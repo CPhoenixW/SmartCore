@@ -31,5 +31,8 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
+    from app.db import models  # noqa: F401
+
     settings = get_settings()
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
+    Base.metadata.create_all(bind=engine)
