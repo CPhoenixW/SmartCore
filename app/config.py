@@ -22,11 +22,22 @@ class Settings(BaseSettings):
     feishu_replay_max_age_seconds: int = 300
     semester_start: date | None = None
 
+    backup_dir: str = str(PROJECT_ROOT / "backups")
+    pi_user: str = ""
+    pi_host: str = ""
+    pi_backup_dir: str = ""
+    local_backup_retention_days: int = 30
+    pi_backup_retention_days: int = 90
+
     @property
     def database_path(self) -> Path:
         if self.database_url.startswith("sqlite:///"):
             return Path(self.database_url.removeprefix("sqlite:///"))
         return PROJECT_ROOT / "data" / "smartcore.sqlite"
+
+    @property
+    def backup_path(self) -> Path:
+        return Path(self.backup_dir)
 
 
 @lru_cache
