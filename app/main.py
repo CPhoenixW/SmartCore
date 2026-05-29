@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from app.config import get_settings
 from app.db.session import init_db
 from app.feishu.event_handler import create_feishu_router
+from app.web.routes import create_web_router
 
 
 @asynccontextmanager
@@ -22,6 +23,7 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(create_feishu_router())
+    app.include_router(create_web_router())
 
     return app
 

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}生活事项 · SmartCore{% endblock %}
+
+{% block content %}
+<section class="page-header">
+  <h2>生活事项管理</h2>
+</section>
+
+{% if message %}
+<div class="flash success">{{ message }}</div>
+{% endif %}
+
+<form method="post" action="/dashboard/life-events" class="card form-card">
+  <h3>添加事项</h3>
+  <label for="title">标题</label>
+  <input id="title" name="title" type="text" required>
+
+  <label for="scheduled_at">计划时间（可选）</label>
+  <input id="scheduled_at" name="scheduled_at" type="datetime-local">
+
+  <label for="deadline_at">截止时间（可选）</label>
+  <input id="deadline_at" name="deadline_at" type="datetime-local">
+
+  <label for="notes">备注</label>
+  <textarea id="notes" name="notes" rows="2"></textarea>
+
+  <button type="submit">添加事项</button>
+</form>
+
+<section class="card">
+  <h3>事项列表</h3>
+  {% if events %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>标题</th>
+        <th>计划时间</th>
+        <th>截止时间</th>
+        <th>状态</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in events %}
+      <tr>
+        <td>{{ item.title }}</td>
+        <td>{{ item.scheduled_at.strftime("%Y-%m-%d %H:%M") if item.scheduled_at else "—" }}</td>
+        <td>{{ item.deadline_at.strftime("%Y-%m-%d %H:%M") if item.deadline_at else "—" }}</td>
+        <td><span class="status status-{{ item.status }}">{{ item.status }}</span></td>
+        <td>
+          {% if item.status != "done" %}
+          <form method="post" action="/dashboard/life-events/{{ item.id }}/complete" class="inline-form">
+            <button type="submit" class="link-button">完成</button>
+          </form>
+          {% else %}
+          —
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">暂无生活事项。</p>
+  {% endif %}
+</section>
+{% endblock %}

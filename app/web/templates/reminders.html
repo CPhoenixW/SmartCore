@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}提醒日志 · SmartCore{% endblock %}
+
+{% block content %}
+<section class="page-header">
+  <h2>提醒日志</h2>
+  <p class="meta">最近 200 条提醒记录</p>
+</section>
+
+<section class="card">
+  {% if reminders %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>类型</th>
+        <th>目标</th>
+        <th>计划发送</th>
+        <th>实际发送</th>
+        <th>状态</th>
+        <th>重试</th>
+        <th>内容摘要</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in reminders %}
+      <tr>
+        <td>{{ item.reminder_type }}</td>
+        <td>{{ item.target_type }}{% if item.target_id %} #{{ item.target_id }}{% endif %}</td>
+        <td>{{ item.scheduled_at.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>{{ item.sent_at.strftime("%Y-%m-%d %H:%M") if item.sent_at else "—" }}</td>
+        <td><span class="status status-{{ item.status }}">{{ item.status }}</span></td>
+        <td>{{ item.retry_count }}</td>
+        <td class="truncate">{{ item.content or "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">暂无提醒记录。</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block title %}今日计划 · SmartCore{% endblock %}
+
+{% block content %}
+<section class="page-header">
+  <h2>今日计划</h2>
+  <p class="meta">{{ plan.target_date.isoformat() }}</p>
+</section>
+
+{% include "partials/plan_sections.html" %}
+{% endblock %}

@@ -1,0 +1,64 @@
+<section class="plan-section">
+  <h3>课程</h3>
+  {% if plan.courses %}
+  <ul class="item-list">
+    {% for item in plan.courses %}
+    <li>
+      <span class="item-title">{{ item.title }}</span>
+      {% if item.time_label %}<span class="badge">{{ item.time_label }}</span>{% endif %}
+      {% if item.location %}<span class="meta">{{ item.location }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">今日无课程安排。</p>
+  {% endif %}
+</section>
+
+<section class="plan-section">
+  <h3>作业 / DDL</h3>
+  {% if plan.assignments %}
+  <ul class="item-list">
+    {% for item in plan.assignments %}
+    <li>
+      <span class="item-title">{{ item.title }}</span>
+      {% if item.time_label %}<span class="badge danger">{{ item.time_label }}</span>{% endif %}
+      {% if item.notes %}<span class="meta">{{ item.notes }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">今日无截止作业。</p>
+  {% endif %}
+</section>
+
+<section class="plan-section">
+  <h3>生活事项</h3>
+  {% if plan.life_events %}
+  <ul class="item-list">
+    {% for item in plan.life_events %}
+    <li>
+      <span class="item-title">{{ item.title }}</span>
+      {% if item.time_label %}<span class="badge">{{ item.time_label }}</span>{% endif %}
+      {% if item.notes %}<span class="meta">{{ item.notes }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">今日无已安排生活事项。</p>
+  {% endif %}
+</section>
+
+{% if plan.unscheduled is defined and plan.unscheduled %}
+<section class="plan-section">
+  <h3>待安排</h3>
+  <ul class="item-list">
+    {% for item in plan.unscheduled %}
+    <li>
+      <span class="item-title">{{ item.title }}</span>
+      {% if item.notes %}<span class="meta">{{ item.notes }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}

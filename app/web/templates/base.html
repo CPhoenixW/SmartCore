@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}SmartCore{% endblock %}</title>
+  <link rel="stylesheet" href="/dashboard/static/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <h1><a href="/dashboard/today">SmartCore</a></h1>
+      <p class="subtitle">内部管理面板 · 仅 Tailscale 访问</p>
+    </div>
+  </header>
+
+  <nav class="site-nav">
+    <div class="container nav-links">
+      <a href="/dashboard/today" class="{% if active_page == 'today' %}active{% endif %}">今日计划</a>
+      <a href="/dashboard/tomorrow" class="{% if active_page == 'tomorrow' %}active{% endif %}">明日计划</a>
+      <a href="/dashboard/timetable" class="{% if active_page == 'timetable' %}active{% endif %}">课表导入</a>
+      <a href="/dashboard/assignments" class="{% if active_page == 'assignments' %}active{% endif %}">作业 / DDL</a>
+      <a href="/dashboard/life-events" class="{% if active_page == 'life_events' %}active{% endif %}">生活事项</a>
+      <a href="/dashboard/reminders" class="{% if active_page == 'reminders' %}active{% endif %}">提醒日志</a>
+    </div>
+  </nav>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

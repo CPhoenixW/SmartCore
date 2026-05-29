@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}作业 / DDL · SmartCore{% endblock %}
+
+{% block content %}
+<section class="page-header">
+  <h2>作业 / DDL 管理</h2>
+</section>
+
+{% if message %}
+<div class="flash success">{{ message }}</div>
+{% endif %}
+
+<form method="post" action="/dashboard/assignments" class="card form-card">
+  <h3>添加作业</h3>
+  <label for="title">标题</label>
+  <input id="title" name="title" type="text" required>
+
+  <label for="due_at">截止时间</label>
+  <input id="due_at" name="due_at" type="datetime-local">
+
+  <label for="course_id">关联课程（可选）</label>
+  <select id="course_id" name="course_id">
+    <option value="">无</option>
+    {% for course in courses %}
+    <option value="{{ course.id }}">{{ course.name }}</option>
+    {% endfor %}
+  </select>
+
+  <label for="notes">备注</label>
+  <textarea id="notes" name="notes" rows="2"></textarea>
+
+  <button type="submit">添加作业</button>
+</form>
+
+<section class="card">
+  <h3>作业列表</h3>
+  {% if assignments %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>标题</th>
+        <th>课程</th>
+        <th>截止时间</th>
+        <th>状态</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in assignments %}
+      <tr>
+        <td>{{ item.title }}</td>
+        <td>{{ item.course.name if item.course else "—" }}</td>
+        <td>{{ item.due_at.strftime("%Y-%m-%d %H:%M") if item.due_at else "未定" }}</td>
+        <td><span class="status status-{{ item.status }}">{{ item.status }}</span></td>
+        <td>
+          {% if item.status not in ["done", "cancelled"] %}
+          <form method="post" action="/dashboard/assignments/{{ item.id }}/complete" class="inline-form">
+            <button type="submit" class="link-button">完成</button>
+          </form>
+          {% else %}
+          —
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">暂无作业。</p>
+  {% endif %}
+</section>
+{% endblock %}
