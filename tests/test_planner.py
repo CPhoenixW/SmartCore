@@ -8,7 +8,6 @@ from app.secretary.planner import build_today_plan, build_tomorrow_plan
 from app.secretary.rules import DEFAULT_TZ
 from app.secretary.timetable import get_course_instances_for_date, session_applies_on_date
 
-
 SEMESTER_START = date(2026, 2, 23)
 
 

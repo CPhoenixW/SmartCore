@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
-from app.db.models import Assignment, AssignmentStatus, Reminder, ReminderStatus
+from app.db.models import Reminder, ReminderStatus
 from app.scheduler.daily_digest import (
     format_daily_digest,
     format_ddl_message,
@@ -15,7 +15,7 @@ from app.scheduler.daily_digest import (
     format_tomorrow_preview,
 )
 from app.secretary.assignments import get_assignments_due_on
-from app.secretary.planner import build_day_plan, build_today_plan, build_tomorrow_plan
+from app.secretary.planner import build_today_plan, build_tomorrow_plan
 from app.secretary.rules import DEFAULT_TZ, format_datetime
 from app.secretary.timetable import get_course_instances_for_date
 

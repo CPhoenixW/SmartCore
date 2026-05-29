@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
