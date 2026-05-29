@@ -18,6 +18,7 @@ dependencies = [
     "httpx",
     "python-multipart",
     "jinja2",
+    "cryptography",
 ]
 
 [project.optional-dependencies]

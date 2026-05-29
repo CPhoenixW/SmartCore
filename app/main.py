@@ -4,6 +4,7 @@ from fastapi import FastAPI
 
 from app.config import get_settings
 from app.db.session import init_db
+from app.feishu.event_handler import create_feishu_router
 
 
 @asynccontextmanager
@@ -19,6 +20,8 @@ def create_app() -> FastAPI:
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    app.include_router(create_feishu_router())
 
     return app
 
