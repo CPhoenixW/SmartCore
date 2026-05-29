@@ -1,0 +1,52 @@
+# SmartCore production stack: FastAPI app + Caddy (public HTTPS for Feishu only).
+# Copy env.example to .env in this directory before starting.
+#
+# Public:  Caddy :443 -> /feishu/event only
+# Internal: app :8000 -> /dashboard, /healthz, etc. (Tailscale / private network)
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    env_file:
+      - .env
+    volumes:
+      - smartcore-data:/app/data
+      - smartcore-backups:/app/backups
+    expose:
+      - "8000"
+    ports:
+      # Not published through Caddy; reach via host Tailscale IP for the web panel.
+      - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - smartcore
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-example.com}
+      CADDY_ADMIN_EMAIL: ${CADDY_ADMIN_EMAIL:-admin@example.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - smartcore
+
+networks:
+  smartcore:
+    driver: bridge
+
+volumes:
+  smartcore-data:
+  smartcore-backups:
+  caddy-data:
+  caddy-config:
