@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     feishu_replay_max_age_seconds: int = 300
     semester_start: date | None = None
 
+    scheduler_enabled: bool = False
+    scheduler_interval_seconds: int = 60
+
     backup_dir: str = str(PROJECT_ROOT / "backups")
     pi_user: str = ""
     pi_host: str = ""

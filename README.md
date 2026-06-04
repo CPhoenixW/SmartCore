@@ -88,6 +88,8 @@ Configuration is loaded from the process environment. In Docker Compose, use `de
 | `FEISHU_DEFAULT_CHAT_ID` | Recommended | Default chat ID for proactive reminders |
 | `FEISHU_REPLAY_MAX_AGE_SECONDS` | No | Max event timestamp age (default: `300`) |
 | `SEMESTER_START` | No | Semester start date (`YYYY-MM-DD`) for week calculations |
+| `SCHEDULER_ENABLED` | No | Enable background reminder generation and dispatch (default: `false`) |
+| `SCHEDULER_INTERVAL_SECONDS` | No | Background scheduler tick interval in seconds (default: `60`) |
 | `BACKUP_DIR` | No | Local backup directory (default: `backups/` or `/app/backups` in Docker) |
 | `PI_USER` | For sync | SSH user on the Raspberry Pi |
 | `PI_HOST` | For sync | Pi hostname or Tailscale name |

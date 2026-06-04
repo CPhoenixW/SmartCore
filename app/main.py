@@ -5,13 +5,22 @@ from fastapi import FastAPI
 from app.config import get_settings
 from app.db.session import init_db
 from app.feishu.event_handler import create_feishu_router
+from app.scheduler.service import build_scheduler_service
 from app.web.routes import create_web_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    yield
+    settings = get_settings()
+    scheduler_service = build_scheduler_service(settings)
+    if scheduler_service is not None:
+        scheduler_service.start()
+    try:
+        yield
+    finally:
+        if scheduler_service is not None:
+            scheduler_service.shutdown()
 
 
 def create_app() -> FastAPI:

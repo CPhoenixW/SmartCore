@@ -134,3 +134,23 @@ Notification Dispatcher 只负责发送队列中的通知，并写 delivery。�
 - 可以创建 notification，并通过 fake channel 发送。
 - 发送成功和失败都写 notification delivery。
 - 现有飞书命令、Web 面板、提醒引擎测试不回退。
+
+## 第二阶段：主动提醒调度
+
+配置完成后，SmartCore 必须从“被动命令机器人”升级为“会主动提醒的个人秘书”。本阶段先不引入 LLM，也不处理树莓派备份，只把现有 ReminderEngine 接入 FastAPI 生命周期。
+
+目标行为：
+
+- 服务启动时，如果 `SCHEDULER_ENABLED=true` 且飞书主动推送配置完整，则启动后台调度。
+- 调度器按 `SCHEDULER_INTERVAL_SECONDS` 周期调用 `SchedulerRunner.tick()`。
+- 每次 tick 先生成当天提醒，再发送到期提醒。
+- 发送通道使用 `FEISHU_DEFAULT_CHAT_ID`，不能依赖收到用户消息时的临时 chat_id。
+- 配置不完整时，应用仍然正常启动，只是不启动主动调度。
+- 服务关闭时，后台调度必须停止，避免 reload 或容器退出时留下重复任务。
+
+本阶段的可靠性边界：
+
+- 不在启动时发送测试消息，避免部署时误打扰。
+- 不要求每条 reminder 进入 notification 队列表；现有 `Reminder` 表可继续作为定时提醒的可靠队列。
+- 飞书发送失败按现有 retry 规则记录在 reminder 上，不能让后台任务崩溃。
+- 后续如果统一到 `notification` 队列，应保持对 `ReminderEngine` 行为的兼容测试。
