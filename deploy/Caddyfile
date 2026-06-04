@@ -7,6 +7,11 @@
 }
 
 {$DOMAIN} {
+	log {
+		output stdout
+		format console
+	}
+
 	handle /feishu/event {
 		reverse_proxy app:8000
 	}

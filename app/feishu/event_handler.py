@@ -100,6 +100,12 @@ class FeishuEventHandler:
 
         chat_id = self._resolve_chat_id(payload)
         if chat_id:
+            logger.info(
+                "feishu message command parsed: message_id=%s command=%s chat_id=%s",
+                message_id,
+                command.name,
+                chat_id,
+            )
             try:
                 self.client.send_text(chat_id, reply)
             except Exception:
@@ -125,12 +131,15 @@ def create_feishu_router(
     handler: FeishuEventHandler | None = None,
 ) -> APIRouter:
     router = APIRouter()
+    cached_handler: FeishuEventHandler | None = handler
 
     def _handler() -> FeishuEventHandler:
-        if handler is not None:
-            return handler
+        nonlocal cached_handler
+        if cached_handler is not None:
+            return cached_handler
         settings = get_settings()
-        return FeishuEventHandler(settings)
+        cached_handler = FeishuEventHandler(settings)
+        return cached_handler
 
     @router.post("/feishu/event")
     async def feishu_event(

@@ -298,8 +298,12 @@ def test_feishu_route_integration(feishu_settings, mock_feishu_client, db_sessio
 
 
 def test_feishu_client_send_text_uses_mock_transport():
+    token_requests = 0
+
     def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal token_requests
         if request.url.path.endswith("/tenant_access_token/internal"):
+            token_requests += 1
             return httpx.Response(200, json={"code": 0, "tenant_access_token": "t-token"})
         return httpx.Response(200, json={"code": 0, "data": {"message_id": "msg_1"}})
 
@@ -307,3 +311,32 @@ def test_feishu_client_send_text_uses_mock_transport():
     client = FeishuClient("app", "secret", transport=transport)
     result = client.send_text("oc_chat", "hello")
     assert result["code"] == 0
+    result = client.send_text("oc_chat", "hello again")
+    assert result["code"] == 0
+    assert token_requests == 1
+
+
+def test_feishu_client_refreshes_token_on_send_auth_error():
+    token_requests = 0
+    send_requests = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal token_requests, send_requests
+        if request.url.path.endswith("/tenant_access_token/internal"):
+            token_requests += 1
+            return httpx.Response(
+                200,
+                json={"code": 0, "tenant_access_token": f"t-token-{token_requests}"},
+            )
+        send_requests += 1
+        if send_requests == 1:
+            return httpx.Response(401, json={"code": 99991663, "msg": "token expired"})
+        assert request.headers["Authorization"] == "Bearer t-token-2"
+        return httpx.Response(200, json={"code": 0, "data": {"message_id": "msg_1"}})
+
+    transport = httpx.MockTransport(handler)
+    client = FeishuClient("app", "secret", transport=transport)
+    result = client.send_text("oc_chat", "hello")
+    assert result["code"] == 0
+    assert token_requests == 2
+    assert send_requests == 2
