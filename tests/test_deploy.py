@@ -31,6 +31,13 @@ def test_docker_compose_defines_app_and_caddy() -> None:
     assert "deploy/Dockerfile" in compose or "dockerfile: deploy/Dockerfile" in compose
 
 
+def test_app_port_is_not_published_to_all_interfaces() -> None:
+    compose = _read("docker-compose.yml")
+    assert '"8000:8000"' not in compose
+    assert "- 8000:8000" not in compose
+    assert "127.0.0.1:8000:8000" in compose or "${APP_BIND:-127.0.0.1}:8000:8000" in compose
+
+
 def test_caddyfile_only_forwards_feishu_event() -> None:
     caddyfile = _read("Caddyfile")
     assert "/feishu/event" in caddyfile

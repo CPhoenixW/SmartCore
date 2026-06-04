@@ -75,6 +75,9 @@ def test_init_db_creates_all_tables(db_session):
         "courses",
         "life_events",
         "message_logs",
+        "notification_deliveries",
+        "notifications",
+        "pending_operations",
         "reminders",
     }
 

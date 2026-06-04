@@ -17,8 +17,8 @@ services:
     expose:
       - "8000"
     ports:
-      # Not published through Caddy; reach via host Tailscale IP for the web panel.
-      - "8000:8000"
+      # Bind localhost by default; override APP_BIND for Tailscale/private host access.
+      - "${APP_BIND:-127.0.0.1}:8000:8000"
     restart: unless-stopped
     networks:
       - smartcore
