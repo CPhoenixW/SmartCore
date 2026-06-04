@@ -22,7 +22,7 @@ Do not commit real secrets, databases, or backups. `passwd.txt`, `.env`, `data/`
 
 ## Deployment
 
-Production runs as two Docker Compose services: the FastAPI app and Caddy. Caddy is the only public HTTPS entry; the web panel is reached over Tailscale on the app port.
+Production runs as three Docker Compose services: the FastAPI app, Caddy (public HTTPS), and `tunnel-boundary` (HTTP for Cloudflare Tunnel on the host docker bridge). The web panel is reached over Tailscale on the app port, not through the tunnel boundary.
 
 ### Prerequisites
 
@@ -62,8 +62,9 @@ Production runs as two Docker Compose services: the FastAPI app and Caddy. Caddy
 
 ### Network boundary
 
-- **Public (Caddy :443):** only `POST /feishu/event` is forwarded to the app. All other paths return 404.
-- **Internal (Tailscale):** web panel at `/dashboard/*`, plus `/healthz` and other app routes on port `8000`.
+- **Public HTTPS (Caddy :443):** only `POST /feishu/event` is forwarded to the app. All other paths return 404.
+- **Cloudflare Tunnel (`tunnel-boundary`):** the tunnel daemon on the host should target `http://172.17.0.1:8000` (docker bridge gateway). The boundary Caddy container listens on host `${TUNNEL_BOUNDARY_BIND:-172.17.0.1}:8000` and forwards only `/feishu/event`; other paths return 404. The FastAPI app is **not** bound on `0.0.0.0:8000`.
+- **Internal (Tailscale):** set `APP_BIND` in `deploy/.env` to the server's Tailscale IPv4 (see [deploy/env.example](./deploy/env.example)). Then reach the web panel at `/dashboard/*`, plus `/healthz` and other app routes on `http://<server-tailscale-ip>:8000`.
 
 See [doc/04-network-security.md](./doc/04-network-security.md) for the full security model.
 
@@ -73,6 +74,8 @@ Configuration is loaded from the process environment. In Docker Compose, use `de
 
 | Variable | Required | Description |
 |----------|----------|-------------|
+| `APP_BIND` | No | Host IP for publishing app port `8000` (default `127.0.0.1`; production: server Tailscale IPv4) |
+| `TUNNEL_BOUNDARY_BIND` | No | Host IP for tunnel boundary on port `8000` (default `172.17.0.1`, docker bridge gateway) |
 | `DOMAIN` | Yes (prod) | Public domain for Caddy HTTPS and the Feishu callback host |
 | `CADDY_ADMIN_EMAIL` | Yes (prod) | Email for Let's Encrypt certificate registration |
 | `APP_NAME` | No | Application display name (default: `SmartCore`) |
