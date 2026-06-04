@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from app.feishu.commands import DATE_PATTERN
 
 _ASSIGNMENT_PREFIX = "添加作业"
+_LIFE_EVENT_PREFIX = "添加事项"
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,18 @@ class RuleBasedOperationParser:
                 raw_text=text,
                 action_name="create_assignment",
                 payload={"resource": "assignment", "fields": fields},
+                confidence=0.95,
+                needs_confirmation=True,
+            )
+        if normalized.startswith(_LIFE_EVENT_PREFIX):
+            title = normalized.removeprefix(_LIFE_EVENT_PREFIX).strip()
+            if not title:
+                raise ValueError(f"missing life event title: {text!r}")
+            return ParsedOperation(
+                source=source,
+                raw_text=text,
+                action_name="create_life_event",
+                payload={"resource": "life_event", "fields": {"title": title}},
                 confidence=0.95,
                 needs_confirmation=True,
             )

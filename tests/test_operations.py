@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from app.actions.executor import ActionExecutor
-from app.db.models import Assignment, PendingOperation, PendingOperationStatus
+from app.db.models import Assignment, LifeEvent, PendingOperation, PendingOperationStatus
 from app.operations.parser import RuleBasedOperationParser
 from app.operations.store import create_pending_operation
 from app.secretary.rules import DEFAULT_TZ
@@ -28,6 +28,19 @@ def test_rule_parser_creates_assignment_operation() -> None:
             "title": "高数作业",
             "due_at": "2026-06-10T20:00:00+08:00",
         },
+    }
+
+
+def test_rule_parser_creates_life_event_operation() -> None:
+    parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
+
+    operation = parser.parse("添加事项 洗衣服", source="feishu")
+
+    assert operation.action_name == "create_life_event"
+    assert operation.needs_confirmation is True
+    assert operation.payload == {
+        "resource": "life_event",
+        "fields": {"title": "洗衣服"},
     }
 
 
@@ -68,3 +81,19 @@ def test_rejected_operation_does_not_execute(db_session) -> None:
     assert rejected.status == PendingOperationStatus.REJECTED.value
     assert db_session.query(Assignment).count() == 0
     assert db_session.query(PendingOperation).count() == 1
+
+
+def test_pending_life_event_confirm_executes_action(db_session) -> None:
+    parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
+    parsed = parser.parse("添加事项 洗衣服", source="feishu")
+    pending = create_pending_operation(db_session, parsed)
+
+    executor = ActionExecutor(db_session)
+    applied = executor.confirm_and_apply(pending.id)
+
+    event = db_session.query(LifeEvent).filter_by(title="洗衣服").one()
+    assert applied.status == PendingOperationStatus.APPLIED.value
+    assert applied.action_name == "create_life_event"
+    assert applied.result_resource_type == "life_event"
+    assert applied.result_resource_id == event.id
+    assert applied.error_message is None

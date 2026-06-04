@@ -21,6 +21,8 @@ COMMAND_WEEKLY_DDL = "weekly_ddl"
 COMMAND_ADD_ASSIGNMENT = "add_assignment"
 COMMAND_ADD_LIFE_EVENT = "add_life_event"
 COMMAND_COMPLETE = "complete"
+COMMAND_CONFIRM_OPERATION = "confirm_operation"
+COMMAND_REJECT_OPERATION = "reject_operation"
 COMMAND_HELP = "help"
 
 DATE_PATTERN = re.compile(
@@ -75,6 +77,14 @@ def parse_command(text: str) -> ParsedCommand:
         args = normalized.removeprefix("完成").strip()
         if args:
             return ParsedCommand(COMMAND_COMPLETE, args)
+    if normalized.startswith("确认"):
+        args = normalized.removeprefix("确认").strip()
+        if args:
+            return ParsedCommand(COMMAND_CONFIRM_OPERATION, args)
+    if normalized.startswith("拒绝"):
+        args = normalized.removeprefix("拒绝").strip()
+        if args:
+            return ParsedCommand(COMMAND_REJECT_OPERATION, args)
 
     return ParsedCommand(COMMAND_HELP)
 

@@ -16,6 +16,8 @@ class ActionExecutor:
         pending = self._get_pending_operation(operation_id)
         if pending.action_name == "create_assignment":
             return self._apply_create_assignment(pending)
+        if pending.action_name == "create_life_event":
+            return self._apply_create_life_event(pending)
         pending.status = PendingOperationStatus.FAILED.value
         pending.error_message = f"unsupported action: {pending.action_name}"
         self._db.commit()
@@ -56,6 +58,25 @@ class ActionExecutor:
         pending.status = PendingOperationStatus.APPLIED.value
         pending.result_resource_type = "assignment"
         pending.result_resource_id = assignment.id
+        pending.error_message = None
+        self._db.commit()
+        self._db.refresh(pending)
+        return pending
+
+    def _apply_create_life_event(self, pending: PendingOperation) -> PendingOperation:
+        fields = pending.operation_payload.get("fields", {})
+        title = fields.get("title")
+        if not title:
+            pending.status = PendingOperationStatus.FAILED.value
+            pending.error_message = "missing life event title"
+            self._db.commit()
+            self._db.refresh(pending)
+            return pending
+
+        event = crud.create_life_event(self._db, title=title)
+        pending.status = PendingOperationStatus.APPLIED.value
+        pending.result_resource_type = "life_event"
+        pending.result_resource_id = event.id
         pending.error_message = None
         self._db.commit()
         self._db.refresh(pending)

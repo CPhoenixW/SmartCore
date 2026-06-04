@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from app.config import get_settings
 from app.db import crud
+from app.db.models import Assignment, LifeEvent, PendingOperation, PendingOperationStatus
 from app.feishu.client import FeishuClient
 from app.feishu.commands import (
     COMMAND_ADD_ASSIGNMENT,
@@ -160,6 +161,8 @@ def test_parse_command_maps_known_commands():
     assert parse_command("添加作业 数学作业 2026-03-05").name == COMMAND_ADD_ASSIGNMENT
     assert parse_command("添加事项 洗衣服").name == "add_life_event"
     assert parse_command("完成 数学作业").name == COMMAND_COMPLETE
+    assert parse_command("确认 12").name == "confirm_operation"
+    assert parse_command("拒绝 12").name == "reject_operation"
     assert parse_command("帮助").name == COMMAND_HELP
 
 
@@ -270,6 +273,107 @@ def test_event_handler_unknown_command_returns_help(
     reply_text = mock_feishu_client.send_text.call_args[0][1]
     assert "可用命令" in reply_text
     assert reply_text == format_help_message()
+
+
+def test_event_handler_add_assignment_creates_pending_operation(
+    event_handler,
+    mock_feishu_client,
+    db_session,
+):
+    body = json.dumps(_message_event("添加作业 数学作业 2026-03-05"))
+
+    status, payload = event_handler.handle(
+        body.encode(),
+        _signed_headers(body),
+        db_session,
+        now=FIXED_NOW,
+    )
+
+    assert status == 200
+    assert payload["code"] == 0
+    assert db_session.query(Assignment).count() == 0
+    pending = db_session.query(PendingOperation).one()
+    assert pending.status == PendingOperationStatus.PENDING.value
+    assert pending.action_name == "create_assignment"
+    reply_text = mock_feishu_client.send_text.call_args[0][1]
+    assert f"待确认操作 #{pending.id}" in reply_text
+    assert f"确认 {pending.id}" in reply_text
+    assert f"拒绝 {pending.id}" in reply_text
+
+
+def test_event_handler_confirm_operation_applies_pending_assignment(
+    event_handler,
+    mock_feishu_client,
+    db_session,
+):
+    body = json.dumps(_message_event("添加作业 数学作业 2026-03-05"))
+    event_handler.handle(body.encode(), _signed_headers(body), db_session, now=FIXED_NOW)
+    pending = db_session.query(PendingOperation).one()
+    mock_feishu_client.send_text.reset_mock()
+
+    confirm_body = json.dumps(_message_event(f"确认 {pending.id}", message_id="om_msg_2"))
+    status, payload = event_handler.handle(
+        confirm_body.encode(),
+        _signed_headers(confirm_body),
+        db_session,
+        now=FIXED_NOW,
+    )
+
+    assert status == 200
+    assert payload["code"] == 0
+    assignment = db_session.query(Assignment).filter_by(title="数学作业").one()
+    db_session.refresh(pending)
+    assert pending.status == PendingOperationStatus.APPLIED.value
+    assert pending.result_resource_id == assignment.id
+    reply_text = mock_feishu_client.send_text.call_args[0][1]
+    assert "已确认并执行" in reply_text
+    assert "数学作业" in reply_text
+
+
+def test_event_handler_reject_operation_does_not_apply(
+    event_handler,
+    mock_feishu_client,
+    db_session,
+):
+    body = json.dumps(_message_event("添加事项 洗衣服"))
+    event_handler.handle(body.encode(), _signed_headers(body), db_session, now=FIXED_NOW)
+    pending = db_session.query(PendingOperation).one()
+    mock_feishu_client.send_text.reset_mock()
+
+    reject_body = json.dumps(_message_event(f"拒绝 {pending.id}", message_id="om_msg_2"))
+    status, payload = event_handler.handle(
+        reject_body.encode(),
+        _signed_headers(reject_body),
+        db_session,
+        now=FIXED_NOW,
+    )
+
+    assert status == 200
+    assert payload["code"] == 0
+    assert db_session.query(LifeEvent).count() == 0
+    db_session.refresh(pending)
+    assert pending.status == PendingOperationStatus.REJECTED.value
+    reply_text = mock_feishu_client.send_text.call_args[0][1]
+    assert "已拒绝" in reply_text
+
+
+def test_event_handler_confirm_invalid_operation_replies_without_crashing(
+    event_handler,
+    mock_feishu_client,
+    db_session,
+):
+    body = json.dumps(_message_event("确认 999"))
+    status, payload = event_handler.handle(
+        body.encode(),
+        _signed_headers(body),
+        db_session,
+        now=FIXED_NOW,
+    )
+
+    assert status == 200
+    assert payload["code"] == 0
+    reply_text = mock_feishu_client.send_text.call_args[0][1]
+    assert "未找到" in reply_text or "无法确认" in reply_text
 
 
 def test_feishu_route_integration(feishu_settings, mock_feishu_client, db_session):

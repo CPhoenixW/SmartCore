@@ -154,3 +154,18 @@ Notification Dispatcher 只负责发送队列中的通知，并写 delivery。�
 - 不要求每条 reminder 进入 notification 队列表；现有 `Reminder` 表可继续作为定时提醒的可靠队列。
 - 飞书发送失败按现有 retry 规则记录在 reminder 上，不能让后台任务崩溃。
 - 后续如果统一到 `notification` 队列，应保持对 `ReminderEngine` 行为的兼容测试。
+
+## 第三阶段：飞书确认式操作闭环
+
+飞书入口开始承担第一条真实智能体链路：把用户的写操作转成 `pending_operation`，再由用户显式确认或拒绝。读操作仍然可以即时回复。
+
+本阶段范围：
+
+- `添加作业 ...` 和 `添加事项 ...` 在飞书中不直接写入资源表。
+- 飞书回复必须包含 operation id，并提示 `确认 <id>` / `拒绝 <id>`。
+- `确认 <id>` 调用 ActionExecutor，把 pending operation 应用到数据库。
+- `拒绝 <id>` 只更新 operation 状态，不产生资源。
+- 确认或拒绝不存在、已处理、格式错误的 operation 时，必须给出可理解回复，不让事件处理失败。
+- `今日`、`明日`、`本周DDL`、`帮助`、`完成 ...` 继续保持现有行为。
+
+本阶段暂不接 DeepSeek。语义层继续使用 `RuleBasedOperationParser`，后续 LLM Provider 只能替换“从文本到 ParsedOperation”的部分，不能绕过 PendingOperation 和 ActionExecutor。
