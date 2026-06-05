@@ -38,6 +38,8 @@ create + assignment: fields 含 title、due_at（ISO 8601 带时区）。
 create + life_event: fields 含 title、scheduled_at、deadline_at、reminder_rule、notes、
 reminder_lead_minutes；带计划时间的事项应输出 scheduled_at 和 reminder_lead_minutes，
 若用户未指定提前多久提醒，reminder_lead_minutes 默认为 15。
+当用户说“提醒我……”并给出时间时，必须输出 create + life_event，不要输出
+create + reminder；Reminder 是系统内部发送队列，不是用户直接创建的资源。
 update + reminder: selector 必须含 id，fields 含 scheduled_at（ISO 8601 带时区）。
 cancel + reminder: selector 必须含 id，fields 可为空对象。
 """
@@ -167,6 +169,9 @@ class DeepSeekOperationParser:
         if not isinstance(fields, dict):
             fields = {}
 
+        if operation == "create" and resource == "reminder":
+            return self._normalize_create_reminder_as_life_event(selector, fields)
+
         action_key = (operation, resource)
         if action_key not in _UNIFIED_WRITE_ACTIONS:
             raise ValueError(f"unsupported operation/resource: {operation}/{resource}")
@@ -188,3 +193,24 @@ class DeepSeekOperationParser:
             "fields": fields,
         }
         return action_name, payload
+
+    def _normalize_create_reminder_as_life_event(
+        self,
+        selector: dict[str, Any],
+        fields: dict[str, Any],
+    ) -> tuple[str, dict[str, Any]]:
+        normalized_fields = dict(fields)
+        if not normalized_fields.get("title") and normalized_fields.get("content"):
+            normalized_fields["title"] = normalized_fields["content"]
+        if not normalized_fields.get("title"):
+            raise ValueError("fields must include title")
+        if not normalized_fields.get("scheduled_at"):
+            raise ValueError("fields must include scheduled_at for reminder create")
+        normalized_fields.setdefault("reminder_lead_minutes", 15)
+        payload = {
+            "operation": "create",
+            "resource": "life_event",
+            "selector": selector,
+            "fields": normalized_fields,
+        }
+        return "create_life_event", payload

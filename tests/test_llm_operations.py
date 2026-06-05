@@ -129,6 +129,60 @@ def test_deepseek_parser_accepts_unified_update_reminder_operation() -> None:
     assert "create/read/update/cancel" in prompt
 
 
+def test_deepseek_parser_normalizes_create_reminder_to_life_event() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "operation": "create",
+                                    "resource": "reminder",
+                                    "fields": {
+                                        "title": "吃饭",
+                                        "scheduled_at": "2026-06-05T22:00:00+08:00",
+                                    },
+                                    "confidence": 0.95,
+                                    "needs_confirmation": True,
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    parser = DeepSeekOperationParser(
+        api_key="test-key",
+        base_url="https://api.deepseek.test",
+        model="deepseek-chat",
+        tz=DEFAULT_TZ,
+        transport=httpx.MockTransport(handler),
+    )
+
+    operation = parser.parse(
+        "今晚十点提醒我吃饭",
+        source="feishu",
+        now=datetime(2026, 6, 5, 13, 40, tzinfo=DEFAULT_TZ),
+    )
+
+    assert operation.action_name == "create_life_event"
+    assert operation.payload == {
+        "operation": "create",
+        "resource": "life_event",
+        "selector": {},
+        "fields": {
+            "title": "吃饭",
+            "scheduled_at": "2026-06-05T22:00:00+08:00",
+            "reminder_lead_minutes": 15,
+        },
+    }
+
+
 def test_deepseek_parser_accepts_unified_cancel_reminder_operation() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(

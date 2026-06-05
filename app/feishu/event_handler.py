@@ -289,7 +289,8 @@ class FeishuEventHandler:
     def _try_free_form_operation_reply(self, db: Session, text: str) -> FeishuReply:
         try:
             parsed = self._operation_parser.parse(text, source="feishu")
-        except ValueError:
+        except ValueError as exc:
+            logger.warning("free-form operation parsing failed: text=%r error=%s", text, exc)
             return FeishuReply(
                 text=execute_command(
                     db,
