@@ -193,6 +193,7 @@ Notification Dispatcher 只负责发送队列中的通知，并写 delivery。�
 - `今日` / `明日` 回复除了计划项，还应包含当天待发送提醒摘要，让用户知道系统接下来会主动推送什么。
 - PendingOperation 卡片必须把字段翻译成人能直接确认的信息：事项标题、计划时间、提醒时间、提前量；不要只展示 `scheduled_at`、`reminder_lead_minutes` 这类内部字段名。
 - `/dashboard/reminders` 是提醒队列中控台，应展示状态概览、下一条提醒、最近提醒列表，便于从电脑或手机检查后台调度状态。
+- `/dashboard/today` 作为默认首页，应显示轻量中控台摘要：待确认操作数、待发送提醒数、下一条提醒，帮助用户快速判断系统是否按预期运转。
 - 这些增强只能使用现有 `Reminder`、`PendingOperation`、Feishu card、dashboard 模板，不引入新的框架或外部服务。
 
 ## 第六阶段：提醒修改与取消

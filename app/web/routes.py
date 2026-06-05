@@ -62,6 +62,22 @@ def create_web_router() -> APIRouter:
             tz=DEFAULT_TZ,
             semester_start=settings.semester_start,
         )
+        pending_operations_count = (
+            db.query(PendingOperation)
+            .filter(PendingOperation.status == PendingOperationStatus.PENDING.value)
+            .count()
+        )
+        pending_reminders_count = (
+            db.query(Reminder)
+            .filter(Reminder.status == ReminderStatus.PENDING.value)
+            .count()
+        )
+        next_reminder = (
+            db.query(Reminder)
+            .filter(Reminder.status == ReminderStatus.PENDING.value)
+            .order_by(Reminder.scheduled_at.asc())
+            .first()
+        )
         return templates.TemplateResponse(
             request,
             "today.html",
@@ -69,6 +85,9 @@ def create_web_router() -> APIRouter:
                 "active_page": "today",
                 "plan": plan,
                 "today": date.today(),
+                "pending_operations_count": pending_operations_count,
+                "pending_reminders_count": pending_reminders_count,
+                "next_reminder": next_reminder,
             },
         )
 
