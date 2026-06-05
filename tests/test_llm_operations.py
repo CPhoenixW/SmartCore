@@ -71,6 +71,109 @@ def test_deepseek_parser_converts_free_form_reminder_to_life_event() -> None:
     assert "reminder_lead_minutes" in json.dumps(requests[0], ensure_ascii=False)
 
 
+def test_deepseek_parser_accepts_unified_update_reminder_operation() -> None:
+    requests: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(json.loads(request.content.decode()))
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "operation": "update",
+                                    "resource": "reminder",
+                                    "selector": {"id": 12},
+                                    "fields": {
+                                        "scheduled_at": "2026-06-05T20:30:00+08:00"
+                                    },
+                                    "confidence": 0.82,
+                                    "needs_confirmation": True,
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    parser = DeepSeekOperationParser(
+        api_key="test-key",
+        base_url="https://api.deepseek.test",
+        model="deepseek-chat",
+        tz=DEFAULT_TZ,
+        transport=httpx.MockTransport(handler),
+    )
+
+    operation = parser.parse(
+        "把 12 号提醒改到 20:30",
+        source="feishu",
+        now=datetime(2026, 6, 5, 9, 0, tzinfo=DEFAULT_TZ),
+    )
+
+    assert operation.action_name == "update_reminder"
+    assert operation.payload == {
+        "operation": "update",
+        "resource": "reminder",
+        "selector": {"id": 12},
+        "fields": {"scheduled_at": "2026-06-05T20:30:00+08:00"},
+    }
+    assert operation.needs_confirmation is True
+    prompt = json.dumps(requests[0], ensure_ascii=False)
+    assert "operation" in prompt
+    assert "selector" in prompt
+    assert "create/read/update/cancel" in prompt
+
+
+def test_deepseek_parser_accepts_unified_cancel_reminder_operation() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "operation": "cancel",
+                                    "resource": "reminder",
+                                    "selector": {"id": 12},
+                                    "fields": {},
+                                    "confidence": 0.86,
+                                    "needs_confirmation": True,
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    parser = DeepSeekOperationParser(
+        api_key="test-key",
+        base_url="https://api.deepseek.test",
+        model="deepseek-chat",
+        tz=DEFAULT_TZ,
+        transport=httpx.MockTransport(handler),
+    )
+
+    operation = parser.parse(
+        "取消 12 号提醒",
+        source="feishu",
+        now=datetime(2026, 6, 5, 9, 0, tzinfo=DEFAULT_TZ),
+    )
+
+    assert operation.action_name == "cancel_reminder"
+    assert operation.payload["operation"] == "cancel"
+    assert operation.payload["resource"] == "reminder"
+    assert operation.payload["selector"] == {"id": 12}
+
+
 def test_composite_parser_falls_back_to_llm_when_rules_do_not_match() -> None:
     class FakeLLMParser:
         def parse(self, text: str, *, source: str, now=None):

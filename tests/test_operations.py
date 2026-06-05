@@ -3,14 +3,16 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from app.actions.executor import ActionExecutor
+from app.db import crud
 from app.db.models import (
     Assignment,
     LifeEvent,
     PendingOperation,
     PendingOperationStatus,
     Reminder,
+    ReminderStatus,
 )
-from app.operations.parser import RuleBasedOperationParser
+from app.operations.parser import ParsedOperation, RuleBasedOperationParser
 from app.operations.store import create_pending_operation
 from app.secretary.rules import DEFAULT_TZ
 
@@ -161,3 +163,70 @@ def test_pending_life_event_confirm_respects_custom_reminder_lead_minutes(
     if reminder_at is not None and reminder_at.tzinfo is None:
         reminder_at = reminder_at.replace(tzinfo=DEFAULT_TZ)
     assert reminder_at == scheduled_at - timedelta(minutes=30)
+
+
+def test_pending_update_reminder_confirm_executes_action(db_session) -> None:
+    reminder = crud.create_reminder(
+        db_session,
+        reminder_type="life_event_pre_event",
+        target_type="life_event",
+        scheduled_at=datetime(2026, 6, 5, 19, 45, tzinfo=DEFAULT_TZ),
+        content="提醒：洗澡",
+    )
+    parsed = ParsedOperation(
+        source="feishu",
+        raw_text="把提醒改到 20:30",
+        action_name="update_reminder",
+        payload={
+            "operation": "update",
+            "resource": "reminder",
+            "selector": {"id": reminder.id},
+            "fields": {"scheduled_at": "2026-06-05T20:30:00+08:00"},
+        },
+        confidence=0.86,
+        needs_confirmation=True,
+    )
+    pending = create_pending_operation(db_session, parsed)
+
+    applied = ActionExecutor(db_session).confirm_and_apply(pending.id)
+
+    db_session.refresh(reminder)
+    scheduled_at = reminder.scheduled_at
+    if scheduled_at is not None and scheduled_at.tzinfo is None:
+        scheduled_at = scheduled_at.replace(tzinfo=DEFAULT_TZ)
+    assert scheduled_at == datetime(2026, 6, 5, 20, 30, tzinfo=DEFAULT_TZ)
+    assert applied.status == PendingOperationStatus.APPLIED.value
+    assert applied.result_resource_type == "reminder"
+    assert applied.result_resource_id == reminder.id
+
+
+def test_pending_cancel_reminder_confirm_executes_action(db_session) -> None:
+    reminder = crud.create_reminder(
+        db_session,
+        reminder_type="life_event_pre_event",
+        target_type="life_event",
+        scheduled_at=datetime(2026, 6, 5, 19, 45, tzinfo=DEFAULT_TZ),
+        content="提醒：洗澡",
+    )
+    parsed = ParsedOperation(
+        source="feishu",
+        raw_text="取消提醒",
+        action_name="cancel_reminder",
+        payload={
+            "operation": "cancel",
+            "resource": "reminder",
+            "selector": {"id": reminder.id},
+            "fields": {},
+        },
+        confidence=0.86,
+        needs_confirmation=True,
+    )
+    pending = create_pending_operation(db_session, parsed)
+
+    applied = ActionExecutor(db_session).confirm_and_apply(pending.id)
+
+    db_session.refresh(reminder)
+    assert reminder.status == ReminderStatus.CANCELLED.value
+    assert applied.status == PendingOperationStatus.APPLIED.value
+    assert applied.result_resource_type == "reminder"
+    assert applied.result_resource_id == reminder.id

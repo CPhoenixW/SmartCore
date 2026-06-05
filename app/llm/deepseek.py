@@ -9,24 +9,37 @@ import httpx
 
 from app.operations.parser import ParsedOperation
 
-_SUPPORTED_ACTIONS = frozenset({"create_assignment", "create_life_event"})
-_SUPPORTED_RESOURCES = frozenset({"assignment", "life_event"})
+_SUPPORTED_LEGACY_ACTIONS = frozenset({"create_assignment", "create_life_event"})
+_SUPPORTED_RESOURCES = frozenset({"assignment", "life_event", "reminder"})
+_SUPPORTED_OPERATIONS = frozenset({"create", "read", "update", "cancel"})
+_UNIFIED_WRITE_ACTIONS = {
+    ("create", "assignment"): "create_assignment",
+    ("create", "life_event"): "create_life_event",
+    ("update", "reminder"): "update_reminder",
+    ("cancel", "reminder"): "cancel_reminder",
+}
 
 _SYSTEM_PROMPT = """\
 你是 SmartCore 个人调度助手的语义解析器。将用户的自然语言转为 JSON 操作草案。
 
-只返回一个 JSON 对象，不要 markdown 代码块，不要额外说明。字段：
-- action_name: create_assignment 或 create_life_event
-- resource: assignment 或 life_event
-- fields: 资源字段对象（至少包含 title）
+只返回一个 JSON 对象，不要 markdown 代码块，不要额外说明。
+
+优先使用统一协议字段：
+- operation: create/read/update/cancel 之一
+- resource: life_event、assignment 或 reminder
+- selector: 定位已有资源，例如 {"id": 12}
+- fields: 资源字段对象
 - confidence: 0 到 1 的浮点数
 - needs_confirmation: 布尔值，写操作应为 true
 
-create_assignment 的 fields 可含 title、due_at（ISO 8601 带时区）。
-create_life_event 的 fields 可含 title、scheduled_at、deadline_at、reminder_rule、notes、
-reminder_lead_minutes。
-当用户为带计划时间的事项请求提醒时，应输出 scheduled_at 和 reminder_lead_minutes；
+也兼容旧格式 action_name/resource/fields。
+
+create + assignment: fields 含 title、due_at（ISO 8601 带时区）。
+create + life_event: fields 含 title、scheduled_at、deadline_at、reminder_rule、notes、
+reminder_lead_minutes；带计划时间的事项应输出 scheduled_at 和 reminder_lead_minutes，
 若用户未指定提前多久提醒，reminder_lead_minutes 默认为 15。
+update + reminder: selector 必须含 id，fields 含 scheduled_at（ISO 8601 带时区）。
+cancel + reminder: selector 必须含 id，fields 可为空对象。
 """
 
 
@@ -59,12 +72,12 @@ class DeepSeekOperationParser:
             now = datetime.now(self._tz)
         raw_content = self._call_chat_completions(text, now)
         data = self._parse_json_content(raw_content)
-        self._validate_operation(data)
+        action_name, payload = self._normalize_operation(data)
         return ParsedOperation(
             source=source,
             raw_text=text,
-            action_name=data["action_name"],
-            payload={"resource": data["resource"], "fields": data["fields"]},
+            action_name=action_name,
+            payload=payload,
             confidence=float(data.get("confidence", 0.5)),
             needs_confirmation=bool(data.get("needs_confirmation", True)),
         )
@@ -118,9 +131,16 @@ class DeepSeekOperationParser:
             raise ValueError("deepseek JSON must be an object")
         return data
 
-    def _validate_operation(self, data: dict[str, Any]) -> None:
+    def _normalize_operation(self, data: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        if "operation" in data:
+            return self._normalize_unified_operation(data)
+        return self._normalize_legacy_operation(data)
+
+    def _normalize_legacy_operation(
+        self, data: dict[str, Any]
+    ) -> tuple[str, dict[str, Any]]:
         action_name = data.get("action_name")
-        if action_name not in _SUPPORTED_ACTIONS:
+        if action_name not in _SUPPORTED_LEGACY_ACTIONS:
             raise ValueError(f"unsupported action_name: {action_name!r}")
         resource = data.get("resource")
         if resource not in _SUPPORTED_RESOURCES:
@@ -128,3 +148,43 @@ class DeepSeekOperationParser:
         fields = data.get("fields")
         if not isinstance(fields, dict) or not fields.get("title"):
             raise ValueError("fields must include title")
+        return action_name, {"resource": resource, "fields": fields}
+
+    def _normalize_unified_operation(
+        self, data: dict[str, Any]
+    ) -> tuple[str, dict[str, Any]]:
+        operation = data.get("operation")
+        if operation not in _SUPPORTED_OPERATIONS:
+            raise ValueError(f"unsupported operation: {operation!r}")
+        resource = data.get("resource")
+        if resource not in _SUPPORTED_RESOURCES:
+            raise ValueError(f"unsupported resource: {resource!r}")
+
+        selector = data.get("selector")
+        if not isinstance(selector, dict):
+            selector = {}
+        fields = data.get("fields")
+        if not isinstance(fields, dict):
+            fields = {}
+
+        action_key = (operation, resource)
+        if action_key not in _UNIFIED_WRITE_ACTIONS:
+            raise ValueError(f"unsupported operation/resource: {operation}/{resource}")
+        action_name = _UNIFIED_WRITE_ACTIONS[action_key]
+
+        if resource == "reminder" and operation in ("update", "cancel"):
+            if selector.get("id") is None:
+                raise ValueError("selector must include id for reminder update/cancel")
+        if resource == "reminder" and operation == "update":
+            if not fields.get("scheduled_at"):
+                raise ValueError("fields must include scheduled_at for reminder update")
+        if operation == "create" and not fields.get("title"):
+            raise ValueError("fields must include title")
+
+        payload = {
+            "operation": operation,
+            "resource": resource,
+            "selector": selector,
+            "fields": fields,
+        }
+        return action_name, payload

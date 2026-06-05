@@ -205,3 +205,14 @@ Notification Dispatcher 只负责发送队列中的通知，并写 delivery。�
 - 取消提醒只把 `Reminder.status` 改为 `cancelled`，不能删除记录，保留审计线索。
 - 已发送提醒不能取消或修改；失败提醒后续可通过重试策略处理，本阶段不改变调度器语义。
 - 所有修改都作用于现有 `reminders` 表，不改变事件、课程、作业等上游资源结构。
+
+## 第七阶段：LLM 统一 CRUD 输出协议
+
+语义层从“动作名优先”升级为“标准操作协议优先”，但不改变现有执行框架：
+
+- DeepSeek 应优先输出 `operation/resource/selector/fields`。
+- `operation` 取值为 `create/read/update/cancel`；写操作仍需 `needs_confirmation=true`。
+- `resource` 目前先覆盖 `life_event`、`assignment`、`reminder`。
+- `selector` 用来定位已有资源，例如 `{"id": 12}`；多义或缺少定位信息时，应降低置信度或生成需要用户补充的信息。
+- 解析层把统一协议规范化为现有 `PendingOperation.action_name`，例如 `update + reminder` -> `update_reminder`，`cancel + reminder` -> `cancel_reminder`。
+- 执行层继续通过 `ActionExecutor.confirm_and_apply()` 执行确认后的写操作；本阶段只补 `reminder` 的 update/cancel，不重写框架。
