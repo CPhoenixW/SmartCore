@@ -265,3 +265,22 @@ def test_pending_operations_page_can_update_raw_command(web_client, db_session):
     assert response.status_code == 303
     assert pending.raw_text == "添加事项 新命令"
     assert pending.operation_payload["fields"]["title"] == "新命令"
+
+
+def test_pending_operations_page_shows_recent_operation_audit(web_client, db_session):
+    parsed = RuleBasedOperationParser(tz=DEFAULT_TZ).parse(
+        "添加事项 失败操作",
+        source="feishu",
+    )
+    pending = create_pending_operation(db_session, parsed)
+    pending.status = PendingOperationStatus.FAILED.value
+    pending.error_message = "simulated failure"
+    db_session.commit()
+
+    response = web_client.get("/dashboard/pending-operations")
+
+    assert response.status_code == 200
+    assert "操作审计" in response.text
+    assert "失败操作" in response.text
+    assert "failed" in response.text
+    assert "simulated failure" in response.text

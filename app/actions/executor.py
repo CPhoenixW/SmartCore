@@ -14,19 +14,27 @@ class ActionExecutor:
 
     def confirm_and_apply(self, operation_id: int) -> PendingOperation:
         pending = self._get_pending_operation(operation_id)
-        if pending.action_name == "create_assignment":
-            return self._apply_create_assignment(pending)
-        if pending.action_name == "create_life_event":
-            return self._apply_create_life_event(pending)
-        if pending.action_name == "update_reminder":
-            return self._apply_update_reminder(pending)
-        if pending.action_name == "cancel_reminder":
-            return self._apply_cancel_reminder(pending)
-        pending.status = PendingOperationStatus.FAILED.value
-        pending.error_message = f"unsupported action: {pending.action_name}"
-        self._db.commit()
-        self._db.refresh(pending)
-        return pending
+        handlers = {
+            "create_assignment": self._apply_create_assignment,
+            "create_life_event": self._apply_create_life_event,
+            "update_reminder": self._apply_update_reminder,
+            "cancel_reminder": self._apply_cancel_reminder,
+        }
+        handler = handlers.get(pending.action_name)
+        if handler is None:
+            pending.status = PendingOperationStatus.FAILED.value
+            pending.error_message = f"unsupported action: {pending.action_name}"
+            self._db.commit()
+            self._db.refresh(pending)
+            return pending
+        try:
+            return handler(pending)
+        except Exception as exc:
+            pending.status = PendingOperationStatus.FAILED.value
+            pending.error_message = str(exc)
+            self._db.commit()
+            self._db.refresh(pending)
+            return pending
 
     def reject(self, operation_id: int) -> PendingOperation:
         pending = self._get_pending_operation(operation_id)
@@ -103,14 +111,22 @@ class ActionExecutor:
             raw_lead = fields.get("reminder_lead_minutes")
             if raw_lead is not None:
                 lead_minutes = int(raw_lead)
-            crud.create_reminder(
-                self._db,
-                reminder_type="life_event_pre_event",
-                target_type="life_event",
-                target_id=event.id,
-                scheduled_at=scheduled_at - timedelta(minutes=lead_minutes),
-                content=f"提醒：{title}",
-            )
+            try:
+                crud.create_reminder(
+                    self._db,
+                    reminder_type="life_event_pre_event",
+                    target_type="life_event",
+                    target_id=event.id,
+                    scheduled_at=scheduled_at - timedelta(minutes=lead_minutes),
+                    content=f"提醒：{title}",
+                )
+            except Exception as exc:
+                self._db.delete(event)
+                pending.status = PendingOperationStatus.FAILED.value
+                pending.error_message = str(exc)
+                self._db.commit()
+                self._db.refresh(pending)
+                return pending
         pending.status = PendingOperationStatus.APPLIED.value
         pending.result_resource_type = "life_event"
         pending.result_resource_id = event.id
@@ -185,6 +201,8 @@ class ActionExecutor:
         if reminder.status == ReminderStatus.SENT.value:
             pending.status = PendingOperationStatus.FAILED.value
             pending.error_message = f"reminder #{reminder_id} already sent, cannot cancel"
+            pending.result_resource_type = "reminder"
+            pending.result_resource_id = reminder.id
             self._db.commit()
             self._db.refresh(pending)
             return pending

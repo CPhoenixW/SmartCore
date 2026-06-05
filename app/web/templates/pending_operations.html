@@ -65,4 +65,42 @@
   <p>当前没有待确认操作。</p>
   {% endif %}
 </section>
+
+<section class="card">
+  <h3>操作审计</h3>
+  {% if recent_operations %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>编号</th>
+        <th>原始命令</th>
+        <th>操作</th>
+        <th>状态</th>
+        <th>结果资源</th>
+        <th>错误信息</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for op in recent_operations %}
+      <tr>
+        <td>#{{ op.id }}</td>
+        <td>{{ op.raw_text }}</td>
+        <td>{{ op.action_name }}</td>
+        <td><span class="status status-{{ op.status }}">{{ op.status }}</span></td>
+        <td>
+          {% if op.result_resource_type and op.result_resource_id %}
+          {{ op.result_resource_type }} #{{ op.result_resource_id }}
+          {% else %}
+          —
+          {% endif %}
+        </td>
+        <td>{{ op.error_message or "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>暂无近期操作记录。</p>
+  {% endif %}
+</section>
 {% endblock %}

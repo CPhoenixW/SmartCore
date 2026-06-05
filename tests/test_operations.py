@@ -230,3 +230,61 @@ def test_pending_cancel_reminder_confirm_executes_action(db_session) -> None:
     assert applied.status == PendingOperationStatus.APPLIED.value
     assert applied.result_resource_type == "reminder"
     assert applied.result_resource_id == reminder.id
+
+
+def test_life_event_create_rolls_back_when_reminder_creation_fails(
+    db_session,
+    monkeypatch,
+) -> None:
+    parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
+    parsed = parser.parse("添加事项 洗澡", source="feishu")
+    parsed.payload["fields"]["scheduled_at"] = "2026-06-05T20:00:00+08:00"
+    pending = create_pending_operation(db_session, parsed)
+
+    def fail_create_reminder(*args, **kwargs):
+        raise RuntimeError("reminder write failed")
+
+    monkeypatch.setattr(crud, "create_reminder", fail_create_reminder)
+
+    applied = ActionExecutor(db_session).confirm_and_apply(pending.id)
+
+    assert applied.status == PendingOperationStatus.FAILED.value
+    assert "reminder write failed" in (applied.error_message or "")
+    assert db_session.query(LifeEvent).filter_by(title="洗澡").count() == 0
+    assert db_session.query(Reminder).count() == 0
+
+
+def test_failed_cancel_reminder_records_audit_without_mutating_sent_reminder(
+    db_session,
+) -> None:
+    reminder = crud.create_reminder(
+        db_session,
+        reminder_type="life_event_pre_event",
+        target_type="life_event",
+        scheduled_at=datetime(2026, 6, 5, 19, 45, tzinfo=DEFAULT_TZ),
+        status=ReminderStatus.SENT,
+        content="提醒：洗澡",
+    )
+    parsed = ParsedOperation(
+        source="feishu",
+        raw_text="取消已发送提醒",
+        action_name="cancel_reminder",
+        payload={
+            "operation": "cancel",
+            "resource": "reminder",
+            "selector": {"id": reminder.id},
+            "fields": {},
+        },
+        confidence=0.86,
+        needs_confirmation=True,
+    )
+    pending = create_pending_operation(db_session, parsed)
+
+    applied = ActionExecutor(db_session).confirm_and_apply(pending.id)
+
+    db_session.refresh(reminder)
+    assert reminder.status == ReminderStatus.SENT.value
+    assert applied.status == PendingOperationStatus.FAILED.value
+    assert "already sent" in (applied.error_message or "")
+    assert applied.result_resource_type == "reminder"
+    assert applied.result_resource_id == reminder.id

@@ -357,12 +357,28 @@ def create_web_router() -> APIRouter:
             .order_by(PendingOperation.created_at.desc())
             .all()
         )
+        recent_operations = (
+            db.query(PendingOperation)
+            .filter(
+                PendingOperation.status.in_(
+                    [
+                        PendingOperationStatus.APPLIED.value,
+                        PendingOperationStatus.REJECTED.value,
+                        PendingOperationStatus.FAILED.value,
+                    ]
+                )
+            )
+            .order_by(PendingOperation.created_at.desc())
+            .limit(50)
+            .all()
+        )
         return templates.TemplateResponse(
             request,
             "pending_operations.html",
             {
                 "active_page": "pending_operations",
                 "operations": operations,
+                "recent_operations": recent_operations,
                 "message": None,
             },
         )

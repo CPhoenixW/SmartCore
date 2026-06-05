@@ -216,3 +216,13 @@ Notification Dispatcher 只负责发送队列中的通知，并写 delivery。�
 - `selector` 用来定位已有资源，例如 `{"id": 12}`；多义或缺少定位信息时，应降低置信度或生成需要用户补充的信息。
 - 解析层把统一协议规范化为现有 `PendingOperation.action_name`，例如 `update + reminder` -> `update_reminder`，`cancel + reminder` -> `cancel_reminder`。
 - 执行层继续通过 `ActionExecutor.confirm_and_apply()` 执行确认后的写操作；本阶段只补 `reminder` 的 update/cancel，不重写框架。
+
+## 第八阶段：失败回滚与操作审计
+
+本阶段不新增审计框架，先复用 `PendingOperation`：
+
+- ActionExecutor 捕获可预期执行失败，不能让飞书事件处理或前端确认请求直接崩溃。
+- 失败操作必须写入 `PendingOperation.status=failed` 与可读 `error_message`。
+- 已定位到目标资源但因状态限制失败时，应记录 `result_resource_type` 与 `result_resource_id`，方便前端审计。
+- 创建类操作如果后续步骤失败，例如 life_event 已创建但 reminder 创建失败，应回滚或清理已创建资源，避免半写入。
+- `/dashboard/pending-operations` 除待确认列表外，应展示最近操作审计，包括 applied/rejected/failed 状态和错误信息。
