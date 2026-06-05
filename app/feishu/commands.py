@@ -18,6 +18,7 @@ from app.db.models import (
     ReminderStatus,
 )
 from app.scheduler.daily_digest import format_daily_digest, format_tomorrow_preview
+from app.secretary.assignments import get_open_assignments
 from app.secretary.planner import build_today_plan, build_tomorrow_plan
 from app.secretary.rules import DEFAULT_TZ, format_datetime
 from app.secretary.timetable import local_day_bounds
@@ -31,9 +32,14 @@ COMMAND_COMPLETE = "complete"
 COMMAND_CONFIRM_OPERATION = "confirm_operation"
 COMMAND_REJECT_OPERATION = "reject_operation"
 COMMAND_REMINDERS = "reminders"
+COMMAND_TODOS = "todos"
 COMMAND_CANCEL_REMINDER = "cancel_reminder"
 COMMAND_UPDATE_REMINDER = "update_reminder"
 COMMAND_HELP = "help"
+
+_TODAY_QUERIES = {"今日", "今天", "今天有啥事", "今天有什么安排"}
+_TOMORROW_QUERIES = {"明日", "明天", "明天有什么安排"}
+_TODOS_QUERIES = {"待办", "待完成事项", "还有什么没做"}
 
 REMINDER_UPDATE_PATTERN = re.compile(r"^(?P<id>\d+)\s+(?P<datetime>.+)$")
 DATE_PATTERN = re.compile(
@@ -52,8 +58,9 @@ def format_help_message() -> str:
     return "\n".join(
         [
             "可用命令：",
-            "今日 — 查看今日计划",
+            "今日 / 今天有啥事 — 查看今日计划",
             "明日 — 查看明日计划",
+            "待办 / 待完成事项 — 查看待完成作业与事项",
             "本周DDL — 查看本周待交作业",
             "添加作业 <标题> [YYYY-MM-DD] — 添加作业",
             "添加事项 <标题> — 添加生活事项",
@@ -76,14 +83,16 @@ def parse_command(text: str) -> ParsedCommand:
     if not normalized:
         return ParsedCommand(COMMAND_HELP)
 
-    if normalized in {"今日", "今天"}:
+    if normalized in _TODAY_QUERIES:
         return ParsedCommand(COMMAND_TODAY)
-    if normalized in {"明日", "明天"}:
+    if normalized in _TOMORROW_QUERIES:
         return ParsedCommand(COMMAND_TOMORROW)
     if normalized in {"本周DDL", "本周ddl", "本周 DDL"}:
         return ParsedCommand(COMMAND_WEEKLY_DDL)
     if normalized in {"提醒队列", "提醒", "提醒列表"}:
         return ParsedCommand(COMMAND_REMINDERS)
+    if normalized in _TODOS_QUERIES:
+        return ParsedCommand(COMMAND_TODOS)
     if normalized in {"帮助", "help", "?"}:
         return ParsedCommand(COMMAND_HELP)
 
@@ -280,6 +289,45 @@ def _parse_reminder_update_args(
     return reminder_id, scheduled_at, None
 
 
+def _get_open_life_events(db: Session) -> list[LifeEvent]:
+    return (
+        db.query(LifeEvent)
+        .filter(
+            LifeEvent.status != LifeEventStatus.DONE.value,
+            LifeEvent.status != LifeEventStatus.CANCELLED.value,
+        )
+        .order_by(LifeEvent.scheduled_at.asc().nullslast(), LifeEvent.created_at.asc())
+        .all()
+    )
+
+
+def _format_todos(db: Session, tz: ZoneInfo) -> str:
+    assignments = get_open_assignments(db)
+    life_events = _get_open_life_events(db)
+    lines = ["【待办事项】", ""]
+    if not assignments and not life_events:
+        lines.append("暂无待完成事项")
+        return "\n".join(lines)
+    if assignments:
+        lines.append("作业")
+        for item in assignments:
+            if item.due_at:
+                due_label = format_datetime(item.due_at, tz)
+                lines.append(f"- {item.title}（截止 {due_label}）")
+            else:
+                lines.append(f"- {item.title}")
+        lines.append("")
+    if life_events:
+        lines.append("生活事项")
+        for item in life_events:
+            if item.scheduled_at:
+                time_label = item.scheduled_at.astimezone(tz).strftime("%Y-%m-%d %H:%M")
+                lines.append(f"- {time_label} {item.title}")
+            else:
+                lines.append(f"- {item.title}")
+    return "\n".join(lines).rstrip()
+
+
 def _find_open_life_event(db: Session, title: str) -> LifeEvent | None:
     return (
         db.query(LifeEvent)
@@ -347,6 +395,9 @@ def execute_command(
     if command.name == COMMAND_WEEKLY_DDL:
         assignments = _get_assignments_due_this_week(db, target_date, tz)
         return _format_weekly_ddl(assignments, tz)
+
+    if command.name == COMMAND_TODOS:
+        return _format_todos(db, tz)
 
     if command.name == COMMAND_ADD_ASSIGNMENT:
         title, due_at = _parse_assignment_args(command.args, tz)

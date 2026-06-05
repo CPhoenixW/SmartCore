@@ -30,6 +30,7 @@ from app.feishu.commands import (
     COMMAND_HELP,
     COMMAND_REMINDERS,
     COMMAND_TODAY,
+    COMMAND_TODOS,
     COMMAND_UPDATE_REMINDER,
     COMMAND_WEEKLY_DDL,
     execute_command,
@@ -196,7 +197,12 @@ def test_parse_event_payload_rejects_invalid_token():
 
 def test_parse_command_maps_known_commands():
     assert parse_command("今日").name == COMMAND_TODAY
+    assert parse_command("今天有啥事").name == COMMAND_TODAY
+    assert parse_command("今天有什么安排").name == COMMAND_TODAY
     assert parse_command("本周DDL").name == COMMAND_WEEKLY_DDL
+    assert parse_command("待办").name == COMMAND_TODOS
+    assert parse_command("待完成事项").name == COMMAND_TODOS
+    assert parse_command("还有什么没做").name == COMMAND_TODOS
     assert parse_command("提醒队列").name == COMMAND_REMINDERS
     assert parse_command("取消提醒 12").name == COMMAND_CANCEL_REMINDER
     assert parse_command("修改提醒 12 2026-03-02 20:30").name == COMMAND_UPDATE_REMINDER
@@ -210,6 +216,14 @@ def test_parse_command_maps_known_commands():
 
 def test_parse_command_unknown_returns_help():
     assert parse_command("随便说点什么").name == COMMAND_HELP
+
+
+def test_help_message_includes_query_commands():
+    help_text = format_help_message()
+
+    assert "今天有啥事" in help_text
+    assert "待办" in help_text
+    assert "待完成事项" in help_text
 
 
 def test_execute_command_today(db_session):
@@ -357,6 +371,53 @@ def test_execute_command_weekly_ddl(db_session):
     assert "Lab report" in reply
 
 
+def test_execute_command_todos_lists_open_assignments_and_life_events(db_session):
+    crud.create_assignment(
+        db_session,
+        title="Open Essay",
+        due_at=datetime(2026, 3, 4, 18, 0, tzinfo=DEFAULT_TZ),
+    )
+    done_assignment = crud.create_assignment(
+        db_session,
+        title="Done Essay",
+        due_at=datetime(2026, 3, 3, 18, 0, tzinfo=DEFAULT_TZ),
+    )
+    done_assignment.status = "done"
+    crud.create_life_event(
+        db_session,
+        title="Buy batteries",
+        scheduled_at=datetime(2026, 3, 2, 20, 0, tzinfo=DEFAULT_TZ),
+    )
+    done_event = crud.create_life_event(db_session, title="Already washed clothes")
+    done_event.status = "done"
+    db_session.commit()
+
+    reply = execute_command(
+        db_session,
+        parse_command("待办"),
+        today=date(2026, 3, 2),
+    )
+
+    assert "【待办事项】" in reply
+    assert "作业" in reply
+    assert "Open Essay" in reply
+    assert "生活事项" in reply
+    assert "Buy batteries" in reply
+    assert "Done Essay" not in reply
+    assert "Already washed clothes" not in reply
+
+
+def test_execute_command_todos_empty_state(db_session):
+    reply = execute_command(
+        db_session,
+        parse_command("还有什么没做"),
+        today=date(2026, 3, 2),
+    )
+
+    assert "【待办事项】" in reply
+    assert "暂无待完成事项" in reply
+
+
 def test_execute_command_add_and_complete(db_session):
     reply = execute_command(db_session, parse_command("添加作业 数学作业"))
     assert "已添加作业" in reply
@@ -409,7 +470,7 @@ def test_event_handler_url_verification(event_handler, db_session):
 def test_event_handler_converts_message_to_command(
     event_handler, mock_feishu_client, db_session
 ):
-    body = json.dumps(_message_event("今日"))
+    body = json.dumps(_message_event("今天有啥事"))
     status, payload = event_handler.handle(
         body.encode(),
         _signed_headers(body),
@@ -421,6 +482,11 @@ def test_event_handler_converts_message_to_command(
     mock_feishu_client.send_text.assert_called_once()
     reply_text = mock_feishu_client.send_text.call_args[0][1]
     assert "今日晨报" in reply_text
+    log = db_session.query(MessageLog).order_by(MessageLog.id.desc()).first()
+    assert log is not None
+    assert log.raw_content == "今天有啥事"
+    assert log.parsed_command == COMMAND_TODAY
+    assert log.reply_status == "ok"
 
 
 def test_event_handler_unknown_command_returns_help(
