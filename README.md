@@ -87,6 +87,11 @@ Configuration is loaded from the process environment. In Docker Compose, use `de
 | `FEISHU_ENCRYPT_KEY` | If encrypted | Encrypt key when event subscription uses encryption |
 | `FEISHU_DEFAULT_CHAT_ID` | Recommended | Default chat ID for proactive reminders |
 | `FEISHU_REPLAY_MAX_AGE_SECONDS` | No | Max event timestamp age (default: `300`) |
+| `LLM_PROVIDER` | For LLM | Set to `deepseek` to enable natural-language operation parsing |
+| `DEEPSEEK_API_KEY` | For LLM | DeepSeek API key; keep only in server `.env` |
+| `DEEPSEEK_BASE_URL` | For LLM | DeepSeek-compatible API base URL |
+| `LLM_MODEL` | For LLM | Model name, for example `deepseek-chat` |
+| `DASHBOARD_BASE_URL` | For cards | Tailscale dashboard base URL used by Feishu card modify links |
 | `SEMESTER_START` | No | Semester start date (`YYYY-MM-DD`) for week calculations |
 | `SCHEDULER_ENABLED` | No | Enable background reminder generation and dispatch (default: `false`) |
 | `SCHEDULER_INTERVAL_SECONDS` | No | Background scheduler tick interval in seconds (default: `60`) |

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}待确认操作 · SmartCore{% endblock %}
+
+{% block content %}
+<section class="page-header">
+  <h2>待确认操作</h2>
+  <p>来自飞书或自然语言解析的写操作草案，确认后才会写入数据库。</p>
+</section>
+
+{% if message %}
+<div class="flash success">{{ message }}</div>
+{% endif %}
+
+<section class="card">
+  <h3>待处理列表</h3>
+  {% if operations %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>编号</th>
+        <th>来源</th>
+        <th>原始命令</th>
+        <th>操作</th>
+        <th>详情</th>
+        <th>置信度</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for op in operations %}
+      <tr>
+        <td>#{{ op.id }}</td>
+        <td>{{ op.source }}</td>
+        <td>{{ op.raw_text }}</td>
+        <td>{{ op.action_name }}</td>
+        <td>
+          {% if op.operation_payload.fields.title %}
+          标题：{{ op.operation_payload.fields.title }}<br>
+          {% endif %}
+          {% for key, value in op.operation_payload.fields.items() %}
+          {% if key != 'title' and value %}
+          {{ key }}：{{ value }}<br>
+          {% endif %}
+          {% endfor %}
+        </td>
+        <td>{{ "%.0f"|format(op.confidence * 100) }}%</td>
+        <td class="actions-cell">
+          <form method="post" action="/dashboard/pending-operations/{{ op.id }}/confirm" style="display:inline">
+            <button type="submit">确认</button>
+          </form>
+          <form method="post" action="/dashboard/pending-operations/{{ op.id }}/reject" style="display:inline">
+            <button type="submit" class="danger">拒绝</button>
+          </form>
+          <form method="post" action="/dashboard/pending-operations/{{ op.id }}/update" class="inline-update-form">
+            <input name="raw_text" type="text" value="{{ op.raw_text }}" required>
+            <button type="submit">更新命令</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>当前没有待确认操作。</p>
+  {% endif %}
+</section>
+{% endblock %}

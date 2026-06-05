@@ -65,3 +65,28 @@ class RuleBasedOperationParser:
         else:
             due_at = datetime.strptime(raw_date, "%Y-%m-%d %H:%M").replace(tzinfo=self._tz)
         return title, due_at
+
+
+class CompositeOperationParser:
+    def __init__(
+        self,
+        *,
+        rule_parser: RuleBasedOperationParser,
+        llm_parser: object | None = None,
+    ) -> None:
+        self._rule_parser = rule_parser
+        self._llm_parser = llm_parser
+
+    def parse(
+        self,
+        text: str,
+        *,
+        source: str,
+        now: datetime | None = None,
+    ) -> ParsedOperation:
+        try:
+            return self._rule_parser.parse(text, source=source)
+        except ValueError:
+            if self._llm_parser is None:
+                raise
+            return self._llm_parser.parse(text, source=source, now=now)

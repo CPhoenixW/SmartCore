@@ -73,7 +73,27 @@ class ActionExecutor:
             self._db.refresh(pending)
             return pending
 
-        event = crud.create_life_event(self._db, title=title)
+        scheduled_at: datetime | None = None
+        raw_scheduled_at = fields.get("scheduled_at")
+        if raw_scheduled_at:
+            scheduled_at = datetime.fromisoformat(raw_scheduled_at)
+
+        deadline_at: datetime | None = None
+        raw_deadline_at = fields.get("deadline_at")
+        if raw_deadline_at:
+            deadline_at = datetime.fromisoformat(raw_deadline_at)
+
+        reminder_rule = fields.get("reminder_rule")
+        notes = fields.get("notes")
+
+        event = crud.create_life_event(
+            self._db,
+            title=title,
+            scheduled_at=scheduled_at,
+            deadline_at=deadline_at,
+            reminder_rule=reminder_rule if isinstance(reminder_rule, str) else None,
+            notes=notes if isinstance(notes, str) else None,
+        )
         pending.status = PendingOperationStatus.APPLIED.value
         pending.result_resource_type = "life_event"
         pending.result_resource_id = event.id

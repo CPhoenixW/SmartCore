@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     feishu_replay_max_age_seconds: int = 300
     semester_start: date | None = None
 
+    llm_provider: str = ""
+    deepseek_api_key: str = ""
+    deepseek_base_url: str = "https://api.deepseek.com"
+    llm_model: str = "deepseek-chat"
+    dashboard_base_url: str = ""
+
     scheduler_enabled: bool = False
     scheduler_interval_seconds: int = 60
 

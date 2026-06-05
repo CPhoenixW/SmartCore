@@ -7,9 +7,11 @@ from fastapi.testclient import TestClient
 
 from app.config import get_settings
 from app.db import crud
-from app.db.models import Assignment, LifeEvent
+from app.db.models import Assignment, LifeEvent, PendingOperationStatus
 from app.db.session import get_db
 from app.main import create_app
+from app.operations.parser import RuleBasedOperationParser
+from app.operations.store import create_pending_operation
 from app.secretary.rules import DEFAULT_TZ
 
 DASHBOARD_ROUTES = [
@@ -19,6 +21,7 @@ DASHBOARD_ROUTES = [
     "/dashboard/assignments",
     "/dashboard/life-events",
     "/dashboard/reminders",
+    "/dashboard/pending-operations",
 ]
 
 
@@ -111,3 +114,45 @@ def test_timetable_import_via_web_form(web_client, db_session):
     course = db_session.query(Course).filter_by(name="Physics").one()
     assert course.default_location == "Room B201"
     assert len(course.sessions) == 1
+
+
+def test_pending_operations_page_can_confirm_operation(web_client, db_session):
+    parsed = RuleBasedOperationParser(tz=DEFAULT_TZ).parse(
+        "添加事项 做程设作业",
+        source="feishu",
+    )
+    pending = create_pending_operation(db_session, parsed)
+
+    response = web_client.get("/dashboard/pending-operations")
+    assert response.status_code == 200
+    assert "做程设作业" in response.text
+
+    confirm = web_client.post(
+        f"/dashboard/pending-operations/{pending.id}/confirm",
+        follow_redirects=False,
+    )
+
+    db_session.refresh(pending)
+    event = db_session.query(LifeEvent).filter_by(title="做程设作业").one()
+    assert confirm.status_code == 303
+    assert pending.status == PendingOperationStatus.APPLIED.value
+    assert pending.result_resource_id == event.id
+
+
+def test_pending_operations_page_can_update_raw_command(web_client, db_session):
+    parsed = RuleBasedOperationParser(tz=DEFAULT_TZ).parse(
+        "添加事项 旧命令",
+        source="feishu",
+    )
+    pending = create_pending_operation(db_session, parsed)
+
+    response = web_client.post(
+        f"/dashboard/pending-operations/{pending.id}/update",
+        data={"raw_text": "添加事项 新命令"},
+        follow_redirects=False,
+    )
+
+    db_session.refresh(pending)
+    assert response.status_code == 303
+    assert pending.raw_text == "添加事项 新命令"
+    assert pending.operation_payload["fields"]["title"] == "新命令"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -10,8 +11,9 @@ from sqlalchemy.orm import Session
 from app.actions.executor import ActionExecutor
 from app.config import Settings, get_settings
 from app.db import crud
-from app.db.models import PendingOperationStatus
+from app.db.models import PendingOperation, PendingOperationStatus
 from app.db.session import get_db
+from app.feishu.cards import build_pending_operation_card
 from app.feishu.client import FeishuClient
 from app.feishu.commands import (
     COMMAND_ADD_ASSIGNMENT,
@@ -24,7 +26,12 @@ from app.feishu.commands import (
     parse_command,
 )
 from app.feishu.security import FeishuSecurityError, parse_event_payload, validate_request_headers
-from app.operations.parser import RuleBasedOperationParser
+from app.llm.deepseek import DeepSeekOperationParser
+from app.operations.parser import (
+    CompositeOperationParser,
+    ParsedOperation,
+    RuleBasedOperationParser,
+)
 from app.operations.store import create_pending_operation
 from app.secretary.rules import DEFAULT_TZ
 
@@ -32,7 +39,31 @@ logger = logging.getLogger(__name__)
 
 ALLOWED_EVENT_TYPES = {
     "im.message.receive_v1",
+    "card.action.trigger",
 }
+
+_HELP_KEYWORDS = {"帮助", "help", "?"}
+
+
+@dataclass(frozen=True)
+class FeishuReply:
+    text: str | None = None
+    card: dict[str, Any] | None = None
+    parsed_command: str | None = None
+    reply_status: str | None = None
+
+
+def build_operation_parser(settings: Settings) -> CompositeOperationParser:
+    rule_parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
+    llm_parser = None
+    if settings.llm_provider == "deepseek" and settings.deepseek_api_key:
+        llm_parser = DeepSeekOperationParser(
+            api_key=settings.deepseek_api_key,
+            base_url=settings.deepseek_base_url,
+            model=settings.llm_model,
+            tz=DEFAULT_TZ,
+        )
+    return CompositeOperationParser(rule_parser=rule_parser, llm_parser=llm_parser)
 
 
 def _format_pending_reply(pending_id: int) -> str:
@@ -42,7 +73,7 @@ def _format_pending_reply(pending_id: int) -> str:
     )
 
 
-def _format_confirm_reply(pending) -> str:
+def _format_confirm_reply(pending: PendingOperation) -> str:
     if pending.status == PendingOperationStatus.FAILED.value:
         return f"执行失败：{pending.error_message or '未知错误'}"
     title = pending.operation_payload.get("fields", {}).get("title", "")
@@ -78,13 +109,14 @@ class FeishuEventHandler:
         self,
         settings: Settings,
         client: FeishuClient | None = None,
+        operation_parser: CompositeOperationParser | object | None = None,
     ) -> None:
         self.settings = settings
         self.client = client or FeishuClient(
             settings.feishu_app_id,
             settings.feishu_app_secret,
         )
-        self._operation_parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
+        self._operation_parser = operation_parser or build_operation_parser(settings)
 
     def handle(
         self,
@@ -122,24 +154,35 @@ class FeishuEventHandler:
         if event_type and event_type not in ALLOWED_EVENT_TYPES:
             return 200, {"code": 0, "msg": "ignored event type"}
 
+        if event_type == "card.action.trigger":
+            return self._handle_card_action(payload, db)
+
         message_id, text = extract_message_text(payload)
         if not text:
             return 200, {"code": 0, "msg": "no text message"}
 
         command = parse_command(text)
         reply = self._build_reply(db, command, text)
+        parsed_command = (
+            reply.parsed_command if reply.parsed_command is not None else command.name
+        )
+        reply_status = (
+            reply.reply_status
+            if reply.reply_status is not None
+            else (
+                "ok"
+                if command.name != COMMAND_HELP
+                or text.strip() in _HELP_KEYWORDS
+                else "help"
+            )
+        )
         crud.create_message_log(
             db,
             source="feishu",
             external_message_id=message_id,
             raw_content=text,
-            parsed_command=command.name,
-            reply_status=(
-                "ok"
-                if command.name != COMMAND_HELP
-                or text.strip() in {"帮助", "help", "?"}
-                else "help"
-            ),
+            parsed_command=parsed_command,
+            reply_status=reply_status,
         )
 
         chat_id = self._resolve_chat_id(payload)
@@ -147,37 +190,135 @@ class FeishuEventHandler:
             logger.info(
                 "feishu message command parsed: message_id=%s command=%s chat_id=%s",
                 message_id,
-                command.name,
+                parsed_command,
                 chat_id,
             )
             try:
-                self.client.send_text(chat_id, reply)
+                if reply.card is not None:
+                    self.client.send_interactive_card(chat_id, card=reply.card)
+                elif reply.text:
+                    self.client.send_text(chat_id, reply.text)
             except Exception:
                 logger.exception("failed to send feishu reply")
                 return 200, {"code": 0, "msg": "reply failed"}
 
         return 200, {"code": 0, "msg": "ok"}
 
-    def _build_reply(self, db: Session, command, text: str) -> str:
+    def _handle_card_action(
+        self,
+        payload: dict[str, Any],
+        db: Session,
+    ) -> tuple[int, dict[str, Any]]:
+        event = payload.get("event")
+        if not isinstance(event, dict):
+            return 200, {"toast": {"type": "error", "content": "无效卡片回调"}}
+
+        action = event.get("action")
+        if not isinstance(action, dict):
+            return 200, {"toast": {"type": "error", "content": "无效卡片回调"}}
+
+        value = action.get("value")
+        if not isinstance(value, dict):
+            return 200, {"toast": {"type": "error", "content": "无效卡片回调"}}
+
+        smartcore_action = value.get("smartcore_action")
+        operation_id = value.get("operation_id")
+        if not isinstance(operation_id, int):
+            return 200, {"toast": {"type": "error", "content": "无效操作编号"}}
+
+        executor = ActionExecutor(db)
+        if smartcore_action == "confirm_operation":
+            try:
+                pending = executor.confirm_and_apply(operation_id)
+            except ValueError as exc:
+                return 200, {
+                    "toast": {
+                        "type": "error",
+                        "content": _format_confirm_error(operation_id, exc),
+                    }
+                }
+            return 200, {
+                "toast": {
+                    "type": "success",
+                    "content": _format_confirm_reply(pending),
+                }
+            }
+
+        if smartcore_action == "reject_operation":
+            try:
+                executor.reject(operation_id)
+            except ValueError as exc:
+                return 200, {
+                    "toast": {
+                        "type": "error",
+                        "content": _format_reject_error(operation_id, exc),
+                    }
+                }
+            return 200, {
+                "toast": {
+                    "type": "success",
+                    "content": _format_reject_reply(operation_id),
+                }
+            }
+
+        return 200, {"toast": {"type": "error", "content": "未知卡片操作"}}
+
+    def _build_reply(self, db: Session, command, text: str) -> FeishuReply:
         if command.name in {COMMAND_ADD_ASSIGNMENT, COMMAND_ADD_LIFE_EVENT}:
             return self._create_pending_operation_reply(db, text)
         if command.name == COMMAND_CONFIRM_OPERATION:
-            return self._confirm_operation_reply(db, command.args)
+            return FeishuReply(text=self._confirm_operation_reply(db, command.args))
         if command.name == COMMAND_REJECT_OPERATION:
-            return self._reject_operation_reply(db, command.args)
-        return execute_command(
-            db,
-            command,
-            semester_start=self.settings.semester_start,
+            return FeishuReply(text=self._reject_operation_reply(db, command.args))
+        if command.name == COMMAND_HELP and text.strip() not in _HELP_KEYWORDS:
+            return self._try_free_form_operation_reply(db, text)
+        return FeishuReply(
+            text=execute_command(
+                db,
+                command,
+                semester_start=self.settings.semester_start,
+            )
         )
 
-    def _create_pending_operation_reply(self, db: Session, text: str) -> str:
+    def _try_free_form_operation_reply(self, db: Session, text: str) -> FeishuReply:
         try:
             parsed = self._operation_parser.parse(text, source="feishu")
         except ValueError:
-            return "无法理解该操作，请检查命令格式。"
+            return FeishuReply(
+                text=execute_command(
+                    db,
+                    parse_command("帮助"),
+                    semester_start=self.settings.semester_start,
+                )
+            )
+        return self._pending_operation_card_reply(db, parsed)
+
+    def _create_pending_operation_reply(self, db: Session, text: str) -> FeishuReply:
+        try:
+            parsed = self._operation_parser.parse(text, source="feishu")
+        except ValueError:
+            return FeishuReply(text="无法理解该操作，请检查命令格式。")
+        return self._pending_operation_card_reply(db, parsed)
+
+    def _pending_operation_card_reply(
+        self,
+        db: Session,
+        parsed: ParsedOperation,
+    ) -> FeishuReply:
         pending = create_pending_operation(db, parsed)
-        return _format_pending_reply(pending.id)
+        dashboard_base_url = self.settings.dashboard_base_url or "/dashboard"
+        card = build_pending_operation_card(
+            operation_id=pending.id,
+            raw_text=pending.raw_text,
+            action_name=pending.action_name,
+            payload=pending.operation_payload,
+            dashboard_base_url=dashboard_base_url,
+        )
+        return FeishuReply(
+            card=card,
+            parsed_command=pending.action_name,
+            reply_status="ok",
+        )
 
     def _confirm_operation_reply(self, db: Session, operation_id_text: str) -> str:
         try:
@@ -211,6 +352,11 @@ class FeishuEventHandler:
             message = event.get("message")
             if isinstance(message, dict):
                 chat_id = message.get("chat_id")
+                if isinstance(chat_id, str) and chat_id:
+                    return chat_id
+            context = event.get("context")
+            if isinstance(context, dict):
+                chat_id = context.get("open_chat_id")
                 if isinstance(chat_id, str) and chat_id:
                     return chat_id
         if self.settings.feishu_default_chat_id:

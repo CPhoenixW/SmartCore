@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 
+from app.actions.executor import ActionExecutor
 from app.config import get_settings
 from app.db import crud
 from app.db.models import (
@@ -18,9 +19,12 @@ from app.db.models import (
     Course,
     LifeEvent,
     LifeEventStatus,
+    PendingOperation,
+    PendingOperationStatus,
     Reminder,
 )
 from app.db.session import get_db
+from app.operations.parser import RuleBasedOperationParser
 from app.secretary.planner import build_today_plan, build_tomorrow_plan
 from app.secretary.rules import DEFAULT_TZ
 from app.web.timetable_import import CSV_HEADERS, import_timetable_csv
@@ -277,5 +281,72 @@ def create_web_router() -> APIRouter:
                 "reminders": reminders,
             },
         )
+
+    @router.get("/pending-operations", response_class=HTMLResponse)
+    def pending_operations_page(
+        request: Request,
+        db: Session = Depends(get_db),
+    ) -> HTMLResponse:
+        operations = (
+            db.query(PendingOperation)
+            .filter(PendingOperation.status == PendingOperationStatus.PENDING.value)
+            .order_by(PendingOperation.created_at.desc())
+            .all()
+        )
+        return templates.TemplateResponse(
+            request,
+            "pending_operations.html",
+            {
+                "active_page": "pending_operations",
+                "operations": operations,
+                "message": None,
+            },
+        )
+
+    @router.post("/pending-operations/{operation_id}/confirm")
+    def confirm_pending_operation(
+        operation_id: int,
+        db: Session = Depends(get_db),
+    ) -> RedirectResponse:
+        executor = ActionExecutor(db)
+        try:
+            executor.confirm_and_apply(operation_id)
+        except ValueError:
+            pass
+        return RedirectResponse(url="/dashboard/pending-operations", status_code=303)
+
+    @router.post("/pending-operations/{operation_id}/reject")
+    def reject_pending_operation(
+        operation_id: int,
+        db: Session = Depends(get_db),
+    ) -> RedirectResponse:
+        executor = ActionExecutor(db)
+        try:
+            executor.reject(operation_id)
+        except ValueError:
+            pass
+        return RedirectResponse(url="/dashboard/pending-operations", status_code=303)
+
+    @router.post("/pending-operations/{operation_id}/update")
+    def update_pending_operation_raw_text(
+        operation_id: int,
+        raw_text: str = Form(...),
+        db: Session = Depends(get_db),
+    ) -> RedirectResponse:
+        pending = db.get(PendingOperation, operation_id)
+        if pending and pending.status == PendingOperationStatus.PENDING.value:
+            parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
+            try:
+                parsed = parser.parse(raw_text.strip(), source=pending.source)
+            except ValueError:
+                return RedirectResponse(url="/dashboard/pending-operations", status_code=303)
+            pending.raw_text = parsed.raw_text
+            pending.action_name = parsed.action_name
+            pending.operation_payload = parsed.payload
+            pending.confidence = parsed.confidence
+            pending.needs_confirmation = parsed.needs_confirmation
+            pending.status = PendingOperationStatus.PENDING.value
+            db.commit()
+        return RedirectResponse(url="/dashboard/pending-operations", status_code=303)
 
     return router

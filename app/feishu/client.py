@@ -108,6 +108,44 @@ class FeishuClient:
         force_refresh_token: bool,
         retry_on_token_error: bool,
     ) -> dict[str, Any]:
+        return self._send_message_with_token(
+            receive_id,
+            msg_type="text",
+            content=json.dumps({"text": text}, ensure_ascii=False),
+            receive_id_type=receive_id_type,
+            force_refresh_token=force_refresh_token,
+            retry_on_token_error=retry_on_token_error,
+        )
+
+    def send_interactive_card(
+        self,
+        receive_id: str,
+        card: dict[str, Any],
+        *,
+        receive_id_type: str = "chat_id",
+    ) -> dict[str, Any]:
+        return self._send_message_with_token(
+            receive_id,
+            msg_type="interactive",
+            content=json.dumps(card, ensure_ascii=False),
+            receive_id_type=receive_id_type,
+            force_refresh_token=False,
+            retry_on_token_error=True,
+        )
+
+    def send_text_message(self, receive_id: str, text: str) -> dict[str, Any]:
+        return self.send_text(receive_id, text)
+
+    def _send_message_with_token(
+        self,
+        receive_id: str,
+        *,
+        msg_type: str,
+        content: str,
+        receive_id_type: str,
+        force_refresh_token: bool,
+        retry_on_token_error: bool,
+    ) -> dict[str, Any]:
         token = self.get_tenant_access_token(force_refresh=force_refresh_token)
         with self._client() as client:
             response = client.post(
@@ -116,14 +154,15 @@ class FeishuClient:
                 headers={"Authorization": f"Bearer {token}"},
                 json={
                     "receive_id": receive_id,
-                    "msg_type": "text",
-                    "content": json.dumps({"text": text}, ensure_ascii=False),
+                    "msg_type": msg_type,
+                    "content": content,
                 },
             )
             if response.status_code in {401, 403} and retry_on_token_error:
-                return self._send_text_with_token(
+                return self._send_message_with_token(
                     receive_id,
-                    text,
+                    msg_type=msg_type,
+                    content=content,
                     receive_id_type=receive_id_type,
                     force_refresh_token=True,
                     retry_on_token_error=False,
@@ -134,9 +173,10 @@ class FeishuClient:
                 )
             payload = response.json()
         if payload.get("code") in TOKEN_ERROR_CODES and retry_on_token_error:
-            return self._send_text_with_token(
+            return self._send_message_with_token(
                 receive_id,
-                text,
+                msg_type=msg_type,
+                content=content,
                 receive_id_type=receive_id_type,
                 force_refresh_token=True,
                 retry_on_token_error=False,
@@ -144,9 +184,6 @@ class FeishuClient:
         if payload.get("code") != 0:
             raise FeishuAPIError(payload.get("msg", "failed to send message"))
         return payload
-
-    def send_text_message(self, receive_id: str, text: str) -> dict[str, Any]:
-        return self.send_text(receive_id, text)
 
 
 class FeishuNotificationSender:

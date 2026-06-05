@@ -13,7 +13,13 @@ from fastapi.testclient import TestClient
 
 from app.config import get_settings
 from app.db import crud
-from app.db.models import Assignment, LifeEvent, PendingOperation, PendingOperationStatus
+from app.db.models import (
+    Assignment,
+    LifeEvent,
+    MessageLog,
+    PendingOperation,
+    PendingOperationStatus,
+)
 from app.feishu.client import FeishuClient
 from app.feishu.commands import (
     COMMAND_ADD_ASSIGNMENT,
@@ -60,6 +66,7 @@ def feishu_settings(monkeypatch, db_session):
 def mock_feishu_client():
     client = MagicMock(spec=FeishuClient)
     client.send_text.return_value = {"code": 0}
+    client.send_interactive_card.return_value = {"code": 0}
     return client
 
 
@@ -103,6 +110,33 @@ def _message_event(
                 "message_type": "text",
                 "content": json.dumps({"text": text}, ensure_ascii=False),
             }
+        },
+    }
+
+
+def _card_action_event(
+    action: str,
+    operation_id: int,
+    *,
+    token: str = TEST_TOKEN,
+) -> dict[str, Any]:
+    return {
+        "schema": "2.0",
+        "header": {
+            "event_type": "card.action.trigger",
+            "token": token,
+        },
+        "event": {
+            "action": {
+                "value": {
+                    "smartcore_action": action,
+                    "operation_id": operation_id,
+                }
+            },
+            "context": {
+                "open_chat_id": "oc_chat_1",
+                "open_message_id": "om_card_1",
+            },
         },
     }
 
@@ -295,10 +329,14 @@ def test_event_handler_add_assignment_creates_pending_operation(
     pending = db_session.query(PendingOperation).one()
     assert pending.status == PendingOperationStatus.PENDING.value
     assert pending.action_name == "create_assignment"
-    reply_text = mock_feishu_client.send_text.call_args[0][1]
-    assert f"待确认操作 #{pending.id}" in reply_text
-    assert f"确认 {pending.id}" in reply_text
-    assert f"拒绝 {pending.id}" in reply_text
+    mock_feishu_client.send_interactive_card.assert_called_once()
+    card = mock_feishu_client.send_interactive_card.call_args.kwargs["card"]
+    serialized = json.dumps(card, ensure_ascii=False)
+    assert f"待确认操作 #{pending.id}" in serialized
+    assert "数学作业" in serialized
+    assert "确认" in serialized
+    assert "修改命令" in serialized
+    assert "拒绝" in serialized
 
 
 def test_event_handler_strips_group_mention_before_parsing_operation(
@@ -323,8 +361,7 @@ def test_event_handler_strips_group_mention_before_parsing_operation(
     assert pending.action_name == "create_assignment"
     assert pending.raw_text == "添加作业 群聊作业 2026-03-05"
     assert pending.operation_payload["fields"]["title"] == "群聊作业"
-    reply_text = mock_feishu_client.send_text.call_args[0][1]
-    assert f"待确认操作 #{pending.id}" in reply_text
+    mock_feishu_client.send_interactive_card.assert_called_once()
 
 
 def test_event_handler_confirm_operation_applies_pending_assignment(
@@ -356,6 +393,47 @@ def test_event_handler_confirm_operation_applies_pending_assignment(
     assert "数学作业" in reply_text
 
 
+def test_event_handler_llm_free_form_message_creates_pending_card(
+    feishu_settings,
+    mock_feishu_client,
+    db_session,
+):
+    class FakeOperationParser:
+        def parse(self, text: str, *, source: str, now=None):
+            assert text == "今晚八点提醒我做程设作业"
+            return RuleBasedOperationParser(tz=DEFAULT_TZ).parse(
+                "添加事项 做程设作业",
+                source=source,
+            )
+
+    from app.operations.parser import RuleBasedOperationParser
+
+    handler = FeishuEventHandler(
+        feishu_settings,
+        client=mock_feishu_client,
+        operation_parser=FakeOperationParser(),
+    )
+    body = json.dumps(_message_event("今晚八点提醒我做程设作业"))
+
+    status, payload = handler.handle(
+        body.encode(),
+        _signed_headers(body),
+        db_session,
+        now=FIXED_NOW,
+    )
+
+    assert status == 200
+    assert payload["code"] == 0
+    pending = db_session.query(PendingOperation).one()
+    assert pending.action_name == "create_life_event"
+    log = db_session.query(MessageLog).order_by(MessageLog.id.desc()).first()
+    assert log is not None
+    assert log.raw_content == "今晚八点提醒我做程设作业"
+    assert log.parsed_command == "create_life_event"
+    assert log.reply_status == "ok"
+    mock_feishu_client.send_interactive_card.assert_called_once()
+
+
 def test_event_handler_reject_operation_does_not_apply(
     event_handler,
     mock_feishu_client,
@@ -381,6 +459,55 @@ def test_event_handler_reject_operation_does_not_apply(
     assert pending.status == PendingOperationStatus.REJECTED.value
     reply_text = mock_feishu_client.send_text.call_args[0][1]
     assert "已拒绝" in reply_text
+
+
+def test_event_handler_card_confirm_callback_applies_pending_operation(
+    event_handler,
+    db_session,
+):
+    body = json.dumps(_message_event("添加事项 做程设作业"))
+    event_handler.handle(body.encode(), _signed_headers(body), db_session, now=FIXED_NOW)
+    pending = db_session.query(PendingOperation).one()
+
+    callback_body = json.dumps(_card_action_event("confirm_operation", pending.id))
+    status, payload = event_handler.handle(
+        callback_body.encode(),
+        _signed_headers(callback_body),
+        db_session,
+        now=FIXED_NOW,
+    )
+
+    event = db_session.query(LifeEvent).filter_by(title="做程设作业").one()
+    db_session.refresh(pending)
+    assert status == 200
+    assert pending.status == PendingOperationStatus.APPLIED.value
+    assert pending.result_resource_id == event.id
+    assert payload["toast"]["type"] == "success"
+    assert "已确认" in payload["toast"]["content"]
+
+
+def test_event_handler_card_reject_callback_rejects_pending_operation(
+    event_handler,
+    db_session,
+):
+    body = json.dumps(_message_event("添加事项 做程设作业"))
+    event_handler.handle(body.encode(), _signed_headers(body), db_session, now=FIXED_NOW)
+    pending = db_session.query(PendingOperation).one()
+
+    callback_body = json.dumps(_card_action_event("reject_operation", pending.id))
+    status, payload = event_handler.handle(
+        callback_body.encode(),
+        _signed_headers(callback_body),
+        db_session,
+        now=FIXED_NOW,
+    )
+
+    db_session.refresh(pending)
+    assert status == 200
+    assert pending.status == PendingOperationStatus.REJECTED.value
+    assert db_session.query(LifeEvent).count() == 0
+    assert payload["toast"]["type"] == "success"
+    assert "已拒绝" in payload["toast"]["content"]
 
 
 def test_event_handler_confirm_invalid_operation_replies_without_crashing(

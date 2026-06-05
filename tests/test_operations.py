@@ -97,3 +97,19 @@ def test_pending_life_event_confirm_executes_action(db_session) -> None:
     assert applied.result_resource_type == "life_event"
     assert applied.result_resource_id == event.id
     assert applied.error_message is None
+
+
+def test_pending_life_event_confirm_preserves_scheduled_at(db_session) -> None:
+    parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
+    parsed = parser.parse("添加事项 做程设作业", source="feishu")
+    parsed.payload["fields"]["scheduled_at"] = "2026-06-05T20:00:00+08:00"
+    pending = create_pending_operation(db_session, parsed)
+
+    executor = ActionExecutor(db_session)
+    executor.confirm_and_apply(pending.id)
+
+    event = db_session.query(LifeEvent).filter_by(title="做程设作业").one()
+    scheduled_at = event.scheduled_at
+    if scheduled_at is not None and scheduled_at.tzinfo is None:
+        scheduled_at = scheduled_at.replace(tzinfo=DEFAULT_TZ)
+    assert scheduled_at == datetime(2026, 6, 5, 20, 0, tzinfo=DEFAULT_TZ)

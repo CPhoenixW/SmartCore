@@ -103,14 +103,14 @@ Notification Dispatcher 只负责发送队列中的通知，并写 delivery。�
 
 ## LLM Provider 策略
 
-本阶段预留 DeepSeek Provider，但不把真实 API key 写入仓库。配置通过环境变量提供：
+本阶段接入 DeepSeek Provider，但不把真实 API key 写入仓库。配置通过环境变量提供：
 
 - `LLM_PROVIDER=deepseek`
 - `DEEPSEEK_API_KEY`
 - `DEEPSEEK_BASE_URL=https://api.deepseek.com`
 - `LLM_MODEL=deepseek-chat`
 
-默认实现应先提供 `RuleBasedOperationParser`，在没有 key 或关闭 LLM 时也能处理确定性命令。LLM 调用失败时必须降级为 pending 或帮助信息，不能影响现有命令。
+默认实现先运行 `RuleBasedOperationParser`，规则不支持时再调用 DeepSeek。LLM 只能返回结构化 `ParsedOperation`，不能直接修改数据库。LLM 调用失败时必须降级为帮助信息或可理解错误，不能影响现有命令。
 
 ## 新增能力流程
 
@@ -169,3 +169,17 @@ Notification Dispatcher 只负责发送队列中的通知，并写 delivery。�
 - `今日`、`明日`、`本周DDL`、`帮助`、`完成 ...` 继续保持现有行为。
 
 本阶段暂不接 DeepSeek。语义层继续使用 `RuleBasedOperationParser`，后续 LLM Provider 只能替换“从文本到 ParsedOperation”的部分，不能绕过 PendingOperation 和 ActionExecutor。
+
+## 第四阶段：LLM 与卡片确认
+
+飞书入口升级为自然语言优先的确认式交互：
+
+- 规则命令继续本地解析。
+- 规则不认识的写操作调用 DeepSeek，把自然语言转成 `PendingOperation`。
+- 例如 `今晚八点提醒我做程设作业` 应转为 `create_life_event`，字段包含 `title` 与 `scheduled_at`。
+- 飞书回复必须使用交互卡片展示操作摘要，包含“确认”“修改命令”“拒绝”三个入口。
+- “确认”“拒绝”按钮通过 `card.action.trigger` 回调执行，不依赖用户手动输入 `确认 <id>`。
+- “修改命令”跳转到 Tailscale 内网前端的 pending operation 页面。
+- 前端提供 `/dashboard/pending-operations`，可查看、确认、拒绝和修改待确认操作。
+
+飞书开发者后台需要额外订阅新版卡片回传交互回调 `card.action.trigger`，请求地址与事件订阅一致：`https://<DOMAIN>/feishu/event`。
