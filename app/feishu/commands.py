@@ -28,6 +28,7 @@ COMMAND_HELP = "help"
 DATE_PATTERN = re.compile(
     r"^(?P<title>.+?)\s+(?P<date>\d{4}-\d{2}-\d{2}(?:[ T]\d{1,2}:\d{2})?)$"
 )
+GROUP_MENTION_PREFIX_PATTERN = re.compile(r"^(?:@_user_\d+\s*)+")
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,11 @@ def format_help_message() -> str:
             "帮助 — 显示本说明",
         ]
     )
+
+
+def normalize_message_text(text: str) -> str:
+    """Strip leading Feishu group-chat mention tokens (e.g. @_user_1)."""
+    return GROUP_MENTION_PREFIX_PATTERN.sub("", text.strip()).strip()
 
 
 def parse_command(text: str) -> ParsedCommand:
@@ -245,4 +251,4 @@ def extract_message_text(event_payload: dict) -> tuple[str | None, str | None]:
     text = content.get("text")
     if not isinstance(text, str):
         return message.get("message_id"), None
-    return message.get("message_id"), text.strip()
+    return message.get("message_id"), normalize_message_text(text)

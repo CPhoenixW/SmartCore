@@ -301,6 +301,32 @@ def test_event_handler_add_assignment_creates_pending_operation(
     assert f"拒绝 {pending.id}" in reply_text
 
 
+def test_event_handler_strips_group_mention_before_parsing_operation(
+    event_handler,
+    mock_feishu_client,
+    db_session,
+):
+    body = json.dumps(_message_event("@_user_1 添加作业 群聊作业 2026-03-05"))
+
+    status, payload = event_handler.handle(
+        body.encode(),
+        _signed_headers(body),
+        db_session,
+        now=FIXED_NOW,
+    )
+
+    assert status == 200
+    assert payload["code"] == 0
+    assert db_session.query(Assignment).count() == 0
+    pending = db_session.query(PendingOperation).one()
+    assert pending.status == PendingOperationStatus.PENDING.value
+    assert pending.action_name == "create_assignment"
+    assert pending.raw_text == "添加作业 群聊作业 2026-03-05"
+    assert pending.operation_payload["fields"]["title"] == "群聊作业"
+    reply_text = mock_feishu_client.send_text.call_args[0][1]
+    assert f"待确认操作 #{pending.id}" in reply_text
+
+
 def test_event_handler_confirm_operation_applies_pending_assignment(
     event_handler,
     mock_feishu_client,
