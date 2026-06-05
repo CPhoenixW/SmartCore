@@ -19,12 +19,15 @@ from app.db.models import (
     MessageLog,
     PendingOperation,
     PendingOperationStatus,
+    ReminderStatus,
 )
+from app.feishu.cards import build_pending_operation_card
 from app.feishu.client import FeishuClient
 from app.feishu.commands import (
     COMMAND_ADD_ASSIGNMENT,
     COMMAND_COMPLETE,
     COMMAND_HELP,
+    COMMAND_REMINDERS,
     COMMAND_TODAY,
     COMMAND_WEEKLY_DDL,
     execute_command,
@@ -192,6 +195,7 @@ def test_parse_event_payload_rejects_invalid_token():
 def test_parse_command_maps_known_commands():
     assert parse_command("今日").name == COMMAND_TODAY
     assert parse_command("本周DDL").name == COMMAND_WEEKLY_DDL
+    assert parse_command("提醒队列").name == COMMAND_REMINDERS
     assert parse_command("添加作业 数学作业 2026-03-05").name == COMMAND_ADD_ASSIGNMENT
     assert parse_command("添加事项 洗衣服").name == "add_life_event"
     assert parse_command("完成 数学作业").name == COMMAND_COMPLETE
@@ -217,6 +221,57 @@ def test_execute_command_today(db_session):
     )
     assert "今日晨报" in reply
     assert "Essay" in reply
+
+
+def test_execute_command_today_includes_pending_reminder_summary(db_session):
+    crud.create_reminder(
+        db_session,
+        reminder_type="life_event_pre_event",
+        target_type="life_event",
+        scheduled_at=datetime(2026, 3, 2, 19, 45, tzinfo=DEFAULT_TZ),
+        content="提醒：洗澡",
+    )
+
+    reply = execute_command(
+        db_session,
+        parse_command("今日"),
+        today=date(2026, 3, 2),
+    )
+
+    assert "待发送提醒" in reply
+    assert "19:45" in reply
+    assert "洗澡" in reply
+
+
+def test_execute_command_reminder_queue_lists_status_groups(db_session):
+    crud.create_reminder(
+        db_session,
+        reminder_type="life_event_pre_event",
+        target_type="life_event",
+        scheduled_at=datetime(2026, 3, 2, 19, 45, tzinfo=DEFAULT_TZ),
+        content="提醒：洗澡",
+    )
+    crud.create_reminder(
+        db_session,
+        reminder_type="life_event_pre_event",
+        target_type="life_event",
+        scheduled_at=datetime(2026, 3, 2, 20, 45, tzinfo=DEFAULT_TZ),
+        status=ReminderStatus.SENT,
+        content="提醒：跑步",
+    )
+
+    reply = execute_command(
+        db_session,
+        parse_command("提醒队列"),
+        today=date(2026, 3, 2),
+    )
+
+    assert "【提醒队列】" in reply
+    assert "待发送" in reply
+    assert "已发送" in reply
+    assert "19:45" in reply
+    assert "洗澡" in reply
+    assert "跑步" in reply
 
 
 def test_execute_command_weekly_ddl(db_session):
@@ -337,6 +392,29 @@ def test_event_handler_add_assignment_creates_pending_operation(
     assert "确认" in serialized
     assert "修改命令" in serialized
     assert "拒绝" in serialized
+
+
+def test_pending_operation_card_shows_event_and_reminder_times():
+    card = build_pending_operation_card(
+        operation_id=42,
+        raw_text="晚上8点提醒我洗澡",
+        action_name="create_life_event",
+        payload={
+            "resource": "life_event",
+            "fields": {
+                "title": "洗澡",
+                "scheduled_at": "2026-06-05T20:00:00+08:00",
+                "reminder_lead_minutes": 15,
+            },
+        },
+        dashboard_base_url="http://100.65.243.93:8000/dashboard",
+    )
+
+    serialized = json.dumps(card, ensure_ascii=False)
+    assert "事项：洗澡" in serialized
+    assert "计划时间：2026-06-05 20:00" in serialized
+    assert "提醒时间：2026-06-05 19:45" in serialized
+    assert "提前 15 分钟" in serialized
 
 
 def test_event_handler_strips_group_mention_before_parsing_operation(

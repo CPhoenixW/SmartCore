@@ -9,7 +9,14 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
 from app.db import crud
-from app.db.models import Assignment, AssignmentStatus, LifeEvent, LifeEventStatus
+from app.db.models import (
+    Assignment,
+    AssignmentStatus,
+    LifeEvent,
+    LifeEventStatus,
+    Reminder,
+    ReminderStatus,
+)
 from app.scheduler.daily_digest import format_daily_digest, format_tomorrow_preview
 from app.secretary.planner import build_today_plan, build_tomorrow_plan
 from app.secretary.rules import DEFAULT_TZ, format_datetime
@@ -23,6 +30,7 @@ COMMAND_ADD_LIFE_EVENT = "add_life_event"
 COMMAND_COMPLETE = "complete"
 COMMAND_CONFIRM_OPERATION = "confirm_operation"
 COMMAND_REJECT_OPERATION = "reject_operation"
+COMMAND_REMINDERS = "reminders"
 COMMAND_HELP = "help"
 
 DATE_PATTERN = re.compile(
@@ -47,6 +55,7 @@ def format_help_message() -> str:
             "添加作业 <标题> [YYYY-MM-DD] — 添加作业",
             "添加事项 <标题> — 添加生活事项",
             "完成 <标题> — 标记作业或事项为已完成",
+            "提醒队列 — 查看待发送/已发送提醒",
             "帮助 — 显示本说明",
         ]
     )
@@ -68,6 +77,8 @@ def parse_command(text: str) -> ParsedCommand:
         return ParsedCommand(COMMAND_TOMORROW)
     if normalized in {"本周DDL", "本周ddl", "本周 DDL"}:
         return ParsedCommand(COMMAND_WEEKLY_DDL)
+    if normalized in {"提醒队列", "提醒", "提醒列表"}:
+        return ParsedCommand(COMMAND_REMINDERS)
     if normalized in {"帮助", "help", "?"}:
         return ParsedCommand(COMMAND_HELP)
 
@@ -158,6 +169,68 @@ def _find_open_assignment(db: Session, title: str) -> Assignment | None:
     )
 
 
+def _get_reminders_on_day(
+    db: Session,
+    target: date,
+    tz: ZoneInfo,
+    *,
+    status: ReminderStatus | None = None,
+) -> list[Reminder]:
+    start, end = local_day_bounds(target, tz)
+    query = db.query(Reminder).filter(
+        Reminder.scheduled_at >= start,
+        Reminder.scheduled_at < end,
+    )
+    if status is not None:
+        query = query.filter(Reminder.status == status.value)
+    return query.order_by(Reminder.scheduled_at.asc()).all()
+
+
+def _format_reminder_line(reminder: Reminder, tz: ZoneInfo) -> str:
+    time_label = reminder.scheduled_at.astimezone(tz).strftime("%H:%M")
+    content = reminder.content or ""
+    return f"- {time_label} {content}".rstrip()
+
+
+def _format_pending_reminder_summary(
+    reminders: list[Reminder],
+    tz: ZoneInfo,
+) -> list[str]:
+    if not reminders:
+        return []
+    lines = ["待发送提醒"]
+    for reminder in reminders:
+        lines.append(_format_reminder_line(reminder, tz))
+    return lines
+
+
+def _format_reminder_queue(db: Session, tz: ZoneInfo) -> str:
+    lines = ["【提醒队列】", ""]
+    status_groups = [
+        ("待发送", ReminderStatus.PENDING),
+        ("已发送", ReminderStatus.SENT),
+        ("失败", ReminderStatus.FAILED),
+    ]
+    has_any = False
+    for label, status in status_groups:
+        reminders = (
+            db.query(Reminder)
+            .filter(Reminder.status == status.value)
+            .order_by(Reminder.scheduled_at.asc())
+            .all()
+        )
+        if not reminders:
+            continue
+        has_any = True
+        lines.append(f"{label}（{len(reminders)}）")
+        for reminder in reminders:
+            lines.append(_format_reminder_line(reminder, tz))
+        lines.append("")
+    if not has_any:
+        lines.append("暂无提醒记录。")
+    return "\n".join(lines).rstrip()
+
+
 def _find_open_life_event(db: Session, title: str) -> LifeEvent | None:
     return (
         db.query(LifeEvent)
@@ -187,7 +260,17 @@ def execute_command(
             tz=tz,
             semester_start=semester_start,
         )
-        return format_daily_digest(plan)
+        reply = format_daily_digest(plan)
+        pending_reminders = _get_reminders_on_day(
+            db,
+            target_date,
+            tz,
+            status=ReminderStatus.PENDING,
+        )
+        summary = _format_pending_reminder_summary(pending_reminders, tz)
+        if summary:
+            reply = f"{reply}\n\n" + "\n".join(summary)
+        return reply
 
     if command.name == COMMAND_TOMORROW:
         plan = build_tomorrow_plan(
@@ -196,7 +279,21 @@ def execute_command(
             tz=tz,
             semester_start=semester_start,
         )
-        return format_tomorrow_preview(plan)
+        reply = format_tomorrow_preview(plan)
+        tomorrow = target_date + timedelta(days=1)
+        pending_reminders = _get_reminders_on_day(
+            db,
+            tomorrow,
+            tz,
+            status=ReminderStatus.PENDING,
+        )
+        summary = _format_pending_reminder_summary(pending_reminders, tz)
+        if summary:
+            reply = f"{reply}\n\n" + "\n".join(summary)
+        return reply
+
+    if command.name == COMMAND_REMINDERS:
+        return _format_reminder_queue(db, tz)
 
     if command.name == COMMAND_WEEKLY_DDL:
         assignments = _get_assignments_due_this_week(db, target_date, tz)

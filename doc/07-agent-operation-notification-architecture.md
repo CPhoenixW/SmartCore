@@ -184,3 +184,13 @@ Notification Dispatcher 只负责发送队列中的通知，并写 delivery。�
 - 前端提供 `/dashboard/pending-operations`，可查看、确认、拒绝和修改待确认操作。
 
 飞书开发者后台需要额外订阅新版卡片回传交互回调 `card.action.trigger`，请求地址与事件订阅一致：`https://<DOMAIN>/feishu/event`。
+
+## 第五阶段：体验增强与可视化队列
+
+本阶段不改变分层架构，只在现有层补齐可用性：
+
+- 读命令层继续承载 `今日`、`明日`，并新增轻量 `提醒队列` 查询，展示待发送、已发送、失败提醒。
+- `今日` / `明日` 回复除了计划项，还应包含当天待发送提醒摘要，让用户知道系统接下来会主动推送什么。
+- PendingOperation 卡片必须把字段翻译成人能直接确认的信息：事项标题、计划时间、提醒时间、提前量；不要只展示 `scheduled_at`、`reminder_lead_minutes` 这类内部字段名。
+- `/dashboard/reminders` 是提醒队列中控台，应展示状态概览、下一条提醒、最近提醒列表，便于从电脑或手机检查后台调度状态。
+- 这些增强只能使用现有 `Reminder`、`PendingOperation`、Feishu card、dashboard 模板，不引入新的框架或外部服务。

@@ -1,14 +1,44 @@
 {% extends "base.html" %}
 
-{% block title %}提醒日志 · SmartCore{% endblock %}
+{% block title %}提醒队列 · SmartCore{% endblock %}
 
 {% block content %}
 <section class="page-header">
-  <h2>提醒日志</h2>
-  <p class="meta">最近 200 条提醒记录</p>
+  <h2>提醒队列</h2>
+  <p class="meta">后台调度状态概览</p>
 </section>
 
 <section class="card">
+  <h3>状态概览</h3>
+  <div class="status-summary">
+    {% if status_counts.pending %}
+    <span class="status-chip">待发送 {{ status_counts.pending }}</span>
+    {% endif %}
+    {% if status_counts.sent %}
+    <span class="status-chip">已发送 {{ status_counts.sent }}</span>
+    {% endif %}
+    {% if status_counts.failed %}
+    <span class="status-chip">失败 {{ status_counts.failed }}</span>
+    {% endif %}
+    {% if not status_counts.pending and not status_counts.sent and not status_counts.failed %}
+    <p class="empty">暂无提醒记录。</p>
+    {% endif %}
+  </div>
+</section>
+
+{% if next_reminder %}
+<section class="card">
+  <h3>下一条提醒</h3>
+  <p>
+    <strong>{{ next_reminder.scheduled_at.strftime("%Y-%m-%d %H:%M") }}</strong>
+    — {{ next_reminder.content or "—" }}
+  </p>
+</section>
+{% endif %}
+
+<section class="card">
+  <h3>最近提醒</h3>
+  <p class="meta">最近 200 条提醒记录</p>
   {% if reminders %}
   <table class="data-table">
     <thead>

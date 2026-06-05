@@ -22,6 +22,7 @@ from app.db.models import (
     PendingOperation,
     PendingOperationStatus,
     Reminder,
+    ReminderStatus,
 )
 from app.db.session import get_db
 from app.operations.parser import RuleBasedOperationParser
@@ -273,12 +274,31 @@ def create_web_router() -> APIRouter:
             .limit(200)
             .all()
         )
+        status_counts = {
+            ReminderStatus.PENDING.value: db.query(Reminder)
+            .filter(Reminder.status == ReminderStatus.PENDING.value)
+            .count(),
+            ReminderStatus.SENT.value: db.query(Reminder)
+            .filter(Reminder.status == ReminderStatus.SENT.value)
+            .count(),
+            ReminderStatus.FAILED.value: db.query(Reminder)
+            .filter(Reminder.status == ReminderStatus.FAILED.value)
+            .count(),
+        }
+        next_reminder = (
+            db.query(Reminder)
+            .filter(Reminder.status == ReminderStatus.PENDING.value)
+            .order_by(Reminder.scheduled_at.asc())
+            .first()
+        )
         return templates.TemplateResponse(
             request,
             "reminders.html",
             {
                 "active_page": "reminders",
                 "reminders": reminders,
+                "status_counts": status_counts,
+                "next_reminder": next_reminder,
             },
         )
 

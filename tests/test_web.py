@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.config import get_settings
 from app.db import crud
-from app.db.models import Assignment, LifeEvent, PendingOperationStatus
+from app.db.models import Assignment, LifeEvent, PendingOperationStatus, ReminderStatus
 from app.db.session import get_db
 from app.main import create_app
 from app.operations.parser import RuleBasedOperationParser
@@ -93,6 +93,42 @@ def test_view_today_plan_shows_due_assignment(web_client, db_session):
     assert response.status_code == 200
     assert "今日计划" in response.text
     assert "Due Today Homework" in response.text
+
+
+def test_reminders_page_shows_queue_summary(web_client, db_session):
+    crud.create_reminder(
+        db_session,
+        reminder_type="life_event_pre_event",
+        target_type="life_event",
+        scheduled_at=datetime(2026, 5, 30, 19, 45, tzinfo=DEFAULT_TZ),
+        content="提醒：洗澡",
+    )
+    crud.create_reminder(
+        db_session,
+        reminder_type="life_event_pre_event",
+        target_type="life_event",
+        scheduled_at=datetime(2026, 5, 30, 20, 45, tzinfo=DEFAULT_TZ),
+        status=ReminderStatus.SENT,
+        content="提醒：跑步",
+    )
+    crud.create_reminder(
+        db_session,
+        reminder_type="life_event_pre_event",
+        target_type="life_event",
+        scheduled_at=datetime(2026, 5, 30, 21, 45, tzinfo=DEFAULT_TZ),
+        status=ReminderStatus.FAILED,
+        content="提醒：复盘",
+    )
+
+    response = web_client.get("/dashboard/reminders")
+
+    assert response.status_code == 200
+    assert "提醒队列" in response.text
+    assert "待发送 1" in response.text
+    assert "已发送 1" in response.text
+    assert "失败 1" in response.text
+    assert "下一条提醒" in response.text
+    assert "洗澡" in response.text
 
 
 def test_timetable_import_via_web_form(web_client, db_session):
