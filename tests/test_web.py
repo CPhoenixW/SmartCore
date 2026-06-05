@@ -7,7 +7,12 @@ from fastapi.testclient import TestClient
 
 from app.config import get_settings
 from app.db import crud
-from app.db.models import Assignment, LifeEvent, PendingOperationStatus, ReminderStatus
+from app.db.models import (
+    Assignment,
+    LifeEvent,
+    PendingOperationStatus,
+    ReminderStatus,
+)
 from app.db.session import get_db
 from app.main import create_app
 from app.operations.parser import RuleBasedOperationParser
@@ -129,6 +134,50 @@ def test_reminders_page_shows_queue_summary(web_client, db_session):
     assert "失败 1" in response.text
     assert "下一条提醒" in response.text
     assert "洗澡" in response.text
+
+
+def test_reminders_page_can_cancel_pending_reminder(web_client, db_session):
+    reminder = crud.create_reminder(
+        db_session,
+        reminder_type="life_event_pre_event",
+        target_type="life_event",
+        scheduled_at=datetime(2026, 5, 30, 19, 45, tzinfo=DEFAULT_TZ),
+        content="提醒：洗澡",
+    )
+
+    response = web_client.post(
+        f"/dashboard/reminders/{reminder.id}/cancel",
+        follow_redirects=False,
+    )
+
+    db_session.refresh(reminder)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/dashboard/reminders"
+    assert reminder.status == ReminderStatus.CANCELLED.value
+
+
+def test_reminders_page_can_update_pending_reminder_time(web_client, db_session):
+    reminder = crud.create_reminder(
+        db_session,
+        reminder_type="life_event_pre_event",
+        target_type="life_event",
+        scheduled_at=datetime(2026, 5, 30, 19, 45, tzinfo=DEFAULT_TZ),
+        content="提醒：洗澡",
+    )
+
+    response = web_client.post(
+        f"/dashboard/reminders/{reminder.id}/update",
+        data={"scheduled_at": "2026-05-30T20:30"},
+        follow_redirects=False,
+    )
+
+    db_session.refresh(reminder)
+    scheduled_at = reminder.scheduled_at
+    if scheduled_at is not None and scheduled_at.tzinfo is None:
+        scheduled_at = scheduled_at.replace(tzinfo=DEFAULT_TZ)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/dashboard/reminders"
+    assert scheduled_at == datetime(2026, 5, 30, 20, 30, tzinfo=DEFAULT_TZ)
 
 
 def test_timetable_import_via_web_form(web_client, db_session):

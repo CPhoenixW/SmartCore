@@ -25,10 +25,12 @@ from app.feishu.cards import build_pending_operation_card
 from app.feishu.client import FeishuClient
 from app.feishu.commands import (
     COMMAND_ADD_ASSIGNMENT,
+    COMMAND_CANCEL_REMINDER,
     COMMAND_COMPLETE,
     COMMAND_HELP,
     COMMAND_REMINDERS,
     COMMAND_TODAY,
+    COMMAND_UPDATE_REMINDER,
     COMMAND_WEEKLY_DDL,
     execute_command,
     format_help_message,
@@ -196,6 +198,8 @@ def test_parse_command_maps_known_commands():
     assert parse_command("今日").name == COMMAND_TODAY
     assert parse_command("本周DDL").name == COMMAND_WEEKLY_DDL
     assert parse_command("提醒队列").name == COMMAND_REMINDERS
+    assert parse_command("取消提醒 12").name == COMMAND_CANCEL_REMINDER
+    assert parse_command("修改提醒 12 2026-03-02 20:30").name == COMMAND_UPDATE_REMINDER
     assert parse_command("添加作业 数学作业 2026-03-05").name == COMMAND_ADD_ASSIGNMENT
     assert parse_command("添加事项 洗衣服").name == "add_life_event"
     assert parse_command("完成 数学作业").name == COMMAND_COMPLETE
@@ -272,6 +276,71 @@ def test_execute_command_reminder_queue_lists_status_groups(db_session):
     assert "19:45" in reply
     assert "洗澡" in reply
     assert "跑步" in reply
+
+
+def test_execute_command_cancel_pending_reminder_by_id(db_session):
+    reminder = crud.create_reminder(
+        db_session,
+        reminder_type="life_event_pre_event",
+        target_type="life_event",
+        scheduled_at=datetime(2026, 3, 2, 19, 45, tzinfo=DEFAULT_TZ),
+        content="提醒：洗澡",
+    )
+
+    reply = execute_command(
+        db_session,
+        parse_command(f"取消提醒 {reminder.id}"),
+        today=date(2026, 3, 2),
+    )
+
+    db_session.refresh(reminder)
+    assert reminder.status == ReminderStatus.CANCELLED.value
+    assert f"已取消提醒 #{reminder.id}" in reply
+
+
+def test_execute_command_update_pending_reminder_time_by_id(db_session):
+    reminder = crud.create_reminder(
+        db_session,
+        reminder_type="life_event_pre_event",
+        target_type="life_event",
+        scheduled_at=datetime(2026, 3, 2, 19, 45, tzinfo=DEFAULT_TZ),
+        content="提醒：洗澡",
+    )
+
+    reply = execute_command(
+        db_session,
+        parse_command(f"修改提醒 {reminder.id} 2026-03-02 20:30"),
+        today=date(2026, 3, 2),
+    )
+
+    db_session.refresh(reminder)
+    scheduled_at = reminder.scheduled_at
+    if scheduled_at is not None and scheduled_at.tzinfo is None:
+        scheduled_at = scheduled_at.replace(tzinfo=DEFAULT_TZ)
+    assert scheduled_at == datetime(2026, 3, 2, 20, 30, tzinfo=DEFAULT_TZ)
+    assert f"已修改提醒 #{reminder.id}" in reply
+    assert "20:30" in reply
+
+
+def test_execute_command_does_not_cancel_sent_reminder(db_session):
+    reminder = crud.create_reminder(
+        db_session,
+        reminder_type="life_event_pre_event",
+        target_type="life_event",
+        scheduled_at=datetime(2026, 3, 2, 19, 45, tzinfo=DEFAULT_TZ),
+        status=ReminderStatus.SENT,
+        content="提醒：洗澡",
+    )
+
+    reply = execute_command(
+        db_session,
+        parse_command(f"取消提醒 {reminder.id}"),
+        today=date(2026, 3, 2),
+    )
+
+    db_session.refresh(reminder)
+    assert reminder.status == ReminderStatus.SENT.value
+    assert "无法取消" in reply
 
 
 def test_execute_command_weekly_ddl(db_session):

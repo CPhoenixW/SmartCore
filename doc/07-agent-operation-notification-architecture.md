@@ -194,3 +194,13 @@ Notification Dispatcher 只负责发送队列中的通知，并写 delivery。�
 - PendingOperation 卡片必须把字段翻译成人能直接确认的信息：事项标题、计划时间、提醒时间、提前量；不要只展示 `scheduled_at`、`reminder_lead_minutes` 这类内部字段名。
 - `/dashboard/reminders` 是提醒队列中控台，应展示状态概览、下一条提醒、最近提醒列表，便于从电脑或手机检查后台调度状态。
 - 这些增强只能使用现有 `Reminder`、`PendingOperation`、Feishu card、dashboard 模板，不引入新的框架或外部服务。
+
+## 第六阶段：提醒修改与取消
+
+本阶段仍然只增强现有提醒层，不引入统一 CRUD 框架：
+
+- 飞书命令层支持显式 `修改提醒 <id> <YYYY-MM-DD HH:MM>` 和 `取消提醒 <id>`。
+- 前端 `/dashboard/reminders` 支持对待发送提醒修改计划发送时间、取消提醒。
+- 取消提醒只把 `Reminder.status` 改为 `cancelled`，不能删除记录，保留审计线索。
+- 已发送提醒不能取消或修改；失败提醒后续可通过重试策略处理，本阶段不改变调度器语义。
+- 所有修改都作用于现有 `reminders` 表，不改变事件、课程、作业等上游资源结构。

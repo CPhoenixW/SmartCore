@@ -302,6 +302,31 @@ def create_web_router() -> APIRouter:
             },
         )
 
+    @router.post("/reminders/{reminder_id}/cancel")
+    def cancel_reminder(
+        reminder_id: int,
+        db: Session = Depends(get_db),
+    ) -> RedirectResponse:
+        reminder = db.get(Reminder, reminder_id)
+        if reminder and reminder.status == ReminderStatus.PENDING.value:
+            reminder.status = ReminderStatus.CANCELLED.value
+            db.commit()
+        return RedirectResponse(url="/dashboard/reminders", status_code=303)
+
+    @router.post("/reminders/{reminder_id}/update")
+    def update_reminder(
+        reminder_id: int,
+        scheduled_at: str = Form(...),
+        db: Session = Depends(get_db),
+    ) -> RedirectResponse:
+        reminder = db.get(Reminder, reminder_id)
+        if reminder and reminder.status == ReminderStatus.PENDING.value:
+            parsed = _parse_datetime_local(scheduled_at, DEFAULT_TZ)
+            if parsed:
+                reminder.scheduled_at = parsed
+                db.commit()
+        return RedirectResponse(url="/dashboard/reminders", status_code=303)
+
     @router.get("/pending-operations", response_class=HTMLResponse)
     def pending_operations_page(
         request: Request,

@@ -31,8 +31,11 @@ COMMAND_COMPLETE = "complete"
 COMMAND_CONFIRM_OPERATION = "confirm_operation"
 COMMAND_REJECT_OPERATION = "reject_operation"
 COMMAND_REMINDERS = "reminders"
+COMMAND_CANCEL_REMINDER = "cancel_reminder"
+COMMAND_UPDATE_REMINDER = "update_reminder"
 COMMAND_HELP = "help"
 
+REMINDER_UPDATE_PATTERN = re.compile(r"^(?P<id>\d+)\s+(?P<datetime>.+)$")
 DATE_PATTERN = re.compile(
     r"^(?P<title>.+?)\s+(?P<date>\d{4}-\d{2}-\d{2}(?:[ T]\d{1,2}:\d{2})?)$"
 )
@@ -56,6 +59,8 @@ def format_help_message() -> str:
             "添加事项 <标题> — 添加生活事项",
             "完成 <标题> — 标记作业或事项为已完成",
             "提醒队列 — 查看待发送/已发送提醒",
+            "取消提醒 <编号> — 取消待发送提醒",
+            "修改提醒 <编号> <YYYY-MM-DD HH:MM> — 修改待发送提醒时间",
             "帮助 — 显示本说明",
         ]
     )
@@ -102,6 +107,14 @@ def parse_command(text: str) -> ParsedCommand:
         args = normalized.removeprefix("拒绝").strip()
         if args:
             return ParsedCommand(COMMAND_REJECT_OPERATION, args)
+    if normalized.startswith("取消提醒"):
+        args = normalized.removeprefix("取消提醒").strip()
+        if args:
+            return ParsedCommand(COMMAND_CANCEL_REMINDER, args)
+    if normalized.startswith("修改提醒"):
+        args = normalized.removeprefix("修改提醒").strip()
+        if args:
+            return ParsedCommand(COMMAND_UPDATE_REMINDER, args)
 
     return ParsedCommand(COMMAND_HELP)
 
@@ -231,6 +244,42 @@ def _format_reminder_queue(db: Session, tz: ZoneInfo) -> str:
     return "\n".join(lines).rstrip()
 
 
+def _parse_reminder_id(args: str) -> tuple[int | None, str | None]:
+    reminder_id_text = args.strip()
+    if not reminder_id_text:
+        return None, "请提供提醒编号，例如：取消提醒 12"
+    if not reminder_id_text.isdigit():
+        return None, "提醒编号必须是数字"
+    return int(reminder_id_text), None
+
+
+def _parse_reminder_update_args(
+    args: str,
+    tz: ZoneInfo,
+) -> tuple[int | None, datetime | None, str | None]:
+    args = args.strip()
+    if not args:
+        return None, None, "请提供提醒编号和时间，例如：修改提醒 12 2026-03-02 20:30"
+
+    match = REMINDER_UPDATE_PATTERN.match(args)
+    if not match:
+        parts = args.split(maxsplit=1)
+        if len(parts) == 1 and parts[0].isdigit():
+            return int(parts[0]), None, "请提供新的发送时间，例如：修改提醒 12 2026-03-02 20:30"
+        return None, None, "命令格式不正确，请使用：修改提醒 <编号> <YYYY-MM-DD HH:MM>"
+
+    reminder_id = int(match.group("id"))
+    raw_datetime = match.group("datetime").strip().replace("T", " ")
+    try:
+        if len(raw_datetime) == 10:
+            scheduled_at = datetime.strptime(raw_datetime, "%Y-%m-%d").replace(tzinfo=tz)
+        else:
+            scheduled_at = datetime.strptime(raw_datetime, "%Y-%m-%d %H:%M").replace(tzinfo=tz)
+    except ValueError:
+        return reminder_id, None, "无法解析时间，请使用 YYYY-MM-DD HH:MM 格式"
+    return reminder_id, scheduled_at, None
+
+
 def _find_open_life_event(db: Session, title: str) -> LifeEvent | None:
     return (
         db.query(LifeEvent)
@@ -324,6 +373,40 @@ def execute_command(
             db.commit()
             return f"已完成事项：{title}"
         return f"未找到待完成的作业或事项：{title}"
+
+    if command.name == COMMAND_CANCEL_REMINDER:
+        reminder_id, error = _parse_reminder_id(command.args)
+        if error:
+            return error
+        reminder = db.get(Reminder, reminder_id)
+        if reminder is None:
+            return f"未找到提醒 #{reminder_id}"
+        if reminder.status == ReminderStatus.SENT.value:
+            return f"提醒 #{reminder_id} 已发送，无法取消"
+        if reminder.status == ReminderStatus.CANCELLED.value:
+            return f"提醒 #{reminder_id} 已取消"
+        if reminder.status not in (
+            ReminderStatus.PENDING.value,
+            ReminderStatus.FAILED.value,
+        ):
+            return f"提醒 #{reminder_id} 当前状态无法取消"
+        reminder.status = ReminderStatus.CANCELLED.value
+        db.commit()
+        return f"已取消提醒 #{reminder_id}"
+
+    if command.name == COMMAND_UPDATE_REMINDER:
+        reminder_id, scheduled_at, error = _parse_reminder_update_args(command.args, tz)
+        if error:
+            return error
+        reminder = db.get(Reminder, reminder_id)
+        if reminder is None:
+            return f"未找到提醒 #{reminder_id}"
+        if reminder.status != ReminderStatus.PENDING.value:
+            return f"提醒 #{reminder_id} 当前状态无法修改"
+        reminder.scheduled_at = scheduled_at
+        db.commit()
+        time_label = scheduled_at.astimezone(tz).strftime("%H:%M")
+        return f"已修改提醒 #{reminder_id}，新时间 {time_label}"
 
     return format_help_message()
 

@@ -50,6 +50,7 @@
         <th>状态</th>
         <th>重试</th>
         <th>内容摘要</th>
+        <th>操作</th>
       </tr>
     </thead>
     <tbody>
@@ -62,6 +63,19 @@
         <td><span class="status status-{{ item.status }}">{{ item.status }}</span></td>
         <td>{{ item.retry_count }}</td>
         <td class="truncate">{{ item.content or "—" }}</td>
+        <td class="actions-cell">
+          {% if item.status == "pending" %}
+          <form method="post" action="/dashboard/reminders/{{ item.id }}/update" class="inline-update-form">
+            <input name="scheduled_at" type="datetime-local" value="{{ item.scheduled_at.strftime('%Y-%m-%dT%H:%M') }}" required>
+            <button type="submit">修改</button>
+          </form>
+          <form method="post" action="/dashboard/reminders/{{ item.id }}/cancel" style="display:inline">
+            <button type="submit" class="danger">取消</button>
+          </form>
+          {% else %}
+          —
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>
