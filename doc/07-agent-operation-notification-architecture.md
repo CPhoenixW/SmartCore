@@ -177,6 +177,7 @@ Notification Dispatcher 只负责发送队列中的通知，并写 delivery。�
 - 规则命令继续本地解析。
 - 规则不认识的写操作调用 DeepSeek，把自然语言转成 `PendingOperation`。
 - 例如 `今晚八点提醒我做程设作业` 应转为 `create_life_event`，字段包含 `title` 与 `scheduled_at`。
+- 带计划时间的 `create_life_event` 在用户确认后必须同时创建事件前提醒；默认提前 15 分钟，用户输入指定“提前 X 分钟/小时提醒”时，语义层应输出 `fields.reminder_lead_minutes`，执行层按该值覆盖默认提前量。
 - 飞书回复必须使用交互卡片展示操作摘要，包含“确认”“修改命令”“拒绝”三个入口。
 - “确认”“拒绝”按钮通过 `card.action.trigger` 回调执行，不依赖用户手动输入 `确认 <id>`。
 - “修改命令”跳转到 Tailscale 内网前端的 pending operation 页面。

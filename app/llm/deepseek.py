@@ -23,7 +23,10 @@ _SYSTEM_PROMPT = """\
 - needs_confirmation: 布尔值，写操作应为 true
 
 create_assignment 的 fields 可含 title、due_at（ISO 8601 带时区）。
-create_life_event 的 fields 可含 title、scheduled_at、deadline_at、reminder_rule、notes。
+create_life_event 的 fields 可含 title、scheduled_at、deadline_at、reminder_rule、notes、
+reminder_lead_minutes。
+当用户为带计划时间的事项请求提醒时，应输出 scheduled_at 和 reminder_lead_minutes；
+若用户未指定提前多久提醒，reminder_lead_minutes 默认为 15。
 """
 
 

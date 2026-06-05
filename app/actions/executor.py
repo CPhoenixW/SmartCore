@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -94,6 +94,19 @@ class ActionExecutor:
             reminder_rule=reminder_rule if isinstance(reminder_rule, str) else None,
             notes=notes if isinstance(notes, str) else None,
         )
+        if scheduled_at is not None:
+            lead_minutes = 15
+            raw_lead = fields.get("reminder_lead_minutes")
+            if raw_lead is not None:
+                lead_minutes = int(raw_lead)
+            crud.create_reminder(
+                self._db,
+                reminder_type="life_event_pre_event",
+                target_type="life_event",
+                target_id=event.id,
+                scheduled_at=scheduled_at - timedelta(minutes=lead_minutes),
+                content=f"提醒：{title}",
+            )
         pending.status = PendingOperationStatus.APPLIED.value
         pending.result_resource_type = "life_event"
         pending.result_resource_id = event.id

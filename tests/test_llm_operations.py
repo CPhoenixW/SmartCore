@@ -28,6 +28,7 @@ def test_deepseek_parser_converts_free_form_reminder_to_life_event() -> None:
                                     "fields": {
                                         "title": "做程设作业",
                                         "scheduled_at": "2026-06-05T20:00:00+08:00",
+                                        "reminder_lead_minutes": 15,
                                     },
                                     "confidence": 0.88,
                                     "needs_confirmation": True,
@@ -62,10 +63,12 @@ def test_deepseek_parser_converts_free_form_reminder_to_life_event() -> None:
         "fields": {
             "title": "做程设作业",
             "scheduled_at": "2026-06-05T20:00:00+08:00",
+            "reminder_lead_minutes": 15,
         },
     }
     assert requests[0]["model"] == "deepseek-chat"
     assert "今晚八点提醒我做程设作业" in json.dumps(requests[0], ensure_ascii=False)
+    assert "reminder_lead_minutes" in json.dumps(requests[0], ensure_ascii=False)
 
 
 def test_composite_parser_falls_back_to_llm_when_rules_do_not_match() -> None:

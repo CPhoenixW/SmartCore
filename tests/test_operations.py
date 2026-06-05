@@ -1,9 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.actions.executor import ActionExecutor
-from app.db.models import Assignment, LifeEvent, PendingOperation, PendingOperationStatus
+from app.db.models import (
+    Assignment,
+    LifeEvent,
+    PendingOperation,
+    PendingOperationStatus,
+    Reminder,
+)
 from app.operations.parser import RuleBasedOperationParser
 from app.operations.store import create_pending_operation
 from app.secretary.rules import DEFAULT_TZ
@@ -113,3 +119,45 @@ def test_pending_life_event_confirm_preserves_scheduled_at(db_session) -> None:
     if scheduled_at is not None and scheduled_at.tzinfo is None:
         scheduled_at = scheduled_at.replace(tzinfo=DEFAULT_TZ)
     assert scheduled_at == datetime(2026, 6, 5, 20, 0, tzinfo=DEFAULT_TZ)
+
+
+def test_pending_life_event_confirm_creates_default_pre_event_reminder(
+    db_session,
+) -> None:
+    parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
+    parsed = parser.parse("添加事项 做程设作业", source="feishu")
+    parsed.payload["fields"]["scheduled_at"] = "2026-06-05T20:00:00+08:00"
+    pending = create_pending_operation(db_session, parsed)
+
+    executor = ActionExecutor(db_session)
+    executor.confirm_and_apply(pending.id)
+
+    event = db_session.query(LifeEvent).filter_by(title="做程设作业").one()
+    reminder = db_session.query(Reminder).filter_by(target_type="life_event").one()
+    reminder_at = reminder.scheduled_at
+    if reminder_at is not None and reminder_at.tzinfo is None:
+        reminder_at = reminder_at.replace(tzinfo=DEFAULT_TZ)
+    assert reminder.target_id == event.id
+    assert reminder.reminder_type == "life_event_pre_event"
+    assert reminder_at == datetime(2026, 6, 5, 19, 45, tzinfo=DEFAULT_TZ)
+    assert "做程设作业" in (reminder.content or "")
+
+
+def test_pending_life_event_confirm_respects_custom_reminder_lead_minutes(
+    db_session,
+) -> None:
+    parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
+    parsed = parser.parse("添加事项 做程设作业", source="feishu")
+    scheduled_at = datetime(2026, 6, 5, 20, 0, tzinfo=DEFAULT_TZ)
+    parsed.payload["fields"]["scheduled_at"] = scheduled_at.isoformat()
+    parsed.payload["fields"]["reminder_lead_minutes"] = 30
+    pending = create_pending_operation(db_session, parsed)
+
+    executor = ActionExecutor(db_session)
+    executor.confirm_and_apply(pending.id)
+
+    reminder = db_session.query(Reminder).filter_by(target_type="life_event").one()
+    reminder_at = reminder.scheduled_at
+    if reminder_at is not None and reminder_at.tzinfo is None:
+        reminder_at = reminder_at.replace(tzinfo=DEFAULT_TZ)
+    assert reminder_at == scheduled_at - timedelta(minutes=30)
