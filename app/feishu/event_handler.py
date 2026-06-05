@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.actions.executor import ActionExecutor
 from app.config import Settings, get_settings
 from app.db import crud
-from app.db.models import PendingOperation, PendingOperationStatus
+from app.db.models import MessageLog, PendingOperation, PendingOperationStatus
 from app.db.session import get_db
 from app.feishu.cards import build_pending_operation_card
 from app.feishu.client import FeishuClient
@@ -160,6 +160,12 @@ class FeishuEventHandler:
         message_id, text = extract_message_text(payload)
         if not text:
             return 200, {"code": 0, "msg": "no text message"}
+
+        if message_id and db.query(MessageLog).filter_by(
+            source="feishu",
+            external_message_id=message_id,
+        ).first():
+            return 200, {"code": 0, "msg": "duplicate message ignored"}
 
         command = parse_command(text)
         reply = self._build_reply(db, command, text)

@@ -434,6 +434,76 @@ def test_event_handler_llm_free_form_message_creates_pending_card(
     mock_feishu_client.send_interactive_card.assert_called_once()
 
 
+def test_event_handler_ignores_duplicate_free_form_message_id(
+    feishu_settings,
+    mock_feishu_client,
+    db_session,
+):
+    class FakeOperationParser:
+        def parse(self, text: str, *, source: str, now=None):
+            assert text == "晚上8点提醒我洗澡"
+            return RuleBasedOperationParser(tz=DEFAULT_TZ).parse(
+                "添加事项 洗澡",
+                source=source,
+            )
+
+    from app.operations.parser import RuleBasedOperationParser
+
+    handler = FeishuEventHandler(
+        feishu_settings,
+        client=mock_feishu_client,
+        operation_parser=FakeOperationParser(),
+    )
+    body = json.dumps(_message_event("晚上8点提醒我洗澡", message_id="om_duplicate"))
+
+    first_status, first_payload = handler.handle(
+        body.encode(),
+        _signed_headers(body),
+        db_session,
+        now=FIXED_NOW,
+    )
+    second_status, second_payload = handler.handle(
+        body.encode(),
+        _signed_headers(body),
+        db_session,
+        now=FIXED_NOW,
+    )
+
+    assert first_status == 200
+    assert first_payload["code"] == 0
+    assert second_status == 200
+    assert second_payload == {"code": 0, "msg": "duplicate message ignored"}
+    assert db_session.query(PendingOperation).count() == 1
+    assert db_session.query(MessageLog).filter_by(external_message_id="om_duplicate").count() == 1
+    mock_feishu_client.send_interactive_card.assert_called_once()
+
+
+def test_event_handler_ignores_duplicate_read_message_id(
+    event_handler,
+    mock_feishu_client,
+    db_session,
+):
+    body = json.dumps(_message_event("今日", message_id="om_today_duplicate"))
+
+    event_handler.handle(body.encode(), _signed_headers(body), db_session, now=FIXED_NOW)
+    status, payload = event_handler.handle(
+        body.encode(),
+        _signed_headers(body),
+        db_session,
+        now=FIXED_NOW,
+    )
+
+    assert status == 200
+    assert payload == {"code": 0, "msg": "duplicate message ignored"}
+    assert (
+        db_session.query(MessageLog)
+        .filter_by(external_message_id="om_today_duplicate")
+        .count()
+        == 1
+    )
+    mock_feishu_client.send_text.assert_called_once()
+
+
 def test_event_handler_reject_operation_does_not_apply(
     event_handler,
     mock_feishu_client,
