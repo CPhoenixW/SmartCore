@@ -100,3 +100,18 @@ class CompositeOperationParser:
             if self._llm_parser is None:
                 raise
             return self._llm_parser.parse(text, source=source, now=now)
+
+    def select_candidates(
+        self,
+        *,
+        raw_text: str,
+        parsed: ParsedOperation,
+        candidates: list[dict],
+    ) -> dict:
+        if self._llm_parser is None or not hasattr(self._llm_parser, "select_candidates"):
+            raise ValueError("candidate selection is not available")
+        return self._llm_parser.select_candidates(
+            raw_text=raw_text,
+            parsed=parsed,
+            candidates=candidates,
+        )

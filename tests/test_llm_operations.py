@@ -6,7 +6,11 @@ from datetime import datetime
 import httpx
 
 from app.llm.deepseek import DeepSeekOperationParser
-from app.operations.parser import CompositeOperationParser, RuleBasedOperationParser
+from app.operations.parser import (
+    CompositeOperationParser,
+    ParsedOperation,
+    RuleBasedOperationParser,
+)
 from app.secretary.rules import DEFAULT_TZ
 
 
@@ -347,3 +351,55 @@ def test_composite_parser_falls_back_to_llm_when_rules_do_not_match() -> None:
 
     assert operation.action_name == "create_event"
     assert operation.payload["fields"]["title"] == "做程设作业"
+
+
+def test_composite_parser_delegates_candidate_selection_to_llm() -> None:
+    class FakeLLMParser:
+        def select_candidates(self, *, raw_text, parsed, candidates):
+            assert raw_text == "把程设作业改到十点"
+            assert parsed.action_name == "update_event"
+            assert candidates == [
+                {
+                    "event_type": "life_event",
+                    "id": 7,
+                    "status": "pending",
+                    "time_label": "2026-06-06 20:00",
+                    "title": "做程序设计作业",
+                }
+            ]
+            return {
+                "match_status": "single",
+                "selected_ids": [{"event_type": "life_event", "id": 7}],
+                "confidence": 0.93,
+                "reason": "语义匹配",
+            }
+
+    parser = CompositeOperationParser(
+        rule_parser=RuleBasedOperationParser(tz=DEFAULT_TZ),
+        llm_parser=FakeLLMParser(),
+    )
+    parsed = ParsedOperation(
+        source="feishu",
+        raw_text="把程设作业改到十点",
+        action_name="update_event",
+        payload={"operation": "update", "resource": "event", "selector": {}, "fields": {}},
+        confidence=0.9,
+        needs_confirmation=True,
+    )
+
+    selection = parser.select_candidates(
+        raw_text="把程设作业改到十点",
+        parsed=parsed,
+        candidates=[
+            {
+                "event_type": "life_event",
+                "id": 7,
+                "status": "pending",
+                "time_label": "2026-06-06 20:00",
+                "title": "做程序设计作业",
+            }
+        ],
+    )
+
+    assert selection["match_status"] == "single"
+    assert selection["selected_ids"] == [{"event_type": "life_event", "id": 7}]
