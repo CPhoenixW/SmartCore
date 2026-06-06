@@ -263,6 +263,59 @@ Notification Dispatcher 只负责发送队列中的通知，并写 delivery。�
 - 解析层只规范化为 `create_event`、`update_event`、`delete_event`、`query_event`。
 - Reminder 队列是调度内部资源，前端和显式飞书命令可管理队列，但 LLM 不直接增删改查 reminder。
 
+## 第九阶段：二阶段语义候选选择
+
+自然语言查询、修改、删除不能依赖数据库文本模糊匹配，也不能要求用户提前知道数据库 id。除 `create_event` 外，语义层必须使用二阶段流水线：
+
+```text
+用户自然语言
+  ↓
+LLM #1：抽取 operation、candidate_scope、patch
+  ↓
+DB：只用结构化条件召回候选短列表
+  ↓
+LLM #2：从短候选中语义选择目标
+  ↓
+query 直接回复 / update-delete 生成确认卡片
+  ↓
+用户确认后执行数据库写入
+```
+
+第一阶段输出仍使用统一 event 协议，但 `selector` 不再强制包含 `id`。它可以包含：
+
+- `event_type`: `all`、`assignment`、`life_event`、`course_session`。
+- `time_range`: `{"start": ISO8601, "end": ISO8601}`。
+- `status`: 默认 `open`。
+- `max_candidates`: 默认 20，上限 50。
+- `target_description`: 用户口中的目标描述，例如“程序设计作业”。
+
+数据库候选召回只使用强结构条件：类型、时间范围、状态、数量限制。不得把 `target_description` 当作唯一 SQL text match 条件。候选列表传给 LLM #2 前必须压缩成低 token 结构，字段只保留：
+
+- `event_type`
+- `id`
+- `status`
+- `time_label`
+- `title`
+
+第二阶段只负责从候选里选择，不允许产生新的数据库写入字段。结构化输出：
+
+```json
+{
+  "match_status": "single | multiple | ambiguous | none",
+  "selected_ids": [{"event_type": "life_event", "id": 1}],
+  "confidence": 0.92,
+  "reason": "候选标题和用户目标最接近"
+}
+```
+
+执行规则：
+
+- `query_event`: 展示 LLM #2 选中的候选；如果 `none`，回复暂无匹配。
+- `update_event`: 只有 `single` 且置信度足够时生成 pending confirmation；多候选或低置信度必须要求用户澄清。
+- `delete_event`: `single` 或明确批量 `multiple` 可以生成 pending confirmation；卡片必须展示将删除的候选列表。多义 `ambiguous` 必须澄清。
+- 确认前不得修改数据库。
+- pending payload 必须保存已解析出的真实目标 id，执行层只执行这些目标。
+
 ## 第八阶段：失败回滚与操作审计
 
 本阶段不新增审计框架，先复用 `PendingOperation`：

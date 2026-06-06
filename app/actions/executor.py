@@ -15,6 +15,7 @@ from app.db.models import (
     PendingOperation,
     PendingOperationStatus,
 )
+from app.secretary.rules import DEFAULT_TZ
 
 
 class ActionExecutor:
@@ -123,9 +124,14 @@ class ActionExecutor:
         return pending
 
     def query_events(self, payload: dict) -> list[dict]:
+        selector = payload.get("selector") or {}
         fields = payload.get("fields") or {}
-        event_type = fields.get("event_type", "all")
-        status_filter = fields.get("status", "open")
+        event_type = selector.get("event_type") or fields.get("event_type", "all")
+        status_filter = selector.get("status") or fields.get("status", "open")
+        raw_max = selector.get("max_candidates") or fields.get("max_candidates") or 20
+        max_candidates = min(int(raw_max), 50)
+        time_range = selector.get("time_range") or fields.get("time_range")
+        range_start, range_end = self._parse_time_range(time_range)
         results: list[dict] = []
 
         if event_type in ("all", "assignment"):
@@ -137,14 +143,10 @@ class ActionExecutor:
                     )
                 )
             for item in query.all():
-                results.append(
-                    {
-                        "id": item.id,
-                        "event_type": "assignment",
-                        "title": item.title,
-                        "status": item.status,
-                    }
-                )
+                if range_start is not None or range_end is not None:
+                    if not self._datetime_in_range(item.due_at, range_start, range_end):
+                        continue
+                results.append(self._compact_assignment(item))
 
         if event_type in ("all", "life_event"):
             query = self._db.query(LifeEvent)
@@ -155,27 +157,106 @@ class ActionExecutor:
                     )
                 )
             for item in query.all():
-                results.append(
-                    {
-                        "id": item.id,
-                        "event_type": "life_event",
-                        "title": item.title,
-                        "status": item.status,
-                    }
-                )
+                if range_start is not None or range_end is not None:
+                    if not self._life_event_in_time_range(
+                        item, range_start, range_end
+                    ):
+                        continue
+                results.append(self._compact_life_event(item))
 
         if event_type in ("all", "course_session"):
             for item in self._db.query(CourseSession).all():
-                results.append(
-                    {
-                        "id": item.id,
-                        "event_type": "course_session",
-                        "title": item.course.name if item.course else "",
-                        "status": "active",
-                    }
-                )
+                results.append(self._compact_course_session(item))
 
-        return results
+        return results[:max_candidates]
+
+    @staticmethod
+    def _parse_time_range(
+        time_range: dict | None,
+    ) -> tuple[datetime | None, datetime | None]:
+        if not isinstance(time_range, dict):
+            return None, None
+        start_raw = time_range.get("start")
+        end_raw = time_range.get("end")
+        start = datetime.fromisoformat(start_raw) if start_raw else None
+        end = datetime.fromisoformat(end_raw) if end_raw else None
+        return start, end
+
+    @staticmethod
+    def _normalize_datetime(value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=DEFAULT_TZ)
+        return value
+
+    def _datetime_in_range(
+        self,
+        value: datetime | None,
+        range_start: datetime | None,
+        range_end: datetime | None,
+    ) -> bool:
+        dt = self._normalize_datetime(value)
+        if dt is None:
+            return False
+        if range_start is not None:
+            start = self._normalize_datetime(range_start)
+            if start is not None and dt < start:
+                return False
+        if range_end is not None:
+            end = self._normalize_datetime(range_end)
+            if end is not None and dt >= end:
+                return False
+        return True
+
+    def _life_event_in_time_range(
+        self,
+        event: LifeEvent,
+        range_start: datetime | None,
+        range_end: datetime | None,
+    ) -> bool:
+        for attr in ("scheduled_at", "deadline_at"):
+            if self._datetime_in_range(getattr(event, attr), range_start, range_end):
+                return True
+        return False
+
+    @staticmethod
+    def _format_time_label(value: datetime | None) -> str:
+        dt = ActionExecutor._normalize_datetime(value)
+        if dt is None:
+            return ""
+        return dt.strftime("%Y-%m-%d %H:%M")
+
+    @classmethod
+    def _compact_assignment(cls, item: Assignment) -> dict:
+        return {
+            "event_type": "assignment",
+            "id": item.id,
+            "status": item.status,
+            "time_label": cls._format_time_label(item.due_at),
+            "title": item.title,
+        }
+
+    @classmethod
+    def _compact_life_event(cls, item: LifeEvent) -> dict:
+        time_source = item.scheduled_at or item.deadline_at
+        return {
+            "event_type": "life_event",
+            "id": item.id,
+            "status": item.status,
+            "time_label": cls._format_time_label(time_source),
+            "title": item.title,
+        }
+
+    @classmethod
+    def _compact_course_session(cls, item: CourseSession) -> dict:
+        return {
+            "event_type": "course_session",
+            "id": item.id,
+            "status": "active",
+            "time_label": "",
+            "title": item.course.name if item.course else "",
+        }
 
     def _apply_create_event(self, pending: PendingOperation) -> PendingOperation:
         fields = pending.operation_payload.get("fields") or {}
@@ -366,6 +447,10 @@ class ActionExecutor:
 
     def _apply_delete_event(self, pending: PendingOperation) -> PendingOperation:
         selector = pending.operation_payload.get("selector") or {}
+        targets = selector.get("targets")
+        if isinstance(targets, list) and targets:
+            return self._apply_delete_event_targets(pending, targets)
+
         event_type = selector.get("event_type")
         resource_id = selector.get("id")
 
@@ -434,3 +519,100 @@ class ActionExecutor:
         self._db.commit()
         self._db.refresh(pending)
         return pending
+
+    def _apply_delete_event_targets(
+        self,
+        pending: PendingOperation,
+        targets: list,
+    ) -> PendingOperation:
+        normalized_targets: list[tuple[str, int]] = []
+        for target in targets:
+            if not isinstance(target, dict):
+                pending.status = PendingOperationStatus.FAILED.value
+                pending.error_message = "invalid delete target"
+                self._db.commit()
+                self._db.refresh(pending)
+                return pending
+            event_type = target.get("event_type")
+            resource_id = target.get("id")
+            if event_type not in ("assignment", "life_event", "course_session"):
+                pending.status = PendingOperationStatus.FAILED.value
+                pending.error_message = f"unsupported event_type for delete: {event_type!r}"
+                self._db.commit()
+                self._db.refresh(pending)
+                return pending
+            if resource_id is None:
+                pending.status = PendingOperationStatus.FAILED.value
+                pending.error_message = "missing event id in delete targets"
+                self._db.commit()
+                self._db.refresh(pending)
+                return pending
+            if self._get_delete_event(event_type, int(resource_id)) is None:
+                pending.status = PendingOperationStatus.FAILED.value
+                pending.error_message = f"{event_type} not found: {resource_id}"
+                pending.result_resource_type = event_type
+                pending.result_resource_id = int(resource_id)
+                self._db.commit()
+                self._db.refresh(pending)
+                return pending
+            normalized_targets.append((event_type, int(resource_id)))
+
+        last_resource_type: str | None = None
+        last_resource_id: int | None = None
+        for event_type, resource_id in normalized_targets:
+            applied = self._delete_single_event(event_type, resource_id)
+            if applied is None:
+                pending.status = PendingOperationStatus.FAILED.value
+                pending.error_message = f"{event_type} not found: {resource_id}"
+                pending.result_resource_type = event_type
+                pending.result_resource_id = resource_id
+                self._db.commit()
+                self._db.refresh(pending)
+                return pending
+            last_resource_type, last_resource_id = applied
+
+        pending.status = PendingOperationStatus.APPLIED.value
+        pending.result_resource_type = last_resource_type
+        pending.result_resource_id = last_resource_id
+        pending.error_message = None
+        self._db.commit()
+        self._db.refresh(pending)
+        return pending
+
+    def _get_delete_event(self, event_type: str, resource_id: int):
+        if event_type == "assignment":
+            return self._db.get(Assignment, resource_id)
+        if event_type == "life_event":
+            return self._db.get(LifeEvent, resource_id)
+        if event_type == "course_session":
+            return self._db.get(CourseSession, resource_id)
+        return None
+
+    def _delete_single_event(
+        self,
+        event_type: str,
+        resource_id: int,
+    ) -> tuple[str, int] | None:
+        if event_type == "assignment":
+            assignment = self._get_delete_event(event_type, resource_id)
+            if assignment is None:
+                return None
+            assignment.status = AssignmentStatus.CANCELLED.value
+            return "assignment", assignment.id
+
+        if event_type == "life_event":
+            event = self._get_delete_event(event_type, resource_id)
+            if event is None:
+                return None
+            event.status = LifeEventStatus.CANCELLED.value
+            return "life_event", event.id
+
+        if event_type == "course_session":
+            session = self._get_delete_event(event_type, resource_id)
+            if session is None:
+                return None
+            session_id = session.id
+            self._db.delete(session)
+            return "course_session", session_id
+
+        return None

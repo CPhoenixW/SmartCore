@@ -708,6 +708,286 @@ def test_event_handler_llm_query_event_replies_without_pending_operation(
     assert log.reply_status == "ok"
 
 
+def test_event_handler_two_stage_query_selects_from_compact_candidates(
+    feishu_settings,
+    mock_feishu_client,
+    db_session,
+):
+    target = crud.create_life_event(
+        db_session,
+        title="做程序设计作业",
+        scheduled_at=datetime(2026, 6, 6, 20, 0, tzinfo=DEFAULT_TZ),
+        notes="长备注不应进入候选短列表",
+    )
+    crud.create_life_event(
+        db_session,
+        title="明天跑步",
+        scheduled_at=datetime(2026, 6, 7, 20, 0, tzinfo=DEFAULT_TZ),
+    )
+
+    class TwoStageParser:
+        def __init__(self):
+            self.candidates = None
+
+        def parse(self, text: str, *, source: str, now=None):
+            assert text == "今晚有啥事"
+            return ParsedOperation(
+                source=source,
+                raw_text=text,
+                action_name="query_event",
+                payload={
+                    "operation": "query",
+                    "resource": "event",
+                    "selector": {
+                        "event_type": "all",
+                        "status": "open",
+                        "time_range": {
+                            "start": "2026-06-06T18:00:00+08:00",
+                            "end": "2026-06-07T00:00:00+08:00",
+                        },
+                        "target_description": "今晚事项",
+                        "max_candidates": 10,
+                    },
+                    "fields": {},
+                },
+                confidence=0.9,
+                needs_confirmation=False,
+            )
+
+        def select_candidates(self, *, raw_text, parsed, candidates):
+            assert raw_text == "今晚有啥事"
+            assert parsed.action_name == "query_event"
+            self.candidates = candidates
+            assert candidates == [
+                {
+                    "event_type": "life_event",
+                    "id": target.id,
+                    "status": "pending",
+                    "time_label": "2026-06-06 20:00",
+                    "title": "做程序设计作业",
+                }
+            ]
+            return {
+                "match_status": "single",
+                "selected_ids": [{"event_type": "life_event", "id": target.id}],
+                "confidence": 0.93,
+                "reason": "今晚唯一候选",
+            }
+
+    parser = TwoStageParser()
+    handler = FeishuEventHandler(
+        feishu_settings,
+        client=mock_feishu_client,
+        operation_parser=parser,
+    )
+    body = json.dumps(_message_event("今晚有啥事"))
+
+    status, payload = handler.handle(
+        body.encode(),
+        _signed_headers(body),
+        db_session,
+        now=FIXED_NOW,
+    )
+
+    assert status == 200
+    assert payload["code"] == 0
+    assert db_session.query(PendingOperation).count() == 0
+    reply_text = mock_feishu_client.send_text.call_args[0][1]
+    assert "做程序设计作业" in reply_text
+    assert "明天跑步" not in reply_text
+    assert "长备注" not in reply_text
+
+
+def test_event_handler_two_stage_update_resolves_candidate_before_pending(
+    feishu_settings,
+    mock_feishu_client,
+    db_session,
+):
+    target = crud.create_life_event(
+        db_session,
+        title="做程序设计作业",
+        scheduled_at=datetime(2026, 6, 6, 20, 0, tzinfo=DEFAULT_TZ),
+    )
+    other = crud.create_life_event(
+        db_session,
+        title="写英语作业",
+        scheduled_at=datetime(2026, 6, 6, 20, 30, tzinfo=DEFAULT_TZ),
+    )
+
+    class TwoStageParser:
+        def parse(self, text: str, *, source: str, now=None):
+            assert text == "把做程序设计作业改到今晚九点"
+            return ParsedOperation(
+                source=source,
+                raw_text=text,
+                action_name="update_event",
+                payload={
+                    "operation": "update",
+                    "resource": "event",
+                    "selector": {
+                        "event_type": "life_event",
+                        "status": "open",
+                        "time_range": {
+                            "start": "2026-06-06T18:00:00+08:00",
+                            "end": "2026-06-07T00:00:00+08:00",
+                        },
+                        "target_description": "做程序设计作业",
+                        "max_candidates": 10,
+                    },
+                    "fields": {"scheduled_at": "2026-06-06T21:00:00+08:00"},
+                },
+                confidence=0.9,
+                needs_confirmation=True,
+            )
+
+        def select_candidates(self, *, raw_text, parsed, candidates):
+            assert {item["title"] for item in candidates} == {
+                "做程序设计作业",
+                "写英语作业",
+            }
+            return {
+                "match_status": "single",
+                "selected_ids": [{"event_type": "life_event", "id": target.id}],
+                "confidence": 0.94,
+                "reason": "标题语义匹配",
+            }
+
+    handler = FeishuEventHandler(
+        feishu_settings,
+        client=mock_feishu_client,
+        operation_parser=TwoStageParser(),
+    )
+    body = json.dumps(_message_event("把做程序设计作业改到今晚九点"))
+
+    status, payload = handler.handle(
+        body.encode(),
+        _signed_headers(body),
+        db_session,
+        now=FIXED_NOW,
+    )
+
+    assert status == 200
+    assert payload["code"] == 0
+    db_session.refresh(target)
+    db_session.refresh(other)
+    target_scheduled_at = target.scheduled_at
+    other_scheduled_at = other.scheduled_at
+    if target_scheduled_at is not None and target_scheduled_at.tzinfo is None:
+        target_scheduled_at = target_scheduled_at.replace(tzinfo=DEFAULT_TZ)
+    if other_scheduled_at is not None and other_scheduled_at.tzinfo is None:
+        other_scheduled_at = other_scheduled_at.replace(tzinfo=DEFAULT_TZ)
+    assert target_scheduled_at == datetime(2026, 6, 6, 20, 0, tzinfo=DEFAULT_TZ)
+    assert other_scheduled_at == datetime(2026, 6, 6, 20, 30, tzinfo=DEFAULT_TZ)
+    pending = db_session.query(PendingOperation).one()
+    assert pending.action_name == "update_event"
+    assert pending.operation_payload["selector"] == {
+        "event_type": "life_event",
+        "id": target.id,
+    }
+    assert pending.operation_payload["fields"]["scheduled_at"] == (
+        "2026-06-06T21:00:00+08:00"
+    )
+    mock_feishu_client.send_interactive_card.assert_called_once()
+
+
+def test_event_handler_two_stage_delete_all_creates_batch_pending(
+    feishu_settings,
+    mock_feishu_client,
+    db_session,
+):
+    first = crud.create_life_event(
+        db_session,
+        title="今晚事项 A",
+        scheduled_at=datetime(2026, 6, 6, 20, 0, tzinfo=DEFAULT_TZ),
+    )
+    second = crud.create_life_event(
+        db_session,
+        title="今晚事项 B",
+        scheduled_at=datetime(2026, 6, 6, 21, 0, tzinfo=DEFAULT_TZ),
+    )
+    tomorrow = crud.create_life_event(
+        db_session,
+        title="明晚事项",
+        scheduled_at=datetime(2026, 6, 7, 20, 0, tzinfo=DEFAULT_TZ),
+    )
+
+    class TwoStageParser:
+        def parse(self, text: str, *, source: str, now=None):
+            assert text == "删除今晚的所有事项"
+            return ParsedOperation(
+                source=source,
+                raw_text=text,
+                action_name="delete_event",
+                payload={
+                    "operation": "delete",
+                    "resource": "event",
+                    "selector": {
+                        "event_type": "life_event",
+                        "status": "open",
+                        "time_range": {
+                            "start": "2026-06-06T18:00:00+08:00",
+                            "end": "2026-06-07T00:00:00+08:00",
+                        },
+                        "target_description": "今晚的所有事项",
+                        "max_candidates": 20,
+                    },
+                    "fields": {},
+                },
+                confidence=0.9,
+                needs_confirmation=True,
+            )
+
+        def select_candidates(self, *, raw_text, parsed, candidates):
+            assert {item["title"] for item in candidates} == {"今晚事项 A", "今晚事项 B"}
+            return {
+                "match_status": "multiple",
+                "selected_ids": [
+                    {"event_type": "life_event", "id": first.id},
+                    {"event_type": "life_event", "id": second.id},
+                ],
+                "confidence": 0.96,
+                "reason": "用户明确要求删除今晚所有事项",
+            }
+
+    handler = FeishuEventHandler(
+        feishu_settings,
+        client=mock_feishu_client,
+        operation_parser=TwoStageParser(),
+    )
+    body = json.dumps(_message_event("删除今晚的所有事项"))
+
+    status, payload = handler.handle(
+        body.encode(),
+        _signed_headers(body),
+        db_session,
+        now=FIXED_NOW,
+    )
+
+    assert status == 200
+    assert payload["code"] == 0
+    pending = db_session.query(PendingOperation).one()
+    assert pending.action_name == "delete_event"
+    assert pending.operation_payload["selector"] == {
+        "targets": [
+            {"event_type": "life_event", "id": first.id},
+            {"event_type": "life_event", "id": second.id},
+        ]
+    }
+    db_session.refresh(first)
+    db_session.refresh(second)
+    db_session.refresh(tomorrow)
+    assert first.status == "pending"
+    assert second.status == "pending"
+    assert tomorrow.status == "pending"
+    serialized_card = json.dumps(
+        mock_feishu_client.send_interactive_card.call_args.kwargs["card"],
+        ensure_ascii=False,
+    )
+    assert "今晚事项 A" in serialized_card
+    assert "今晚事项 B" in serialized_card
+    assert "明晚事项" not in serialized_card
+
+
 def test_event_handler_ignores_duplicate_free_form_message_id(
     feishu_settings,
     mock_feishu_client,

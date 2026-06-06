@@ -48,6 +48,7 @@ def build_pending_operation_card(
     tz: ZoneInfo = DEFAULT_TZ,
 ) -> dict[str, Any]:
     fields = payload.get("fields", {})
+    selector = payload.get("selector") or {}
     title = fields.get("title", "")
     event_type = fields.get("event_type")
     detail_lines = [
@@ -55,7 +56,24 @@ def build_pending_operation_card(
         f"操作：{action_name}",
         f"资源：{payload.get('resource', '')}",
     ]
-    if event_type:
+    selected_candidates = payload.get("selected_candidates")
+    delete_targets = selector.get("targets")
+    if action_name == "delete_event" and (
+        isinstance(selected_candidates, list) and selected_candidates
+        or isinstance(delete_targets, list) and delete_targets
+    ):
+        detail_lines.append("将删除：")
+        if isinstance(selected_candidates, list) and selected_candidates:
+            for item in selected_candidates:
+                label = item.get("title") or f"{item.get('event_type')}#{item.get('id')}"
+                detail_lines.append(f"- {label}")
+        elif isinstance(delete_targets, list):
+            for item in delete_targets:
+                if isinstance(item, dict):
+                    detail_lines.append(
+                        f"- {item.get('event_type')}#{item.get('id')}"
+                    )
+    elif event_type:
         detail_lines.append(f"事件类型：{event_type}")
     if event_type == "life_event":
         detail_lines.extend(

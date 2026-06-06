@@ -43,6 +43,7 @@ ALLOWED_EVENT_TYPES = {
 }
 
 _HELP_KEYWORDS = {"帮助", "help", "?"}
+_SELECTION_CONFIDENCE_THRESHOLD = 0.85
 
 
 @dataclass(frozen=True)
@@ -301,9 +302,163 @@ class FeishuEventHandler:
                     semester_start=self.settings.semester_start,
                 )
             )
+        if self._supports_two_stage_selection(parsed):
+            return self._two_stage_event_reply(db, text, parsed)
         if parsed.action_name == "query_event":
             return self._query_event_reply(db, parsed)
         return self._pending_operation_card_reply(db, parsed)
+
+    def _supports_two_stage_selection(self, parsed: ParsedOperation) -> bool:
+        return parsed.action_name in {
+            "query_event",
+            "update_event",
+            "delete_event",
+        } and hasattr(self._operation_parser, "select_candidates")
+
+    def _two_stage_event_reply(
+        self,
+        db: Session,
+        text: str,
+        parsed: ParsedOperation,
+    ) -> FeishuReply:
+        candidates = ActionExecutor(db).query_events(parsed.payload)
+        selection = self._operation_parser.select_candidates(
+            raw_text=text,
+            parsed=parsed,
+            candidates=candidates,
+        )
+        selected_ids = selection.get("selected_ids") or []
+        match_status = selection.get("match_status")
+        confidence = float(selection.get("confidence", 0))
+
+        if parsed.action_name == "query_event":
+            selected = self._filter_candidates(candidates, selected_ids)
+            if match_status == "none" or not selected:
+                return FeishuReply(
+                    text=_format_query_event_reply([]),
+                    parsed_command="query_event",
+                    reply_status="ok",
+                )
+            return FeishuReply(
+                text=_format_query_event_reply(selected),
+                parsed_command="query_event",
+                reply_status="ok",
+            )
+
+        if parsed.action_name == "update_event":
+            if (
+                match_status == "single"
+                and len(selected_ids) == 1
+                and confidence >= _SELECTION_CONFIDENCE_THRESHOLD
+            ):
+                resolved = self._resolve_update_payload(parsed, selected_ids[0])
+                return self._pending_operation_card_reply(
+                    db,
+                    ParsedOperation(
+                        source=parsed.source,
+                        raw_text=parsed.raw_text,
+                        action_name=parsed.action_name,
+                        payload=resolved,
+                        confidence=parsed.confidence,
+                        needs_confirmation=True,
+                    ),
+                )
+            return FeishuReply(
+                text=self._format_selection_clarification(
+                    parsed.action_name,
+                    match_status,
+                    selection.get("reason"),
+                ),
+                parsed_command=parsed.action_name,
+                reply_status="ok",
+            )
+
+        if parsed.action_name == "delete_event":
+            if match_status in {"single", "multiple"} and selected_ids:
+                if confidence >= _SELECTION_CONFIDENCE_THRESHOLD:
+                    resolved = self._resolve_delete_payload(
+                        parsed,
+                        selected_ids,
+                        candidates,
+                    )
+                    return self._pending_operation_card_reply(
+                        db,
+                        ParsedOperation(
+                            source=parsed.source,
+                            raw_text=parsed.raw_text,
+                            action_name=parsed.action_name,
+                            payload=resolved,
+                            confidence=parsed.confidence,
+                            needs_confirmation=True,
+                        ),
+                    )
+            return FeishuReply(
+                text=self._format_selection_clarification(
+                    parsed.action_name,
+                    match_status,
+                    selection.get("reason"),
+                ),
+                parsed_command=parsed.action_name,
+                reply_status="ok",
+            )
+
+        return self._pending_operation_card_reply(db, parsed)
+
+    @staticmethod
+    def _filter_candidates(
+        candidates: list[dict],
+        selected_ids: list[dict],
+    ) -> list[dict]:
+        selected_keys = {
+            (item.get("event_type"), item.get("id"))
+            for item in selected_ids
+            if isinstance(item, dict)
+        }
+        return [
+            item
+            for item in candidates
+            if (item.get("event_type"), item.get("id")) in selected_keys
+        ]
+
+    @staticmethod
+    def _resolve_update_payload(parsed: ParsedOperation, target: dict) -> dict:
+        payload = dict(parsed.payload)
+        payload["selector"] = {
+            "event_type": target["event_type"],
+            "id": target["id"],
+        }
+        return payload
+
+    @staticmethod
+    def _resolve_delete_payload(
+        parsed: ParsedOperation,
+        selected_ids: list[dict],
+        candidates: list[dict],
+    ) -> dict:
+        payload = dict(parsed.payload)
+        payload["selector"] = {"targets": selected_ids}
+        selected = FeishuEventHandler._filter_candidates(candidates, selected_ids)
+        if selected:
+            payload["selected_candidates"] = selected
+        return payload
+
+    @staticmethod
+    def _format_selection_clarification(
+        action_name: str,
+        match_status: str | None,
+        reason: str | None,
+    ) -> str:
+        action_label = {
+            "update_event": "修改",
+            "delete_event": "删除",
+        }.get(action_name, "处理")
+        if match_status == "none":
+            return f"未找到可{action_label}的事件。"
+        if match_status == "ambiguous":
+            detail = reason or "目标不够明确"
+            return f"无法确定要{action_label}的事件：{detail}，请补充更多信息。"
+        detail = reason or "请补充更具体的目标描述"
+        return f"无法确定要{action_label}的事件：{detail}。"
 
     def _query_event_reply(self, db: Session, parsed: ParsedOperation) -> FeishuReply:
         events = ActionExecutor(db).query_events(parsed.payload)

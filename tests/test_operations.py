@@ -382,6 +382,49 @@ def test_event_interface_query_events(db_session) -> None:
     assert {item["event_type"] for item in results} == {"assignment", "life_event"}
 
 
+def test_event_query_filters_by_time_range_and_returns_compact_candidates(
+    db_session,
+) -> None:
+    crud.create_life_event(
+        db_session,
+        title="做程序设计作业",
+        scheduled_at=datetime(2026, 6, 6, 20, 0, tzinfo=DEFAULT_TZ),
+        notes="这是一段很长的备注，不应该进入二阶段候选短列表",
+    )
+    crud.create_life_event(
+        db_session,
+        title="明天跑步",
+        scheduled_at=datetime(2026, 6, 7, 20, 0, tzinfo=DEFAULT_TZ),
+    )
+    crud.create_assignment(
+        db_session,
+        title="今晚交线代",
+        due_at=datetime(2026, 6, 6, 23, 0, tzinfo=DEFAULT_TZ),
+    )
+
+    results = ActionExecutor(db_session).query_events(
+        {
+            "operation": "query",
+            "resource": "event",
+            "selector": {
+                "event_type": "all",
+                "status": "open",
+                "time_range": {
+                    "start": "2026-06-06T18:00:00+08:00",
+                    "end": "2026-06-07T00:00:00+08:00",
+                },
+                "max_candidates": 10,
+            },
+            "fields": {},
+        }
+    )
+
+    assert {item["title"] for item in results} == {"做程序设计作业", "今晚交线代"}
+    for item in results:
+        assert set(item) <= {"event_type", "id", "status", "time_label", "title"}
+        assert item["time_label"]
+
+
 def test_legacy_update_reminder_action_is_rejected(db_session) -> None:
     reminder = crud.create_reminder(
         db_session,
@@ -472,3 +515,87 @@ def test_life_event_create_rolls_back_when_reminder_creation_fails(
     assert db_session.query(LifeEvent).filter_by(title="洗澡").count() == 0
     assert db_session.query(Reminder).count() == 0
 
+
+def test_delete_event_can_apply_resolved_batch_targets(db_session) -> None:
+    first = crud.create_life_event(
+        db_session,
+        title="今晚事项 A",
+        scheduled_at=datetime(2026, 6, 6, 20, 0, tzinfo=DEFAULT_TZ),
+    )
+    second = crud.create_life_event(
+        db_session,
+        title="今晚事项 B",
+        scheduled_at=datetime(2026, 6, 6, 21, 0, tzinfo=DEFAULT_TZ),
+    )
+    tomorrow = crud.create_life_event(
+        db_session,
+        title="明晚事项",
+        scheduled_at=datetime(2026, 6, 7, 20, 0, tzinfo=DEFAULT_TZ),
+    )
+    parsed = ParsedOperation(
+        source="feishu",
+        raw_text="删除今晚的所有事项",
+        action_name="delete_event",
+        payload={
+            "operation": "delete",
+            "resource": "event",
+            "selector": {
+                "targets": [
+                    {"event_type": "life_event", "id": first.id},
+                    {"event_type": "life_event", "id": second.id},
+                ]
+            },
+            "fields": {},
+        },
+        confidence=0.9,
+        needs_confirmation=True,
+    )
+
+    applied = ActionExecutor(db_session).confirm_and_apply(
+        create_pending_operation(db_session, parsed).id
+    )
+
+    db_session.refresh(first)
+    db_session.refresh(second)
+    db_session.refresh(tomorrow)
+    assert applied.status == PendingOperationStatus.APPLIED.value
+    assert first.status == LifeEventStatus.CANCELLED.value
+    assert second.status == LifeEventStatus.CANCELLED.value
+    assert tomorrow.status == LifeEventStatus.PENDING.value
+
+
+def test_delete_event_batch_failure_does_not_partially_mutate_targets(
+    db_session,
+) -> None:
+    first = crud.create_life_event(
+        db_session,
+        title="今晚事项 A",
+        scheduled_at=datetime(2026, 6, 6, 20, 0, tzinfo=DEFAULT_TZ),
+    )
+    parsed = ParsedOperation(
+        source="feishu",
+        raw_text="删除两个事项",
+        action_name="delete_event",
+        payload={
+            "operation": "delete",
+            "resource": "event",
+            "selector": {
+                "targets": [
+                    {"event_type": "life_event", "id": first.id},
+                    {"event_type": "life_event", "id": 9999},
+                ]
+            },
+            "fields": {},
+        },
+        confidence=0.9,
+        needs_confirmation=True,
+    )
+
+    applied = ActionExecutor(db_session).confirm_and_apply(
+        create_pending_operation(db_session, parsed).id
+    )
+
+    db_session.refresh(first)
+    assert applied.status == PendingOperationStatus.FAILED.value
+    assert "not found" in (applied.error_message or "")
+    assert first.status == LifeEventStatus.PENDING.value

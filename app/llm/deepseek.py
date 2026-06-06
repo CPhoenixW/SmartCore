@@ -28,7 +28,8 @@ _SYSTEM_PROMPT = """\
 - operation: create/update/delete/query（兼容 read，归一化为 query）
 - resource: 固定为 event
 - fields.event_type: course_session、assignment 或 life_event 之一
-- selector: 修改/删除/精确查询已有事件时含 id 和 event_type
+- selector: 定位已有事件。精确修改/删除可含 id 和 event_type；语义查询/修改/删除可不含 id，
+  改用 event_type、time_range、status、max_candidates、target_description 描述候选范围
 - fields: 事件字段，如 title、course_name、due_at、scheduled_at、deadline_at、
   weekday、start_time、end_time、location、notes、reminder_lead_minutes
 - confidence: 0 到 1 的浮点数
@@ -38,12 +39,31 @@ create + event + assignment: fields 含 event_type=assignment、title、due_at�
 create + event + life_event: fields 含 event_type=life_event、title、scheduled_at 等。
 create + event + course_session: fields 含 event_type=course_session、course_name、
 weekday、start_time、end_time、location 等。
-update/delete + event: selector 必须含 id 和 event_type。
-query + event: fields 含 event_type（all/assignment/life_event/course_session）和 status。
+update/delete + event: 若已知 id，selector 含 id 和 event_type；否则 selector 用候选范围字段，
+  至少包含 event_type、time_range、target_description、status、max_candidates 之一。
+query + event: selector 或 fields 可含 event_type（all/assignment/life_event/course_session）、
+  status、time_range、max_candidates、target_description。
 
 当用户说“提醒我……”并给出时间时，必须输出 create + event + life_event，
 不要输出 create + reminder；Reminder 是系统内部发送队列，不是用户直接创建的资源。
 当用户想修改/删除提醒事项时，输出 update/delete + event + life_event，而不是 reminder。
+"""
+
+_SELECT_SYSTEM_PROMPT = """\
+你是 SmartCore 事件候选选择器。根据用户原话、操作类型、补丁摘要和候选短列表，选择目标事件。
+
+只返回 JSON：
+{
+  "match_status": "single | multiple | ambiguous | none",
+  "selected_ids": [{"event_type": "...", "id": 1}],
+  "confidence": 0.0-1.0,
+  "reason": "简短原因"
+}
+
+规则：
+- 只能从给定候选里选择，不能编造 id。
+- query 可多选；update 通常应 single；delete 可为 single 或 multiple。
+- 无法确定时返回 ambiguous 或 none。
 """
 
 
@@ -85,6 +105,86 @@ class DeepSeekOperationParser:
             confidence=float(data.get("confidence", 0.5)),
             needs_confirmation=bool(data.get("needs_confirmation", True)),
         )
+
+    def select_candidates(
+        self,
+        *,
+        raw_text: str,
+        parsed: ParsedOperation,
+        candidates: list[dict],
+    ) -> dict[str, Any]:
+        if not candidates:
+            return {
+                "match_status": "none",
+                "selected_ids": [],
+                "confidence": 0.0,
+                "reason": "无候选事件",
+            }
+
+        candidate_lines = [
+            " | ".join(
+                [
+                    f"{item['event_type']}#{item['id']}",
+                    str(item.get("status", "")),
+                    str(item.get("time_label", "")),
+                    str(item.get("title", "")),
+                ]
+            )
+            for item in candidates
+        ]
+        fields = parsed.payload.get("fields") or {}
+        patch_summary = json.dumps(fields, ensure_ascii=False)
+        user_content = (
+            f"用户原话：{raw_text}\n"
+            f"操作：{parsed.action_name}\n"
+            f"补丁摘要：{patch_summary}\n"
+            "候选：\n"
+            + "\n".join(candidate_lines)
+        )
+        raw_content = self._call_selection_completions(user_content)
+        data = self._parse_json_content(raw_content)
+        selected_ids = data.get("selected_ids")
+        if not isinstance(selected_ids, list):
+            selected_ids = []
+        return {
+            "match_status": data.get("match_status", "none"),
+            "selected_ids": selected_ids,
+            "confidence": float(data.get("confidence", 0.0)),
+            "reason": data.get("reason", ""),
+        }
+
+    def _call_selection_completions(self, user_content: str) -> str:
+        payload = {
+            "model": self._model,
+            "messages": [
+                {"role": "system", "content": _SELECT_SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            "response_format": {"type": "json_object"},
+        }
+        with httpx.Client(
+            base_url=self._base_url,
+            timeout=self._timeout,
+            transport=self._transport,
+        ) as client:
+            response = client.post(
+                "/chat/completions",
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                json=payload,
+            )
+            if response.is_error:
+                raise ValueError(
+                    f"deepseek request failed: {response.status_code} {response.text}"
+                )
+            body = response.json()
+        choices = body.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise ValueError("deepseek response missing choices")
+        message = choices[0].get("message", {})
+        content = message.get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("deepseek response missing message content")
+        return content
 
     def _call_chat_completions(self, text: str, now: datetime) -> str:
         payload = {
@@ -182,8 +282,18 @@ class DeepSeekOperationParser:
                 raise ValueError("fields must include course_name for course_session")
         elif operation in ("update", "delete"):
             if selector.get("id") is None:
-                raise ValueError("selector must include id for event update/delete")
-            if event_type not in _EVENT_TYPES:
+                scope_keys = (
+                    "event_type",
+                    "time_range",
+                    "target_description",
+                    "status",
+                    "max_candidates",
+                )
+                if not any(selector.get(key) is not None for key in scope_keys):
+                    raise ValueError(
+                        "selector must include id or candidate scope for event update/delete"
+                    )
+            elif event_type not in _EVENT_TYPES:
                 raise ValueError(f"unsupported event_type: {event_type!r}")
 
         payload = {
