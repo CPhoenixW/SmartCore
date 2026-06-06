@@ -47,6 +47,7 @@ from app.feishu.security import (
     verify_timestamp,
     verify_token,
 )
+from app.operations.parser import ParsedOperation
 from app.secretary.rules import DEFAULT_TZ
 
 TEST_TOKEN = "test-verification-token"
@@ -645,6 +646,59 @@ def test_event_handler_llm_free_form_message_creates_pending_card(
     assert log.parsed_command == "create_life_event"
     assert log.reply_status == "ok"
     mock_feishu_client.send_interactive_card.assert_called_once()
+
+
+def test_event_handler_llm_query_event_replies_without_pending_operation(
+    feishu_settings,
+    mock_feishu_client,
+    db_session,
+):
+    crud.create_assignment(db_session, title="线代作业")
+    crud.create_life_event(db_session, title="买电池")
+
+    class FakeOperationParser:
+        def parse(self, text: str, *, source: str, now=None):
+            assert text == "查一下还有什么事件"
+            return ParsedOperation(
+                source=source,
+                raw_text=text,
+                action_name="query_event",
+                payload={
+                    "operation": "query",
+                    "resource": "event",
+                    "selector": {},
+                    "fields": {"event_type": "all", "status": "open"},
+                },
+                confidence=0.9,
+                needs_confirmation=False,
+            )
+
+    handler = FeishuEventHandler(
+        feishu_settings,
+        client=mock_feishu_client,
+        operation_parser=FakeOperationParser(),
+    )
+    body = json.dumps(_message_event("查一下还有什么事件"))
+
+    status, payload = handler.handle(
+        body.encode(),
+        _signed_headers(body),
+        db_session,
+        now=FIXED_NOW,
+    )
+
+    assert status == 200
+    assert payload["code"] == 0
+    assert db_session.query(PendingOperation).count() == 0
+    reply_text = mock_feishu_client.send_text.call_args[0][1]
+    assert "事件查询" in reply_text
+    assert "线代作业" in reply_text
+    assert "买电池" in reply_text
+    mock_feishu_client.send_interactive_card.assert_not_called()
+    log = db_session.query(MessageLog).order_by(MessageLog.id.desc()).first()
+    assert log is not None
+    assert log.parsed_command == "query_event"
+    assert log.reply_status == "ok"
 
 
 def test_event_handler_ignores_duplicate_free_form_message_id(

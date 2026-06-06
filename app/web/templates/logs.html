@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}运行日志 · SmartCore{% endblock %}
+
+{% block content %}
+<section class="page-header">
+  <h2>运行日志</h2>
+  <p>最近飞书消息解析与操作执行审计。</p>
+</section>
+
+<section class="card">
+  <h3>飞书消息日志</h3>
+  {% if message_logs %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>来源</th>
+        <th>外部消息 ID</th>
+        <th>原始内容</th>
+        <th>解析命令</th>
+        <th>回复状态</th>
+        <th>创建时间</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for log in message_logs %}
+      <tr>
+        <td>{{ log.source }}</td>
+        <td>{{ log.external_message_id or "—" }}</td>
+        <td>{{ log.raw_content or "—" }}</td>
+        <td>{{ log.parsed_command or "—" }}</td>
+        <td>{{ log.reply_status or "—" }}</td>
+        <td>{{ log.created_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>暂无消息日志。</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h3>操作审计</h3>
+  {% if recent_operations %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>编号</th>
+        <th>原始命令</th>
+        <th>操作</th>
+        <th>状态</th>
+        <th>结果资源</th>
+        <th>错误信息</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for op in recent_operations %}
+      <tr>
+        <td>#{{ op.id }}</td>
+        <td>{{ op.raw_text }}</td>
+        <td>{{ op.action_name }}</td>
+        <td><span class="status status-{{ op.status }}">{{ op.status }}</span></td>
+        <td>
+          {% if op.result_resource_type and op.result_resource_id %}
+          {{ op.result_resource_type }} #{{ op.result_resource_id }}
+          {% else %}
+          —
+          {% endif %}
+        </td>
+        <td>{{ op.error_message or "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>暂无近期操作记录。</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -70,6 +70,41 @@ Operation 是系统接收输入后的标准执行草案。它不是数据库写�
 
 这些低风险查询不进入 pending confirmation；它们应直接查询 Resource/Secretary 层并即时回复，同时 `message_logs.parsed_command` 必须记录实际查询命令，例如 `today` 或 `todos`，不能把已支持自然问法记录为 `help`。
 
+### 第一阶段：LLM 事件接口
+
+大模型面向 Action Layer 的主接口必须收敛为统一事件协议，而不是直接暴露内部表名或提醒队列表。
+
+统一事件资源：
+
+- `resource`: 固定为 `event`。
+- `operation`: `create`、`update`、`delete`、`query` 四种；兼容模型输出 `read`，归一化为 `query`。
+- `fields.event_type`: 三类用户可见事件之一：
+  - `course_session`：课程/上课事件，映射到 `courses` + `course_sessions`。
+  - `assignment`：作业/DDL 事件，映射到 `assignments`。
+  - `life_event`：生活事项/个人安排，映射到 `life_events`。
+- `selector`: 修改、删除、精确查询已有事件时必须包含 `id`，并应包含 `event_type`；缺失时由 `fields.event_type` 补齐。
+- `fields`: 事件字段，例如 `title`、`course_name`、`due_at`、`scheduled_at`、`deadline_at`、`weekday`、`start_time`、`end_time`、`notes`、`reminder_lead_minutes`。
+
+Action 名称边界：
+
+- `create_event`：新增三类事件；`assignment` 和 `life_event` 默认需要确认。
+- `update_event`：修改已有事件；必须确认。
+- `delete_event`：删除语义先实现为软删除/取消；必须确认。
+- `query_event`：查询事件；低风险，直接执行并回复，不进入 pending。
+
+内部资源边界：
+
+- `reminder` 是内部提醒队列，不是用户直接创建的事件类型。用户说“提醒我……”时应输出 `resource=event`、`event_type=life_event`，并通过 `reminder_lead_minutes` 表达提前提醒。
+- 旧格式 `create_assignment`、`create_life_event`、`update_reminder`、`cancel_reminder` 暂时兼容，但新增能力优先走统一事件协议。
+
+### 可观测性
+
+Web 面板必须能直接查看最近输入和执行链路：
+
+- `/dashboard/logs` 展示最近 `message_logs`，包含来源、外部消息 ID、原始内容、解析命令、回复状态和创建时间。
+- 同页展示最近 `pending_operations`，包含原始命令、Action、状态、结果资源和错误信息。
+- 飞书自然语言解析失败必须在应用日志里记录错误；前端至少能通过 `message_logs.reply_status=help` 发现用户看到了降级帮助。
+
 ## 执行侧：Action
 
 Action 是业务动作边界。接口层、LLM 层、飞书层都不能直接写复杂业务逻辑，必须调用 Action。

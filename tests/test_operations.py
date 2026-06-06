@@ -6,7 +6,10 @@ from app.actions.executor import ActionExecutor
 from app.db import crud
 from app.db.models import (
     Assignment,
+    AssignmentStatus,
+    CourseSession,
     LifeEvent,
+    LifeEventStatus,
     PendingOperation,
     PendingOperationStatus,
     Reminder,
@@ -163,6 +166,215 @@ def test_pending_life_event_confirm_respects_custom_reminder_lead_minutes(
     if reminder_at is not None and reminder_at.tzinfo is None:
         reminder_at = reminder_at.replace(tzinfo=DEFAULT_TZ)
     assert reminder_at == scheduled_at - timedelta(minutes=30)
+
+
+def test_event_interface_create_supports_three_event_types(db_session) -> None:
+    operations = [
+        ParsedOperation(
+            source="feishu",
+            raw_text="新增作业",
+            action_name="create_event",
+            payload={
+                "operation": "create",
+                "resource": "event",
+                "selector": {},
+                "fields": {
+                    "event_type": "assignment",
+                    "title": "线代作业",
+                    "due_at": "2026-06-10T20:00:00+08:00",
+                },
+            },
+            confidence=0.9,
+            needs_confirmation=True,
+        ),
+        ParsedOperation(
+            source="feishu",
+            raw_text="新增生活事项",
+            action_name="create_event",
+            payload={
+                "operation": "create",
+                "resource": "event",
+                "selector": {},
+                "fields": {
+                    "event_type": "life_event",
+                    "title": "吃饭",
+                    "scheduled_at": "2026-06-05T22:00:00+08:00",
+                    "reminder_lead_minutes": 15,
+                },
+            },
+            confidence=0.9,
+            needs_confirmation=True,
+        ),
+        ParsedOperation(
+            source="feishu",
+            raw_text="新增课程",
+            action_name="create_event",
+            payload={
+                "operation": "create",
+                "resource": "event",
+                "selector": {},
+                "fields": {
+                    "event_type": "course_session",
+                    "course_name": "物理",
+                    "teacher": "Dr. Lee",
+                    "weekday": 2,
+                    "start_time": "10:00",
+                    "end_time": "11:40",
+                    "location": "B201",
+                },
+            },
+            confidence=0.9,
+            needs_confirmation=True,
+        ),
+    ]
+
+    for operation in operations:
+        pending = create_pending_operation(db_session, operation)
+        applied = ActionExecutor(db_session).confirm_and_apply(pending.id)
+        assert applied.status == PendingOperationStatus.APPLIED.value
+
+    assert db_session.query(Assignment).filter_by(title="线代作业").one()
+    event = db_session.query(LifeEvent).filter_by(title="吃饭").one()
+    reminder = db_session.query(Reminder).filter_by(target_type="life_event").one()
+    session = db_session.query(CourseSession).one()
+    assert reminder.target_id == event.id
+    assert session.course.name == "物理"
+    assert session.location_override == "B201"
+
+
+def test_event_interface_update_and_delete_events(db_session) -> None:
+    assignment = crud.create_assignment(db_session, title="旧作业")
+    life_event = crud.create_life_event(db_session, title="旧事项")
+
+    update = ParsedOperation(
+        source="feishu",
+        raw_text="修改事项",
+        action_name="update_event",
+        payload={
+            "operation": "update",
+            "resource": "event",
+            "selector": {"event_type": "life_event", "id": life_event.id},
+            "fields": {
+                "title": "新事项",
+                "scheduled_at": "2026-06-05T21:00:00+08:00",
+                "notes": "updated",
+            },
+        },
+        confidence=0.9,
+        needs_confirmation=True,
+    )
+    delete = ParsedOperation(
+        source="feishu",
+        raw_text="删除作业",
+        action_name="delete_event",
+        payload={
+            "operation": "delete",
+            "resource": "event",
+            "selector": {"event_type": "assignment", "id": assignment.id},
+            "fields": {},
+        },
+        confidence=0.9,
+        needs_confirmation=True,
+    )
+
+    ActionExecutor(db_session).confirm_and_apply(create_pending_operation(db_session, update).id)
+    ActionExecutor(db_session).confirm_and_apply(create_pending_operation(db_session, delete).id)
+
+    db_session.refresh(assignment)
+    db_session.refresh(life_event)
+    assert assignment.status == AssignmentStatus.CANCELLED.value
+    assert life_event.title == "新事项"
+    assert life_event.notes == "updated"
+    scheduled_at = life_event.scheduled_at
+    if scheduled_at is not None and scheduled_at.tzinfo is None:
+        scheduled_at = scheduled_at.replace(tzinfo=DEFAULT_TZ)
+    assert scheduled_at == datetime(2026, 6, 5, 21, 0, tzinfo=DEFAULT_TZ)
+
+
+def test_event_interface_update_and_delete_course_session(db_session) -> None:
+    course = crud.create_course(db_session, name="物理")
+    session = crud.create_course_session(
+        db_session,
+        course_id=course.id,
+        weekday=2,
+        start_time="10:00",
+        end_time="11:40",
+        location_override="B201",
+    )
+
+    update = ParsedOperation(
+        source="feishu",
+        raw_text="修改课程",
+        action_name="update_event",
+        payload={
+            "operation": "update",
+            "resource": "event",
+            "selector": {"event_type": "course_session", "id": session.id},
+            "fields": {
+                "weekday": 3,
+                "start_time": "14:00",
+                "end_time": "15:40",
+                "location": "C301",
+            },
+        },
+        confidence=0.9,
+        needs_confirmation=True,
+    )
+
+    applied = ActionExecutor(db_session).confirm_and_apply(
+        create_pending_operation(db_session, update).id
+    )
+
+    db_session.refresh(session)
+    assert applied.status == PendingOperationStatus.APPLIED.value
+    assert session.weekday == 3
+    assert session.start_time == "14:00"
+    assert session.end_time == "15:40"
+    assert session.location_override == "C301"
+
+    delete = ParsedOperation(
+        source="feishu",
+        raw_text="删除课程",
+        action_name="delete_event",
+        payload={
+            "operation": "delete",
+            "resource": "event",
+            "selector": {"event_type": "course_session", "id": session.id},
+            "fields": {},
+        },
+        confidence=0.9,
+        needs_confirmation=True,
+    )
+
+    deleted = ActionExecutor(db_session).confirm_and_apply(
+        create_pending_operation(db_session, delete).id
+    )
+
+    assert deleted.status == PendingOperationStatus.APPLIED.value
+    assert db_session.get(CourseSession, session.id) is None
+
+
+def test_event_interface_query_events(db_session) -> None:
+    crud.create_assignment(db_session, title="待交作业")
+    done_assignment = crud.create_assignment(db_session, title="已完成作业")
+    done_assignment.status = AssignmentStatus.DONE.value
+    crud.create_life_event(db_session, title="待做事项")
+    cancelled_event = crud.create_life_event(db_session, title="已取消事项")
+    cancelled_event.status = LifeEventStatus.CANCELLED.value
+    db_session.commit()
+
+    results = ActionExecutor(db_session).query_events(
+        {
+            "operation": "query",
+            "resource": "event",
+            "selector": {},
+            "fields": {"event_type": "all", "status": "open"},
+        }
+    )
+
+    titles = {item["title"] for item in results}
+    assert titles == {"待交作业", "待做事项"}
+    assert {item["event_type"] for item in results} == {"assignment", "life_event"}
 
 
 def test_pending_update_reminder_confirm_executes_action(db_session) -> None:

@@ -10,13 +10,20 @@ import httpx
 from app.operations.parser import ParsedOperation
 
 _SUPPORTED_LEGACY_ACTIONS = frozenset({"create_assignment", "create_life_event"})
-_SUPPORTED_RESOURCES = frozenset({"assignment", "life_event", "reminder"})
-_SUPPORTED_OPERATIONS = frozenset({"create", "read", "update", "cancel"})
+_SUPPORTED_RESOURCES = frozenset({"assignment", "life_event", "reminder", "event"})
+_SUPPORTED_OPERATIONS = frozenset({"create", "read", "update", "cancel", "delete", "query"})
+_EVENT_TYPES = frozenset({"course_session", "assignment", "life_event"})
 _UNIFIED_WRITE_ACTIONS = {
     ("create", "assignment"): "create_assignment",
     ("create", "life_event"): "create_life_event",
     ("update", "reminder"): "update_reminder",
     ("cancel", "reminder"): "cancel_reminder",
+}
+_EVENT_ACTIONS = {
+    "create": "create_event",
+    "update": "update_event",
+    "delete": "delete_event",
+    "query": "query_event",
 }
 
 _SYSTEM_PROMPT = """\
@@ -24,22 +31,29 @@ _SYSTEM_PROMPT = """\
 
 只返回一个 JSON 对象，不要 markdown 代码块，不要额外说明。
 
-优先使用统一协议字段：
-- operation: create/read/update/cancel 之一
-- resource: life_event、assignment 或 reminder
-- selector: 定位已有资源，例如 {"id": 12}
-- fields: 资源字段对象
+优先使用统一 event 协议（resource=event）：
+- operation: create/update/delete/query（兼容 read，归一化为 query）
+- resource: 固定为 event
+- fields.event_type: course_session、assignment 或 life_event 之一
+- selector: 修改/删除/精确查询已有事件时含 id 和 event_type
+- fields: 事件字段，如 title、course_name、due_at、scheduled_at、deadline_at、
+  weekday、start_time、end_time、location、notes、reminder_lead_minutes
 - confidence: 0 到 1 的浮点数
-- needs_confirmation: 布尔值，写操作应为 true
+- needs_confirmation: 布尔值；query 应为 false，写操作应为 true
 
-也兼容旧格式 action_name/resource/fields。
+也兼容旧格式 operation/resource/selector/fields：
+- resource=life_event、assignment 或 reminder
+- operation=create/read/update/cancel
 
-create + assignment: fields 含 title、due_at（ISO 8601 带时区）。
-create + life_event: fields 含 title、scheduled_at、deadline_at、reminder_rule、notes、
-reminder_lead_minutes；带计划时间的事项应输出 scheduled_at 和 reminder_lead_minutes，
-若用户未指定提前多久提醒，reminder_lead_minutes 默认为 15。
-当用户说“提醒我……”并给出时间时，必须输出 create + life_event，不要输出
-create + reminder；Reminder 是系统内部发送队列，不是用户直接创建的资源。
+create + event + assignment: fields 含 event_type=assignment、title、due_at。
+create + event + life_event: fields 含 event_type=life_event、title、scheduled_at 等。
+create + event + course_session: fields 含 event_type=course_session、course_name、
+weekday、start_time、end_time、location 等。
+update/delete + event: selector 必须含 id 和 event_type。
+query + event: fields 含 event_type（all/assignment/life_event/course_session）和 status。
+
+当用户说“提醒我……”并给出时间时，必须输出 create + event + life_event，
+不要输出 create + reminder；Reminder 是系统内部发送队列，不是用户直接创建的资源。
 update + reminder: selector 必须含 id，fields 含 scheduled_at（ISO 8601 带时区）。
 cancel + reminder: selector 必须含 id，fields 可为空对象。
 """
@@ -156,6 +170,8 @@ class DeepSeekOperationParser:
         self, data: dict[str, Any]
     ) -> tuple[str, dict[str, Any]]:
         operation = data.get("operation")
+        if operation == "read":
+            operation = "query"
         if operation not in _SUPPORTED_OPERATIONS:
             raise ValueError(f"unsupported operation: {operation!r}")
         resource = data.get("resource")
@@ -168,6 +184,9 @@ class DeepSeekOperationParser:
         fields = data.get("fields")
         if not isinstance(fields, dict):
             fields = {}
+
+        if resource == "event":
+            return self._normalize_event_operation(operation, selector, fields)
 
         if operation == "create" and resource == "reminder":
             return self._normalize_create_reminder_as_life_event(selector, fields)
@@ -189,6 +208,39 @@ class DeepSeekOperationParser:
         payload = {
             "operation": operation,
             "resource": resource,
+            "selector": selector,
+            "fields": fields,
+        }
+        return action_name, payload
+
+    def _normalize_event_operation(
+        self,
+        operation: str,
+        selector: dict[str, Any],
+        fields: dict[str, Any],
+    ) -> tuple[str, dict[str, Any]]:
+        if operation not in _EVENT_ACTIONS:
+            raise ValueError(f"unsupported event operation: {operation!r}")
+
+        action_name = _EVENT_ACTIONS[operation]
+        event_type = selector.get("event_type") or fields.get("event_type")
+
+        if operation == "create":
+            if event_type not in _EVENT_TYPES:
+                raise ValueError(f"unsupported event_type: {event_type!r}")
+            if event_type in ("assignment", "life_event") and not fields.get("title"):
+                raise ValueError("fields must include title")
+            if event_type == "course_session" and not fields.get("course_name"):
+                raise ValueError("fields must include course_name for course_session")
+        elif operation in ("update", "delete"):
+            if selector.get("id") is None:
+                raise ValueError("selector must include id for event update/delete")
+            if event_type not in _EVENT_TYPES:
+                raise ValueError(f"unsupported event_type: {event_type!r}")
+
+        payload = {
+            "operation": operation,
+            "resource": "event",
             "selector": selector,
             "fields": fields,
         }

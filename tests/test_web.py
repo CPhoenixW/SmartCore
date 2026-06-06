@@ -10,6 +10,7 @@ from app.db import crud
 from app.db.models import (
     Assignment,
     LifeEvent,
+    MessageLog,
     PendingOperationStatus,
     ReminderStatus,
 )
@@ -27,6 +28,7 @@ DASHBOARD_ROUTES = [
     "/dashboard/life-events",
     "/dashboard/reminders",
     "/dashboard/pending-operations",
+    "/dashboard/logs",
 ]
 
 
@@ -51,6 +53,14 @@ def test_dashboard_root_redirects_to_today(web_client):
     response = web_client.get("/dashboard", follow_redirects=False)
     assert response.status_code == 303
     assert response.headers["location"] == "/dashboard/today"
+
+
+def test_dashboard_static_css_loads(web_client):
+    response = web_client.get("/dashboard/static/style.css")
+
+    assert response.status_code == 200
+    assert "text/css" in response.headers["content-type"]
+    assert ":root" in response.text
 
 
 def test_create_assignment_via_web_form(web_client, db_session):
@@ -284,3 +294,35 @@ def test_pending_operations_page_shows_recent_operation_audit(web_client, db_ses
     assert "失败操作" in response.text
     assert "failed" in response.text
     assert "simulated failure" in response.text
+
+
+def test_logs_page_shows_message_logs_and_operation_audit(web_client, db_session):
+    db_session.add(
+        MessageLog(
+            source="feishu",
+            external_message_id="om_help",
+            raw_content="晚上十点提醒我写作业",
+            parsed_command="help",
+            reply_status="help",
+        )
+    )
+    parsed = RuleBasedOperationParser(tz=DEFAULT_TZ).parse(
+        "添加事项 失败操作",
+        source="feishu",
+    )
+    pending = create_pending_operation(db_session, parsed)
+    pending.status = PendingOperationStatus.FAILED.value
+    pending.error_message = "schema mismatch"
+    db_session.commit()
+
+    response = web_client.get("/dashboard/logs")
+
+    assert response.status_code == 200
+    assert "运行日志" in response.text
+    assert "飞书消息日志" in response.text
+    assert "晚上十点提醒我写作业" in response.text
+    assert "om_help" in response.text
+    assert "help" in response.text
+    assert "操作审计" in response.text
+    assert "失败操作" in response.text
+    assert "schema mismatch" in response.text

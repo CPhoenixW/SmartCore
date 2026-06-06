@@ -66,11 +66,14 @@ def build_operation_parser(settings: Settings) -> CompositeOperationParser:
     return CompositeOperationParser(rule_parser=rule_parser, llm_parser=llm_parser)
 
 
-def _format_pending_reply(pending_id: int) -> str:
-    return (
-        f"待确认操作 #{pending_id}\n"
-        f"请回复：确认 {pending_id} / 拒绝 {pending_id}"
-    )
+def _format_query_event_reply(events: list[dict]) -> str:
+    lines = ["【事件查询】"]
+    if not events:
+        lines.append("暂无匹配事件。")
+    else:
+        for item in events:
+            lines.append(f"- {item['title']}")
+    return "\n".join(lines)
 
 
 def _format_confirm_reply(pending: PendingOperation) -> str:
@@ -298,7 +301,17 @@ class FeishuEventHandler:
                     semester_start=self.settings.semester_start,
                 )
             )
+        if parsed.action_name == "query_event":
+            return self._query_event_reply(db, parsed)
         return self._pending_operation_card_reply(db, parsed)
+
+    def _query_event_reply(self, db: Session, parsed: ParsedOperation) -> FeishuReply:
+        events = ActionExecutor(db).query_events(parsed.payload)
+        return FeishuReply(
+            text=_format_query_event_reply(events),
+            parsed_command="query_event",
+            reply_status="ok",
+        )
 
     def _create_pending_operation_reply(self, db: Session, text: str) -> FeishuReply:
         try:

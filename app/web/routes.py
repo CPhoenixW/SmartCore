@@ -19,6 +19,7 @@ from app.db.models import (
     Course,
     LifeEvent,
     LifeEventStatus,
+    MessageLog,
     PendingOperation,
     PendingOperationStatus,
     Reminder,
@@ -45,7 +46,6 @@ def _parse_datetime_local(value: str | None, tz: ZoneInfo) -> datetime | None:
 
 def create_web_router() -> APIRouter:
     router = APIRouter(prefix="/dashboard", tags=["web"])
-    router.mount("/static", StaticFiles(directory=str(WEB_DIR / "static")), name="web-static")
 
     @router.get("", include_in_schema=False)
     def dashboard_root() -> RedirectResponse:
@@ -429,4 +429,48 @@ def create_web_router() -> APIRouter:
             db.commit()
         return RedirectResponse(url="/dashboard/pending-operations", status_code=303)
 
+    @router.get("/logs", response_class=HTMLResponse)
+    def logs_page(
+        request: Request,
+        db: Session = Depends(get_db),
+    ) -> HTMLResponse:
+        message_logs = (
+            db.query(MessageLog)
+            .order_by(MessageLog.created_at.desc())
+            .limit(100)
+            .all()
+        )
+        recent_operations = (
+            db.query(PendingOperation)
+            .filter(
+                PendingOperation.status.in_(
+                    [
+                        PendingOperationStatus.APPLIED.value,
+                        PendingOperationStatus.REJECTED.value,
+                        PendingOperationStatus.FAILED.value,
+                    ]
+                )
+            )
+            .order_by(PendingOperation.created_at.desc())
+            .limit(50)
+            .all()
+        )
+        return templates.TemplateResponse(
+            request,
+            "logs.html",
+            {
+                "active_page": "logs",
+                "message_logs": message_logs,
+                "recent_operations": recent_operations,
+            },
+        )
+
     return router
+
+
+def mount_web_static(app) -> None:
+    app.mount(
+        "/dashboard/static",
+        StaticFiles(directory=str(WEB_DIR / "static")),
+        name="web-static",
+    )
