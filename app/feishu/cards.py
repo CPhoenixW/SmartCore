@@ -49,18 +49,26 @@ def build_pending_operation_card(
 ) -> dict[str, Any]:
     fields = payload.get("fields", {})
     title = fields.get("title", "")
+    event_type = fields.get("event_type")
     detail_lines = [
         f"原始命令：{raw_text}",
         f"操作：{action_name}",
         f"资源：{payload.get('resource', '')}",
     ]
-    if action_name == "create_life_event":
-        detail_lines.extend(_format_life_event_detail_lines(fields, tz))
+    if event_type:
+        detail_lines.append(f"事件类型：{event_type}")
+    if event_type == "life_event":
+        detail_lines.extend(
+            _format_life_event_detail_lines(
+                {k: v for k, v in fields.items() if k != "event_type"},
+                tz,
+            )
+        )
     else:
         if title:
             detail_lines.append(f"标题：{title}")
         for key, value in fields.items():
-            if key == "title" or value in (None, ""):
+            if key in {"title", "event_type"} or value in (None, ""):
                 continue
             detail_lines.append(f"{key}：{value}")
 

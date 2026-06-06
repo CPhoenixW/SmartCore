@@ -519,7 +519,9 @@ def test_event_handler_add_assignment_creates_pending_operation(
     assert db_session.query(Assignment).count() == 0
     pending = db_session.query(PendingOperation).one()
     assert pending.status == PendingOperationStatus.PENDING.value
-    assert pending.action_name == "create_assignment"
+    assert pending.action_name == "create_event"
+    assert pending.operation_payload["resource"] == "event"
+    assert pending.operation_payload["fields"]["event_type"] == "assignment"
     mock_feishu_client.send_interactive_card.assert_called_once()
     card = mock_feishu_client.send_interactive_card.call_args.kwargs["card"]
     serialized = json.dumps(card, ensure_ascii=False)
@@ -534,10 +536,13 @@ def test_pending_operation_card_shows_event_and_reminder_times():
     card = build_pending_operation_card(
         operation_id=42,
         raw_text="晚上8点提醒我洗澡",
-        action_name="create_life_event",
+        action_name="create_event",
         payload={
-            "resource": "life_event",
+            "operation": "create",
+            "resource": "event",
+            "selector": {},
             "fields": {
+                "event_type": "life_event",
                 "title": "洗澡",
                 "scheduled_at": "2026-06-05T20:00:00+08:00",
                 "reminder_lead_minutes": 15,
@@ -572,8 +577,9 @@ def test_event_handler_strips_group_mention_before_parsing_operation(
     assert db_session.query(Assignment).count() == 0
     pending = db_session.query(PendingOperation).one()
     assert pending.status == PendingOperationStatus.PENDING.value
-    assert pending.action_name == "create_assignment"
+    assert pending.action_name == "create_event"
     assert pending.raw_text == "添加作业 群聊作业 2026-03-05"
+    assert pending.operation_payload["fields"]["event_type"] == "assignment"
     assert pending.operation_payload["fields"]["title"] == "群聊作业"
     mock_feishu_client.send_interactive_card.assert_called_once()
 
@@ -639,11 +645,12 @@ def test_event_handler_llm_free_form_message_creates_pending_card(
     assert status == 200
     assert payload["code"] == 0
     pending = db_session.query(PendingOperation).one()
-    assert pending.action_name == "create_life_event"
+    assert pending.action_name == "create_event"
+    assert pending.operation_payload["fields"]["event_type"] == "life_event"
     log = db_session.query(MessageLog).order_by(MessageLog.id.desc()).first()
     assert log is not None
     assert log.raw_content == "今晚八点提醒我做程设作业"
-    assert log.parsed_command == "create_life_event"
+    assert log.parsed_command == "create_event"
     assert log.reply_status == "ok"
     mock_feishu_client.send_interactive_card.assert_called_once()
 

@@ -14,8 +14,6 @@ from app.db.models import (
     LifeEventStatus,
     PendingOperation,
     PendingOperationStatus,
-    Reminder,
-    ReminderStatus,
 )
 
 
@@ -26,13 +24,9 @@ class ActionExecutor:
     def confirm_and_apply(self, operation_id: int) -> PendingOperation:
         pending = self._get_pending_operation(operation_id)
         handlers = {
-            "create_assignment": self._apply_create_assignment,
-            "create_life_event": self._apply_create_life_event,
             "create_event": self._apply_create_event,
             "update_event": self._apply_update_event,
             "delete_event": self._apply_delete_event,
-            "update_reminder": self._apply_update_reminder,
-            "cancel_reminder": self._apply_cancel_reminder,
         }
         handler = handlers.get(pending.action_name)
         if handler is None:
@@ -65,32 +59,11 @@ class ActionExecutor:
             raise ValueError(f"operation {operation_id} is not pending")
         return pending
 
-    def _apply_create_assignment(self, pending: PendingOperation) -> PendingOperation:
-        fields = pending.operation_payload.get("fields", {})
-        title = fields.get("title")
-        if not title:
-            pending.status = PendingOperationStatus.FAILED.value
-            pending.error_message = "missing assignment title"
-            self._db.commit()
-            self._db.refresh(pending)
-            return pending
-
-        due_at: datetime | None = None
-        raw_due_at = fields.get("due_at")
-        if raw_due_at:
-            due_at = datetime.fromisoformat(raw_due_at)
-
-        assignment = crud.create_assignment(self._db, title=title, due_at=due_at)
-        pending.status = PendingOperationStatus.APPLIED.value
-        pending.result_resource_type = "assignment"
-        pending.result_resource_id = assignment.id
-        pending.error_message = None
-        self._db.commit()
-        self._db.refresh(pending)
-        return pending
-
-    def _apply_create_life_event(self, pending: PendingOperation) -> PendingOperation:
-        fields = pending.operation_payload.get("fields", {})
+    def _create_life_event_from_fields(
+        self,
+        pending: PendingOperation,
+        fields: dict,
+    ) -> PendingOperation:
         title = fields.get("title")
         if not title:
             pending.status = PendingOperationStatus.FAILED.value
@@ -248,11 +221,7 @@ class ActionExecutor:
         self, pending: PendingOperation, fields: dict
     ) -> PendingOperation:
         life_fields = {k: v for k, v in fields.items() if k != "event_type"}
-        pending.operation_payload = {
-            **pending.operation_payload,
-            "fields": life_fields,
-        }
-        return self._apply_create_life_event(pending)
+        return self._create_life_event_from_fields(pending, life_fields)
 
     def _create_event_course_session(
         self, pending: PendingOperation, fields: dict
@@ -462,99 +431,6 @@ class ActionExecutor:
 
         pending.status = PendingOperationStatus.FAILED.value
         pending.error_message = f"unsupported event_type for delete: {event_type}"
-        self._db.commit()
-        self._db.refresh(pending)
-        return pending
-
-    def _apply_update_reminder(self, pending: PendingOperation) -> PendingOperation:
-        selector = pending.operation_payload.get("selector") or {}
-        reminder_id = selector.get("id")
-        if reminder_id is None:
-            pending.status = PendingOperationStatus.FAILED.value
-            pending.error_message = "missing reminder id"
-            self._db.commit()
-            self._db.refresh(pending)
-            return pending
-
-        reminder = self._db.get(Reminder, reminder_id)
-        if reminder is None:
-            pending.status = PendingOperationStatus.FAILED.value
-            pending.error_message = f"reminder not found: {reminder_id}"
-            self._db.commit()
-            self._db.refresh(pending)
-            return pending
-
-        if reminder.status != ReminderStatus.PENDING.value:
-            pending.status = PendingOperationStatus.FAILED.value
-            pending.error_message = (
-                f"reminder #{reminder_id} cannot be updated in status {reminder.status}"
-            )
-            self._db.commit()
-            self._db.refresh(pending)
-            return pending
-
-        fields = pending.operation_payload.get("fields") or {}
-        raw_scheduled_at = fields.get("scheduled_at")
-        if not raw_scheduled_at:
-            pending.status = PendingOperationStatus.FAILED.value
-            pending.error_message = "missing scheduled_at"
-            self._db.commit()
-            self._db.refresh(pending)
-            return pending
-
-        reminder.scheduled_at = datetime.fromisoformat(raw_scheduled_at)
-        pending.status = PendingOperationStatus.APPLIED.value
-        pending.result_resource_type = "reminder"
-        pending.result_resource_id = reminder.id
-        pending.error_message = None
-        self._db.commit()
-        self._db.refresh(pending)
-        return pending
-
-    def _apply_cancel_reminder(self, pending: PendingOperation) -> PendingOperation:
-        selector = pending.operation_payload.get("selector") or {}
-        reminder_id = selector.get("id")
-        if reminder_id is None:
-            pending.status = PendingOperationStatus.FAILED.value
-            pending.error_message = "missing reminder id"
-            self._db.commit()
-            self._db.refresh(pending)
-            return pending
-
-        reminder = self._db.get(Reminder, reminder_id)
-        if reminder is None:
-            pending.status = PendingOperationStatus.FAILED.value
-            pending.error_message = f"reminder not found: {reminder_id}"
-            self._db.commit()
-            self._db.refresh(pending)
-            return pending
-
-        if reminder.status == ReminderStatus.SENT.value:
-            pending.status = PendingOperationStatus.FAILED.value
-            pending.error_message = f"reminder #{reminder_id} already sent, cannot cancel"
-            pending.result_resource_type = "reminder"
-            pending.result_resource_id = reminder.id
-            self._db.commit()
-            self._db.refresh(pending)
-            return pending
-
-        if reminder.status not in (
-            ReminderStatus.PENDING.value,
-            ReminderStatus.FAILED.value,
-        ):
-            pending.status = PendingOperationStatus.FAILED.value
-            pending.error_message = (
-                f"reminder #{reminder_id} cannot be cancelled in status {reminder.status}"
-            )
-            self._db.commit()
-            self._db.refresh(pending)
-            return pending
-
-        reminder.status = ReminderStatus.CANCELLED.value
-        pending.status = PendingOperationStatus.APPLIED.value
-        pending.result_resource_type = "reminder"
-        pending.result_resource_id = reminder.id
-        pending.error_message = None
         self._db.commit()
         self._db.refresh(pending)
         return pending

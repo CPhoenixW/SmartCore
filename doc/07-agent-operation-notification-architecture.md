@@ -51,7 +51,7 @@ Operation 是系统接收输入后的标准执行草案。它不是数据库写�
 
 - `source`：输入来源，例如 `feishu`、`web`、`internal_api`。
 - `raw_text`：原始输入。
-- `action_name`：准备执行的 Action，例如 `create_assignment`。
+- `action_name`：准备执行的 Action，例如 `create_event`、`update_event`、`delete_event`、`query_event`。
 - `operation_payload`：结构化参数 JSON。
 - `confidence`：语义解析置信度。
 - `status`：`pending`、`confirmed`、`applied`、`rejected`、`failed`。
@@ -95,7 +95,7 @@ Action 名称边界：
 内部资源边界：
 
 - `reminder` 是内部提醒队列，不是用户直接创建的事件类型。用户说“提醒我……”时应输出 `resource=event`、`event_type=life_event`，并通过 `reminder_lead_minutes` 表达提前提醒。
-- 旧格式 `create_assignment`、`create_life_event`、`update_reminder`、`cancel_reminder` 暂时兼容，但新增能力优先走统一事件协议。
+- LLM 和规则写入入口不得再产生 `create_assignment`、`create_life_event`、`update_reminder`、`cancel_reminder` 等旧 Action；历史 pending operation 如果仍携带这些 action，应失败并进入审计，而不是继续扩散旧协议。
 
 ### 可观测性
 
@@ -111,10 +111,10 @@ Action 是业务动作边界。接口层、LLM 层、飞书层都不能直接写
 
 第一批标准 Action：
 
-- `create_assignment`
-- `create_life_event`
-- `complete_item`
-- `postpone_reminder`
+- `create_event`
+- `update_event`
+- `delete_event`
+- `query_event`
 - `confirm_operation`
 - `reject_operation`
 
@@ -221,8 +221,8 @@ Notification Dispatcher 只负责发送队列中的通知，并写 delivery。�
 
 - 规则命令继续本地解析。
 - 规则不认识的写操作调用 DeepSeek，把自然语言转成 `PendingOperation`。
-- 例如 `今晚八点提醒我做程设作业` 应转为 `create_life_event`，字段包含 `title` 与 `scheduled_at`。
-- 带计划时间的 `create_life_event` 在用户确认后必须同时创建事件前提醒；默认提前 15 分钟，用户输入指定“提前 X 分钟/小时提醒”时，语义层应输出 `fields.reminder_lead_minutes`，执行层按该值覆盖默认提前量。
+- 例如 `今晚八点提醒我做程设作业` 应转为 `create_event`，字段包含 `event_type=life_event`、`title` 与 `scheduled_at`。
+- 带计划时间的 `life_event` 在用户确认后必须同时创建事件前提醒；默认提前 15 分钟，用户输入指定“提前 X 分钟/小时提醒”时，语义层应输出 `fields.reminder_lead_minutes`，执行层按该值覆盖默认提前量。
 - 飞书回复必须使用交互卡片展示操作摘要，包含“确认”“修改命令”“拒绝”三个入口。
 - “确认”“拒绝”按钮通过 `card.action.trigger` 回调执行，不依赖用户手动输入 `确认 <id>`。
 - “修改命令”跳转到 Tailscale 内网前端的 pending operation 页面。
@@ -251,16 +251,17 @@ Notification Dispatcher 只负责发送队列中的通知，并写 delivery。�
 - 已发送提醒不能取消或修改；失败提醒后续可通过重试策略处理，本阶段不改变调度器语义。
 - 所有修改都作用于现有 `reminders` 表，不改变事件、课程、作业等上游资源结构。
 
-## 第七阶段：LLM 统一 CRUD 输出协议
+## 第七阶段：LLM 统一事件输出协议
 
-语义层从“动作名优先”升级为“标准操作协议优先”，但不改变现有执行框架：
+语义层从“动作名优先”升级为唯一的事件操作协议：
 
-- DeepSeek 应优先输出 `operation/resource/selector/fields`。
-- `operation` 取值为 `create/read/update/cancel`；写操作仍需 `needs_confirmation=true`。
-- `resource` 目前先覆盖 `life_event`、`assignment`、`reminder`。
-- `selector` 用来定位已有资源，例如 `{"id": 12}`；多义或缺少定位信息时，应降低置信度或生成需要用户补充的信息。
-- 解析层把统一协议规范化为现有 `PendingOperation.action_name`，例如 `update + reminder` -> `update_reminder`，`cancel + reminder` -> `cancel_reminder`。
-- 执行层继续通过 `ActionExecutor.confirm_and_apply()` 执行确认后的写操作；本阶段只补 `reminder` 的 update/cancel，不重写框架。
+- DeepSeek 必须输出 `operation/resource/selector/fields`。
+- `operation` 取值为 `create/update/delete/query`；兼容模型输出 `read`，解析层归一化为 `query`；写操作仍需 `needs_confirmation=true`。
+- `resource` 固定为 `event`。
+- `fields.event_type` 固定为 `course_session`、`assignment`、`life_event` 三选一；查询可使用 `all`。
+- `selector` 用来定位已有事件，例如 `{"event_type": "life_event", "id": 12}`；多义或缺少定位信息时，应降低置信度或生成需要用户补充的信息。
+- 解析层只规范化为 `create_event`、`update_event`、`delete_event`、`query_event`。
+- Reminder 队列是调度内部资源，前端和显式飞书命令可管理队列，但 LLM 不直接增删改查 reminder。
 
 ## 第八阶段：失败回滚与操作审计
 

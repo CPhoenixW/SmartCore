@@ -35,8 +35,13 @@ class RuleBasedOperationParser:
             return ParsedOperation(
                 source=source,
                 raw_text=text,
-                action_name="create_assignment",
-                payload={"resource": "assignment", "fields": fields},
+                action_name="create_event",
+                payload={
+                    "operation": "create",
+                    "resource": "event",
+                    "selector": {},
+                    "fields": {"event_type": "assignment", **fields},
+                },
                 confidence=0.95,
                 needs_confirmation=True,
             )
@@ -47,8 +52,13 @@ class RuleBasedOperationParser:
             return ParsedOperation(
                 source=source,
                 raw_text=text,
-                action_name="create_life_event",
-                payload={"resource": "life_event", "fields": {"title": title}},
+                action_name="create_event",
+                payload={
+                    "operation": "create",
+                    "resource": "event",
+                    "selector": {},
+                    "fields": {"event_type": "life_event", "title": title},
+                },
                 confidence=0.95,
                 needs_confirmation=True,
             )

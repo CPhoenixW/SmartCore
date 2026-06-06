@@ -23,9 +23,10 @@ def test_deepseek_parser_converts_free_form_reminder_to_life_event() -> None:
                         "message": {
                             "content": json.dumps(
                                 {
-                                    "action_name": "create_life_event",
-                                    "resource": "life_event",
+                                    "operation": "create",
+                                    "resource": "event",
                                     "fields": {
+                                        "event_type": "life_event",
                                         "title": "做程设作业",
                                         "scheduled_at": "2026-06-05T20:00:00+08:00",
                                         "reminder_lead_minutes": 15,
@@ -55,12 +56,15 @@ def test_deepseek_parser_converts_free_form_reminder_to_life_event() -> None:
         now=datetime(2026, 6, 5, 9, 0, tzinfo=DEFAULT_TZ),
     )
 
-    assert operation.action_name == "create_life_event"
+    assert operation.action_name == "create_event"
     assert operation.needs_confirmation is True
     assert operation.confidence == 0.88
     assert operation.payload == {
-        "resource": "life_event",
+        "operation": "create",
+        "resource": "event",
+        "selector": {},
         "fields": {
+            "event_type": "life_event",
             "title": "做程设作业",
             "scheduled_at": "2026-06-05T20:00:00+08:00",
             "reminder_lead_minutes": 15,
@@ -71,7 +75,7 @@ def test_deepseek_parser_converts_free_form_reminder_to_life_event() -> None:
     assert "reminder_lead_minutes" in json.dumps(requests[0], ensure_ascii=False)
 
 
-def test_deepseek_parser_accepts_unified_update_reminder_operation() -> None:
+def test_deepseek_parser_accepts_unified_update_life_event_operation() -> None:
     requests: list[dict] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -85,8 +89,8 @@ def test_deepseek_parser_accepts_unified_update_reminder_operation() -> None:
                             "content": json.dumps(
                                 {
                                     "operation": "update",
-                                    "resource": "reminder",
-                                    "selector": {"id": 12},
+                                    "resource": "event",
+                                    "selector": {"event_type": "life_event", "id": 12},
                                     "fields": {
                                         "scheduled_at": "2026-06-05T20:30:00+08:00"
                                     },
@@ -110,23 +114,23 @@ def test_deepseek_parser_accepts_unified_update_reminder_operation() -> None:
     )
 
     operation = parser.parse(
-        "把 12 号提醒改到 20:30",
+        "把 12 号事项改到 20:30",
         source="feishu",
         now=datetime(2026, 6, 5, 9, 0, tzinfo=DEFAULT_TZ),
     )
 
-    assert operation.action_name == "update_reminder"
+    assert operation.action_name == "update_event"
     assert operation.payload == {
         "operation": "update",
-        "resource": "reminder",
-        "selector": {"id": 12},
+        "resource": "event",
+        "selector": {"event_type": "life_event", "id": 12},
         "fields": {"scheduled_at": "2026-06-05T20:30:00+08:00"},
     }
     assert operation.needs_confirmation is True
     prompt = json.dumps(requests[0], ensure_ascii=False)
     assert "operation" in prompt
     assert "selector" in prompt
-    assert "create/read/update/cancel" in prompt
+    assert "create/update/delete/query" in prompt
 
 
 def test_deepseek_parser_accepts_unified_event_interface() -> None:
@@ -235,7 +239,7 @@ def test_deepseek_parser_accepts_unified_event_interface() -> None:
     assert "life_event" in prompt
 
 
-def test_deepseek_parser_normalizes_create_reminder_to_life_event() -> None:
+def test_deepseek_parser_rejects_reminder_resource() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
@@ -270,26 +274,17 @@ def test_deepseek_parser_normalizes_create_reminder_to_life_event() -> None:
         transport=httpx.MockTransport(handler),
     )
 
-    operation = parser.parse(
-        "今晚十点提醒我吃饭",
-        source="feishu",
-        now=datetime(2026, 6, 5, 13, 40, tzinfo=DEFAULT_TZ),
-    )
+    import pytest
 
-    assert operation.action_name == "create_life_event"
-    assert operation.payload == {
-        "operation": "create",
-        "resource": "life_event",
-        "selector": {},
-        "fields": {
-            "title": "吃饭",
-            "scheduled_at": "2026-06-05T22:00:00+08:00",
-            "reminder_lead_minutes": 15,
-        },
-    }
+    with pytest.raises(ValueError, match="unsupported resource"):
+        parser.parse(
+            "今晚十点提醒我吃饭",
+            source="feishu",
+            now=datetime(2026, 6, 5, 13, 40, tzinfo=DEFAULT_TZ),
+        )
 
 
-def test_deepseek_parser_accepts_unified_cancel_reminder_operation() -> None:
+def test_deepseek_parser_accepts_unified_delete_life_event_operation() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
@@ -299,9 +294,9 @@ def test_deepseek_parser_accepts_unified_cancel_reminder_operation() -> None:
                         "message": {
                             "content": json.dumps(
                                 {
-                                    "operation": "cancel",
-                                    "resource": "reminder",
-                                    "selector": {"id": 12},
+                                    "operation": "delete",
+                                    "resource": "event",
+                                    "selector": {"event_type": "life_event", "id": 12},
                                     "fields": {},
                                     "confidence": 0.86,
                                     "needs_confirmation": True,
@@ -323,15 +318,15 @@ def test_deepseek_parser_accepts_unified_cancel_reminder_operation() -> None:
     )
 
     operation = parser.parse(
-        "取消 12 号提醒",
+        "删除 12 号事项",
         source="feishu",
         now=datetime(2026, 6, 5, 9, 0, tzinfo=DEFAULT_TZ),
     )
 
-    assert operation.action_name == "cancel_reminder"
-    assert operation.payload["operation"] == "cancel"
-    assert operation.payload["resource"] == "reminder"
-    assert operation.payload["selector"] == {"id": 12}
+    assert operation.action_name == "delete_event"
+    assert operation.payload["operation"] == "delete"
+    assert operation.payload["resource"] == "event"
+    assert operation.payload["selector"] == {"event_type": "life_event", "id": 12}
 
 
 def test_composite_parser_falls_back_to_llm_when_rules_do_not_match() -> None:
@@ -350,5 +345,5 @@ def test_composite_parser_falls_back_to_llm_when_rules_do_not_match() -> None:
 
     operation = parser.parse("今晚八点提醒我做程设作业", source="feishu")
 
-    assert operation.action_name == "create_life_event"
+    assert operation.action_name == "create_event"
     assert operation.payload["fields"]["title"] == "做程设作业"

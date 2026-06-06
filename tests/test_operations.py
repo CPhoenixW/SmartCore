@@ -30,12 +30,15 @@ def test_rule_parser_creates_assignment_operation() -> None:
 
     assert operation.source == "feishu"
     assert operation.raw_text == "添加作业 高数作业 2026-06-10 20:00"
-    assert operation.action_name == "create_assignment"
+    assert operation.action_name == "create_event"
     assert operation.needs_confirmation is True
     assert operation.confidence >= 0.9
     assert operation.payload == {
-        "resource": "assignment",
+        "operation": "create",
+        "resource": "event",
+        "selector": {},
         "fields": {
+            "event_type": "assignment",
             "title": "高数作业",
             "due_at": "2026-06-10T20:00:00+08:00",
         },
@@ -47,11 +50,13 @@ def test_rule_parser_creates_life_event_operation() -> None:
 
     operation = parser.parse("添加事项 洗衣服", source="feishu")
 
-    assert operation.action_name == "create_life_event"
+    assert operation.action_name == "create_event"
     assert operation.needs_confirmation is True
     assert operation.payload == {
-        "resource": "life_event",
-        "fields": {"title": "洗衣服"},
+        "operation": "create",
+        "resource": "event",
+        "selector": {},
+        "fields": {"event_type": "life_event", "title": "洗衣服"},
     }
 
 
@@ -75,7 +80,7 @@ def test_pending_operation_confirm_executes_action(db_session) -> None:
 
     db_session.refresh(applied)
     assert applied.status == PendingOperationStatus.APPLIED.value
-    assert applied.action_name == "create_assignment"
+    assert applied.action_name == "create_event"
     assert applied.result_resource_type == "assignment"
     assert applied.result_resource_id == assignment.id
     assert applied.error_message is None
@@ -104,7 +109,7 @@ def test_pending_life_event_confirm_executes_action(db_session) -> None:
 
     event = db_session.query(LifeEvent).filter_by(title="洗衣服").one()
     assert applied.status == PendingOperationStatus.APPLIED.value
-    assert applied.action_name == "create_life_event"
+    assert applied.action_name == "create_event"
     assert applied.result_resource_type == "life_event"
     assert applied.result_resource_id == event.id
     assert applied.error_message is None
@@ -377,7 +382,7 @@ def test_event_interface_query_events(db_session) -> None:
     assert {item["event_type"] for item in results} == {"assignment", "life_event"}
 
 
-def test_pending_update_reminder_confirm_executes_action(db_session) -> None:
+def test_legacy_update_reminder_action_is_rejected(db_session) -> None:
     reminder = crud.create_reminder(
         db_session,
         reminder_type="life_event_pre_event",
@@ -406,13 +411,14 @@ def test_pending_update_reminder_confirm_executes_action(db_session) -> None:
     scheduled_at = reminder.scheduled_at
     if scheduled_at is not None and scheduled_at.tzinfo is None:
         scheduled_at = scheduled_at.replace(tzinfo=DEFAULT_TZ)
-    assert scheduled_at == datetime(2026, 6, 5, 20, 30, tzinfo=DEFAULT_TZ)
-    assert applied.status == PendingOperationStatus.APPLIED.value
-    assert applied.result_resource_type == "reminder"
-    assert applied.result_resource_id == reminder.id
+    assert scheduled_at == datetime(2026, 6, 5, 19, 45, tzinfo=DEFAULT_TZ)
+    assert applied.status == PendingOperationStatus.FAILED.value
+    assert "unsupported action" in (applied.error_message or "")
+    assert applied.result_resource_type is None
+    assert applied.result_resource_id is None
 
 
-def test_pending_cancel_reminder_confirm_executes_action(db_session) -> None:
+def test_legacy_cancel_reminder_action_is_rejected(db_session) -> None:
     reminder = crud.create_reminder(
         db_session,
         reminder_type="life_event_pre_event",
@@ -438,10 +444,11 @@ def test_pending_cancel_reminder_confirm_executes_action(db_session) -> None:
     applied = ActionExecutor(db_session).confirm_and_apply(pending.id)
 
     db_session.refresh(reminder)
-    assert reminder.status == ReminderStatus.CANCELLED.value
-    assert applied.status == PendingOperationStatus.APPLIED.value
-    assert applied.result_resource_type == "reminder"
-    assert applied.result_resource_id == reminder.id
+    assert reminder.status == ReminderStatus.PENDING.value
+    assert applied.status == PendingOperationStatus.FAILED.value
+    assert "unsupported action" in (applied.error_message or "")
+    assert applied.result_resource_type is None
+    assert applied.result_resource_id is None
 
 
 def test_life_event_create_rolls_back_when_reminder_creation_fails(
@@ -465,38 +472,3 @@ def test_life_event_create_rolls_back_when_reminder_creation_fails(
     assert db_session.query(LifeEvent).filter_by(title="洗澡").count() == 0
     assert db_session.query(Reminder).count() == 0
 
-
-def test_failed_cancel_reminder_records_audit_without_mutating_sent_reminder(
-    db_session,
-) -> None:
-    reminder = crud.create_reminder(
-        db_session,
-        reminder_type="life_event_pre_event",
-        target_type="life_event",
-        scheduled_at=datetime(2026, 6, 5, 19, 45, tzinfo=DEFAULT_TZ),
-        status=ReminderStatus.SENT,
-        content="提醒：洗澡",
-    )
-    parsed = ParsedOperation(
-        source="feishu",
-        raw_text="取消已发送提醒",
-        action_name="cancel_reminder",
-        payload={
-            "operation": "cancel",
-            "resource": "reminder",
-            "selector": {"id": reminder.id},
-            "fields": {},
-        },
-        confidence=0.86,
-        needs_confirmation=True,
-    )
-    pending = create_pending_operation(db_session, parsed)
-
-    applied = ActionExecutor(db_session).confirm_and_apply(pending.id)
-
-    db_session.refresh(reminder)
-    assert reminder.status == ReminderStatus.SENT.value
-    assert applied.status == PendingOperationStatus.FAILED.value
-    assert "already sent" in (applied.error_message or "")
-    assert applied.result_resource_type == "reminder"
-    assert applied.result_resource_id == reminder.id
