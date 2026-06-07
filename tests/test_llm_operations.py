@@ -77,17 +77,85 @@ def test_deepseek_parser_converts_free_form_reminder_to_life_event() -> None:
     }
     assert requests[0]["model"] == "deepseek-chat"
     assert "今晚八点提醒我做程设作业" in json.dumps(requests[0], ensure_ascii=False)
-    assert "reminder_lead_minutes" in json.dumps(requests[0], ensure_ascii=False)
+    assert "schedule" in json.dumps(requests[0], ensure_ascii=False)
+
+
+def test_deepseek_parser_accepts_new_action_protocol() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "action": "create_event",
+                                    "payload": {
+                                        "event": {
+                                            "event_type": "schedule",
+                                            "title": "写作业",
+                                            "start_at": "2026-06-07T22:00:00+08:00",
+                                        }
+                                    },
+                                    "confidence": 0.9,
+                                    "needs_confirmation": True,
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    parser = DeepSeekOperationParser(
+        api_key="test-key",
+        base_url="https://api.deepseek.test",
+        model="deepseek-chat",
+        tz=DEFAULT_TZ,
+        transport=httpx.MockTransport(handler),
+    )
+
+    operation = parser.parse(
+        "晚上十点提醒我写作业",
+        source="feishu",
+        now=datetime(2026, 6, 7, 18, 0, tzinfo=DEFAULT_TZ),
+    )
+
+    assert operation.action_name == "create_event"
+    assert operation.payload == {
+        "action": "create_event",
+        "source": "feishu",
+        "raw_text": "晚上十点提醒我写作业",
+        "payload": {
+            "event": {
+                "event_type": "schedule",
+                "title": "写作业",
+                "start_at": "2026-06-07T22:00:00+08:00",
+            }
+        },
+    }
+    assert operation.needs_confirmation is True
 
 
 def test_deepseek_prompts_keep_candidate_selection_conservative() -> None:
     system_prompt = deepseek._SYSTEM_PROMPT
     selection_prompt = deepseek._SELECT_SYSTEM_PROMPT
 
-    assert "event_type=all" in system_prompt
-    assert "不要过早收窄" in system_prompt
+    for event_type in ("course", "plan", "schedule", "deadline"):
+        assert event_type in system_prompt
+    for legacy_type in ("assignment", "life_event", "course_session"):
+        assert legacy_type not in system_prompt
+    assert "start_at" in system_prompt
+    assert "end_at" in system_prompt
+    assert "30" in system_prompt
+    assert "15" in system_prompt
+    assert "数据库 id" in system_prompt
     assert "标题/语义/时间" in selection_prompt
     assert "不要选择无关或弱相关候选" in selection_prompt
+    assert "ref" in selection_prompt
+    assert "selected_refs" in selection_prompt
     assert "ambiguous" in selection_prompt
 
 
@@ -144,9 +212,8 @@ def test_deepseek_parser_accepts_unified_update_life_event_operation() -> None:
     }
     assert operation.needs_confirmation is True
     prompt = json.dumps(requests[0], ensure_ascii=False)
-    assert "operation" in prompt
-    assert "selector" in prompt
-    assert "create/update/delete/query" in prompt
+    assert "create_event" in prompt or "action" in prompt
+    assert "selector" in prompt or "patch" in prompt
 
 
 def test_deepseek_parser_accepts_unified_event_interface() -> None:
@@ -249,10 +316,9 @@ def test_deepseek_parser_accepts_unified_event_interface() -> None:
     assert query.needs_confirmation is False
     assert query.payload["operation"] == "query"
     prompt = json.dumps(requests[0], ensure_ascii=False)
-    assert "resource=event" in prompt or '"event"' in prompt
-    assert "course_session" in prompt
-    assert "assignment" in prompt
-    assert "life_event" in prompt
+    assert "create_event" in prompt or "query_event" in prompt
+    for event_type in ("course", "plan", "schedule", "deadline"):
+        assert event_type in prompt
 
 
 def test_deepseek_parser_rejects_reminder_resource() -> None:

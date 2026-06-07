@@ -19,6 +19,7 @@
         <th>原始内容</th>
         <th>解析命令</th>
         <th>回复状态</th>
+        <th>调试</th>
         <th>创建时间</th>
       </tr>
     </thead>
@@ -30,6 +31,21 @@
         <td>{{ log.raw_content or "—" }}</td>
         <td>{{ log.parsed_command or "—" }}</td>
         <td>{{ log.reply_status or "—" }}</td>
+        <td>
+          {% if log.action_input or log.db_result %}
+          <details>
+            <summary>展开</summary>
+            {% if log.action_input %}
+            <div><strong>模型输入</strong><pre>{{ log.action_input | tojson(indent=2) }}</pre></div>
+            {% endif %}
+            {% if log.db_result %}
+            <div><strong>数据库执行结果</strong><pre>{{ log.db_result | tojson(indent=2) }}</pre></div>
+            {% endif %}
+          </details>
+          {% else %}
+          —
+          {% endif %}
+        </td>
         <td>{{ log.created_at }}</td>
       </tr>
       {% endfor %}

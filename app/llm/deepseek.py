@@ -11,45 +11,55 @@ from app.operations.parser import ParsedOperation
 
 _SUPPORTED_RESOURCES = frozenset({"event"})
 _SUPPORTED_OPERATIONS = frozenset({"create", "read", "update", "delete", "query"})
-_EVENT_TYPES = frozenset({"course_session", "assignment", "life_event"})
+_EVENT_TYPES = frozenset({"course", "plan", "schedule", "deadline"})
+_LEGACY_EVENT_TYPES = frozenset({"assignment", "life_event", "course_session"})
+_ACCEPTED_EVENT_TYPES = _EVENT_TYPES | _LEGACY_EVENT_TYPES
 _EVENT_ACTIONS = {
     "create": "create_event",
     "update": "update_event",
     "delete": "delete_event",
     "query": "query_event",
 }
+_SUPPORTED_ACTIONS = frozenset(_EVENT_ACTIONS.values())
 
 _SYSTEM_PROMPT = """\
-你是 SmartCore 个人调度助手的语义解析器。将用户的自然语言转为 JSON 操作草案。
+你是 SmartCore 个人调度助手的语义解析器。将用户的自然语言转为 JSON Action。
 
 只返回一个 JSON 对象，不要 markdown 代码块，不要额外说明。
 
-优先使用统一 event 协议（resource=event）：
-- operation: create/update/delete/query（兼容 read，归一化为 query）
-- resource: 固定为 event
-- fields.event_type: course_session、assignment 或 life_event 之一
-- selector: 定位已有事件。精确修改/删除可含 id 和 event_type；语义查询/修改/删除可不含 id，
-  改用 event_type、time_range、status、max_candidates、target_description 描述候选范围
-- fields: 事件字段，如 title、course_name、due_at、scheduled_at、deadline_at、
-  weekday、start_time、end_time、location、notes、reminder_lead_minutes
-- confidence: 0 到 1 的浮点数
-- needs_confirmation: 布尔值；query 应为 false，写操作应为 true
+Action 结构：
+- action: create_event | query_event | update_event | delete_event
+- payload: 依 action 变化
 
-create + event + assignment: fields 含 event_type=assignment、title、due_at。
-create + event + life_event: fields 含 event_type=life_event、title、scheduled_at 等。
-create + event + course_session: fields 含 event_type=course_session、course_name、
-weekday、start_time、end_time、location 等。
-update/delete + event: 若已知 id，selector 含 id 和 event_type；否则 selector 用候选范围字段，
-  至少包含 event_type、time_range、target_description、status、max_candidates 之一。
-  对 update/delete/query，默认优先使用 event_type=all，不要过早收窄；仅当用户明确提到
-  作业/课程/课/ coursework/homework/class/course 或某一事件类别时，才使用具体 event_type。
-query + event: selector 或 fields 可含 event_type（all/assignment/life_event/course_session）、
-  status、time_range、max_candidates、target_description。
-  对 query，同样默认优先 event_type=all，除非用户明确限定事件类别。
+公开 event_type 只能是 course、plan、schedule、deadline 之一。
+不要输出已废弃的旧事件类型名称。
+不要使用数据库 id 作为查询/修改/删除句柄。
 
-当用户说“提醒我……”并给出时间时，必须输出 create + event + life_event，
-不要输出 create + reminder；Reminder 是系统内部发送队列，不是用户直接创建的资源。
-当用户想修改/删除提醒事项时，输出 update/delete + event + life_event，而不是 reminder。
+create_event.payload.event:
+- event_type: course/plan/schedule/deadline
+- title, start_at, end_at, location, notes
+- course/plan 需要 start_at 和 end_at；缺省 end_at 时由系统默认 start_at + 1 小时
+- schedule/deadline 需要 start_at；可省略 reminders，系统默认在开始前 30 和 15 分钟提醒
+
+query_event.payload:
+- filter: event_type(all/course/plan/schedule/deadline)、status、time_range、limit
+- semantic.target_description: 可选语义提示
+
+update_event.payload:
+- selector: mode=semantic_ref, refs(可留空由后端候选), filter, target_description
+- patch: 如 start_at、end_at、title、location
+
+delete_event.payload:
+- selector: mode=semantic_ref, refs(可留空), allow_multiple, filter, target_description
+
+额外字段：
+- confidence: 0 到 1
+- needs_confirmation: query 为 false，写操作为 true
+
+当用户说“提醒我……”并给出时间时，输出 create_event + schedule。
+当用户提到作业截止/DDL 时，输出 create_event + deadline。
+当用户提到课程时间段时，输出 create_event + course。
+当用户提到计划块/复习/安排时段时，输出 create_event + plan。
 """
 
 _SELECT_SYSTEM_PROMPT = """\
@@ -58,13 +68,13 @@ _SELECT_SYSTEM_PROMPT = """\
 只返回 JSON：
 {
   "match_status": "single | multiple | ambiguous | none",
-  "selected_ids": [{"event_type": "...", "id": 1}],
+  "selected_refs": ["c1"],
   "confidence": 0.0-1.0,
   "reason": "简短原因"
 }
 
 规则：
-- 只能从给定候选里选择，不能编造 id。
+- 只能从给定候选里的 ref 选择，不能编造 ref，不能使用数据库 id。
 - query 可多选；update 通常应 single；delete 可为 single 或 multiple。
 - 综合比较标题/语义/时间，不要选择无关或弱相关候选。
 - 无法确定时返回 ambiguous 或 none，不要猜测。
@@ -101,6 +111,8 @@ class DeepSeekOperationParser:
         raw_content = self._call_chat_completions(text, now)
         data = self._parse_json_content(raw_content)
         action_name, payload = self._normalize_operation(data)
+        if isinstance(payload.get("action"), str):
+            payload = {**payload, "source": source, "raw_text": text}
         return ParsedOperation(
             source=source,
             raw_text=text,
@@ -128,7 +140,8 @@ class DeepSeekOperationParser:
         candidate_lines = [
             " | ".join(
                 [
-                    f"{item['event_type']}#{item['id']}",
+                    str(item.get("ref", "")),
+                    str(item.get("event_type", "")),
                     str(item.get("status", "")),
                     str(item.get("time_label", "")),
                     str(item.get("title", "")),
@@ -147,11 +160,15 @@ class DeepSeekOperationParser:
         )
         raw_content = self._call_selection_completions(user_content)
         data = self._parse_json_content(raw_content)
+        selected_refs = data.get("selected_refs")
+        if not isinstance(selected_refs, list):
+            selected_refs = []
         selected_ids = data.get("selected_ids")
         if not isinstance(selected_ids, list):
             selected_ids = []
         return {
             "match_status": data.get("match_status", "none"),
+            "selected_refs": selected_refs,
             "selected_ids": selected_ids,
             "confidence": float(data.get("confidence", 0.0)),
             "reason": data.get("reason", ""),
@@ -240,9 +257,47 @@ class DeepSeekOperationParser:
         return data
 
     def _normalize_operation(self, data: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-        if "operation" not in data:
-            raise ValueError("operation is required")
-        return self._normalize_unified_operation(data)
+        if "action" in data:
+            return self._normalize_action_protocol(data)
+        if "operation" in data:
+            return self._normalize_unified_operation(data)
+        raise ValueError("operation or action is required")
+
+    def _normalize_action_protocol(
+        self, data: dict[str, Any]
+    ) -> tuple[str, dict[str, Any]]:
+        action_name = data.get("action")
+        if action_name not in _SUPPORTED_ACTIONS:
+            raise ValueError(f"unsupported action: {action_name!r}")
+
+        payload_body = data.get("payload")
+        if not isinstance(payload_body, dict):
+            raise ValueError("payload must be an object")
+
+        if action_name == "create_event":
+            event = payload_body.get("event")
+            if not isinstance(event, dict):
+                raise ValueError("create_event payload must include event")
+            event_type = event.get("event_type")
+            if event_type not in _EVENT_TYPES:
+                raise ValueError(f"unsupported event_type: {event_type!r}")
+        elif action_name == "query_event":
+            filter_payload = payload_body.get("filter")
+            if not isinstance(filter_payload, dict):
+                raise ValueError("query_event payload must include filter")
+        elif action_name == "update_event":
+            selector = payload_body.get("selector")
+            patch = payload_body.get("patch")
+            if not isinstance(selector, dict) or not isinstance(patch, dict):
+                raise ValueError(
+                    "update_event payload must include selector and patch"
+                )
+        elif action_name == "delete_event":
+            selector = payload_body.get("selector")
+            if not isinstance(selector, dict):
+                raise ValueError("delete_event payload must include selector")
+
+        return action_name, {"action": action_name, "payload": payload_body}
 
     def _normalize_unified_operation(
         self, data: dict[str, Any]
@@ -278,12 +333,21 @@ class DeepSeekOperationParser:
         event_type = selector.get("event_type") or fields.get("event_type")
 
         if operation == "create":
-            if event_type not in _EVENT_TYPES:
+            if event_type not in _ACCEPTED_EVENT_TYPES:
                 raise ValueError(f"unsupported event_type: {event_type!r}")
-            if event_type in ("assignment", "life_event") and not fields.get("title"):
+            title_required_types = (
+                "assignment",
+                "life_event",
+                "deadline",
+                "schedule",
+                "plan",
+            )
+            if event_type in title_required_types and not fields.get("title"):
                 raise ValueError("fields must include title")
-            if event_type == "course_session" and not fields.get("course_name"):
-                raise ValueError("fields must include course_name for course_session")
+            if event_type in ("course_session", "course") and not (
+                fields.get("course_name") or fields.get("title")
+            ):
+                raise ValueError("fields must include course_name or title for course")
         elif operation in ("update", "delete"):
             if selector.get("id") is None:
                 scope_keys = (
@@ -292,12 +356,14 @@ class DeepSeekOperationParser:
                     "target_description",
                     "status",
                     "max_candidates",
+                    "refs",
+                    "mode",
                 )
                 if not any(selector.get(key) is not None for key in scope_keys):
                     raise ValueError(
                         "selector must include id or candidate scope for event update/delete"
                     )
-            elif event_type not in _EVENT_TYPES:
+            elif event_type not in _ACCEPTED_EVENT_TYPES:
                 raise ValueError(f"unsupported event_type: {event_type!r}")
 
         payload = {

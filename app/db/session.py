@@ -30,9 +30,29 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
+def _ensure_message_log_trace_columns() -> None:
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    if "message_logs" not in inspector.get_table_names():
+        return
+    existing = {column["name"] for column in inspector.get_columns("message_logs")}
+    statements = []
+    if "action_input" not in existing:
+        statements.append("ALTER TABLE message_logs ADD COLUMN action_input JSON")
+    if "db_result" not in existing:
+        statements.append("ALTER TABLE message_logs ADD COLUMN db_result JSON")
+    if not statements:
+        return
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+
 def init_db() -> None:
     from app.db import models  # noqa: F401
 
     settings = get_settings()
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(bind=engine)
+    _ensure_message_log_trace_columns()

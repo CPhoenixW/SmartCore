@@ -470,10 +470,41 @@ def test_event_handler_url_verification(event_handler, db_session):
 
 
 def test_event_handler_converts_message_to_command(
-    event_handler, mock_feishu_client, db_session
+    feishu_settings, mock_feishu_client, db_session
 ):
+    class FakeOperationParser:
+        def parse(self, text: str, *, source: str, now=None):
+            assert text == "今天有啥事"
+            return ParsedOperation(
+                source=source,
+                raw_text=text,
+                action_name="query_event",
+                payload={
+                    "action": "query_event",
+                    "source": source,
+                    "raw_text": text,
+                    "payload": {
+                        "filter": {
+                            "event_type": "all",
+                            "time_range": {
+                                "start": "2026-06-07T00:00:00+08:00",
+                                "end": "2026-06-08T00:00:00+08:00",
+                            },
+                            "limit": 20,
+                        }
+                    },
+                },
+                confidence=0.9,
+                needs_confirmation=False,
+            )
+
+    handler = FeishuEventHandler(
+        feishu_settings,
+        client=mock_feishu_client,
+        operation_parser=FakeOperationParser(),
+    )
     body = json.dumps(_message_event("今天有啥事"))
-    status, payload = event_handler.handle(
+    status, payload = handler.handle(
         body.encode(),
         _signed_headers(body),
         db_session,
@@ -483,11 +514,11 @@ def test_event_handler_converts_message_to_command(
     assert payload["code"] == 0
     mock_feishu_client.send_text.assert_called_once()
     reply_text = mock_feishu_client.send_text.call_args[0][1]
-    assert "今日晨报" in reply_text
+    assert "事件查询" in reply_text or "暂无" in reply_text
     log = db_session.query(MessageLog).order_by(MessageLog.id.desc()).first()
     assert log is not None
     assert log.raw_content == "今天有啥事"
-    assert log.parsed_command == COMMAND_TODAY
+    assert log.parsed_command == "query_event"
     assert log.reply_status == "ok"
 
 
@@ -521,8 +552,9 @@ def test_event_handler_add_assignment_creates_pending_operation(
     pending = db_session.query(PendingOperation).one()
     assert pending.status == PendingOperationStatus.PENDING.value
     assert pending.action_name == "create_event"
-    assert pending.operation_payload["resource"] == "event"
-    assert pending.operation_payload["fields"]["event_type"] == "assignment"
+    event = pending.operation_payload["payload"]["event"]
+    assert event["event_type"] == "deadline"
+    assert event["title"] == "数学作业"
     mock_feishu_client.send_interactive_card.assert_called_once()
     card = mock_feishu_client.send_interactive_card.call_args.kwargs["card"]
     serialized = json.dumps(card, ensure_ascii=False)
@@ -616,8 +648,8 @@ def test_event_handler_strips_group_mention_before_parsing_operation(
     assert pending.status == PendingOperationStatus.PENDING.value
     assert pending.action_name == "create_event"
     assert pending.raw_text == "添加作业 群聊作业 2026-03-05"
-    assert pending.operation_payload["fields"]["event_type"] == "assignment"
-    assert pending.operation_payload["fields"]["title"] == "群聊作业"
+    assert pending.operation_payload["payload"]["event"]["event_type"] == "deadline"
+    assert pending.operation_payload["payload"]["event"]["title"] == "群聊作业"
     mock_feishu_client.send_interactive_card.assert_called_once()
 
 
@@ -629,25 +661,23 @@ def test_event_handler_confirm_operation_applies_pending_assignment(
     body = json.dumps(_message_event("添加作业 数学作业 2026-03-05"))
     event_handler.handle(body.encode(), _signed_headers(body), db_session, now=FIXED_NOW)
     pending = db_session.query(PendingOperation).one()
-    mock_feishu_client.send_text.reset_mock()
 
-    confirm_body = json.dumps(_message_event(f"确认 {pending.id}", message_id="om_msg_2"))
+    callback_body = json.dumps(_card_action_event("confirm_operation", pending.id))
     status, payload = event_handler.handle(
-        confirm_body.encode(),
-        _signed_headers(confirm_body),
+        callback_body.encode(),
+        _signed_headers(callback_body),
         db_session,
         now=FIXED_NOW,
     )
 
     assert status == 200
-    assert payload["code"] == 0
     assignment = db_session.query(Assignment).filter_by(title="数学作业").one()
     db_session.refresh(pending)
     assert pending.status == PendingOperationStatus.APPLIED.value
     assert pending.result_resource_id == assignment.id
-    reply_text = mock_feishu_client.send_text.call_args[0][1]
-    assert "已确认并执行" in reply_text
-    assert "数学作业" in reply_text
+    assert payload["toast"]["type"] == "success"
+    assert "已确认" in payload["toast"]["content"]
+    assert "数学作业" in payload["toast"]["content"]
 
 
 def test_event_handler_llm_free_form_message_creates_pending_card(
@@ -683,13 +713,69 @@ def test_event_handler_llm_free_form_message_creates_pending_card(
     assert payload["code"] == 0
     pending = db_session.query(PendingOperation).one()
     assert pending.action_name == "create_event"
-    assert pending.operation_payload["fields"]["event_type"] == "life_event"
+    assert pending.operation_payload["payload"]["event"]["event_type"] == "schedule"
     log = db_session.query(MessageLog).order_by(MessageLog.id.desc()).first()
     assert log is not None
     assert log.raw_content == "今晚八点提醒我做程设作业"
     assert log.parsed_command == "create_event"
     assert log.reply_status == "ok"
     mock_feishu_client.send_interactive_card.assert_called_once()
+
+
+def test_feishu_text_entry_uses_action_result_reply_without_legacy_command_branch(
+    feishu_settings,
+    mock_feishu_client,
+    db_session,
+):
+    class FakeOperationParser:
+        def parse(self, text: str, *, source: str, now=None):
+            assert text == "今日"
+            return ParsedOperation(
+                source=source,
+                raw_text=text,
+                action_name="query_event",
+                payload={
+                    "action": "query_event",
+                    "source": source,
+                    "raw_text": text,
+                    "payload": {
+                        "filter": {
+                            "event_type": "all",
+                            "time_range": {
+                                "start": "2026-06-07T00:00:00+08:00",
+                                "end": "2026-06-08T00:00:00+08:00",
+                            },
+                            "limit": 20,
+                        }
+                    },
+                },
+                confidence=0.9,
+                needs_confirmation=False,
+            )
+
+    handler = FeishuEventHandler(
+        feishu_settings,
+        client=mock_feishu_client,
+        operation_parser=FakeOperationParser(),
+    )
+    body = json.dumps(_message_event("今日"))
+
+    status, payload = handler.handle(
+        body.encode(),
+        _signed_headers(body),
+        db_session,
+        now=FIXED_NOW,
+    )
+
+    assert status == 200
+    assert payload["code"] == 0
+    reply_text = mock_feishu_client.send_text.call_args[0][1]
+    assert "事件查询" in reply_text or "暂无" in reply_text
+    log = db_session.query(MessageLog).order_by(MessageLog.id.desc()).first()
+    assert log is not None
+    assert log.parsed_command == "query_event"
+    assert log.action_input["action"] == "query_event"
+    assert log.db_result["status"] == "applied"
 
 
 def test_event_handler_llm_query_event_replies_without_pending_operation(
@@ -750,7 +836,7 @@ def test_event_handler_two_stage_query_selects_from_compact_candidates(
     mock_feishu_client,
     db_session,
 ):
-    target = crud.create_life_event(
+    crud.create_life_event(
         db_session,
         title="做程序设计作业",
         scheduled_at=datetime(2026, 6, 6, 20, 0, tzinfo=DEFAULT_TZ),
@@ -795,18 +881,14 @@ def test_event_handler_two_stage_query_selects_from_compact_candidates(
             assert raw_text == "今晚有啥事"
             assert parsed.action_name == "query_event"
             self.candidates = candidates
-            assert candidates == [
-                {
-                    "event_type": "life_event",
-                    "id": target.id,
-                    "status": "pending",
-                    "time_label": "2026-06-06 20:00",
-                    "title": "做程序设计作业",
-                }
-            ]
+            assert len(candidates) == 1
+            assert candidates[0]["ref"] == "c1"
+            assert candidates[0]["event_type"] == "schedule"
+            assert candidates[0]["title"] == "做程序设计作业"
+            assert "id" not in candidates[0]
             return {
                 "match_status": "single",
-                "selected_ids": [{"event_type": "life_event", "id": target.id}],
+                "selected_refs": ["c1"],
                 "confidence": 0.93,
                 "reason": "今晚唯一候选",
             }
@@ -882,9 +964,10 @@ def test_event_handler_two_stage_update_resolves_candidate_before_pending(
                 "做程序设计作业",
                 "写英语作业",
             }
+            ref = next(item["ref"] for item in candidates if item["title"] == "做程序设计作业")
             return {
                 "match_status": "single",
-                "selected_ids": [{"event_type": "life_event", "id": target.id}],
+                "selected_refs": [ref],
                 "confidence": 0.94,
                 "reason": "标题语义匹配",
             }
@@ -917,14 +1000,82 @@ def test_event_handler_two_stage_update_resolves_candidate_before_pending(
     assert other_scheduled_at == datetime(2026, 6, 6, 20, 30, tzinfo=DEFAULT_TZ)
     pending = db_session.query(PendingOperation).one()
     assert pending.action_name == "update_event"
-    assert pending.operation_payload["selector"] == {
-        "event_type": "life_event",
-        "id": target.id,
-    }
-    assert pending.operation_payload["fields"]["scheduled_at"] == (
-        "2026-06-06T21:00:00+08:00"
-    )
+    resolved = pending.operation_payload["payload"]
+    assert resolved["selector"]["event_type"] == "life_event"
+    assert resolved["selector"]["id"] == target.id
+    assert resolved["patch"]["start_at"] == "2026-06-06T21:00:00+08:00"
     mock_feishu_client.send_interactive_card.assert_called_once()
+
+
+def test_event_handler_two_stage_does_not_fallback_from_legacy_selected_ids(
+    feishu_settings,
+    mock_feishu_client,
+    db_session,
+):
+    crud.create_life_event(
+        db_session,
+        title="劳动法律法规考试",
+        scheduled_at=datetime(2026, 6, 6, 21, 0, tzinfo=DEFAULT_TZ),
+    )
+
+    class LegacyIdParser:
+        def parse(self, text: str, *, source: str, now=None):
+            return ParsedOperation(
+                source=source,
+                raw_text=text,
+                action_name="update_event",
+                payload={
+                    "action": "update_event",
+                    "source": source,
+                    "raw_text": text,
+                    "payload": {
+                        "selector": {
+                            "mode": "semantic_ref",
+                            "refs": [],
+                            "filter": {
+                                "event_type": "all",
+                                "time_range": {
+                                    "start": "2026-06-06T18:00:00+08:00",
+                                    "end": "2026-06-07T00:00:00+08:00",
+                                },
+                            },
+                            "target_description": "劳动法律法规考试",
+                        },
+                        "patch": {"start_at": "2026-06-06T22:00:00+08:00"},
+                    },
+                },
+                confidence=0.9,
+                needs_confirmation=True,
+            )
+
+        def select_candidates(self, *, raw_text, parsed, candidates):
+            assert candidates
+            return {
+                "match_status": "single",
+                "selected_ids": [{"event_type": "life_event", "id": 999}],
+                "confidence": 0.99,
+                "reason": "旧协议输出，应该被拒绝",
+            }
+
+    handler = FeishuEventHandler(
+        feishu_settings,
+        client=mock_feishu_client,
+        operation_parser=LegacyIdParser(),
+    )
+    body = json.dumps(_message_event("把劳动法律法规考试调整到十点"))
+
+    status, payload = handler.handle(
+        body.encode(),
+        _signed_headers(body),
+        db_session,
+        now=FIXED_NOW,
+    )
+
+    assert status == 200
+    assert payload["code"] == 0
+    mock_feishu_client.send_text.assert_called_once()
+    assert "无法确定" in mock_feishu_client.send_text.call_args[0][1]
+    assert db_session.query(PendingOperation).count() == 0
 
 
 def test_event_handler_two_stage_uses_all_event_types_when_parser_overfilters(
@@ -984,9 +1135,12 @@ def test_event_handler_two_stage_uses_all_event_types_when_parser_overfilters(
                 "1111",
                 "晚上的考试",
             }
+            ref = next(
+                item["ref"] for item in candidates if item["title"] == "考一下劳动法律法规"
+            )
             return {
                 "match_status": "single",
-                "selected_ids": [{"event_type": "life_event", "id": target.id}],
+                "selected_refs": [ref],
                 "confidence": 0.95,
                 "reason": "劳动法律法规考试语义匹配",
             }
@@ -1011,10 +1165,9 @@ def test_event_handler_two_stage_uses_all_event_types_when_parser_overfilters(
     assert len(parser.seen_candidates) == 1
     pending = db_session.query(PendingOperation).one()
     assert pending.action_name == "update_event"
-    assert pending.operation_payload["selector"] == {
-        "event_type": "life_event",
-        "id": target.id,
-    }
+    resolved = pending.operation_payload["payload"]
+    assert resolved["selector"]["event_type"] == "life_event"
+    assert resolved["selector"]["id"] == target.id
     serialized_card = json.dumps(
         mock_feishu_client.send_interactive_card.call_args.kwargs["card"],
         ensure_ascii=False,
@@ -1072,12 +1225,10 @@ def test_event_handler_two_stage_delete_all_creates_batch_pending(
 
         def select_candidates(self, *, raw_text, parsed, candidates):
             assert {item["title"] for item in candidates} == {"今晚事项 A", "今晚事项 B"}
+            refs = [item["ref"] for item in candidates]
             return {
                 "match_status": "multiple",
-                "selected_ids": [
-                    {"event_type": "life_event", "id": first.id},
-                    {"event_type": "life_event", "id": second.id},
-                ],
+                "selected_refs": refs,
                 "confidence": 0.96,
                 "reason": "用户明确要求删除今晚所有事项",
             }
@@ -1100,12 +1251,10 @@ def test_event_handler_two_stage_delete_all_creates_batch_pending(
     assert payload["code"] == 0
     pending = db_session.query(PendingOperation).one()
     assert pending.action_name == "delete_event"
-    assert pending.operation_payload["selector"] == {
-        "targets": [
-            {"event_type": "life_event", "id": first.id},
-            {"event_type": "life_event", "id": second.id},
-        ]
-    }
+    assert pending.operation_payload["payload"]["selector"]["targets"] == [
+        {"event_type": "life_event", "id": first.id},
+        {"event_type": "life_event", "id": second.id},
+    ]
     db_session.refresh(first)
     db_session.refresh(second)
     db_session.refresh(tomorrow)
@@ -1166,14 +1315,35 @@ def test_event_handler_ignores_duplicate_free_form_message_id(
 
 
 def test_event_handler_ignores_duplicate_read_message_id(
-    event_handler,
+    feishu_settings,
     mock_feishu_client,
     db_session,
 ):
+    class FakeOperationParser:
+        def parse(self, text: str, *, source: str, now=None):
+            return ParsedOperation(
+                source=source,
+                raw_text=text,
+                action_name="query_event",
+                payload={
+                    "action": "query_event",
+                    "source": source,
+                    "raw_text": text,
+                    "payload": {"filter": {"event_type": "all", "limit": 20}},
+                },
+                confidence=0.9,
+                needs_confirmation=False,
+            )
+
+    handler = FeishuEventHandler(
+        feishu_settings,
+        client=mock_feishu_client,
+        operation_parser=FakeOperationParser(),
+    )
     body = json.dumps(_message_event("今日", message_id="om_today_duplicate"))
 
-    event_handler.handle(body.encode(), _signed_headers(body), db_session, now=FIXED_NOW)
-    status, payload = event_handler.handle(
+    handler.handle(body.encode(), _signed_headers(body), db_session, now=FIXED_NOW)
+    status, payload = handler.handle(
         body.encode(),
         _signed_headers(body),
         db_session,
@@ -1199,23 +1369,21 @@ def test_event_handler_reject_operation_does_not_apply(
     body = json.dumps(_message_event("添加事项 洗衣服"))
     event_handler.handle(body.encode(), _signed_headers(body), db_session, now=FIXED_NOW)
     pending = db_session.query(PendingOperation).one()
-    mock_feishu_client.send_text.reset_mock()
 
-    reject_body = json.dumps(_message_event(f"拒绝 {pending.id}", message_id="om_msg_2"))
+    callback_body = json.dumps(_card_action_event("reject_operation", pending.id))
     status, payload = event_handler.handle(
-        reject_body.encode(),
-        _signed_headers(reject_body),
+        callback_body.encode(),
+        _signed_headers(callback_body),
         db_session,
         now=FIXED_NOW,
     )
 
     assert status == 200
-    assert payload["code"] == 0
     assert db_session.query(LifeEvent).count() == 0
     db_session.refresh(pending)
     assert pending.status == PendingOperationStatus.REJECTED.value
-    reply_text = mock_feishu_client.send_text.call_args[0][1]
-    assert "已拒绝" in reply_text
+    assert payload["toast"]["type"] == "success"
+    assert "已拒绝" in payload["toast"]["content"]
 
 
 def test_event_handler_card_confirm_callback_applies_pending_operation_and_deletes_card(
@@ -1276,18 +1444,17 @@ def test_event_handler_confirm_invalid_operation_replies_without_crashing(
     mock_feishu_client,
     db_session,
 ):
-    body = json.dumps(_message_event("确认 999"))
+    callback_body = json.dumps(_card_action_event("confirm_operation", 999))
     status, payload = event_handler.handle(
-        body.encode(),
-        _signed_headers(body),
+        callback_body.encode(),
+        _signed_headers(callback_body),
         db_session,
         now=FIXED_NOW,
     )
 
     assert status == 200
-    assert payload["code"] == 0
-    reply_text = mock_feishu_client.send_text.call_args[0][1]
-    assert "未找到" in reply_text or "无法确认" in reply_text
+    assert payload["toast"]["type"] == "error"
+    assert "未找到" in payload["toast"]["content"] or "无法确认" in payload["toast"]["content"]
 
 
 def test_feishu_route_integration(feishu_settings, mock_feishu_client, db_session):

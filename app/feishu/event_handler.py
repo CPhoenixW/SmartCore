@@ -9,22 +9,15 @@ from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
 from app.actions.executor import ActionExecutor
+from app.actions.normalize import action_from_parsed
+from app.actions.reply import format_result_reply
 from app.config import Settings, get_settings
 from app.db import crud
 from app.db.models import MessageLog, PendingOperation, PendingOperationStatus
 from app.db.session import get_db
 from app.feishu.cards import build_pending_operation_card
 from app.feishu.client import FeishuClient
-from app.feishu.commands import (
-    COMMAND_ADD_ASSIGNMENT,
-    COMMAND_ADD_LIFE_EVENT,
-    COMMAND_CONFIRM_OPERATION,
-    COMMAND_HELP,
-    COMMAND_REJECT_OPERATION,
-    execute_command,
-    extract_message_text,
-    parse_command,
-)
+from app.feishu.commands import extract_message_text, format_help_message
 from app.feishu.security import FeishuSecurityError, parse_event_payload, validate_request_headers
 from app.llm.deepseek import DeepSeekOperationParser
 from app.operations.parser import (
@@ -32,7 +25,6 @@ from app.operations.parser import (
     ParsedOperation,
     RuleBasedOperationParser,
 )
-from app.operations.store import create_pending_operation
 from app.secretary.rules import DEFAULT_TZ
 
 logger = logging.getLogger(__name__)
@@ -52,6 +44,8 @@ class FeishuReply:
     card: dict[str, Any] | None = None
     parsed_command: str | None = None
     reply_status: str | None = None
+    action_input: dict[str, Any] | None = None
+    db_result: dict[str, Any] | None = None
 
 
 def build_operation_parser(settings: Settings) -> CompositeOperationParser:
@@ -67,20 +61,13 @@ def build_operation_parser(settings: Settings) -> CompositeOperationParser:
     return CompositeOperationParser(rule_parser=rule_parser, llm_parser=llm_parser)
 
 
-def _format_query_event_reply(events: list[dict]) -> str:
-    lines = ["【事件查询】"]
-    if not events:
-        lines.append("暂无匹配事件。")
-    else:
-        for item in events:
-            lines.append(f"- {item['title']}")
-    return "\n".join(lines)
-
-
 def _format_confirm_reply(pending: PendingOperation) -> str:
     if pending.status == PendingOperationStatus.FAILED.value:
         return f"执行失败：{pending.error_message or '未知错误'}"
     title = pending.operation_payload.get("fields", {}).get("title", "")
+    if not title:
+        event = (pending.operation_payload.get("payload") or {}).get("event") or {}
+        title = event.get("title", "")
     if title:
         return f"已确认并执行：{title}"
     return "已确认并执行"
@@ -171,21 +158,9 @@ class FeishuEventHandler:
         ).first():
             return 200, {"code": 0, "msg": "duplicate message ignored"}
 
-        command = parse_command(text)
-        reply = self._build_reply(db, command, text)
-        parsed_command = (
-            reply.parsed_command if reply.parsed_command is not None else command.name
-        )
-        reply_status = (
-            reply.reply_status
-            if reply.reply_status is not None
-            else (
-                "ok"
-                if command.name != COMMAND_HELP
-                or text.strip() in _HELP_KEYWORDS
-                else "help"
-            )
-        )
+        reply = self._handle_text_message(db, text)
+        parsed_command = reply.parsed_command or "unknown"
+        reply_status = reply.reply_status or "ok"
         crud.create_message_log(
             db,
             source="feishu",
@@ -193,12 +168,14 @@ class FeishuEventHandler:
             raw_content=text,
             parsed_command=parsed_command,
             reply_status=reply_status,
+            action_input=reply.action_input,
+            db_result=reply.db_result,
         )
 
         chat_id = self._resolve_chat_id(payload)
         if chat_id:
             logger.info(
-                "feishu message command parsed: message_id=%s command=%s chat_id=%s",
+                "feishu message parsed: message_id=%s command=%s chat_id=%s",
                 message_id,
                 parsed_command,
                 chat_id,
@@ -213,6 +190,62 @@ class FeishuEventHandler:
                 return 200, {"code": 0, "msg": "reply failed"}
 
         return 200, {"code": 0, "msg": "ok"}
+
+    def _handle_text_message(self, db: Session, text: str) -> FeishuReply:
+        if text.strip() in _HELP_KEYWORDS:
+            return FeishuReply(
+                text=format_help_message(),
+                parsed_command="help",
+                reply_status="help",
+            )
+
+        try:
+            parsed = self._operation_parser.parse(text, source="feishu")
+        except ValueError as exc:
+            logger.warning("operation parsing failed: text=%r error=%s", text, exc)
+            return FeishuReply(
+                text=format_help_message(),
+                parsed_command="help",
+                reply_status="help",
+            )
+
+        if self._supports_two_stage_selection(parsed):
+            return self._two_stage_event_reply(db, text, parsed)
+
+        action = action_from_parsed(parsed)
+        return self._execute_action_reply(db, action)
+
+    def _execute_action_reply(self, db: Session, action: dict[str, Any]) -> FeishuReply:
+        executor = ActionExecutor(db)
+        result = executor.execute(action)
+        action_name = result.get("action") or action.get("action")
+
+        if result.get("status") == "pending_confirmation" and result.get("operation_id"):
+            pending = db.get(PendingOperation, result["operation_id"])
+            if pending is not None:
+                dashboard_base_url = self.settings.dashboard_base_url or "/dashboard"
+                card = build_pending_operation_card(
+                    operation_id=pending.id,
+                    raw_text=pending.raw_text,
+                    action_name=pending.action_name,
+                    payload=pending.operation_payload,
+                    dashboard_base_url=dashboard_base_url,
+                )
+                return FeishuReply(
+                    card=card,
+                    parsed_command=action_name,
+                    reply_status="ok",
+                    action_input=action,
+                    db_result=result,
+                )
+
+        return FeishuReply(
+            text=format_result_reply(result),
+            parsed_command=action_name,
+            reply_status="ok",
+            action_input=action,
+            db_result=result,
+        )
 
     def _handle_card_action(
         self,
@@ -293,47 +326,39 @@ class FeishuEventHandler:
                 open_message_id,
             )
 
-    def _build_reply(self, db: Session, command, text: str) -> FeishuReply:
-        if command.name in {COMMAND_ADD_ASSIGNMENT, COMMAND_ADD_LIFE_EVENT}:
-            return self._create_pending_operation_reply(db, text)
-        if command.name == COMMAND_CONFIRM_OPERATION:
-            return FeishuReply(text=self._confirm_operation_reply(db, command.args))
-        if command.name == COMMAND_REJECT_OPERATION:
-            return FeishuReply(text=self._reject_operation_reply(db, command.args))
-        if command.name == COMMAND_HELP and text.strip() not in _HELP_KEYWORDS:
-            return self._try_free_form_operation_reply(db, text)
-        return FeishuReply(
-            text=execute_command(
-                db,
-                command,
-                semester_start=self.settings.semester_start,
-            )
-        )
-
-    def _try_free_form_operation_reply(self, db: Session, text: str) -> FeishuReply:
-        try:
-            parsed = self._operation_parser.parse(text, source="feishu")
-        except ValueError as exc:
-            logger.warning("free-form operation parsing failed: text=%r error=%s", text, exc)
-            return FeishuReply(
-                text=execute_command(
-                    db,
-                    parse_command("帮助"),
-                    semester_start=self.settings.semester_start,
-                )
-            )
-        if self._supports_two_stage_selection(parsed):
-            return self._two_stage_event_reply(db, text, parsed)
-        if parsed.action_name == "query_event":
-            return self._query_event_reply(db, parsed)
-        return self._pending_operation_card_reply(db, parsed)
-
     def _supports_two_stage_selection(self, parsed: ParsedOperation) -> bool:
-        return parsed.action_name in {
-            "query_event",
-            "update_event",
-            "delete_event",
-        } and hasattr(self._operation_parser, "select_candidates")
+        if not hasattr(self._operation_parser, "select_candidates"):
+            return False
+        payload = parsed.payload
+        if isinstance(payload.get("action"), str):
+            inner = payload.get("payload") or {}
+            if parsed.action_name == "query_event":
+                semantic = inner.get("semantic") or {}
+                return bool(semantic.get("target_description"))
+            if parsed.action_name in {"update_event", "delete_event"}:
+                selector = inner.get("selector") or {}
+                if selector.get("mode") == "semantic_ref":
+                    return True
+                return selector.get("id") is None and bool(
+                    selector.get("target_description") or selector.get("time_range")
+                )
+            return False
+
+        selector = payload.get("selector") or {}
+        fields = payload.get("fields") or {}
+        if parsed.action_name == "query_event":
+            return bool(
+                selector.get("target_description") or fields.get("target_description")
+            )
+        if parsed.action_name in {"update_event", "delete_event"}:
+            if selector.get("id") is not None:
+                return False
+            return bool(
+                selector.get("target_description")
+                or selector.get("time_range")
+                or fields.get("target_description")
+            )
+        return False
 
     def _two_stage_event_reply(
         self,
@@ -341,52 +366,67 @@ class FeishuEventHandler:
         text: str,
         parsed: ParsedOperation,
     ) -> FeishuReply:
-        candidates = self._query_event_candidates(db, parsed)
+        query_action = self._build_candidate_query_action(parsed)
+        executor = ActionExecutor(db)
+        query_result = executor.execute(query_action)
+        candidates = (query_result.get("data") or {}).get("events") or []
+
         selection = self._operation_parser.select_candidates(
             raw_text=text,
             parsed=parsed,
             candidates=candidates,
         )
-        selected_ids = selection.get("selected_ids") or []
+        selected_refs = selection.get("selected_refs") or []
         match_status = selection.get("match_status")
         confidence = float(selection.get("confidence", 0))
 
         if parsed.action_name == "query_event":
-            selected = self._filter_candidates(candidates, selected_ids)
+            selected = self._filter_candidates_by_ref(candidates, selected_refs)
             if match_status == "none" or not selected:
+                result = {
+                    "ok": True,
+                    "action": "query_event",
+                    "status": "applied",
+                    "message_code": "EVENTS_FOUND",
+                    "data": {"events": []},
+                    "debug": query_result.get("debug", {}),
+                }
                 return FeishuReply(
-                    text=_format_query_event_reply([]),
+                    text=format_result_reply(result),
                     parsed_command="query_event",
                     reply_status="ok",
+                    action_input=query_action,
+                    db_result=result,
                 )
+            result = {
+                "ok": True,
+                "action": "query_event",
+                "status": "applied",
+                "message_code": "EVENTS_FOUND",
+                "data": {"events": selected},
+                "debug": query_result.get("debug", {}),
+            }
             return FeishuReply(
-                text=_format_query_event_reply(selected),
+                text=format_result_reply(result),
                 parsed_command="query_event",
                 reply_status="ok",
+                action_input=query_action,
+                db_result=result,
             )
 
         if parsed.action_name == "update_event":
             if (
                 match_status == "single"
-                and len(selected_ids) == 1
+                and len(selected_refs) == 1
                 and confidence >= _SELECTION_CONFIDENCE_THRESHOLD
             ):
-                resolved = self._resolve_update_payload(
+                update_action = self._build_ref_action(
                     parsed,
-                    selected_ids[0],
-                    candidates,
+                    selected_refs,
+                    query_action,
+                    patch=self._extract_patch(parsed),
                 )
-                return self._pending_operation_card_reply(
-                    db,
-                    ParsedOperation(
-                        source=parsed.source,
-                        raw_text=parsed.raw_text,
-                        action_name=parsed.action_name,
-                        payload=resolved,
-                        confidence=parsed.confidence,
-                        needs_confirmation=True,
-                    ),
-                )
+                return self._execute_action_reply(db, update_action)
             return FeishuReply(
                 text=self._format_selection_clarification(
                     parsed.action_name,
@@ -395,27 +435,20 @@ class FeishuEventHandler:
                 ),
                 parsed_command=parsed.action_name,
                 reply_status="ok",
+                action_input=query_action,
+                db_result=query_result,
             )
 
         if parsed.action_name == "delete_event":
-            if match_status in {"single", "multiple"} and selected_ids:
+            if match_status in {"single", "multiple"} and selected_refs:
                 if confidence >= _SELECTION_CONFIDENCE_THRESHOLD:
-                    resolved = self._resolve_delete_payload(
+                    delete_action = self._build_ref_action(
                         parsed,
-                        selected_ids,
-                        candidates,
+                        selected_refs,
+                        query_action,
+                        allow_multiple=True,
                     )
-                    return self._pending_operation_card_reply(
-                        db,
-                        ParsedOperation(
-                            source=parsed.source,
-                            raw_text=parsed.raw_text,
-                            action_name=parsed.action_name,
-                            payload=resolved,
-                            confidence=parsed.confidence,
-                            needs_confirmation=True,
-                        ),
-                    )
+                    return self._execute_action_reply(db, delete_action)
             return FeishuReply(
                 text=self._format_selection_clarification(
                     parsed.action_name,
@@ -424,75 +457,89 @@ class FeishuEventHandler:
                 ),
                 parsed_command=parsed.action_name,
                 reply_status="ok",
+                action_input=query_action,
+                db_result=query_result,
             )
 
-        return self._pending_operation_card_reply(db, parsed)
+        return self._execute_action_reply(db, action_from_parsed(parsed))
+
+    def _build_candidate_query_action(self, parsed: ParsedOperation) -> dict[str, Any]:
+        payload = parsed.payload
+        if isinstance(payload.get("action"), str):
+            selector = (payload.get("payload") or {}).get("selector") or {}
+        else:
+            selector = payload.get("selector") or {}
+
+        filter_payload: dict[str, Any] = {
+            "event_type": "all",
+            "status": ["pending", "active"],
+            "limit": selector.get("max_candidates") or 50,
+        }
+        if selector.get("time_range"):
+            filter_payload["time_range"] = selector["time_range"]
+        if selector.get("status") == "open":
+            filter_payload["status"] = ["pending", "active"]
+
+        return {
+            "action": "query_event",
+            "source": parsed.source,
+            "raw_text": parsed.raw_text,
+            "payload": {"filter": filter_payload},
+        }
 
     @staticmethod
-    def _query_event_candidates(db: Session, parsed: ParsedOperation) -> list[dict]:
-        executor = ActionExecutor(db)
-        selector = parsed.payload.get("selector") or {}
-        fields = parsed.payload.get("fields") or {}
-        event_type = selector.get("event_type")
-        if event_type is None:
-            event_type = fields.get("event_type", "all")
-        if event_type in {None, "all"}:
-            return executor.query_events(parsed.payload)
+    def _extract_patch(parsed: ParsedOperation) -> dict[str, Any]:
+        payload = parsed.payload
+        if isinstance(payload.get("payload"), dict):
+            patch = payload["payload"].get("patch")
+            if isinstance(patch, dict):
+                return patch
+        fields = payload.get("fields") or {}
+        patch = dict(fields)
+        if fields.get("scheduled_at") and "start_at" not in patch:
+            patch["start_at"] = fields["scheduled_at"]
+        if fields.get("due_at") and "start_at" not in patch:
+            patch["start_at"] = fields["due_at"]
+        return patch
 
-        broad_payload = dict(parsed.payload)
-        broad_selector = dict(selector)
-        broad_selector["event_type"] = "all"
-        broad_payload["selector"] = broad_selector
-        if "event_type" in fields:
-            broad_fields = dict(fields)
-            broad_fields["event_type"] = "all"
-            broad_payload["fields"] = broad_fields
-        return executor.query_events(broad_payload)
+    def _build_ref_action(
+        self,
+        parsed: ParsedOperation,
+        refs: list[str],
+        query_action: dict[str, Any],
+        *,
+        patch: dict[str, Any] | None = None,
+        allow_multiple: bool = False,
+    ) -> dict[str, Any]:
+        query_filter = (query_action.get("payload") or {}).get("filter") or {}
+        selector: dict[str, Any] = {
+            "mode": "semantic_ref",
+            "refs": refs,
+            "filter": {
+                "event_type": query_filter.get("event_type", "all"),
+            },
+        }
+        if query_filter.get("time_range"):
+            selector["filter"]["time_range"] = query_filter["time_range"]
+        if allow_multiple:
+            selector["allow_multiple"] = True
+        payload: dict[str, Any] = {"selector": selector}
+        if patch:
+            payload["patch"] = patch
+        return {
+            "action": parsed.action_name,
+            "source": parsed.source,
+            "raw_text": parsed.raw_text,
+            "payload": payload,
+        }
 
     @staticmethod
-    def _filter_candidates(
+    def _filter_candidates_by_ref(
         candidates: list[dict],
-        selected_ids: list[dict],
+        selected_refs: list[str],
     ) -> list[dict]:
-        selected_keys = {
-            (item.get("event_type"), item.get("id"))
-            for item in selected_ids
-            if isinstance(item, dict)
-        }
-        return [
-            item
-            for item in candidates
-            if (item.get("event_type"), item.get("id")) in selected_keys
-        ]
-
-    @staticmethod
-    def _resolve_update_payload(
-        parsed: ParsedOperation,
-        target: dict,
-        candidates: list[dict],
-    ) -> dict:
-        payload = dict(parsed.payload)
-        payload["selector"] = {
-            "event_type": target["event_type"],
-            "id": target["id"],
-        }
-        selected = FeishuEventHandler._filter_candidates(candidates, [target])
-        if selected:
-            payload["selected_candidates"] = selected
-        return payload
-
-    @staticmethod
-    def _resolve_delete_payload(
-        parsed: ParsedOperation,
-        selected_ids: list[dict],
-        candidates: list[dict],
-    ) -> dict:
-        payload = dict(parsed.payload)
-        payload["selector"] = {"targets": selected_ids}
-        selected = FeishuEventHandler._filter_candidates(candidates, selected_ids)
-        if selected:
-            payload["selected_candidates"] = selected
-        return payload
+        ref_set = set(selected_refs)
+        return [item for item in candidates if item.get("ref") in ref_set]
 
     @staticmethod
     def _format_selection_clarification(
@@ -511,67 +558,6 @@ class FeishuEventHandler:
             return f"无法确定要{action_label}的事件：{detail}，请补充更多信息。"
         detail = reason or "请补充更具体的目标描述"
         return f"无法确定要{action_label}的事件：{detail}。"
-
-    def _query_event_reply(self, db: Session, parsed: ParsedOperation) -> FeishuReply:
-        events = ActionExecutor(db).query_events(parsed.payload)
-        return FeishuReply(
-            text=_format_query_event_reply(events),
-            parsed_command="query_event",
-            reply_status="ok",
-        )
-
-    def _create_pending_operation_reply(self, db: Session, text: str) -> FeishuReply:
-        try:
-            parsed = self._operation_parser.parse(text, source="feishu")
-        except ValueError:
-            return FeishuReply(text="无法理解该操作，请检查命令格式。")
-        return self._pending_operation_card_reply(db, parsed)
-
-    def _pending_operation_card_reply(
-        self,
-        db: Session,
-        parsed: ParsedOperation,
-    ) -> FeishuReply:
-        pending = create_pending_operation(db, parsed)
-        dashboard_base_url = self.settings.dashboard_base_url or "/dashboard"
-        card = build_pending_operation_card(
-            operation_id=pending.id,
-            raw_text=pending.raw_text,
-            action_name=pending.action_name,
-            payload=pending.operation_payload,
-            dashboard_base_url=dashboard_base_url,
-        )
-        return FeishuReply(
-            card=card,
-            parsed_command=pending.action_name,
-            reply_status="ok",
-        )
-
-    def _confirm_operation_reply(self, db: Session, operation_id_text: str) -> str:
-        try:
-            operation_id = int(operation_id_text.strip())
-        except ValueError:
-            return f"无法确认：操作编号无效（{operation_id_text}）"
-
-        executor = ActionExecutor(db)
-        try:
-            pending = executor.confirm_and_apply(operation_id)
-        except ValueError as exc:
-            return _format_confirm_error(operation_id, exc)
-        return _format_confirm_reply(pending)
-
-    def _reject_operation_reply(self, db: Session, operation_id_text: str) -> str:
-        try:
-            operation_id = int(operation_id_text.strip())
-        except ValueError:
-            return f"无法拒绝：操作编号无效（{operation_id_text}）"
-
-        executor = ActionExecutor(db)
-        try:
-            executor.reject(operation_id)
-        except ValueError as exc:
-            return _format_reject_error(operation_id, exc)
-        return _format_reject_reply(operation_id)
 
     def _resolve_chat_id(self, payload: dict[str, Any]) -> str | None:
         event = payload.get("event")

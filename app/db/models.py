@@ -167,7 +167,7 @@ class Reminder(Base):
     reminder_type: Mapped[str] = mapped_column(String(50), nullable=False)
     target_type: Mapped[str] = mapped_column(String(50), nullable=False)
     target_id: Mapped[int | None] = mapped_column(Integer)
-    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    scheduled_at: Mapped[datetime] = mapped_column(TZDateTime, nullable=False)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(
         String(20), default=ReminderStatus.PENDING.value, nullable=False
@@ -188,6 +188,8 @@ class MessageLog(Base):
     raw_content: Mapped[str | None] = mapped_column(Text)
     parsed_command: Mapped[str | None] = mapped_column(String(200))
     reply_status: Mapped[str | None] = mapped_column(String(50))
+    action_input: Mapped[dict | None] = mapped_column(JSON)
+    db_result: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

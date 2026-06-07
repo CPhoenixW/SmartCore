@@ -38,6 +38,15 @@ def _format_life_event_detail_lines(fields: dict, tz: ZoneInfo) -> list[str]:
     return lines
 
 
+def _format_event_target_label(item: dict) -> str:
+    return (
+        item.get("title")
+        or item.get("ref")
+        or item.get("event_type")
+        or "目标事件"
+    )
+
+
 def _format_local_datetime(value: object, tz: ZoneInfo) -> str | None:
     if not value:
         return None
@@ -54,13 +63,15 @@ def _format_update_detail_lines(payload: dict, tz: ZoneInfo) -> list[str]:
     if isinstance(selected_candidates, list) and selected_candidates:
         lines.append("将修改：")
         for item in selected_candidates:
-            label = item.get("title") or f"{item.get('event_type')}#{item.get('id')}"
-            lines.append(f"- {label}")
+            lines.append(f"- {_format_event_target_label(item)}")
             time_label = item.get("time_label")
             if time_label:
                 lines.append(f"原计划时间：{time_label}")
 
-    scheduled_at = _format_local_datetime(fields.get("scheduled_at"), tz)
+    scheduled_at = _format_local_datetime(
+        fields.get("scheduled_at") or fields.get("start_at"),
+        tz,
+    )
     if scheduled_at:
         lines.append(f"新计划时间：{scheduled_at}")
         reminder_lead = fields.get("reminder_lead_minutes", 15)
@@ -69,11 +80,13 @@ def _format_update_detail_lines(payload: dict, tz: ZoneInfo) -> list[str]:
         except (TypeError, ValueError):
             lead_minutes = None
         if lead_minutes is not None:
-            dt = datetime.fromisoformat(str(fields["scheduled_at"]))
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=tz)
-            reminder_at = dt.astimezone(tz) - timedelta(minutes=lead_minutes)
-            lines.append(f"新提醒时间：{reminder_at.strftime('%Y-%m-%d %H:%M')}")
+            raw_time = fields.get("scheduled_at") or fields.get("start_at")
+            if raw_time:
+                dt = datetime.fromisoformat(str(raw_time))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=tz)
+                reminder_at = dt.astimezone(tz) - timedelta(minutes=lead_minutes)
+                lines.append(f"新提醒时间：{reminder_at.strftime('%Y-%m-%d %H:%M')}")
 
     due_at = _format_local_datetime(fields.get("due_at"), tz)
     if due_at:
@@ -88,6 +101,26 @@ def _format_update_detail_lines(payload: dict, tz: ZoneInfo) -> list[str]:
     return lines
 
 
+def _normalize_card_payload(action_name: str, payload: dict) -> dict:
+    if payload.get("action"):
+        inner = payload.get("payload") or {}
+        if action_name == "create_event" and isinstance(inner.get("event"), dict):
+            event = inner["event"]
+            return {
+                "resource": "event",
+                "fields": event,
+            }
+        normalized = {
+            "resource": "event",
+            "selector": inner.get("selector") or {},
+            "fields": inner.get("patch") or {},
+        }
+        if inner.get("selected_candidates"):
+            normalized["selected_candidates"] = inner["selected_candidates"]
+        return normalized
+    return payload
+
+
 def build_pending_operation_card(
     *,
     operation_id: int,
@@ -97,6 +130,7 @@ def build_pending_operation_card(
     dashboard_base_url: str,
     tz: ZoneInfo = DEFAULT_TZ,
 ) -> dict[str, Any]:
+    payload = _normalize_card_payload(action_name, payload)
     fields = payload.get("fields", {})
     selector = payload.get("selector") or {}
     title = fields.get("title", "")
@@ -115,22 +149,26 @@ def build_pending_operation_card(
         detail_lines.append("将删除：")
         if isinstance(selected_candidates, list) and selected_candidates:
             for item in selected_candidates:
-                label = item.get("title") or f"{item.get('event_type')}#{item.get('id')}"
-                detail_lines.append(f"- {label}")
+                detail_lines.append(f"- {_format_event_target_label(item)}")
         elif isinstance(delete_targets, list):
             for item in delete_targets:
                 if isinstance(item, dict):
-                    detail_lines.append(
-                        f"- {item.get('event_type')}#{item.get('id')}"
-                    )
+                    detail_lines.append(f"- {_format_event_target_label(item)}")
     elif action_name == "update_event":
         detail_lines.extend(_format_update_detail_lines(payload, tz))
     elif event_type:
         detail_lines.append(f"事件类型：{event_type}")
-    if action_name != "update_event" and event_type == "life_event":
+    if action_name != "update_event" and event_type in {
+        "life_event",
+        "schedule",
+        "plan",
+    }:
+        legacy_fields = dict(fields)
+        if legacy_fields.get("start_at") and "scheduled_at" not in legacy_fields:
+            legacy_fields["scheduled_at"] = legacy_fields["start_at"]
         detail_lines.extend(
             _format_life_event_detail_lines(
-                {k: v for k, v in fields.items() if k != "event_type"},
+                {k: v for k, v in legacy_fields.items() if k != "event_type"},
                 tz,
             )
         )

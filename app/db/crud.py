@@ -146,6 +146,8 @@ def create_message_log(
     raw_content: str | None = None,
     parsed_command: str | None = None,
     reply_status: str | None = None,
+    action_input: dict | None = None,
+    db_result: dict | None = None,
 ) -> MessageLog:
     log = MessageLog(
         source=source,
@@ -153,6 +155,8 @@ def create_message_log(
         raw_content=raw_content,
         parsed_command=parsed_command,
         reply_status=reply_status,
+        action_input=action_input,
+        db_result=db_result,
     )
     db.add(log)
     db.commit()
