@@ -74,6 +74,7 @@ def mock_feishu_client():
     client = MagicMock(spec=FeishuClient)
     client.send_text.return_value = {"code": 0}
     client.send_interactive_card.return_value = {"code": 0}
+    client.delete_message.return_value = {"code": 0}
     return client
 
 
@@ -926,6 +927,102 @@ def test_event_handler_two_stage_update_resolves_candidate_before_pending(
     mock_feishu_client.send_interactive_card.assert_called_once()
 
 
+def test_event_handler_two_stage_uses_all_event_types_when_parser_overfilters(
+    feishu_settings,
+    mock_feishu_client,
+    db_session,
+):
+    target = crud.create_life_event(
+        db_session,
+        title="考一下劳动法律法规",
+        scheduled_at=datetime(2026, 6, 7, 21, 0, tzinfo=DEFAULT_TZ),
+    )
+    crud.create_life_event(
+        db_session,
+        title="1111",
+        scheduled_at=datetime(2026, 6, 7, 20, 0, tzinfo=DEFAULT_TZ),
+    )
+    crud.create_assignment(
+        db_session,
+        title="晚上的考试",
+        due_at=datetime(2026, 6, 7, 20, 30, tzinfo=DEFAULT_TZ),
+    )
+
+    class OverfilteredParser:
+        def __init__(self):
+            self.seen_candidates: list[list[dict[str, Any]]] = []
+
+        def parse(self, text: str, *, source: str, now=None):
+            assert text == "把晚上的劳动法律法规考试调整到10点"
+            return ParsedOperation(
+                source=source,
+                raw_text=text,
+                action_name="update_event",
+                payload={
+                    "operation": "update",
+                    "resource": "event",
+                    "selector": {
+                        "event_type": "assignment",
+                        "status": "open",
+                        "time_range": {
+                            "start": "2026-06-07T18:00:00+08:00",
+                            "end": "2026-06-08T00:00:00+08:00",
+                        },
+                        "target_description": "劳动法律法规考试",
+                        "max_candidates": 10,
+                    },
+                    "fields": {"scheduled_at": "2026-06-07T22:00:00+08:00"},
+                },
+                confidence=0.9,
+                needs_confirmation=True,
+            )
+
+        def select_candidates(self, *, raw_text, parsed, candidates):
+            self.seen_candidates.append(candidates)
+            assert {item["title"] for item in candidates} == {
+                "考一下劳动法律法规",
+                "1111",
+                "晚上的考试",
+            }
+            return {
+                "match_status": "single",
+                "selected_ids": [{"event_type": "life_event", "id": target.id}],
+                "confidence": 0.95,
+                "reason": "劳动法律法规考试语义匹配",
+            }
+
+    parser = OverfilteredParser()
+    handler = FeishuEventHandler(
+        feishu_settings,
+        client=mock_feishu_client,
+        operation_parser=parser,
+    )
+    body = json.dumps(_message_event("把晚上的劳动法律法规考试调整到10点"))
+
+    status, payload = handler.handle(
+        body.encode(),
+        _signed_headers(body),
+        db_session,
+        now=FIXED_NOW,
+    )
+
+    assert status == 200
+    assert payload["code"] == 0
+    assert len(parser.seen_candidates) == 1
+    pending = db_session.query(PendingOperation).one()
+    assert pending.action_name == "update_event"
+    assert pending.operation_payload["selector"] == {
+        "event_type": "life_event",
+        "id": target.id,
+    }
+    serialized_card = json.dumps(
+        mock_feishu_client.send_interactive_card.call_args.kwargs["card"],
+        ensure_ascii=False,
+    )
+    assert "考一下劳动法律法规" in serialized_card
+    assert "1111" not in serialized_card
+
+
 def test_event_handler_two_stage_delete_all_creates_batch_pending(
     feishu_settings,
     mock_feishu_client,
@@ -1121,8 +1218,9 @@ def test_event_handler_reject_operation_does_not_apply(
     assert "已拒绝" in reply_text
 
 
-def test_event_handler_card_confirm_callback_applies_pending_operation(
+def test_event_handler_card_confirm_callback_applies_pending_operation_and_deletes_card(
     event_handler,
+    mock_feishu_client,
     db_session,
 ):
     body = json.dumps(_message_event("添加事项 做程设作业"))
@@ -1144,10 +1242,12 @@ def test_event_handler_card_confirm_callback_applies_pending_operation(
     assert pending.result_resource_id == event.id
     assert payload["toast"]["type"] == "success"
     assert "已确认" in payload["toast"]["content"]
+    mock_feishu_client.delete_message.assert_called_once_with("om_card_1")
 
 
-def test_event_handler_card_reject_callback_rejects_pending_operation(
+def test_event_handler_card_reject_callback_rejects_pending_operation_and_deletes_card(
     event_handler,
+    mock_feishu_client,
     db_session,
 ):
     body = json.dumps(_message_event("添加事项 做程设作业"))
@@ -1168,6 +1268,7 @@ def test_event_handler_card_reject_callback_rejects_pending_operation(
     assert db_session.query(LifeEvent).count() == 0
     assert payload["toast"]["type"] == "success"
     assert "已拒绝" in payload["toast"]["content"]
+    mock_feishu_client.delete_message.assert_called_once_with("om_card_1")
 
 
 def test_event_handler_confirm_invalid_operation_replies_without_crashing(
@@ -1231,6 +1332,27 @@ def test_feishu_client_send_text_uses_mock_transport():
     result = client.send_text("oc_chat", "hello again")
     assert result["code"] == 0
     assert token_requests == 1
+
+
+def test_feishu_client_delete_message_uses_message_delete_api():
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path.endswith("/tenant_access_token/internal"):
+            return httpx.Response(200, json={"code": 0, "tenant_access_token": "t-token"})
+        return httpx.Response(200, json={"code": 0})
+
+    transport = httpx.MockTransport(handler)
+    client = FeishuClient("app", "secret", transport=transport)
+
+    result = client.delete_message("om_card_1")
+
+    assert result == {"code": 0}
+    delete_request = requests[-1]
+    assert delete_request.method == "DELETE"
+    assert delete_request.url.path == "/open-apis/im/v1/messages/om_card_1"
+    assert delete_request.headers["Authorization"] == "Bearer t-token"
 
 
 def test_feishu_client_refreshes_token_on_send_auth_error():

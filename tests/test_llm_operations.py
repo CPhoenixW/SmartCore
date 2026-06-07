@@ -5,6 +5,7 @@ from datetime import datetime
 
 import httpx
 
+from app.llm import deepseek
 from app.llm.deepseek import DeepSeekOperationParser
 from app.operations.parser import (
     CompositeOperationParser,
@@ -77,6 +78,17 @@ def test_deepseek_parser_converts_free_form_reminder_to_life_event() -> None:
     assert requests[0]["model"] == "deepseek-chat"
     assert "今晚八点提醒我做程设作业" in json.dumps(requests[0], ensure_ascii=False)
     assert "reminder_lead_minutes" in json.dumps(requests[0], ensure_ascii=False)
+
+
+def test_deepseek_prompts_keep_candidate_selection_conservative() -> None:
+    system_prompt = deepseek._SYSTEM_PROMPT
+    selection_prompt = deepseek._SELECT_SYSTEM_PROMPT
+
+    assert "event_type=all" in system_prompt
+    assert "不要过早收窄" in system_prompt
+    assert "标题/语义/时间" in selection_prompt
+    assert "不要选择无关或弱相关候选" in selection_prompt
+    assert "ambiguous" in selection_prompt
 
 
 def test_deepseek_parser_accepts_unified_update_life_event_operation() -> None:

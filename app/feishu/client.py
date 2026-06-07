@@ -185,6 +185,22 @@ class FeishuClient:
             raise FeishuAPIError(payload.get("msg", "failed to send message"))
         return payload
 
+    def delete_message(self, message_id: str) -> dict[str, Any]:
+        token = self.get_tenant_access_token()
+        with self._client() as client:
+            response = client.delete(
+                f"/im/v1/messages/{message_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if response.is_error:
+                raise FeishuAPIError(
+                    f"delete message request failed: {response.status_code} {response.text}"
+                )
+            payload = response.json()
+        if payload.get("code") != 0:
+            raise FeishuAPIError(payload.get("msg", "failed to delete message"))
+        return payload
+
 
 class FeishuNotificationSender:
     """Adapter so the scheduler can deliver reminders through Feishu."""

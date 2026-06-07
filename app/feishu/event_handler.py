@@ -236,6 +236,13 @@ class FeishuEventHandler:
         if not isinstance(operation_id, int):
             return 200, {"toast": {"type": "error", "content": "无效操作编号"}}
 
+        context = event.get("context")
+        open_message_id = None
+        if isinstance(context, dict):
+            raw_message_id = context.get("open_message_id")
+            if isinstance(raw_message_id, str) and raw_message_id:
+                open_message_id = raw_message_id
+
         executor = ActionExecutor(db)
         if smartcore_action == "confirm_operation":
             try:
@@ -247,6 +254,7 @@ class FeishuEventHandler:
                         "content": _format_confirm_error(operation_id, exc),
                     }
                 }
+            self._delete_card_message(open_message_id)
             return 200, {
                 "toast": {
                     "type": "success",
@@ -264,6 +272,7 @@ class FeishuEventHandler:
                         "content": _format_reject_error(operation_id, exc),
                     }
                 }
+            self._delete_card_message(open_message_id)
             return 200, {
                 "toast": {
                     "type": "success",
@@ -272,6 +281,17 @@ class FeishuEventHandler:
             }
 
         return 200, {"toast": {"type": "error", "content": "未知卡片操作"}}
+
+    def _delete_card_message(self, open_message_id: str | None) -> None:
+        if not open_message_id:
+            return
+        try:
+            self.client.delete_message(open_message_id)
+        except Exception:
+            logger.exception(
+                "failed to delete feishu card message: message_id=%s",
+                open_message_id,
+            )
 
     def _build_reply(self, db: Session, command, text: str) -> FeishuReply:
         if command.name in {COMMAND_ADD_ASSIGNMENT, COMMAND_ADD_LIFE_EVENT}:
@@ -321,7 +341,7 @@ class FeishuEventHandler:
         text: str,
         parsed: ParsedOperation,
     ) -> FeishuReply:
-        candidates = ActionExecutor(db).query_events(parsed.payload)
+        candidates = self._query_event_candidates(db, parsed)
         selection = self._operation_parser.select_candidates(
             raw_text=text,
             parsed=parsed,
@@ -407,6 +427,27 @@ class FeishuEventHandler:
             )
 
         return self._pending_operation_card_reply(db, parsed)
+
+    @staticmethod
+    def _query_event_candidates(db: Session, parsed: ParsedOperation) -> list[dict]:
+        executor = ActionExecutor(db)
+        selector = parsed.payload.get("selector") or {}
+        fields = parsed.payload.get("fields") or {}
+        event_type = selector.get("event_type")
+        if event_type is None:
+            event_type = fields.get("event_type", "all")
+        if event_type in {None, "all"}:
+            return executor.query_events(parsed.payload)
+
+        broad_payload = dict(parsed.payload)
+        broad_selector = dict(selector)
+        broad_selector["event_type"] = "all"
+        broad_payload["selector"] = broad_selector
+        if "event_type" in fields:
+            broad_fields = dict(fields)
+            broad_fields["event_type"] = "all"
+            broad_payload["fields"] = broad_fields
+        return executor.query_events(broad_payload)
 
     @staticmethod
     def _filter_candidates(

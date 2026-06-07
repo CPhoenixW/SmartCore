@@ -41,8 +41,11 @@ create + event + course_session: fields 含 event_type=course_session、course_n
 weekday、start_time、end_time、location 等。
 update/delete + event: 若已知 id，selector 含 id 和 event_type；否则 selector 用候选范围字段，
   至少包含 event_type、time_range、target_description、status、max_candidates 之一。
+  对 update/delete/query，默认优先使用 event_type=all，不要过早收窄；仅当用户明确提到
+  作业/课程/课/ coursework/homework/class/course 或某一事件类别时，才使用具体 event_type。
 query + event: selector 或 fields 可含 event_type（all/assignment/life_event/course_session）、
   status、time_range、max_candidates、target_description。
+  对 query，同样默认优先 event_type=all，除非用户明确限定事件类别。
 
 当用户说“提醒我……”并给出时间时，必须输出 create + event + life_event，
 不要输出 create + reminder；Reminder 是系统内部发送队列，不是用户直接创建的资源。
@@ -63,7 +66,8 @@ _SELECT_SYSTEM_PROMPT = """\
 规则：
 - 只能从给定候选里选择，不能编造 id。
 - query 可多选；update 通常应 single；delete 可为 single 或 multiple。
-- 无法确定时返回 ambiguous 或 none。
+- 综合比较标题/语义/时间，不要选择无关或弱相关候选。
+- 无法确定时返回 ambiguous 或 none，不要猜测。
 """
 
 
