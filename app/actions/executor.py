@@ -14,6 +14,8 @@ from app.db.models import (
     LifeEventStatus,
     PendingOperation,
     PendingOperationStatus,
+    Reminder,
+    ReminderStatus,
 )
 from app.secretary.rules import DEFAULT_TZ
 
@@ -376,6 +378,7 @@ class ActionExecutor:
                 event.title = fields["title"]
             if fields.get("scheduled_at"):
                 event.scheduled_at = datetime.fromisoformat(fields["scheduled_at"])
+                self._reschedule_life_event_reminders(event, fields)
             if fields.get("deadline_at"):
                 event.deadline_at = datetime.fromisoformat(fields["deadline_at"])
             if "notes" in fields:
@@ -444,6 +447,48 @@ class ActionExecutor:
         self._db.commit()
         self._db.refresh(pending)
         return pending
+
+    def _reschedule_life_event_reminders(
+        self,
+        event: LifeEvent,
+        fields: dict,
+    ) -> None:
+        if event.scheduled_at is None:
+            return
+
+        lead_minutes = 15
+        raw_lead = fields.get("reminder_lead_minutes")
+        if raw_lead is not None:
+            lead_minutes = int(raw_lead)
+        scheduled_at = event.scheduled_at - timedelta(minutes=lead_minutes)
+        content = f"提醒：{event.title}"
+        reminders = (
+            self._db.query(Reminder)
+            .filter(
+                Reminder.reminder_type == "life_event_pre_event",
+                Reminder.target_type == "life_event",
+                Reminder.target_id == event.id,
+                Reminder.status.in_(
+                    [ReminderStatus.PENDING.value, ReminderStatus.FAILED.value]
+                ),
+            )
+            .all()
+        )
+        if not reminders:
+            crud.create_reminder(
+                self._db,
+                reminder_type="life_event_pre_event",
+                target_type="life_event",
+                target_id=event.id,
+                scheduled_at=scheduled_at,
+                content=content,
+            )
+            return
+        for reminder in reminders:
+            reminder.scheduled_at = scheduled_at
+            reminder.content = content
+            reminder.retry_count = 0
+            reminder.status = ReminderStatus.PENDING.value
 
     def _apply_delete_event(self, pending: PendingOperation) -> PendingOperation:
         selector = pending.operation_payload.get("selector") or {}

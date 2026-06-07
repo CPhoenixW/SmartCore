@@ -296,6 +296,68 @@ def test_event_interface_update_and_delete_events(db_session) -> None:
     assert scheduled_at == datetime(2026, 6, 5, 21, 0, tzinfo=DEFAULT_TZ)
 
 
+def test_update_life_event_reschedules_pending_pre_event_reminder(db_session) -> None:
+    event = crud.create_life_event(
+        db_session,
+        title="做程序设计作业",
+        scheduled_at=datetime(2026, 6, 6, 20, 0, tzinfo=DEFAULT_TZ),
+    )
+    sent_reminder = crud.create_reminder(
+        db_session,
+        reminder_type="life_event_pre_event",
+        target_type="life_event",
+        target_id=event.id,
+        scheduled_at=datetime(2026, 6, 6, 19, 45, tzinfo=DEFAULT_TZ),
+        status=ReminderStatus.SENT,
+        content="提醒：旧提醒",
+    )
+    pending_reminder = crud.create_reminder(
+        db_session,
+        reminder_type="life_event_pre_event",
+        target_type="life_event",
+        target_id=event.id,
+        scheduled_at=datetime(2026, 6, 6, 19, 45, tzinfo=DEFAULT_TZ),
+        content="提醒：做程序设计作业",
+    )
+    parsed = ParsedOperation(
+        source="feishu",
+        raw_text="把程设作业改到十点",
+        action_name="update_event",
+        payload={
+            "operation": "update",
+            "resource": "event",
+            "selector": {"event_type": "life_event", "id": event.id},
+            "fields": {
+                "scheduled_at": "2026-06-06T22:00:00+08:00",
+                "reminder_lead_minutes": 30,
+            },
+        },
+        confidence=0.9,
+        needs_confirmation=True,
+    )
+
+    applied = ActionExecutor(db_session).confirm_and_apply(
+        create_pending_operation(db_session, parsed).id
+    )
+
+    db_session.refresh(event)
+    db_session.refresh(pending_reminder)
+    db_session.refresh(sent_reminder)
+    event_time = event.scheduled_at
+    reminder_time = pending_reminder.scheduled_at
+    sent_time = sent_reminder.scheduled_at
+    if event_time is not None and event_time.tzinfo is None:
+        event_time = event_time.replace(tzinfo=DEFAULT_TZ)
+    if reminder_time is not None and reminder_time.tzinfo is None:
+        reminder_time = reminder_time.replace(tzinfo=DEFAULT_TZ)
+    if sent_time is not None and sent_time.tzinfo is None:
+        sent_time = sent_time.replace(tzinfo=DEFAULT_TZ)
+    assert applied.status == PendingOperationStatus.APPLIED.value
+    assert event_time == datetime(2026, 6, 6, 22, 0, tzinfo=DEFAULT_TZ)
+    assert reminder_time == datetime(2026, 6, 6, 21, 30, tzinfo=DEFAULT_TZ)
+    assert sent_time == datetime(2026, 6, 6, 19, 45, tzinfo=DEFAULT_TZ)
+
+
 def test_event_interface_update_and_delete_course_session(db_session) -> None:
     course = crud.create_course(db_session, name="物理")
     session = crud.create_course_session(

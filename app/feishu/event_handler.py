@@ -351,7 +351,11 @@ class FeishuEventHandler:
                 and len(selected_ids) == 1
                 and confidence >= _SELECTION_CONFIDENCE_THRESHOLD
             ):
-                resolved = self._resolve_update_payload(parsed, selected_ids[0])
+                resolved = self._resolve_update_payload(
+                    parsed,
+                    selected_ids[0],
+                    candidates,
+                )
                 return self._pending_operation_card_reply(
                     db,
                     ParsedOperation(
@@ -421,12 +425,19 @@ class FeishuEventHandler:
         ]
 
     @staticmethod
-    def _resolve_update_payload(parsed: ParsedOperation, target: dict) -> dict:
+    def _resolve_update_payload(
+        parsed: ParsedOperation,
+        target: dict,
+        candidates: list[dict],
+    ) -> dict:
         payload = dict(parsed.payload)
         payload["selector"] = {
             "event_type": target["event_type"],
             "id": target["id"],
         }
+        selected = FeishuEventHandler._filter_candidates(candidates, [target])
+        if selected:
+            payload["selected_candidates"] = selected
         return payload
 
     @staticmethod

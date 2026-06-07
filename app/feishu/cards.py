@@ -38,6 +38,56 @@ def _format_life_event_detail_lines(fields: dict, tz: ZoneInfo) -> list[str]:
     return lines
 
 
+def _format_local_datetime(value: object, tz: ZoneInfo) -> str | None:
+    if not value:
+        return None
+    dt = datetime.fromisoformat(str(value))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=tz)
+    return dt.astimezone(tz).strftime("%Y-%m-%d %H:%M")
+
+
+def _format_update_detail_lines(payload: dict, tz: ZoneInfo) -> list[str]:
+    fields = payload.get("fields") or {}
+    selected_candidates = payload.get("selected_candidates")
+    lines: list[str] = []
+    if isinstance(selected_candidates, list) and selected_candidates:
+        lines.append("将修改：")
+        for item in selected_candidates:
+            label = item.get("title") or f"{item.get('event_type')}#{item.get('id')}"
+            lines.append(f"- {label}")
+            time_label = item.get("time_label")
+            if time_label:
+                lines.append(f"原计划时间：{time_label}")
+
+    scheduled_at = _format_local_datetime(fields.get("scheduled_at"), tz)
+    if scheduled_at:
+        lines.append(f"新计划时间：{scheduled_at}")
+        reminder_lead = fields.get("reminder_lead_minutes", 15)
+        try:
+            lead_minutes = int(reminder_lead)
+        except (TypeError, ValueError):
+            lead_minutes = None
+        if lead_minutes is not None:
+            dt = datetime.fromisoformat(str(fields["scheduled_at"]))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=tz)
+            reminder_at = dt.astimezone(tz) - timedelta(minutes=lead_minutes)
+            lines.append(f"新提醒时间：{reminder_at.strftime('%Y-%m-%d %H:%M')}")
+
+    due_at = _format_local_datetime(fields.get("due_at"), tz)
+    if due_at:
+        lines.append(f"新截止时间：{due_at}")
+    deadline_at = _format_local_datetime(fields.get("deadline_at"), tz)
+    if deadline_at:
+        lines.append(f"新截止/结束时间：{deadline_at}")
+    if fields.get("title"):
+        lines.append(f"新标题：{fields['title']}")
+    if fields.get("notes"):
+        lines.append(f"新备注：{fields['notes']}")
+    return lines
+
+
 def build_pending_operation_card(
     *,
     operation_id: int,
@@ -73,16 +123,18 @@ def build_pending_operation_card(
                     detail_lines.append(
                         f"- {item.get('event_type')}#{item.get('id')}"
                     )
+    elif action_name == "update_event":
+        detail_lines.extend(_format_update_detail_lines(payload, tz))
     elif event_type:
         detail_lines.append(f"事件类型：{event_type}")
-    if event_type == "life_event":
+    if action_name != "update_event" and event_type == "life_event":
         detail_lines.extend(
             _format_life_event_detail_lines(
                 {k: v for k, v in fields.items() if k != "event_type"},
                 tz,
             )
         )
-    else:
+    elif action_name != "update_event":
         if title:
             detail_lines.append(f"标题：{title}")
         for key, value in fields.items():

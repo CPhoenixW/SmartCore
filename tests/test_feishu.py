@@ -558,6 +558,42 @@ def test_pending_operation_card_shows_event_and_reminder_times():
     assert "提前 15 分钟" in serialized
 
 
+def test_pending_operation_card_shows_resolved_update_target_and_new_times():
+    card = build_pending_operation_card(
+        operation_id=43,
+        raw_text="把程设作业改到十点",
+        action_name="update_event",
+        payload={
+            "operation": "update",
+            "resource": "event",
+            "selector": {"event_type": "life_event", "id": 7},
+            "selected_candidates": [
+                {
+                    "event_type": "life_event",
+                    "id": 7,
+                    "status": "pending",
+                    "time_label": "2026-06-06 20:00",
+                    "title": "做程序设计作业",
+                }
+            ],
+            "fields": {
+                "scheduled_at": "2026-06-06T22:00:00+08:00",
+                "reminder_lead_minutes": 15,
+            },
+        },
+        dashboard_base_url="http://100.65.243.93:8000/dashboard",
+    )
+
+    serialized = json.dumps(card, ensure_ascii=False)
+    assert "将修改：" in serialized
+    assert "做程序设计作业" in serialized
+    assert "原计划时间：2026-06-06 20:00" in serialized
+    assert "新计划时间：2026-06-06 22:00" in serialized
+    assert "新提醒时间：2026-06-06 21:45" in serialized
+    assert "scheduled_at" not in serialized
+    assert "reminder_lead_minutes" not in serialized
+
+
 def test_event_handler_strips_group_mention_before_parsing_operation(
     event_handler,
     mock_feishu_client,
