@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -92,7 +92,8 @@ def create_web_router() -> APIRouter:
             {
                 "active_page": "today",
                 "plan": plan,
-                "today": date.today(),
+                "today": plan.target_date,
+                "plan_label": "今日",
                 "pending_operations_count": pending_operations_count,
                 "pending_reminders_count": pending_reminders_count,
                 "next_reminder": next_reminder,
@@ -116,6 +117,7 @@ def create_web_router() -> APIRouter:
             {
                 "active_page": "tomorrow",
                 "plan": plan,
+                "plan_label": "明日",
             },
         )
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
@@ -117,7 +117,7 @@ def build_today_plan(
     tz: ZoneInfo = DEFAULT_TZ,
     semester_start: date | None = None,
 ) -> DayPlan:
-    target = today or date.today()
+    target = today or datetime.now(tz).date()
     return build_day_plan(
         db,
         target,
@@ -134,7 +134,7 @@ def build_tomorrow_plan(
     tz: ZoneInfo = DEFAULT_TZ,
     semester_start: date | None = None,
 ) -> DayPlan:
-    base = today or date.today()
+    base = today or datetime.now(tz).date()
     return build_day_plan(
         db,
         base + timedelta(days=1),
