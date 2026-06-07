@@ -11,7 +11,8 @@
 <section class="card">
   <h3>飞书消息日志</h3>
   {% if message_logs %}
-  <table class="data-table">
+  <div class="table-scroll">
+  <table class="data-table log-table">
     <thead>
       <tr>
         <th>来源</th>
@@ -31,16 +32,28 @@
         <td>{{ log.raw_content or "—" }}</td>
         <td>{{ log.parsed_command or "—" }}</td>
         <td>{{ log.reply_status or "—" }}</td>
-        <td>
+        <td class="debug-cell">
           {% if log.action_input or log.db_result %}
-          <details>
-            <summary>展开</summary>
+          <details class="debug-panel">
+            <summary class="debug-summary">
+              调试
+              <span>{{ log.action_input.action if log.action_input else log.parsed_command or "—" }}</span>
+              <span>{{ log.db_result.status if log.db_result else log.reply_status or "—" }}</span>
+            </summary>
+            <div class="debug-grid">
             {% if log.action_input %}
-            <div><strong>模型输入</strong><pre>{{ log.action_input | tojson(indent=2) }}</pre></div>
+            <section class="debug-block">
+              <strong>模型输入</strong>
+              <pre>{{ log.action_input | pretty_json }}</pre>
+            </section>
             {% endif %}
             {% if log.db_result %}
-            <div><strong>数据库执行结果</strong><pre>{{ log.db_result | tojson(indent=2) }}</pre></div>
+            <section class="debug-block">
+              <strong>数据库执行结果</strong>
+              <pre>{{ log.db_result | pretty_json }}</pre>
+            </section>
             {% endif %}
+            </div>
           </details>
           {% else %}
           —
@@ -51,6 +64,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}
   <p>暂无消息日志。</p>
   {% endif %}

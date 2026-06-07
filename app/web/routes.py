@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -33,6 +34,13 @@ from app.web.timetable_import import CSV_HEADERS, import_timetable_csv
 
 WEB_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(WEB_DIR / "templates"))
+
+
+def _pretty_json(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
+
+
+templates.env.filters["pretty_json"] = _pretty_json
 
 
 def _parse_datetime_local(value: str | None, tz: ZoneInfo) -> datetime | None:

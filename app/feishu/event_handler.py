@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
 from app.actions.executor import ActionExecutor
-from app.actions.normalize import action_from_parsed
+from app.actions.normalize import action_from_parsed, ensure_default_query_time_range
 from app.actions.reply import format_result_reply
 from app.config import Settings, get_settings
 from app.db import crud
@@ -158,7 +159,12 @@ class FeishuEventHandler:
         ).first():
             return 200, {"code": 0, "msg": "duplicate message ignored"}
 
-        reply = self._handle_text_message(db, text)
+        now_dt = (
+            datetime.fromtimestamp(now, DEFAULT_TZ)
+            if now is not None
+            else datetime.now(DEFAULT_TZ)
+        )
+        reply = self._handle_text_message(db, text, now_dt=now_dt)
         parsed_command = reply.parsed_command or "unknown"
         reply_status = reply.reply_status or "ok"
         crud.create_message_log(
@@ -191,7 +197,13 @@ class FeishuEventHandler:
 
         return 200, {"code": 0, "msg": "ok"}
 
-    def _handle_text_message(self, db: Session, text: str) -> FeishuReply:
+    def _handle_text_message(
+        self,
+        db: Session,
+        text: str,
+        *,
+        now_dt: datetime,
+    ) -> FeishuReply:
         if text.strip() in _HELP_KEYWORDS:
             return FeishuReply(
                 text=format_help_message(),
@@ -200,7 +212,7 @@ class FeishuEventHandler:
             )
 
         try:
-            parsed = self._operation_parser.parse(text, source="feishu")
+            parsed = self._operation_parser.parse(text, source="feishu", now=now_dt)
         except ValueError as exc:
             logger.warning("operation parsing failed: text=%r error=%s", text, exc)
             return FeishuReply(
@@ -210,9 +222,9 @@ class FeishuEventHandler:
             )
 
         if self._supports_two_stage_selection(parsed):
-            return self._two_stage_event_reply(db, text, parsed)
+            return self._two_stage_event_reply(db, text, parsed, now_dt=now_dt)
 
-        action = action_from_parsed(parsed)
+        action = action_from_parsed(parsed, now=now_dt)
         return self._execute_action_reply(db, action)
 
     def _execute_action_reply(self, db: Session, action: dict[str, Any]) -> FeishuReply:
@@ -365,8 +377,10 @@ class FeishuEventHandler:
         db: Session,
         text: str,
         parsed: ParsedOperation,
+        *,
+        now_dt: datetime,
     ) -> FeishuReply:
-        query_action = self._build_candidate_query_action(parsed)
+        query_action = self._build_candidate_query_action(parsed, now_dt=now_dt)
         executor = ActionExecutor(db)
         query_result = executor.execute(query_action)
         candidates = (query_result.get("data") or {}).get("events") or []
@@ -461,9 +475,14 @@ class FeishuEventHandler:
                 db_result=query_result,
             )
 
-        return self._execute_action_reply(db, action_from_parsed(parsed))
+        return self._execute_action_reply(db, action_from_parsed(parsed, now=now_dt))
 
-    def _build_candidate_query_action(self, parsed: ParsedOperation) -> dict[str, Any]:
+    def _build_candidate_query_action(
+        self,
+        parsed: ParsedOperation,
+        *,
+        now_dt: datetime,
+    ) -> dict[str, Any]:
         payload = parsed.payload
         if isinstance(payload.get("action"), str):
             selector = (payload.get("payload") or {}).get("selector") or {}
@@ -480,12 +499,17 @@ class FeishuEventHandler:
         if selector.get("status") == "open":
             filter_payload["status"] = ["pending", "active"]
 
-        return {
+        action = {
             "action": "query_event",
             "source": parsed.source,
             "raw_text": parsed.raw_text,
+            "request": {
+                "timezone": "Asia/Shanghai",
+                "now": now_dt.isoformat(),
+            },
             "payload": {"filter": filter_payload},
         }
+        return ensure_default_query_time_range(action, now_dt)
 
     @staticmethod
     def _extract_patch(parsed: ParsedOperation) -> dict[str, Any]:

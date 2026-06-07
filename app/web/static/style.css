@@ -239,6 +239,89 @@ button[type="submit"] {
   color: var(--muted);
 }
 
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.log-table {
+  min-width: 1080px;
+}
+
+.log-table th:nth-child(2),
+.log-table td:nth-child(2) {
+  max-width: 160px;
+}
+
+.log-table th:nth-child(3),
+.log-table td:nth-child(3) {
+  max-width: 220px;
+}
+
+.debug-cell {
+  min-width: 340px;
+}
+
+.debug-panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.debug-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.45rem 0.6rem;
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.debug-summary span {
+  padding: 0.05rem 0.4rem;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.debug-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 0.75rem;
+  padding: 0.65rem;
+  border-top: 1px solid var(--border);
+}
+
+.debug-block strong {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.82rem;
+}
+
+.debug-block pre {
+  max-height: 18rem;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 0.65rem;
+  border-radius: 8px;
+  background: #111827;
+  color: #f9fafb;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  .debug-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .status {
   display: inline-block;
   padding: 0.1rem 0.45rem;

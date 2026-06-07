@@ -139,6 +139,25 @@ def test_tomorrow_courses_in_tomorrow_plan(db_session, sample_course):
     assert any(item.title == "Algorithms" for item in plan.courses)
 
 
+def test_public_course_life_event_appears_in_course_section(db_session):
+    today = date(2026, 6, 8)
+    crud.create_life_event(
+        db_session,
+        title="操作系统课",
+        scheduled_at=datetime(2026, 6, 9, 8, 0, tzinfo=DEFAULT_TZ),
+        deadline_at=datetime(2026, 6, 9, 10, 0, tzinfo=DEFAULT_TZ),
+        reminder_rule="sc:course",
+        notes="7教北216",
+    )
+
+    plan = build_tomorrow_plan(db_session, today=today, tz=DEFAULT_TZ)
+
+    course = next(item for item in plan.courses if item.title == "操作系统课")
+    assert course.time_label == "08:00-10:00"
+    assert course.location == "7教北216"
+    assert not any(item.title == "操作系统课" for item in plan.life_events)
+
+
 def test_unscheduled_life_event_in_today_plan(db_session):
     today = date(2026, 3, 2)
     crud.create_life_event(db_session, title="Call mom")

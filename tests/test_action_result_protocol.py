@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from app.actions.executor import ActionExecutor
+from app.actions.normalize import action_from_parsed
 from app.db.models import PendingOperation, PendingOperationStatus, Reminder
+from app.operations.parser import ParsedOperation
 from app.secretary.rules import DEFAULT_TZ
 
 
@@ -136,3 +138,34 @@ def test_action_executor_query_result_uses_candidate_refs_not_database_ids(db_se
     ]
     assert "id" not in events[0]
     assert result["debug"]["db_result"]["count"] == 1
+
+
+def test_query_action_defaults_today_time_range_from_raw_text():
+    now = datetime(2026, 6, 8, 9, 30, tzinfo=DEFAULT_TZ)
+    parsed = ParsedOperation(
+        source="feishu",
+        raw_text="今天有啥事",
+        action_name="query_event",
+        payload={
+            "action": "query_event",
+            "source": "feishu",
+            "raw_text": "今天有啥事",
+            "payload": {
+                "filter": {
+                    "event_type": "all",
+                    "status": ["pending", "active"],
+                    "limit": 50,
+                }
+            },
+        },
+        confidence=0.9,
+        needs_confirmation=False,
+    )
+
+    action = action_from_parsed(parsed, now=now)
+
+    assert action["payload"]["filter"]["time_range"] == {
+        "start": "2026-06-08T00:00:00+08:00",
+        "end": "2026-06-09T00:00:00+08:00",
+    }
+    assert action["request"]["now"] == now.isoformat()

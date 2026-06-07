@@ -49,6 +49,23 @@ def build_day_plan(
         )
 
     for event in get_life_events_for_date(db, target, tz):
+        event_type = _read_public_event_type(event.reminder_rule)
+        if event_type == "course":
+            time_label = _format_event_time_range(
+                event.scheduled_at,
+                event.deadline_at,
+                tz,
+            )
+            plan.courses.append(
+                PlanItem(
+                    kind="course",
+                    title=event.title,
+                    time_label=time_label,
+                    location=event.notes,
+                    ref_id=event.id,
+                )
+            )
+            continue
         plan.life_events.append(
             PlanItem(
                 kind="life_event",
@@ -71,6 +88,26 @@ def build_day_plan(
             )
 
     return plan
+
+
+def _format_event_time_range(
+    start_at,
+    end_at,
+    tz: ZoneInfo,
+) -> str | None:
+    start_label = format_datetime(start_at, tz)
+    if not start_label:
+        return None
+    end_label = format_datetime(end_at, tz)
+    if not end_label:
+        return start_label
+    return f"{start_label}-{end_label}"
+
+
+def _read_public_event_type(reminder_rule: str | None) -> str | None:
+    if reminder_rule in {"sc:course", "sc:plan", "sc:schedule", "sc:deadline"}:
+        return reminder_rule.removeprefix("sc:")
+    return None
 
 
 def build_today_plan(

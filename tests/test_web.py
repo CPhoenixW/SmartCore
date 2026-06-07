@@ -222,7 +222,11 @@ def test_logs_page_shows_collapsed_action_debug(web_client, db_session):
         raw_content="今晚有什么事",
         parsed_command="query_event",
         reply_status="ok",
-        action_input={"action": "query_event", "payload": {"filter": {"event_type": "all"}}},
+        action_input={
+            "action": "query_event",
+            "raw_text": "今晚有什么事",
+            "payload": {"filter": {"event_type": "all"}},
+        },
         db_result={"ok": True, "status": "applied", "data": {"count": 0}},
     )
 
@@ -230,9 +234,12 @@ def test_logs_page_shows_collapsed_action_debug(web_client, db_session):
 
     assert response.status_code == 200
     assert "<details" in response.text
+    assert "debug-grid" in response.text
     assert "模型输入" in response.text
     assert "数据库执行结果" in response.text
     assert "query_event" in response.text
+    assert "今晚有什么事" in response.text
+    assert "\\u4eca\\u665a" not in response.text
 
 
 def test_timetable_import_via_web_form(web_client, db_session):
