@@ -152,6 +152,13 @@ def test_deepseek_prompts_keep_candidate_selection_conservative() -> None:
     assert "30" in system_prompt
     assert "15" in system_prompt
     assert "数据库 id" in system_prompt
+    assert "今早" in system_prompt
+    assert "06:00" in system_prompt
+    assert "12:00" in system_prompt
+    assert "needs_confirmation" in system_prompt
+    assert "query_event 必须 false" in system_prompt
+    assert "filter 必须包含 event_type、status、limit" in system_prompt
+    assert "time_range 必须是半开区间" in system_prompt
     assert "标题/语义/时间" in selection_prompt
     assert "不要选择无关或弱相关候选" in selection_prompt
     assert "ref" in selection_prompt

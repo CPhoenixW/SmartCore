@@ -248,18 +248,58 @@ button[type="submit"] {
   min-width: 1080px;
 }
 
+.expand-col {
+  width: 2.2rem;
+  text-align: center;
+}
+
+.row-toggle,
+.copy-id {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  padding: 0.1rem 0.2rem;
+}
+
+.row-toggle {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 6px;
+}
+
+.row-toggle:hover,
+.copy-id:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.copy-id {
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+}
+
 .log-table th:nth-child(2),
 .log-table td:nth-child(2) {
-  max-width: 160px;
+  max-width: 110px;
 }
 
 .log-table th:nth-child(3),
 .log-table td:nth-child(3) {
-  max-width: 220px;
+  max-width: 180px;
 }
 
 .debug-cell {
-  min-width: 340px;
+  min-width: 170px;
+}
+
+.debug-row td {
+  background: #f9fafb;
 }
 
 .debug-panel {
@@ -268,24 +308,20 @@ button[type="submit"] {
   background: #f9fafb;
 }
 
-.debug-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  align-items: center;
-  padding: 0.45rem 0.6rem;
-  cursor: pointer;
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.debug-summary span {
+.debug-pill {
+  display: inline-block;
+  margin: 0.1rem 0.15rem 0.1rem 0;
   padding: 0.05rem 0.4rem;
   border-radius: 6px;
-  background: var(--surface);
-  color: var(--muted);
+  background: var(--accent-soft);
+  color: var(--accent);
   font-size: 0.78rem;
   font-weight: 500;
+}
+
+.debug-pill.muted {
+  background: #f3f4f6;
+  color: var(--muted);
 }
 
 .debug-grid {

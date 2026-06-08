@@ -503,6 +503,8 @@ class FeishuEventHandler:
             "action": "query_event",
             "source": parsed.source,
             "raw_text": parsed.raw_text,
+            "confidence": parsed.confidence,
+            "needs_confirmation": parsed.needs_confirmation,
             "request": {
                 "timezone": "Asia/Shanghai",
                 "now": now_dt.isoformat(),

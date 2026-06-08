@@ -15,6 +15,7 @@
   <table class="data-table log-table">
     <thead>
       <tr>
+        <th class="expand-col"></th>
         <th>来源</th>
         <th>外部消息 ID</th>
         <th>原始内容</th>
@@ -27,19 +28,50 @@
     <tbody>
       {% for log in message_logs %}
       <tr>
+        <td class="expand-col">
+          {% if log.action_input or log.db_result %}
+          <button
+            type="button"
+            class="row-toggle"
+            aria-label="展开调试信息"
+            aria-expanded="false"
+            data-target="log-debug-{{ log.id }}"
+          >▶</button>
+          {% else %}
+          —
+          {% endif %}
+        </td>
         <td>{{ log.source }}</td>
-        <td>{{ log.external_message_id or "—" }}</td>
+        <td>
+          {% if log.external_message_id %}
+          <button
+            type="button"
+            class="copy-id"
+            title="点击复制：{{ log.external_message_id }}"
+            data-copy-value="{{ log.external_message_id }}"
+          >{{ log.external_message_id | short_id }}</button>
+          {% else %}
+          —
+          {% endif %}
+        </td>
         <td>{{ log.raw_content or "—" }}</td>
         <td>{{ log.parsed_command or "—" }}</td>
         <td>{{ log.reply_status or "—" }}</td>
         <td class="debug-cell">
           {% if log.action_input or log.db_result %}
-          <details class="debug-panel">
-            <summary class="debug-summary">
-              调试
-              <span>{{ log.action_input.action if log.action_input else log.parsed_command or "—" }}</span>
-              <span>{{ log.db_result.status if log.db_result else log.reply_status or "—" }}</span>
-            </summary>
+          <span class="debug-pill">{{ log.action_input.action if log.action_input else log.parsed_command or "—" }}</span>
+          <span class="debug-pill muted">{{ log.db_result.status if log.db_result else log.reply_status or "—" }}</span>
+          {% else %}
+          —
+          {% endif %}
+        </td>
+        <td>{{ log.created_at }}</td>
+      </tr>
+      {% if log.action_input or log.db_result %}
+      <tr id="log-debug-{{ log.id }}" class="debug-row" hidden>
+        <td></td>
+        <td colspan="7">
+          <div class="debug-panel">
             <div class="debug-grid">
             {% if log.action_input %}
             <section class="debug-block">
@@ -54,13 +86,10 @@
             </section>
             {% endif %}
             </div>
-          </details>
-          {% else %}
-          —
-          {% endif %}
+          </div>
         </td>
-        <td>{{ log.created_at }}</td>
       </tr>
+      {% endif %}
       {% endfor %}
     </tbody>
   </table>
@@ -107,4 +136,41 @@
   <p>暂无近期操作记录。</p>
   {% endif %}
 </section>
+<script>
+  document.querySelectorAll(".row-toggle").forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = document.getElementById(button.dataset.target);
+      if (!target) return;
+      const expanded = button.getAttribute("aria-expanded") === "true";
+      button.setAttribute("aria-expanded", String(!expanded));
+      button.textContent = expanded ? "▶" : "▼";
+      target.hidden = expanded;
+    });
+  });
+
+  document.querySelectorAll(".copy-id").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const value = button.dataset.copyValue || "";
+      if (!value) return;
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        const input = document.createElement("textarea");
+        input.value = value;
+        input.setAttribute("readonly", "");
+        input.style.position = "fixed";
+        input.style.opacity = "0";
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand("copy");
+        document.body.removeChild(input);
+      }
+      const previous = button.textContent;
+      button.textContent = "已复制";
+      window.setTimeout(() => {
+        button.textContent = previous;
+      }, 1000);
+    });
+  });
+</script>
 {% endblock %}

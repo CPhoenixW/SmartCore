@@ -1090,6 +1090,69 @@ class ActionExecutor:
                 content=f"提醒：{title}",
             )
 
+    def _sync_default_reminders(
+        self,
+        *,
+        target_type: str,
+        target_id: int,
+        title: str,
+        start_at: datetime,
+    ) -> None:
+        reminder_type = (
+            "assignment_pre_due"
+            if target_type == "assignment"
+            else "life_event_pre_event"
+        )
+        self._cancel_pending_reminders(target_type, target_id)
+        for scheduled_at in default_reminder_times(start_at):
+            crud.create_reminder(
+                self._db,
+                reminder_type=reminder_type,
+                target_type=target_type,
+                target_id=target_id,
+                scheduled_at=scheduled_at,
+                content=f"提醒：{title}",
+            )
+
+    def _cancel_pending_reminders(self, target_type: str, target_id: int) -> int:
+        reminders = (
+            self._db.query(Reminder)
+            .filter(
+                Reminder.target_type == target_type,
+                Reminder.target_id == target_id,
+                Reminder.status.in_(
+                    [ReminderStatus.PENDING.value, ReminderStatus.FAILED.value]
+                ),
+            )
+            .all()
+        )
+        for reminder in reminders:
+            reminder.status = ReminderStatus.CANCELLED.value
+        return len(reminders)
+
+    def _update_pending_reminder_content(
+        self,
+        *,
+        target_type: str,
+        target_id: int,
+        title: str,
+    ) -> None:
+        reminders = (
+            self._db.query(Reminder)
+            .filter(
+                Reminder.target_type == target_type,
+                Reminder.target_id == target_id,
+                Reminder.status.in_(
+                    [ReminderStatus.PENDING.value, ReminderStatus.FAILED.value]
+                ),
+            )
+            .all()
+        )
+        for reminder in reminders:
+            reminder.content = f"提醒：{title}"
+            reminder.retry_count = 0
+            reminder.status = ReminderStatus.PENDING.value
+
     def _create_event_assignment(
         self, pending: PendingOperation, fields: dict
     ) -> PendingOperation:
@@ -1226,6 +1289,12 @@ class ActionExecutor:
             due_patch = fields.get("due_at") or fields.get("start_at")
             if due_patch:
                 assignment.due_at = datetime.fromisoformat(due_patch)
+                self._sync_default_reminders(
+                    target_type="assignment",
+                    target_id=assignment.id,
+                    title=assignment.title,
+                    start_at=assignment.due_at,
+                )
             if "notes" in fields:
                 assignment.notes = fields["notes"]
 
@@ -1277,12 +1346,26 @@ class ActionExecutor:
         if event.scheduled_at is None:
             return
 
-        lead_minutes = 15
+        public_type = read_sc_type(event.reminder_rule)
+        if public_type in {"schedule", "deadline"}:
+            self._sync_default_reminders(
+                target_type="life_event",
+                target_id=event.id,
+                title=event.title,
+                start_at=event.scheduled_at,
+            )
+            return
+
         raw_lead = fields.get("reminder_lead_minutes")
-        if raw_lead is not None:
-            lead_minutes = int(raw_lead)
-        scheduled_at = event.scheduled_at - timedelta(minutes=lead_minutes)
-        content = f"提醒：{event.title}"
+        if raw_lead is None:
+            self._update_pending_reminder_content(
+                target_type="life_event",
+                target_id=event.id,
+                title=event.title,
+            )
+            return
+
+        scheduled_at = event.scheduled_at - timedelta(minutes=int(raw_lead))
         reminders = (
             self._db.query(Reminder)
             .filter(
@@ -1302,12 +1385,12 @@ class ActionExecutor:
                 target_type="life_event",
                 target_id=event.id,
                 scheduled_at=scheduled_at,
-                content=content,
+                content=f"提醒：{event.title}",
             )
             return
         for reminder in reminders:
             reminder.scheduled_at = scheduled_at
-            reminder.content = content
+            reminder.content = f"提醒：{event.title}"
             reminder.retry_count = 0
             reminder.status = ReminderStatus.PENDING.value
 
@@ -1338,6 +1421,7 @@ class ActionExecutor:
                 self._db.refresh(pending)
                 return pending
             assignment.status = AssignmentStatus.CANCELLED.value
+            self._cancel_pending_reminders("assignment", assignment.id)
             pending.status = PendingOperationStatus.APPLIED.value
             pending.result_resource_type = "assignment"
             pending.result_resource_id = assignment.id
@@ -1355,6 +1439,7 @@ class ActionExecutor:
                 self._db.refresh(pending)
                 return pending
             event.status = LifeEventStatus.CANCELLED.value
+            self._cancel_pending_reminders("life_event", event.id)
             pending.status = PendingOperationStatus.APPLIED.value
             pending.result_resource_type = "life_event"
             pending.result_resource_id = event.id
@@ -1466,6 +1551,7 @@ class ActionExecutor:
             if assignment is None:
                 return None
             assignment.status = AssignmentStatus.CANCELLED.value
+            self._cancel_pending_reminders("assignment", assignment.id)
             return "assignment", assignment.id
 
         if event_type == "life_event":
@@ -1473,6 +1559,7 @@ class ActionExecutor:
             if event is None:
                 return None
             event.status = LifeEventStatus.CANCELLED.value
+            self._cancel_pending_reminders("life_event", event.id)
             return "life_event", event.id
 
         if event_type == "course_session":

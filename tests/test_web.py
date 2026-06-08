@@ -218,7 +218,7 @@ def test_logs_page_shows_collapsed_action_debug(web_client, db_session):
     crud.create_message_log(
         db_session,
         source="feishu",
-        external_message_id="om_debug",
+        external_message_id="om_x100b6d18e37e04a0c32d7ed0c2fbcfa",
         raw_content="今晚有什么事",
         parsed_command="query_event",
         reply_status="ok",
@@ -233,8 +233,12 @@ def test_logs_page_shows_collapsed_action_debug(web_client, db_session):
     response = web_client.get("/dashboard/logs")
 
     assert response.status_code == 200
-    assert "<details" in response.text
+    assert "row-toggle" in response.text
+    assert "debug-row" in response.text
     assert "debug-grid" in response.text
+    assert "copy-id" in response.text
+    assert "om_x100b6d...2fbcfa" in response.text
+    assert "data-copy-value=\"om_x100b6d18e37e04a0c32d7ed0c2fbcfa\"" in response.text
     assert "模型输入" in response.text
     assert "数据库执行结果" in response.text
     assert "query_event" in response.text

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from app.actions.executor import ActionExecutor
 from app.actions.normalize import action_from_parsed
-from app.db.models import PendingOperation, PendingOperationStatus, Reminder
+from app.db.models import LifeEvent, PendingOperation, PendingOperationStatus, Reminder
 from app.operations.parser import ParsedOperation
 from app.secretary.rules import DEFAULT_TZ
 
@@ -169,3 +169,87 @@ def test_query_action_defaults_today_time_range_from_raw_text():
         "end": "2026-06-09T00:00:00+08:00",
     }
     assert action["request"]["now"] == now.isoformat()
+
+
+def test_query_action_defaults_morning_time_range_and_confirmation_metadata():
+    now = datetime(2026, 6, 8, 9, 58, tzinfo=DEFAULT_TZ)
+    parsed = ParsedOperation(
+        source="feishu",
+        raw_text="今早有啥安排",
+        action_name="query_event",
+        payload={
+            "action": "query_event",
+            "source": "feishu",
+            "raw_text": "今早有啥安排",
+            "payload": {"filter": {"event_type": "all"}},
+        },
+        confidence=0.87,
+        needs_confirmation=False,
+    )
+
+    action = action_from_parsed(parsed, now=now)
+
+    assert action["needs_confirmation"] is False
+    assert action["confidence"] == 0.87
+    assert action["payload"]["filter"] == {
+        "event_type": "all",
+        "status": ["pending", "active"],
+        "limit": 50,
+        "time_range": {
+            "start": "2026-06-08T06:00:00+08:00",
+            "end": "2026-06-08T12:00:00+08:00",
+        },
+    }
+
+
+def test_update_schedule_resyncs_pending_reminders(db_session):
+    start = datetime(2026, 6, 7, 22, 0, tzinfo=DEFAULT_TZ)
+    new_start = datetime(2026, 6, 7, 23, 0, tzinfo=DEFAULT_TZ)
+    executor = ActionExecutor(db_session)
+    create_result = executor.execute(_action("schedule", "提醒我写作业", start))
+    executor.confirm_and_apply_result(create_result["operation_id"])
+    event = db_session.query(LifeEvent).filter_by(title="提醒我写作业").one()
+
+    update_result = executor.execute(
+        {
+            "action": "update_event",
+            "source": "feishu",
+            "raw_text": "把写作业改到十一点",
+            "payload": {
+                "selector": {"event_type": "life_event", "id": event.id},
+                "patch": {"start_at": new_start.isoformat()},
+            },
+        }
+    )
+    executor.confirm_and_apply_result(update_result["operation_id"])
+
+    reminders = db_session.query(Reminder).order_by(Reminder.scheduled_at.asc()).all()
+    pending = [item for item in reminders if item.status == "pending"]
+    cancelled = [item for item in reminders if item.status == "cancelled"]
+    assert [item.scheduled_at for item in pending] == [
+        new_start - timedelta(minutes=30),
+        new_start - timedelta(minutes=15),
+    ]
+    assert len(cancelled) == 2
+
+
+def test_delete_schedule_cancels_pending_reminders(db_session):
+    start = datetime(2026, 6, 7, 22, 0, tzinfo=DEFAULT_TZ)
+    executor = ActionExecutor(db_session)
+    create_result = executor.execute(_action("schedule", "提醒我写作业", start))
+    executor.confirm_and_apply_result(create_result["operation_id"])
+    event = db_session.query(LifeEvent).filter_by(title="提醒我写作业").one()
+
+    delete_result = executor.execute(
+        {
+            "action": "delete_event",
+            "source": "feishu",
+            "raw_text": "删除写作业",
+            "payload": {"selector": {"event_type": "life_event", "id": event.id}},
+        }
+    )
+    executor.confirm_and_apply_result(delete_result["operation_id"])
+
+    reminders = db_session.query(Reminder).order_by(Reminder.id.asc()).all()
+    assert reminders
+    assert {item.status for item in reminders} == {"cancelled"}

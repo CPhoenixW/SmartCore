@@ -35,6 +35,8 @@ def action_from_parsed(
                 "timezone": "Asia/Shanghai",
                 "now": now.isoformat(),
             }
+        action.setdefault("confidence", parsed.confidence)
+        action.setdefault("needs_confirmation", parsed.needs_confirmation)
         return ensure_default_query_time_range(action, now)
 
     selector = payload.get("selector") or {}
@@ -154,6 +156,8 @@ def _base_action(
         "action": action_name,
         "source": parsed.source,
         "raw_text": parsed.raw_text,
+        "confidence": parsed.confidence,
+        "needs_confirmation": parsed.needs_confirmation,
         "payload": payload_body,
     }
     if now is not None:
@@ -175,14 +179,28 @@ def ensure_default_query_time_range(
     if not isinstance(payload, dict):
         return action
     filter_payload = payload.get("filter")
-    if not isinstance(filter_payload, dict) or filter_payload.get("time_range"):
-        return action
+    if not isinstance(filter_payload, dict):
+        filter_payload = {}
+
+    new_filter = dict(filter_payload)
+    new_filter.setdefault("event_type", "all")
+    new_filter.setdefault("status", ["pending", "active"])
+    new_filter.setdefault("limit", 50)
+    if new_filter.get("time_range"):
+        new_payload = dict(payload)
+        new_payload["filter"] = new_filter
+        enriched = dict(action)
+        enriched["payload"] = new_payload
+        return enriched
 
     time_range = _infer_query_time_range(str(action.get("raw_text") or ""), now)
     if not time_range:
-        return action
+        new_payload = dict(payload)
+        new_payload["filter"] = new_filter
+        enriched = dict(action)
+        enriched["payload"] = new_payload
+        return enriched
 
-    new_filter = dict(filter_payload)
     new_filter["time_range"] = time_range
     new_payload = dict(payload)
     new_payload["filter"] = new_filter
@@ -206,6 +224,15 @@ def _infer_query_time_range(raw_text: str, now: datetime) -> dict[str, str] | No
             time(0, 0),
             tzinfo=local_now.tzinfo,
         )
+    elif any(keyword in raw_text for keyword in ("今早", "早上", "上午")):
+        start = datetime.combine(today, time(6, 0), tzinfo=local_now.tzinfo)
+        end = datetime.combine(today, time(12, 0), tzinfo=local_now.tzinfo)
+    elif "中午" in raw_text:
+        start = datetime.combine(today, time(11, 0), tzinfo=local_now.tzinfo)
+        end = datetime.combine(today, time(14, 0), tzinfo=local_now.tzinfo)
+    elif "下午" in raw_text:
+        start = datetime.combine(today, time(12, 0), tzinfo=local_now.tzinfo)
+        end = datetime.combine(today, time(18, 0), tzinfo=local_now.tzinfo)
     elif "明早" in raw_text:
         tomorrow = today + timedelta(days=1)
         start = datetime.combine(tomorrow, time(6, 0), tzinfo=local_now.tzinfo)

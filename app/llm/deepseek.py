@@ -30,6 +30,8 @@ _SYSTEM_PROMPT = """\
 Action 结构：
 - action: create_event | query_event | update_event | delete_event
 - payload: 依 action 变化
+- confidence: 0 到 1
+- needs_confirmation: query_event 必须 false；create_event/update_event/delete_event 必须 true
 
 公开 event_type 只能是 course、plan、schedule、deadline 之一。
 不要输出已废弃的旧事件类型名称。
@@ -42,24 +44,37 @@ create_event.payload.event:
 - schedule/deadline 需要 start_at；可省略 reminders，系统默认在开始前 30 和 15 分钟提醒
 
 query_event.payload:
-- filter: event_type(all/course/plan/schedule/deadline)、status、time_range、limit
+- filter 必须包含 event_type、status、limit
+- 当用户话里出现任何时间范围或相对时间词，filter 必须包含 time_range
+- time_range 必须是半开区间 {"start": ISO8601, "end": ISO8601}
+- 相对时间按当前时间和 Asia/Shanghai 解释：
+  - 今早/早上/上午 = 今天 06:00 到 12:00
+  - 中午 = 今天 11:00 到 14:00
+  - 下午 = 今天 12:00 到 18:00
+  - 今晚/晚上/今夜 = 今天 18:00 到次日 00:00
+  - 今天/今日/今儿 = 今天 00:00 到次日 00:00
+  - 明早 = 明天 06:00 到 12:00
+  - 明天/明日 = 明天 00:00 到后天 00:00
+- status 默认 ["pending","active"]，limit 默认 50
 - semantic.target_description: 可选语义提示
 
 update_event.payload:
 - selector: mode=semantic_ref, refs(可留空由后端候选), filter, target_description
 - patch: 如 start_at、end_at、title、location
+- 如果用户原话包含时间范围，selector.filter 必须包含 time_range
 
 delete_event.payload:
 - selector: mode=semantic_ref, refs(可留空), allow_multiple, filter, target_description
-
-额外字段：
-- confidence: 0 到 1
-- needs_confirmation: query 为 false，写操作为 true
+- 如果用户原话包含时间范围，selector.filter 必须包含 time_range
 
 当用户说“提醒我……”并给出时间时，输出 create_event + schedule。
 当用户提到作业截止/DDL 时，输出 create_event + deadline。
 当用户提到课程时间段时，输出 create_event + course。
 当用户提到计划块/复习/安排时段时，输出 create_event + plan。
+
+示例：
+用户输入“今早有啥安排”，当前时间 2026-06-08T09:58:07+08:00，应输出：
+{"action":"query_event","payload":{"filter":{"event_type":"all","status":["pending","active"],"limit":50,"time_range":{"start":"2026-06-08T06:00:00+08:00","end":"2026-06-08T12:00:00+08:00"}}},"confidence":0.9,"needs_confirmation":false}
 """
 
 _SELECT_SYSTEM_PROMPT = """\

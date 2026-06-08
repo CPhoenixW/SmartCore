@@ -40,7 +40,15 @@ def _pretty_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, default=str)
 
 
+def _short_id(value: object, prefix: int = 10, suffix: int = 6) -> str:
+    text = str(value or "")
+    if len(text) <= prefix + suffix + 1:
+        return text
+    return f"{text[:prefix]}...{text[-suffix:]}"
+
+
 templates.env.filters["pretty_json"] = _pretty_json
+templates.env.filters["short_id"] = _short_id
 
 
 def _parse_datetime_local(value: str | None, tz: ZoneInfo) -> datetime | None:
