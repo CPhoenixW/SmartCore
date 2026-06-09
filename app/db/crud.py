@@ -123,8 +123,10 @@ def create_reminder(
     target_id: int | None = None,
     status: ReminderStatus = ReminderStatus.PENDING,
     content: str | None = None,
+    dedup_key: str | None = None,
 ) -> Reminder:
     reminder = Reminder(
+        dedup_key=dedup_key,
         reminder_type=reminder_type,
         target_type=target_type,
         target_id=target_id,

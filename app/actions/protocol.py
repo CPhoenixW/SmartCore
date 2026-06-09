@@ -6,7 +6,6 @@ from typing import Any
 from app.secretary.rules import DEFAULT_TZ
 
 PUBLIC_EVENT_TYPES = frozenset({"course", "plan", "schedule", "deadline"})
-LEGACY_EVENT_TYPES = frozenset({"assignment", "life_event", "course_session"})
 DEFAULT_REMINDER_OFFSETS = (30, 15)
 PLAN_DEFAULT_DURATION = timedelta(hours=1)
 
@@ -87,17 +86,12 @@ def read_sc_type(reminder_rule: str | None) -> str | None:
     return None
 
 
-def map_legacy_event_type(event_type: str | None) -> str:
+def normalize_public_event_type(event_type: str | None) -> str:
     if event_type in (None, "all"):
         return "all"
-    mapping = {
-        "assignment": "deadline",
-        "life_event": "all",
-        "course_session": "course",
-    }
     if event_type in PUBLIC_EVENT_TYPES:
         return event_type
-    return mapping.get(event_type, "all")
+    raise ValueError(f"unsupported event_type: {event_type!r}")
 
 
 def map_status_filter(status: Any) -> set[str] | None:

@@ -35,6 +35,15 @@
         <td>{{ op.raw_text }}</td>
         <td>{{ op.action_name }}</td>
         <td>
+          {% set event = op.operation_payload.get('payload', {}).get('event') %}
+          {% if event %}
+          标题：{{ event.get('title', '') }}<br>
+          {% for key, value in event.items() %}
+          {% if key not in ['title', 'event_type'] and value %}
+          {{ key }}：{{ value }}<br>
+          {% endif %}
+          {% endfor %}
+          {% elif op.operation_payload.get('fields') %}
           {% if op.operation_payload.fields.title %}
           标题：{{ op.operation_payload.fields.title }}<br>
           {% endif %}
@@ -43,6 +52,7 @@
           {{ key }}：{{ value }}<br>
           {% endif %}
           {% endfor %}
+          {% endif %}
         </td>
         <td>{{ "%.0f"|format(op.confidence * 100) }}%</td>
         <td class="actions-cell">

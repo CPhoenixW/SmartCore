@@ -164,6 +164,7 @@ class Reminder(Base):
     __tablename__ = "reminders"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    dedup_key: Mapped[str | None] = mapped_column(String(200), unique=True)
     reminder_type: Mapped[str] = mapped_column(String(50), nullable=False)
     target_type: Mapped[str] = mapped_column(String(50), nullable=False)
     target_id: Mapped[int | None] = mapped_column(Integer)

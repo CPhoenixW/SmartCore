@@ -21,7 +21,7 @@ SmartCore/
     scheduler/
       runner.py
       reminder_engine.py
-      daily_digest.py
+      notification_cards.py
     secretary/
       timetable.py
       assignments.py
@@ -118,12 +118,19 @@ FastAPI 应用入口，负责：
 
 职责：
 
-- 生成每天的提醒队列。
-- 定期扫描未发送提醒。
-- 调用飞书发送提醒。
-- 记录发送成功、失败和重试次数。
+- 每分钟扫描课表、作业、生活事项，计算当前是否需要发送提醒。
+- 通过飞书交互卡片推送晨报、课前提醒、DDL 提醒、事项提醒。
+- 仅在发送成功后写入 `reminders` 表作为投递审计（dedup_key 去重），不再预生成提醒队列。
 
-建议 v1 可以使用应用内调度器，后续再考虑独立 worker。
+### `app/operations/` + `app/llm/`
+
+语义层。
+
+职责：
+
+- 仅使用 DeepSeek LLM 将自然语言解析为 Action 协议 JSON。
+- 输出 `create_event` / `query_event` / `update_event` / `delete_event`。
+- 不再维护规则解析器或旧版 `operation/resource/fields` 协议。
 
 ### `app/web/`
 
@@ -203,14 +210,12 @@ FastAPI 应用入口，负责：
 
 ### `reminders`
 
-保存提醒队列：
+保存通知投递审计，不再作为待发送队列：
 
-- 提醒类型。
-- 目标对象。
-- 计划发送时间。
-- 实际发送时间。
-- 发送状态。
-- 重试次数。
+- 提醒类型与 dedup_key（去重键）。
+- 目标对象与计划发送时间。
+- 实际发送时间、发送状态、重试次数。
+- 调度器每分钟从 live 数据计算提醒，发送成功后写入本表。
 
 ### `message_logs`
 

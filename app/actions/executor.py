@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -11,9 +11,9 @@ from app.actions.protocol import (
     default_reminder_times,
     format_time_label,
     make_result,
-    map_legacy_event_type,
     map_status_filter,
     normalize_datetime,
+    normalize_public_event_type,
     parse_iso_datetime,
     read_sc_type,
     sc_type_tag,
@@ -22,7 +22,6 @@ from app.db import crud
 from app.db.models import (
     Assignment,
     AssignmentStatus,
-    Course,
     CourseSession,
     LifeEvent,
     LifeEventStatus,
@@ -215,7 +214,18 @@ class ActionExecutor:
     def _execute_query_event(self, action: dict[str, Any]) -> dict[str, Any]:
         payload = action.get("payload") or {}
         filter_payload = payload.get("filter") or {}
-        event_type = map_legacy_event_type(filter_payload.get("event_type", "all"))
+        try:
+            event_type = normalize_public_event_type(filter_payload.get("event_type", "all"))
+        except ValueError as exc:
+            return make_result(
+                action="query_event",
+                status="failed",
+                ok=False,
+                message_code="INVALID_EVENT_TYPE",
+                errors=[str(exc)],
+                model_input=action,
+                db_result={"status": "failed"},
+            )
         status_filter = map_status_filter(filter_payload.get("status"))
         limit = min(int(filter_payload.get("limit") or 20), 50)
         time_range = filter_payload.get("time_range")
@@ -369,7 +379,7 @@ class ActionExecutor:
             if item is None:
                 return {}
             start_at = normalize_datetime(item.due_at)
-            reminders = self._load_reminder_times("assignment", item.id)
+            reminders = self._planned_reminder_times(start_at)
             return {
                 "event_type": "deadline",
                 "title": item.title,
@@ -392,8 +402,8 @@ class ActionExecutor:
                 data["end_at"] = end_at.isoformat()
             if public_type == "course" and item.notes:
                 data["location"] = item.notes
-            if public_type in ("schedule", "deadline"):
-                data["reminders"] = self._load_reminder_times("life_event", item.id)
+            if public_type in ("schedule", "deadline") and start_at is not None:
+                data["reminders"] = self._planned_reminder_times(start_at)
             return data
         if resource_type == "course_session":
             item = self._db.get(CourseSession, resource_id)
@@ -409,24 +419,11 @@ class ActionExecutor:
             }
         return {}
 
-    def _load_reminder_times(self, target_type: str, target_id: int) -> list[str]:
-        reminders = (
-            self._db.query(Reminder)
-            .filter(
-                Reminder.target_type == target_type,
-                Reminder.target_id == target_id,
-                Reminder.status.in_(
-                    [ReminderStatus.PENDING.value, ReminderStatus.SENT.value]
-                ),
-            )
-            .order_by(Reminder.scheduled_at.asc())
-            .all()
-        )
-        return [
-            normalize_datetime(item.scheduled_at).isoformat()
-            for item in reminders
-            if item.scheduled_at is not None
-        ]
+    @staticmethod
+    def _planned_reminder_times(start_at: datetime | None) -> list[str]:
+        if start_at is None:
+            return []
+        return [item.isoformat() for item in default_reminder_times(start_at)]
 
     def _collect_internal_events(
         self,
@@ -546,7 +543,7 @@ class ActionExecutor:
         selector: dict[str, Any],
     ) -> dict[str, tuple[str, int]]:
         filter_payload = selector.get("filter") or {}
-        event_type = map_legacy_event_type(filter_payload.get("event_type", "all"))
+        event_type = normalize_public_event_type(filter_payload.get("event_type", "all"))
         time_range = filter_payload.get("time_range")
         range_start, range_end = self._parse_time_range(time_range)
         internal = self._collect_internal_events(
@@ -566,38 +563,51 @@ class ActionExecutor:
         allow_multiple: bool = False,
     ) -> dict[str, Any]:
         mode = selector.get("mode")
-        if mode == "legacy_id":
-            return {
-                "status": "resolved",
-                "selector": {
-                    "event_type": selector.get("event_type"),
-                    "id": selector.get("id"),
-                },
-            }
-        if mode == "legacy_targets":
-            return {
-                "status": "resolved",
-                "selector": {"targets": selector.get("targets") or []},
-            }
         if selector.get("id") is not None and not mode:
+            try:
+                event_type = normalize_public_event_type(selector.get("event_type"))
+            except ValueError as exc:
+                return {
+                    "status": "failed",
+                    "message_code": "INVALID_EVENT_TYPE",
+                    "errors": [str(exc)],
+                }
             return {
                 "status": "resolved",
-                "selector": {
-                    "event_type": selector.get("event_type"),
-                    "id": selector.get("id"),
-                },
+                "selector": {"event_type": event_type, "id": selector.get("id")},
             }
         if selector.get("targets"):
-            return {
-                "status": "resolved",
-                "selector": {"targets": selector.get("targets")},
-            }
+            normalized_targets = []
+            for target in selector.get("targets") or []:
+                if not isinstance(target, dict):
+                    return {
+                        "status": "failed",
+                        "message_code": "INVALID_TARGET",
+                        "errors": ["invalid selector target"],
+                    }
+                try:
+                    event_type = normalize_public_event_type(target.get("event_type"))
+                except ValueError as exc:
+                    return {
+                        "status": "failed",
+                        "message_code": "INVALID_EVENT_TYPE",
+                        "errors": [str(exc)],
+                    }
+                normalized_targets.append({"event_type": event_type, "id": target.get("id")})
+            return {"status": "resolved", "selector": {"targets": normalized_targets}}
 
         refs = selector.get("refs") or []
-        ref_index = self._build_ref_index_from_selector(selector)
+        try:
+            ref_index = self._build_ref_index_from_selector(selector)
+        except ValueError as exc:
+            return {
+                "status": "failed",
+                "message_code": "INVALID_EVENT_TYPE",
+                "errors": [str(exc)],
+            }
         public_candidates, _ = self._assign_candidate_refs(
             self._collect_internal_events(
-                event_type=map_legacy_event_type(
+                event_type=normalize_public_event_type(
                     (selector.get("filter") or {}).get("event_type", "all")
                 ),
                 status_filter=map_status_filter(
@@ -640,7 +650,7 @@ class ActionExecutor:
                 item = ref_map[ref]
                 targets.append(
                     {
-                        "event_type": self._legacy_type_from_storage(storage_type),
+                        "event_type": item.get("event_type"),
                         "id": resource_id,
                     }
                 )
@@ -664,7 +674,7 @@ class ActionExecutor:
         return {
             "status": "resolved",
             "selector": {
-                "event_type": self._legacy_type_from_storage(storage_type),
+                "event_type": item.get("event_type"),
                 "id": resource_id,
             },
             "preview": {"ref": ref, "title": item.get("title")},
@@ -679,123 +689,23 @@ class ActionExecutor:
             ],
         }
 
-    @staticmethod
-    def _legacy_type_from_storage(storage_type: str) -> str:
-        return {
-            "assignment": "assignment",
-            "life_event": "life_event",
-            "course_session": "course_session",
-        }[storage_type]
-
-    def _create_life_event_from_fields(
-        self,
-        pending: PendingOperation,
-        fields: dict,
-    ) -> PendingOperation:
-        title = fields.get("title")
-        if not title:
-            pending.status = PendingOperationStatus.FAILED.value
-            pending.error_message = "missing life event title"
-            self._db.commit()
-            self._db.refresh(pending)
-            return pending
-
-        scheduled_at: datetime | None = None
-        raw_scheduled_at = fields.get("scheduled_at")
-        if raw_scheduled_at:
-            scheduled_at = datetime.fromisoformat(raw_scheduled_at)
-
-        deadline_at: datetime | None = None
-        raw_deadline_at = fields.get("deadline_at")
-        if raw_deadline_at:
-            deadline_at = datetime.fromisoformat(raw_deadline_at)
-
-        reminder_rule = fields.get("reminder_rule")
-        notes = fields.get("notes")
-
-        event = crud.create_life_event(
-            self._db,
-            title=title,
-            scheduled_at=scheduled_at,
-            deadline_at=deadline_at,
-            reminder_rule=reminder_rule if isinstance(reminder_rule, str) else None,
-            notes=notes if isinstance(notes, str) else None,
-        )
-        if scheduled_at is not None:
-            lead_minutes = 15
-            raw_lead = fields.get("reminder_lead_minutes")
-            if raw_lead is not None:
-                lead_minutes = int(raw_lead)
-            try:
-                crud.create_reminder(
-                    self._db,
-                    reminder_type="life_event_pre_event",
-                    target_type="life_event",
-                    target_id=event.id,
-                    scheduled_at=scheduled_at - timedelta(minutes=lead_minutes),
-                    content=f"提醒：{title}",
-                )
-            except Exception as exc:
-                self._db.delete(event)
-                pending.status = PendingOperationStatus.FAILED.value
-                pending.error_message = str(exc)
-                self._db.commit()
-                self._db.refresh(pending)
-                return pending
-        pending.status = PendingOperationStatus.APPLIED.value
-        pending.result_resource_type = "life_event"
-        pending.result_resource_id = event.id
-        pending.error_message = None
-        self._db.commit()
-        self._db.refresh(pending)
-        return pending
-
     def query_events(self, payload: dict) -> list[dict]:
-        selector = payload.get("selector") or {}
-        fields = payload.get("fields") or {}
-        event_type = selector.get("event_type") or fields.get("event_type", "all")
-        status_filter = selector.get("status") or fields.get("status", "open")
-        raw_max = selector.get("max_candidates") or fields.get("max_candidates") or 20
+        filter_payload = payload.get("filter") or {}
+        event_type = normalize_public_event_type(filter_payload.get("event_type", "all"))
+        status_filter = filter_payload.get("status", ["pending", "active"])
+        raw_max = filter_payload.get("limit") or 20
         max_candidates = min(int(raw_max), 50)
-        time_range = selector.get("time_range") or fields.get("time_range")
+        time_range = filter_payload.get("time_range")
         range_start, range_end = self._parse_time_range(time_range)
-        results: list[dict] = []
-
-        if event_type in ("all", "assignment"):
-            query = self._db.query(Assignment)
-            if status_filter == "open":
-                query = query.filter(
-                    Assignment.status.notin_(
-                        [AssignmentStatus.DONE.value, AssignmentStatus.CANCELLED.value]
-                    )
-                )
-            for item in query.all():
-                if range_start is not None or range_end is not None:
-                    if not self._datetime_in_range(item.due_at, range_start, range_end):
-                        continue
-                results.append(self._compact_assignment(item))
-
-        if event_type in ("all", "life_event"):
-            query = self._db.query(LifeEvent)
-            if status_filter == "open":
-                query = query.filter(
-                    LifeEvent.status.notin_(
-                        [LifeEventStatus.DONE.value, LifeEventStatus.CANCELLED.value]
-                    )
-                )
-            for item in query.all():
-                if range_start is not None or range_end is not None:
-                    if not self._life_event_in_time_range(
-                        item, range_start, range_end
-                    ):
-                        continue
-                results.append(self._compact_life_event(item))
-
-        if event_type in ("all", "course_session"):
-            for item in self._db.query(CourseSession).all():
-                results.append(self._compact_course_session(item))
-
-        return results[:max_candidates]
+        internal = self._collect_internal_events(
+            event_type=event_type,
+            status_filter=map_status_filter(status_filter),
+            range_start=range_start,
+            range_end=range_end,
+            limit=max_candidates,
+        )
+        public_items, _ = self._assign_candidate_refs(internal)
+        return public_items
 
     @staticmethod
     def _parse_time_range(
@@ -847,63 +757,17 @@ class ActionExecutor:
                 return True
         return False
 
-    @staticmethod
-    def _format_time_label(value: datetime | None) -> str:
-        dt = ActionExecutor._normalize_datetime(value)
-        if dt is None:
-            return ""
-        return dt.strftime("%Y-%m-%d %H:%M")
-
-    @classmethod
-    def _compact_assignment(cls, item: Assignment) -> dict:
-        return {
-            "event_type": "assignment",
-            "id": item.id,
-            "status": item.status,
-            "time_label": cls._format_time_label(item.due_at),
-            "title": item.title,
-        }
-
-    @classmethod
-    def _compact_life_event(cls, item: LifeEvent) -> dict:
-        time_source = item.scheduled_at or item.deadline_at
-        return {
-            "event_type": "life_event",
-            "id": item.id,
-            "status": item.status,
-            "time_label": cls._format_time_label(time_source),
-            "title": item.title,
-        }
-
-    @classmethod
-    def _compact_course_session(cls, item: CourseSession) -> dict:
-        return {
-            "event_type": "course_session",
-            "id": item.id,
-            "status": "active",
-            "time_label": "",
-            "title": item.course.name if item.course else "",
-        }
-
     def _apply_create_event(self, pending: PendingOperation) -> PendingOperation:
         payload = pending.operation_payload
-        new_event = (payload.get("payload") or {}).get("event")
-        if isinstance(new_event, dict):
-            return self._apply_new_create_event(pending, new_event)
-
-        fields = payload.get("fields") or {}
-        event_type = fields.get("event_type")
-        if event_type == "assignment":
-            return self._create_event_assignment(pending, fields)
-        if event_type == "life_event":
-            return self._create_event_life_event(pending, fields)
-        if event_type == "course_session":
-            return self._create_event_course_session(pending, fields)
-        pending.status = PendingOperationStatus.FAILED.value
-        pending.error_message = f"unsupported event_type: {event_type}"
-        self._db.commit()
-        self._db.refresh(pending)
-        return pending
+        inner = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
+        new_event = inner.get("event")
+        if not isinstance(new_event, dict):
+            pending.status = PendingOperationStatus.FAILED.value
+            pending.error_message = "invalid create event payload"
+            self._db.commit()
+            self._db.refresh(pending)
+            return pending
+        return self._apply_new_create_event(pending, new_event)
 
     def _apply_new_create_event(
         self,
@@ -959,20 +823,6 @@ class ActionExecutor:
         event: dict[str, Any],
     ) -> PendingOperation:
         assignment = crud.create_assignment(self._db, title=title, due_at=start_at)
-        try:
-            self._create_default_reminders(
-                target_type="assignment",
-                target_id=assignment.id,
-                title=title,
-                start_at=start_at,
-            )
-        except Exception as exc:
-            self._db.delete(assignment)
-            pending.status = PendingOperationStatus.FAILED.value
-            pending.error_message = str(exc)
-            self._db.commit()
-            self._db.refresh(pending)
-            return pending
         pending.status = PendingOperationStatus.APPLIED.value
         pending.result_resource_type = "assignment"
         pending.result_resource_id = assignment.id
@@ -1019,21 +869,6 @@ class ActionExecutor:
             reminder_rule=sc_type_tag("schedule"),
             notes=event.get("notes") if isinstance(event.get("notes"), str) else None,
         )
-        if start_at is not None:
-            try:
-                self._create_default_reminders(
-                    target_type="life_event",
-                    target_id=life_event.id,
-                    title=title,
-                    start_at=start_at,
-                )
-            except Exception as exc:
-                self._db.delete(life_event)
-                pending.status = PendingOperationStatus.FAILED.value
-                pending.error_message = str(exc)
-                self._db.commit()
-                self._db.refresh(pending)
-                return pending
         pending.status = PendingOperationStatus.APPLIED.value
         pending.result_resource_type = "life_event"
         pending.result_resource_id = life_event.id
@@ -1067,174 +902,11 @@ class ActionExecutor:
         self._db.refresh(pending)
         return pending
 
-    def _create_default_reminders(
-        self,
-        *,
-        target_type: str,
-        target_id: int,
-        title: str,
-        start_at: datetime,
-    ) -> None:
-        reminder_type = (
-            "assignment_pre_due"
-            if target_type == "assignment"
-            else "life_event_pre_event"
-        )
-        for scheduled_at in default_reminder_times(start_at):
-            crud.create_reminder(
-                self._db,
-                reminder_type=reminder_type,
-                target_type=target_type,
-                target_id=target_id,
-                scheduled_at=scheduled_at,
-                content=f"提醒：{title}",
-            )
-
-    def _sync_default_reminders(
-        self,
-        *,
-        target_type: str,
-        target_id: int,
-        title: str,
-        start_at: datetime,
-    ) -> None:
-        reminder_type = (
-            "assignment_pre_due"
-            if target_type == "assignment"
-            else "life_event_pre_event"
-        )
-        self._cancel_pending_reminders(target_type, target_id)
-        for scheduled_at in default_reminder_times(start_at):
-            crud.create_reminder(
-                self._db,
-                reminder_type=reminder_type,
-                target_type=target_type,
-                target_id=target_id,
-                scheduled_at=scheduled_at,
-                content=f"提醒：{title}",
-            )
-
-    def _cancel_pending_reminders(self, target_type: str, target_id: int) -> int:
-        reminders = (
-            self._db.query(Reminder)
-            .filter(
-                Reminder.target_type == target_type,
-                Reminder.target_id == target_id,
-                Reminder.status.in_(
-                    [ReminderStatus.PENDING.value, ReminderStatus.FAILED.value]
-                ),
-            )
-            .all()
-        )
-        for reminder in reminders:
-            reminder.status = ReminderStatus.CANCELLED.value
-        return len(reminders)
-
-    def _update_pending_reminder_content(
-        self,
-        *,
-        target_type: str,
-        target_id: int,
-        title: str,
-    ) -> None:
-        reminders = (
-            self._db.query(Reminder)
-            .filter(
-                Reminder.target_type == target_type,
-                Reminder.target_id == target_id,
-                Reminder.status.in_(
-                    [ReminderStatus.PENDING.value, ReminderStatus.FAILED.value]
-                ),
-            )
-            .all()
-        )
-        for reminder in reminders:
-            reminder.content = f"提醒：{title}"
-            reminder.retry_count = 0
-            reminder.status = ReminderStatus.PENDING.value
-
-    def _create_event_assignment(
-        self, pending: PendingOperation, fields: dict
-    ) -> PendingOperation:
-        title = fields.get("title")
-        if not title:
-            pending.status = PendingOperationStatus.FAILED.value
-            pending.error_message = "missing assignment title"
-            self._db.commit()
-            self._db.refresh(pending)
-            return pending
-
-        due_at: datetime | None = None
-        raw_due_at = fields.get("due_at")
-        if raw_due_at:
-            due_at = datetime.fromisoformat(raw_due_at)
-
-        assignment = crud.create_assignment(self._db, title=title, due_at=due_at)
-        pending.status = PendingOperationStatus.APPLIED.value
-        pending.result_resource_type = "assignment"
-        pending.result_resource_id = assignment.id
-        pending.error_message = None
-        self._db.commit()
-        self._db.refresh(pending)
-        return pending
-
-    def _create_event_life_event(
-        self, pending: PendingOperation, fields: dict
-    ) -> PendingOperation:
-        life_fields = {k: v for k, v in fields.items() if k != "event_type"}
-        return self._create_life_event_from_fields(pending, life_fields)
-
-    def _create_event_course_session(
-        self, pending: PendingOperation, fields: dict
-    ) -> PendingOperation:
-        course_name = fields.get("course_name")
-        if not course_name:
-            pending.status = PendingOperationStatus.FAILED.value
-            pending.error_message = "missing course_name"
-            self._db.commit()
-            self._db.refresh(pending)
-            return pending
-
-        course = self._db.query(Course).filter(Course.name == course_name).first()
-        if course is None:
-            course = crud.create_course(
-                self._db,
-                name=course_name,
-                teacher=fields.get("teacher") if isinstance(fields.get("teacher"), str) else None,
-            )
-
-        weekday = fields.get("weekday")
-        if weekday is None:
-            pending.status = PendingOperationStatus.FAILED.value
-            pending.error_message = "missing weekday"
-            self._db.commit()
-            self._db.refresh(pending)
-            return pending
-
-        start_time = fields.get("start_time")
-        end_time = fields.get("end_time")
-        location = fields.get("location")
-        session = crud.create_course_session(
-            self._db,
-            course_id=course.id,
-            weekday=int(weekday),
-            start_time=start_time if isinstance(start_time, str) else None,
-            end_time=end_time if isinstance(end_time, str) else None,
-            location_override=location if isinstance(location, str) else None,
-        )
-        pending.status = PendingOperationStatus.APPLIED.value
-        pending.result_resource_type = "course_session"
-        pending.result_resource_id = session.id
-        pending.error_message = None
-        self._db.commit()
-        self._db.refresh(pending)
-        return pending
-
     def _apply_update_event(self, pending: PendingOperation) -> PendingOperation:
         payload = pending.operation_payload
         inner = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
         selector = inner.get("selector") or payload.get("selector") or {}
-        fields = inner.get("patch") or payload.get("fields") or {}
+        fields = inner.get("patch") or {}
         event_type = selector.get("event_type") or fields.get("event_type")
         resource_id = selector.get("id")
 
@@ -1245,7 +917,7 @@ class ActionExecutor:
             self._db.refresh(pending)
             return pending
 
-        if event_type == "life_event":
+        if event_type in {"schedule", "plan"}:
             event = self._db.get(LifeEvent, resource_id)
             if event is None:
                 pending.status = PendingOperationStatus.FAILED.value
@@ -1259,7 +931,6 @@ class ActionExecutor:
             start_patch = fields.get("start_at") or fields.get("scheduled_at")
             if start_patch:
                 event.scheduled_at = datetime.fromisoformat(start_patch)
-                self._reschedule_life_event_reminders(event, fields)
             if fields.get("deadline_at"):
                 event.deadline_at = datetime.fromisoformat(fields["deadline_at"])
             if fields.get("end_at"):
@@ -1275,7 +946,7 @@ class ActionExecutor:
             self._db.refresh(pending)
             return pending
 
-        if event_type == "assignment":
+        if event_type == "deadline":
             assignment = self._db.get(Assignment, resource_id)
             if assignment is None:
                 pending.status = PendingOperationStatus.FAILED.value
@@ -1289,12 +960,6 @@ class ActionExecutor:
             due_patch = fields.get("due_at") or fields.get("start_at")
             if due_patch:
                 assignment.due_at = datetime.fromisoformat(due_patch)
-                self._sync_default_reminders(
-                    target_type="assignment",
-                    target_id=assignment.id,
-                    title=assignment.title,
-                    start_at=assignment.due_at,
-                )
             if "notes" in fields:
                 assignment.notes = fields["notes"]
 
@@ -1306,27 +971,49 @@ class ActionExecutor:
             self._db.refresh(pending)
             return pending
 
-        if event_type == "course_session":
+        if event_type == "course":
             session = self._db.get(CourseSession, resource_id)
-            if session is None:
-                pending.status = PendingOperationStatus.FAILED.value
-                pending.error_message = f"course_session not found: {resource_id}"
+            if session is not None:
+                if "weekday" in fields:
+                    session.weekday = int(fields["weekday"])
+                if "start_time" in fields:
+                    session.start_time = fields["start_time"]
+                if "end_time" in fields:
+                    session.end_time = fields["end_time"]
+                if "location" in fields:
+                    session.location_override = fields["location"]
+
+                pending.status = PendingOperationStatus.APPLIED.value
+                pending.result_resource_type = "course_session"
+                pending.result_resource_id = session.id
+                pending.error_message = None
                 self._db.commit()
                 self._db.refresh(pending)
                 return pending
 
-            if "weekday" in fields:
-                session.weekday = int(fields["weekday"])
-            if "start_time" in fields:
-                session.start_time = fields["start_time"]
-            if "end_time" in fields:
-                session.end_time = fields["end_time"]
+            event = self._db.get(LifeEvent, resource_id)
+            if event is None:
+                pending.status = PendingOperationStatus.FAILED.value
+                pending.error_message = f"course not found: {resource_id}"
+                self._db.commit()
+                self._db.refresh(pending)
+                return pending
+
+            if "title" in fields:
+                event.title = fields["title"]
+            start_patch = fields.get("start_at")
+            if start_patch:
+                event.scheduled_at = datetime.fromisoformat(start_patch)
+            if fields.get("end_at"):
+                event.deadline_at = datetime.fromisoformat(fields["end_at"])
             if "location" in fields:
-                session.location_override = fields["location"]
+                event.notes = fields["location"]
+            if "notes" in fields:
+                event.notes = fields["notes"]
 
             pending.status = PendingOperationStatus.APPLIED.value
-            pending.result_resource_type = "course_session"
-            pending.result_resource_id = session.id
+            pending.result_resource_type = "life_event"
+            pending.result_resource_id = event.id
             pending.error_message = None
             self._db.commit()
             self._db.refresh(pending)
@@ -1337,62 +1024,6 @@ class ActionExecutor:
         self._db.commit()
         self._db.refresh(pending)
         return pending
-
-    def _reschedule_life_event_reminders(
-        self,
-        event: LifeEvent,
-        fields: dict,
-    ) -> None:
-        if event.scheduled_at is None:
-            return
-
-        public_type = read_sc_type(event.reminder_rule)
-        if public_type in {"schedule", "deadline"}:
-            self._sync_default_reminders(
-                target_type="life_event",
-                target_id=event.id,
-                title=event.title,
-                start_at=event.scheduled_at,
-            )
-            return
-
-        raw_lead = fields.get("reminder_lead_minutes")
-        if raw_lead is None:
-            self._update_pending_reminder_content(
-                target_type="life_event",
-                target_id=event.id,
-                title=event.title,
-            )
-            return
-
-        scheduled_at = event.scheduled_at - timedelta(minutes=int(raw_lead))
-        reminders = (
-            self._db.query(Reminder)
-            .filter(
-                Reminder.reminder_type == "life_event_pre_event",
-                Reminder.target_type == "life_event",
-                Reminder.target_id == event.id,
-                Reminder.status.in_(
-                    [ReminderStatus.PENDING.value, ReminderStatus.FAILED.value]
-                ),
-            )
-            .all()
-        )
-        if not reminders:
-            crud.create_reminder(
-                self._db,
-                reminder_type="life_event_pre_event",
-                target_type="life_event",
-                target_id=event.id,
-                scheduled_at=scheduled_at,
-                content=f"提醒：{event.title}",
-            )
-            return
-        for reminder in reminders:
-            reminder.scheduled_at = scheduled_at
-            reminder.content = f"提醒：{event.title}"
-            reminder.retry_count = 0
-            reminder.status = ReminderStatus.PENDING.value
 
     def _apply_delete_event(self, pending: PendingOperation) -> PendingOperation:
         payload = pending.operation_payload
@@ -1412,7 +1043,7 @@ class ActionExecutor:
             self._db.refresh(pending)
             return pending
 
-        if event_type == "assignment":
+        if event_type == "deadline":
             assignment = self._db.get(Assignment, resource_id)
             if assignment is None:
                 pending.status = PendingOperationStatus.FAILED.value
@@ -1421,7 +1052,6 @@ class ActionExecutor:
                 self._db.refresh(pending)
                 return pending
             assignment.status = AssignmentStatus.CANCELLED.value
-            self._cancel_pending_reminders("assignment", assignment.id)
             pending.status = PendingOperationStatus.APPLIED.value
             pending.result_resource_type = "assignment"
             pending.result_resource_id = assignment.id
@@ -1430,7 +1060,7 @@ class ActionExecutor:
             self._db.refresh(pending)
             return pending
 
-        if event_type == "life_event":
+        if event_type in {"schedule", "plan"}:
             event = self._db.get(LifeEvent, resource_id)
             if event is None:
                 pending.status = PendingOperationStatus.FAILED.value
@@ -1439,7 +1069,6 @@ class ActionExecutor:
                 self._db.refresh(pending)
                 return pending
             event.status = LifeEventStatus.CANCELLED.value
-            self._cancel_pending_reminders("life_event", event.id)
             pending.status = PendingOperationStatus.APPLIED.value
             pending.result_resource_type = "life_event"
             pending.result_resource_id = event.id
@@ -1448,20 +1077,31 @@ class ActionExecutor:
             self._db.refresh(pending)
             return pending
 
-        if event_type == "course_session":
+        if event_type == "course":
             session = self._db.get(CourseSession, resource_id)
-            if session is None:
-                pending.status = PendingOperationStatus.FAILED.value
-                pending.error_message = f"course_session not found: {resource_id}"
+            if session is not None:
+                session_id = session.id
+                self._db.delete(session)
+                pending.status = PendingOperationStatus.APPLIED.value
+                pending.result_resource_type = "course_session"
+                pending.result_resource_id = session_id
+                pending.error_message = None
                 self._db.commit()
                 self._db.refresh(pending)
                 return pending
 
-            session_id = session.id
-            self._db.delete(session)
+            event = self._db.get(LifeEvent, resource_id)
+            if event is None:
+                pending.status = PendingOperationStatus.FAILED.value
+                pending.error_message = f"course not found: {resource_id}"
+                self._db.commit()
+                self._db.refresh(pending)
+                return pending
+
+            event.status = LifeEventStatus.CANCELLED.value
             pending.status = PendingOperationStatus.APPLIED.value
-            pending.result_resource_type = "course_session"
-            pending.result_resource_id = session_id
+            pending.result_resource_type = "life_event"
+            pending.result_resource_id = event.id
             pending.error_message = None
             self._db.commit()
             self._db.refresh(pending)
@@ -1488,7 +1128,7 @@ class ActionExecutor:
                 return pending
             event_type = target.get("event_type")
             resource_id = target.get("id")
-            if event_type not in ("assignment", "life_event", "course_session"):
+            if event_type not in PUBLIC_EVENT_TYPES:
                 pending.status = PendingOperationStatus.FAILED.value
                 pending.error_message = f"unsupported event_type for delete: {event_type!r}"
                 self._db.commit()
@@ -1533,12 +1173,12 @@ class ActionExecutor:
         return pending
 
     def _get_delete_event(self, event_type: str, resource_id: int):
-        if event_type == "assignment":
+        if event_type == "deadline":
             return self._db.get(Assignment, resource_id)
-        if event_type == "life_event":
+        if event_type in {"schedule", "plan"}:
             return self._db.get(LifeEvent, resource_id)
-        if event_type == "course_session":
-            return self._db.get(CourseSession, resource_id)
+        if event_type == "course":
+            return self._db.get(CourseSession, resource_id) or self._db.get(LifeEvent, resource_id)
         return None
 
     def _delete_single_event(
@@ -1546,7 +1186,7 @@ class ActionExecutor:
         event_type: str,
         resource_id: int,
     ) -> tuple[str, int] | None:
-        if event_type == "assignment":
+        if event_type == "deadline":
             assignment = self._get_delete_event(event_type, resource_id)
             if assignment is None:
                 return None
@@ -1554,7 +1194,7 @@ class ActionExecutor:
             self._cancel_pending_reminders("assignment", assignment.id)
             return "assignment", assignment.id
 
-        if event_type == "life_event":
+        if event_type in {"schedule", "plan"}:
             event = self._get_delete_event(event_type, resource_id)
             if event is None:
                 return None
@@ -1562,12 +1202,32 @@ class ActionExecutor:
             self._cancel_pending_reminders("life_event", event.id)
             return "life_event", event.id
 
-        if event_type == "course_session":
-            session = self._get_delete_event(event_type, resource_id)
+        if event_type == "course":
+            session = self._db.get(CourseSession, resource_id)
             if session is None:
-                return None
+                event = self._db.get(LifeEvent, resource_id)
+                if event is None:
+                    return None
+                event.status = LifeEventStatus.CANCELLED.value
+                self._cancel_pending_reminders("life_event", event.id)
+                return "life_event", event.id
             session_id = session.id
             self._db.delete(session)
             return "course_session", session_id
 
         return None
+
+    def _cancel_pending_reminders(self, target_type: str, target_id: int) -> None:
+        reminders = (
+            self._db.query(Reminder)
+            .filter(
+                Reminder.target_type == target_type,
+                Reminder.target_id == target_id,
+                Reminder.status == ReminderStatus.PENDING.value,
+            )
+            .all()
+        )
+        for reminder in reminders:
+            reminder.status = ReminderStatus.CANCELLED.value
+        if reminders:
+            self._db.commit()

@@ -27,7 +27,7 @@ from app.db.models import (
     ReminderStatus,
 )
 from app.db.session import get_db
-from app.operations.parser import RuleBasedOperationParser
+from app.feishu.event_handler import build_operation_parser
 from app.secretary.planner import build_today_plan, build_tomorrow_plan
 from app.secretary.rules import DEFAULT_TZ
 from app.web.timetable_import import CSV_HEADERS, import_timetable_csv
@@ -83,15 +83,15 @@ def create_web_router() -> APIRouter:
             .filter(PendingOperation.status == PendingOperationStatus.PENDING.value)
             .count()
         )
-        pending_reminders_count = (
+        recent_notifications_count = (
             db.query(Reminder)
-            .filter(Reminder.status == ReminderStatus.PENDING.value)
+            .filter(Reminder.status == ReminderStatus.SENT.value)
             .count()
         )
-        next_reminder = (
+        latest_notification = (
             db.query(Reminder)
-            .filter(Reminder.status == ReminderStatus.PENDING.value)
-            .order_by(Reminder.scheduled_at.asc())
+            .filter(Reminder.status == ReminderStatus.SENT.value)
+            .order_by(Reminder.sent_at.desc())
             .first()
         )
         return templates.TemplateResponse(
@@ -103,8 +103,8 @@ def create_web_router() -> APIRouter:
                 "today": plan.target_date,
                 "plan_label": "今日",
                 "pending_operations_count": pending_operations_count,
-                "pending_reminders_count": pending_reminders_count,
-                "next_reminder": next_reminder,
+                "pending_reminders_count": recent_notifications_count,
+                "next_reminder": latest_notification,
             },
         )
 
@@ -307,14 +307,11 @@ def create_web_router() -> APIRouter:
     ) -> HTMLResponse:
         reminders = (
             db.query(Reminder)
-            .order_by(Reminder.scheduled_at.desc(), Reminder.created_at.desc())
+            .order_by(Reminder.sent_at.desc(), Reminder.created_at.desc())
             .limit(200)
             .all()
         )
         status_counts = {
-            ReminderStatus.PENDING.value: db.query(Reminder)
-            .filter(Reminder.status == ReminderStatus.PENDING.value)
-            .count(),
             ReminderStatus.SENT.value: db.query(Reminder)
             .filter(Reminder.status == ReminderStatus.SENT.value)
             .count(),
@@ -322,12 +319,7 @@ def create_web_router() -> APIRouter:
             .filter(Reminder.status == ReminderStatus.FAILED.value)
             .count(),
         }
-        next_reminder = (
-            db.query(Reminder)
-            .filter(Reminder.status == ReminderStatus.PENDING.value)
-            .order_by(Reminder.scheduled_at.asc())
-            .first()
-        )
+        next_reminder = reminders[0] if reminders else None
         return templates.TemplateResponse(
             request,
             "reminders.html",
@@ -338,31 +330,6 @@ def create_web_router() -> APIRouter:
                 "next_reminder": next_reminder,
             },
         )
-
-    @router.post("/reminders/{reminder_id}/cancel")
-    def cancel_reminder(
-        reminder_id: int,
-        db: Session = Depends(get_db),
-    ) -> RedirectResponse:
-        reminder = db.get(Reminder, reminder_id)
-        if reminder and reminder.status == ReminderStatus.PENDING.value:
-            reminder.status = ReminderStatus.CANCELLED.value
-            db.commit()
-        return RedirectResponse(url="/dashboard/reminders", status_code=303)
-
-    @router.post("/reminders/{reminder_id}/update")
-    def update_reminder(
-        reminder_id: int,
-        scheduled_at: str = Form(...),
-        db: Session = Depends(get_db),
-    ) -> RedirectResponse:
-        reminder = db.get(Reminder, reminder_id)
-        if reminder and reminder.status == ReminderStatus.PENDING.value:
-            parsed = _parse_datetime_local(scheduled_at, DEFAULT_TZ)
-            if parsed:
-                reminder.scheduled_at = parsed
-                db.commit()
-        return RedirectResponse(url="/dashboard/reminders", status_code=303)
 
     @router.get("/pending-operations", response_class=HTMLResponse)
     def pending_operations_page(
@@ -433,7 +400,9 @@ def create_web_router() -> APIRouter:
     ) -> RedirectResponse:
         pending = db.get(PendingOperation, operation_id)
         if pending and pending.status == PendingOperationStatus.PENDING.value:
-            parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
+            parser = build_operation_parser(get_settings())
+            if parser is None:
+                return RedirectResponse(url="/dashboard/pending-operations", status_code=303)
             try:
                 parsed = parser.parse(raw_text.strip(), source=pending.source)
             except ValueError:

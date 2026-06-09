@@ -18,19 +18,19 @@ class RecordingSender:
         self.fail = fail
         self.messages: list[str] = []
 
-    def send(self, content: str) -> None:
+    def send(self, *, card=None, text: str = "") -> None:
         if self.fail:
             raise NotificationSendError("send failed")
-        self.messages.append(content)
+        self.messages.append(text)
 
 
 class DummyRunner:
     def __init__(self) -> None:
         self.ticks = 0
 
-    def tick(self) -> tuple[int, int]:
+    def tick(self) -> int:
         self.ticks += 1
-        return 0, 0
+        return 0
 
 
 class FakeScheduler:
@@ -150,8 +150,7 @@ def test_enabled_scheduler_runner_generates_and_sends_due_reminders(db_session) 
     )
 
     assert runner is not None
-    created, sent = runner.tick(now=datetime(2026, 3, 2, 22, 0, tzinfo=DEFAULT_TZ))
-    assert created > 0
+    sent = runner.tick(now=datetime(2026, 3, 2, 21, 0, tzinfo=DEFAULT_TZ))
     assert sent > 0
     assert sender.messages
 

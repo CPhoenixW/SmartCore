@@ -9,7 +9,7 @@ from app.scheduler.reminder_engine import NotificationSender, ReminderEngine, Sc
 
 
 class SchedulerRunner:
-    """Coordinates reminder generation and dispatch for a scheduler tick."""
+    """Scan schedule data and dispatch due notifications on each tick."""
 
     def __init__(
         self,
@@ -21,25 +21,9 @@ class SchedulerRunner:
         self.sender = sender
         self.engine = ReminderEngine(config)
 
-    def tick(self, *, now: datetime | None = None) -> tuple[int, int]:
+    def tick(self, *, now: datetime | None = None) -> int:
         db = self.session_factory()
         try:
-            created = self.engine.generate_reminders(db, now=now)
-            sent = self.engine.dispatch_due_reminders(db, self.sender, now=now)
-            return created, sent
-        finally:
-            db.close()
-
-    def generate_only(self, *, now: datetime | None = None) -> int:
-        db = self.session_factory()
-        try:
-            return self.engine.generate_reminders(db, now=now)
-        finally:
-            db.close()
-
-    def dispatch_only(self, *, now: datetime | None = None) -> int:
-        db = self.session_factory()
-        try:
-            return self.engine.dispatch_due_reminders(db, self.sender, now=now)
+            return self.engine.scan_and_notify(db, self.sender, now=now)
         finally:
             db.close()

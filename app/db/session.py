@@ -49,6 +49,19 @@ def _ensure_message_log_trace_columns() -> None:
             connection.execute(text(statement))
 
 
+def _ensure_reminder_dedup_key_column() -> None:
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    if "reminders" not in inspector.get_table_names():
+        return
+    existing = {column["name"] for column in inspector.get_columns("reminders")}
+    if "dedup_key" in existing:
+        return
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE reminders ADD COLUMN dedup_key VARCHAR(200)"))
+
+
 def init_db() -> None:
     from app.db import models  # noqa: F401
 
@@ -56,3 +69,4 @@ def init_db() -> None:
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(bind=engine)
     _ensure_message_log_trace_columns()
+    _ensure_reminder_dedup_key_column()

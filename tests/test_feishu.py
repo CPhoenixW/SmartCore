@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -19,24 +19,10 @@ from app.db.models import (
     MessageLog,
     PendingOperation,
     PendingOperationStatus,
-    ReminderStatus,
 )
 from app.feishu.cards import build_pending_operation_card
 from app.feishu.client import FeishuClient
-from app.feishu.commands import (
-    COMMAND_ADD_ASSIGNMENT,
-    COMMAND_CANCEL_REMINDER,
-    COMMAND_COMPLETE,
-    COMMAND_HELP,
-    COMMAND_REMINDERS,
-    COMMAND_TODAY,
-    COMMAND_TODOS,
-    COMMAND_UPDATE_REMINDER,
-    COMMAND_WEEKLY_DDL,
-    execute_command,
-    format_help_message,
-    parse_command,
-)
+from app.feishu.commands import format_help_message
 from app.feishu.event_handler import FeishuEventHandler
 from app.feishu.security import (
     FeishuSecurityError,
@@ -49,6 +35,7 @@ from app.feishu.security import (
 )
 from app.operations.parser import ParsedOperation
 from app.secretary.rules import DEFAULT_TZ
+from tests.conftest import make_create_event
 
 TEST_TOKEN = "test-verification-token"
 TEST_ENCRYPT_KEY = "test-encrypt-key"
@@ -78,9 +65,51 @@ def mock_feishu_client():
     return client
 
 
+class DefaultFakeOperationParser:
+    def parse(self, text: str, *, source: str, now=None) -> ParsedOperation:
+        if text.startswith("添加作业"):
+            parts = text.split(maxsplit=2)
+            title = parts[1] if len(parts) > 1 else "作业"
+            due_date = parts[2] if len(parts) > 2 else None
+            start_at = f"{due_date}T23:59:00+08:00" if due_date else None
+            return make_create_event(
+                event_type="deadline",
+                title=title,
+                start_at=start_at,
+                raw_text=text,
+                source=source,
+            )
+        if text.startswith("添加事项"):
+            parts = text.split(maxsplit=1)
+            title = parts[1] if len(parts) > 1 else "事项"
+            operation = make_create_event(
+                event_type="schedule",
+                title=title,
+                raw_text=text,
+                source=source,
+            )
+            payload = dict(operation.payload)
+            event = dict(payload["payload"]["event"])
+            event["unscheduled"] = True
+            payload["payload"] = {"event": event}
+            return ParsedOperation(
+                source=operation.source,
+                raw_text=operation.raw_text,
+                action_name=operation.action_name,
+                payload=payload,
+                confidence=operation.confidence,
+                needs_confirmation=operation.needs_confirmation,
+            )
+        raise ValueError(f"unsupported test message: {text}")
+
+
 @pytest.fixture
 def event_handler(feishu_settings, mock_feishu_client):
-    return FeishuEventHandler(feishu_settings, client=mock_feishu_client)
+    return FeishuEventHandler(
+        feishu_settings,
+        client=mock_feishu_client,
+        operation_parser=DefaultFakeOperationParser(),
+    )
 
 
 def _signed_headers(
@@ -197,234 +226,12 @@ def test_parse_event_payload_rejects_invalid_token():
         parse_event_payload(body, encrypt_key=TEST_ENCRYPT_KEY, verification_token=TEST_TOKEN)
 
 
-def test_parse_command_maps_known_commands():
-    assert parse_command("今日").name == COMMAND_TODAY
-    assert parse_command("今天有啥事").name == COMMAND_TODAY
-    assert parse_command("今天有什么安排").name == COMMAND_TODAY
-    assert parse_command("本周DDL").name == COMMAND_WEEKLY_DDL
-    assert parse_command("待办").name == COMMAND_TODOS
-    assert parse_command("待完成事项").name == COMMAND_TODOS
-    assert parse_command("还有什么没做").name == COMMAND_TODOS
-    assert parse_command("提醒队列").name == COMMAND_REMINDERS
-    assert parse_command("取消提醒 12").name == COMMAND_CANCEL_REMINDER
-    assert parse_command("修改提醒 12 2026-03-02 20:30").name == COMMAND_UPDATE_REMINDER
-    assert parse_command("添加作业 数学作业 2026-03-05").name == COMMAND_ADD_ASSIGNMENT
-    assert parse_command("添加事项 洗衣服").name == "add_life_event"
-    assert parse_command("完成 数学作业").name == COMMAND_COMPLETE
-    assert parse_command("确认 12").name == "confirm_operation"
-    assert parse_command("拒绝 12").name == "reject_operation"
-    assert parse_command("帮助").name == COMMAND_HELP
-
-
-def test_parse_command_unknown_returns_help():
-    assert parse_command("随便说点什么").name == COMMAND_HELP
-
-
 def test_help_message_includes_query_commands():
     help_text = format_help_message()
 
-    assert "今天有啥事" in help_text
-    assert "待办" in help_text
-    assert "待完成事项" in help_text
-
-
-def test_execute_command_today(db_session):
-    crud.create_assignment(
-        db_session,
-        title="Essay",
-        due_at=datetime(2026, 3, 2, 23, 59, tzinfo=DEFAULT_TZ),
-    )
-    reply = execute_command(
-        db_session,
-        parse_command("今日"),
-        today=date(2026, 3, 2),
-    )
-    assert "今日晨报" in reply
-    assert "Essay" in reply
-
-
-def test_execute_command_today_includes_pending_reminder_summary(db_session):
-    crud.create_reminder(
-        db_session,
-        reminder_type="life_event_pre_event",
-        target_type="life_event",
-        scheduled_at=datetime(2026, 3, 2, 19, 45, tzinfo=DEFAULT_TZ),
-        content="提醒：洗澡",
-    )
-
-    reply = execute_command(
-        db_session,
-        parse_command("今日"),
-        today=date(2026, 3, 2),
-    )
-
-    assert "待发送提醒" in reply
-    assert "19:45" in reply
-    assert "洗澡" in reply
-
-
-def test_execute_command_reminder_queue_lists_status_groups(db_session):
-    crud.create_reminder(
-        db_session,
-        reminder_type="life_event_pre_event",
-        target_type="life_event",
-        scheduled_at=datetime(2026, 3, 2, 19, 45, tzinfo=DEFAULT_TZ),
-        content="提醒：洗澡",
-    )
-    crud.create_reminder(
-        db_session,
-        reminder_type="life_event_pre_event",
-        target_type="life_event",
-        scheduled_at=datetime(2026, 3, 2, 20, 45, tzinfo=DEFAULT_TZ),
-        status=ReminderStatus.SENT,
-        content="提醒：跑步",
-    )
-
-    reply = execute_command(
-        db_session,
-        parse_command("提醒队列"),
-        today=date(2026, 3, 2),
-    )
-
-    assert "【提醒队列】" in reply
-    assert "待发送" in reply
-    assert "已发送" in reply
-    assert "19:45" in reply
-    assert "洗澡" in reply
-    assert "跑步" in reply
-
-
-def test_execute_command_cancel_pending_reminder_by_id(db_session):
-    reminder = crud.create_reminder(
-        db_session,
-        reminder_type="life_event_pre_event",
-        target_type="life_event",
-        scheduled_at=datetime(2026, 3, 2, 19, 45, tzinfo=DEFAULT_TZ),
-        content="提醒：洗澡",
-    )
-
-    reply = execute_command(
-        db_session,
-        parse_command(f"取消提醒 {reminder.id}"),
-        today=date(2026, 3, 2),
-    )
-
-    db_session.refresh(reminder)
-    assert reminder.status == ReminderStatus.CANCELLED.value
-    assert f"已取消提醒 #{reminder.id}" in reply
-
-
-def test_execute_command_update_pending_reminder_time_by_id(db_session):
-    reminder = crud.create_reminder(
-        db_session,
-        reminder_type="life_event_pre_event",
-        target_type="life_event",
-        scheduled_at=datetime(2026, 3, 2, 19, 45, tzinfo=DEFAULT_TZ),
-        content="提醒：洗澡",
-    )
-
-    reply = execute_command(
-        db_session,
-        parse_command(f"修改提醒 {reminder.id} 2026-03-02 20:30"),
-        today=date(2026, 3, 2),
-    )
-
-    db_session.refresh(reminder)
-    scheduled_at = reminder.scheduled_at
-    if scheduled_at is not None and scheduled_at.tzinfo is None:
-        scheduled_at = scheduled_at.replace(tzinfo=DEFAULT_TZ)
-    assert scheduled_at == datetime(2026, 3, 2, 20, 30, tzinfo=DEFAULT_TZ)
-    assert f"已修改提醒 #{reminder.id}" in reply
-    assert "20:30" in reply
-
-
-def test_execute_command_does_not_cancel_sent_reminder(db_session):
-    reminder = crud.create_reminder(
-        db_session,
-        reminder_type="life_event_pre_event",
-        target_type="life_event",
-        scheduled_at=datetime(2026, 3, 2, 19, 45, tzinfo=DEFAULT_TZ),
-        status=ReminderStatus.SENT,
-        content="提醒：洗澡",
-    )
-
-    reply = execute_command(
-        db_session,
-        parse_command(f"取消提醒 {reminder.id}"),
-        today=date(2026, 3, 2),
-    )
-
-    db_session.refresh(reminder)
-    assert reminder.status == ReminderStatus.SENT.value
-    assert "无法取消" in reply
-
-
-def test_execute_command_weekly_ddl(db_session):
-    crud.create_assignment(
-        db_session,
-        title="Lab report",
-        due_at=datetime(2026, 3, 4, 18, 0, tzinfo=DEFAULT_TZ),
-    )
-    reply = execute_command(
-        db_session,
-        parse_command("本周DDL"),
-        today=date(2026, 3, 2),
-    )
-    assert "Lab report" in reply
-
-
-def test_execute_command_todos_lists_open_assignments_and_life_events(db_session):
-    crud.create_assignment(
-        db_session,
-        title="Open Essay",
-        due_at=datetime(2026, 3, 4, 18, 0, tzinfo=DEFAULT_TZ),
-    )
-    done_assignment = crud.create_assignment(
-        db_session,
-        title="Done Essay",
-        due_at=datetime(2026, 3, 3, 18, 0, tzinfo=DEFAULT_TZ),
-    )
-    done_assignment.status = "done"
-    crud.create_life_event(
-        db_session,
-        title="Buy batteries",
-        scheduled_at=datetime(2026, 3, 2, 20, 0, tzinfo=DEFAULT_TZ),
-    )
-    done_event = crud.create_life_event(db_session, title="Already washed clothes")
-    done_event.status = "done"
-    db_session.commit()
-
-    reply = execute_command(
-        db_session,
-        parse_command("待办"),
-        today=date(2026, 3, 2),
-    )
-
-    assert "【待办事项】" in reply
-    assert "作业" in reply
-    assert "Open Essay" in reply
-    assert "生活事项" in reply
-    assert "Buy batteries" in reply
-    assert "Done Essay" not in reply
-    assert "Already washed clothes" not in reply
-
-
-def test_execute_command_todos_empty_state(db_session):
-    reply = execute_command(
-        db_session,
-        parse_command("还有什么没做"),
-        today=date(2026, 3, 2),
-    )
-
-    assert "【待办事项】" in reply
-    assert "暂无待完成事项" in reply
-
-
-def test_execute_command_add_and_complete(db_session):
-    reply = execute_command(db_session, parse_command("添加作业 数学作业"))
-    assert "已添加作业" in reply
-    done = execute_command(db_session, parse_command("完成 数学作业"))
-    assert "已完成作业" in done
+    assert "今天有什么安排" in help_text
+    assert "还有什么没做" in help_text
+    assert "添加作业" in help_text
 
 
 def test_event_handler_rejects_invalid_token(event_handler, db_session):
@@ -523,12 +330,21 @@ def test_event_handler_converts_message_to_command(
 
 
 def test_event_handler_unknown_command_returns_help(
-    event_handler, mock_feishu_client, db_session
+    feishu_settings, mock_feishu_client, db_session
 ):
+    class RejectingParser:
+        def parse(self, text: str, *, source: str, now=None):
+            raise ValueError("unsupported")
+
+    handler = FeishuEventHandler(
+        feishu_settings,
+        client=mock_feishu_client,
+        operation_parser=RejectingParser(),
+    )
     body = json.dumps(_message_event("未知命令"))
-    event_handler.handle(body.encode(), _signed_headers(body), db_session, now=FIXED_NOW)
+    handler.handle(body.encode(), _signed_headers(body), db_session, now=FIXED_NOW)
     reply_text = mock_feishu_client.send_text.call_args[0][1]
-    assert "可用命令" in reply_text
+    assert "可用命令" in reply_text or "SmartCore" in reply_text
     assert reply_text == format_help_message()
 
 
@@ -571,14 +387,13 @@ def test_pending_operation_card_shows_event_and_reminder_times():
         raw_text="晚上8点提醒我洗澡",
         action_name="create_event",
         payload={
-            "operation": "create",
-            "resource": "event",
-            "selector": {},
-            "fields": {
-                "event_type": "life_event",
-                "title": "洗澡",
-                "scheduled_at": "2026-06-05T20:00:00+08:00",
-                "reminder_lead_minutes": 15,
+            "action": "create_event",
+            "payload": {
+                "event": {
+                    "event_type": "schedule",
+                    "title": "洗澡",
+                    "start_at": "2026-06-05T20:00:00+08:00",
+                }
             },
         },
         dashboard_base_url="http://100.65.243.93:8000/dashboard",
@@ -587,8 +402,6 @@ def test_pending_operation_card_shows_event_and_reminder_times():
     serialized = json.dumps(card, ensure_ascii=False)
     assert "事项：洗澡" in serialized
     assert "计划时间：2026-06-05 20:00" in serialized
-    assert "提醒时间：2026-06-05 19:45" in serialized
-    assert "提前 15 分钟" in serialized
 
 
 def test_pending_operation_card_shows_resolved_update_target_and_new_times():
@@ -597,21 +410,19 @@ def test_pending_operation_card_shows_resolved_update_target_and_new_times():
         raw_text="把程设作业改到十点",
         action_name="update_event",
         payload={
-            "operation": "update",
-            "resource": "event",
-            "selector": {"event_type": "life_event", "id": 7},
-            "selected_candidates": [
-                {
-                    "event_type": "life_event",
-                    "id": 7,
-                    "status": "pending",
-                    "time_label": "2026-06-06 20:00",
-                    "title": "做程序设计作业",
-                }
-            ],
-            "fields": {
-                "scheduled_at": "2026-06-06T22:00:00+08:00",
-                "reminder_lead_minutes": 15,
+            "action": "update_event",
+            "payload": {
+                "selector": {"event_type": "schedule", "id": 7},
+                "patch": {"start_at": "2026-06-06T22:00:00+08:00"},
+                "selected_candidates": [
+                    {
+                        "event_type": "schedule",
+                        "id": 7,
+                        "status": "pending",
+                        "time_label": "2026-06-06 20:00",
+                        "title": "做程序设计作业",
+                    }
+                ],
             },
         },
         dashboard_base_url="http://100.65.243.93:8000/dashboard",
@@ -622,7 +433,6 @@ def test_pending_operation_card_shows_resolved_update_target_and_new_times():
     assert "做程序设计作业" in serialized
     assert "原计划时间：2026-06-06 20:00" in serialized
     assert "新计划时间：2026-06-06 22:00" in serialized
-    assert "新提醒时间：2026-06-06 21:45" in serialized
     assert "scheduled_at" not in serialized
     assert "reminder_lead_minutes" not in serialized
 
@@ -688,12 +498,13 @@ def test_event_handler_llm_free_form_message_creates_pending_card(
     class FakeOperationParser:
         def parse(self, text: str, *, source: str, now=None):
             assert text == "今晚八点提醒我做程设作业"
-            return RuleBasedOperationParser(tz=DEFAULT_TZ).parse(
-                "添加事项 做程设作业",
+            return make_create_event(
+                event_type="schedule",
+                title="做程设作业",
+                start_at="2026-06-05T20:00:00+08:00",
+                raw_text=text,
                 source=source,
             )
-
-    from app.operations.parser import RuleBasedOperationParser
 
     handler = FeishuEventHandler(
         feishu_settings,
@@ -794,10 +605,16 @@ def test_event_handler_llm_query_event_replies_without_pending_operation(
                 raw_text=text,
                 action_name="query_event",
                 payload={
-                    "operation": "query",
-                    "resource": "event",
-                    "selector": {},
-                    "fields": {"event_type": "all", "status": "open"},
+                    "action": "query_event",
+                    "source": source,
+                    "raw_text": text,
+                    "payload": {
+                        "filter": {
+                            "event_type": "all",
+                            "status": ["pending", "active"],
+                            "limit": 50,
+                        }
+                    },
                 },
                 confidence=0.9,
                 needs_confirmation=False,
@@ -859,19 +676,21 @@ def test_event_handler_two_stage_query_selects_from_compact_candidates(
                 raw_text=text,
                 action_name="query_event",
                 payload={
-                    "operation": "query",
-                    "resource": "event",
-                    "selector": {
-                        "event_type": "all",
-                        "status": "open",
-                        "time_range": {
-                            "start": "2026-06-06T18:00:00+08:00",
-                            "end": "2026-06-07T00:00:00+08:00",
+                    "action": "query_event",
+                    "source": source,
+                    "raw_text": text,
+                    "payload": {
+                        "filter": {
+                            "event_type": "all",
+                            "status": ["pending", "active"],
+                            "time_range": {
+                                "start": "2026-06-06T18:00:00+08:00",
+                                "end": "2026-06-07T00:00:00+08:00",
+                            },
+                            "limit": 10,
                         },
-                        "target_description": "今晚事项",
-                        "max_candidates": 10,
+                        "semantic": {"target_description": "今晚事项"},
                     },
-                    "fields": {},
                 },
                 confidence=0.9,
                 needs_confirmation=False,
@@ -941,19 +760,22 @@ def test_event_handler_two_stage_update_resolves_candidate_before_pending(
                 raw_text=text,
                 action_name="update_event",
                 payload={
-                    "operation": "update",
-                    "resource": "event",
-                    "selector": {
-                        "event_type": "life_event",
-                        "status": "open",
-                        "time_range": {
-                            "start": "2026-06-06T18:00:00+08:00",
-                            "end": "2026-06-07T00:00:00+08:00",
+                    "action": "update_event",
+                    "source": source,
+                    "raw_text": text,
+                    "payload": {
+                        "selector": {
+                            "event_type": "schedule",
+                            "status": ["pending", "active"],
+                            "time_range": {
+                                "start": "2026-06-06T18:00:00+08:00",
+                                "end": "2026-06-07T00:00:00+08:00",
+                            },
+                            "target_description": "做程序设计作业",
+                            "max_candidates": 10,
                         },
-                        "target_description": "做程序设计作业",
-                        "max_candidates": 10,
+                        "patch": {"start_at": "2026-06-06T21:00:00+08:00"},
                     },
-                    "fields": {"scheduled_at": "2026-06-06T21:00:00+08:00"},
                 },
                 confidence=0.9,
                 needs_confirmation=True,
@@ -1001,7 +823,7 @@ def test_event_handler_two_stage_update_resolves_candidate_before_pending(
     pending = db_session.query(PendingOperation).one()
     assert pending.action_name == "update_event"
     resolved = pending.operation_payload["payload"]
-    assert resolved["selector"]["event_type"] == "life_event"
+    assert resolved["selector"]["event_type"] == "schedule"
     assert resolved["selector"]["id"] == target.id
     assert resolved["patch"]["start_at"] == "2026-06-06T21:00:00+08:00"
     mock_feishu_client.send_interactive_card.assert_called_once()
@@ -1110,19 +932,22 @@ def test_event_handler_two_stage_uses_all_event_types_when_parser_overfilters(
                 raw_text=text,
                 action_name="update_event",
                 payload={
-                    "operation": "update",
-                    "resource": "event",
-                    "selector": {
-                        "event_type": "assignment",
-                        "status": "open",
-                        "time_range": {
-                            "start": "2026-06-07T18:00:00+08:00",
-                            "end": "2026-06-08T00:00:00+08:00",
+                    "action": "update_event",
+                    "source": source,
+                    "raw_text": text,
+                    "payload": {
+                        "selector": {
+                            "event_type": "deadline",
+                            "status": ["pending", "active"],
+                            "time_range": {
+                                "start": "2026-06-07T18:00:00+08:00",
+                                "end": "2026-06-08T00:00:00+08:00",
+                            },
+                            "target_description": "劳动法律法规考试",
+                            "max_candidates": 10,
                         },
-                        "target_description": "劳动法律法规考试",
-                        "max_candidates": 10,
+                        "patch": {"start_at": "2026-06-07T22:00:00+08:00"},
                     },
-                    "fields": {"scheduled_at": "2026-06-07T22:00:00+08:00"},
                 },
                 confidence=0.9,
                 needs_confirmation=True,
@@ -1166,7 +991,7 @@ def test_event_handler_two_stage_uses_all_event_types_when_parser_overfilters(
     pending = db_session.query(PendingOperation).one()
     assert pending.action_name == "update_event"
     resolved = pending.operation_payload["payload"]
-    assert resolved["selector"]["event_type"] == "life_event"
+    assert resolved["selector"]["event_type"] == "schedule"
     assert resolved["selector"]["id"] == target.id
     serialized_card = json.dumps(
         mock_feishu_client.send_interactive_card.call_args.kwargs["card"],
@@ -1205,19 +1030,21 @@ def test_event_handler_two_stage_delete_all_creates_batch_pending(
                 raw_text=text,
                 action_name="delete_event",
                 payload={
-                    "operation": "delete",
-                    "resource": "event",
-                    "selector": {
-                        "event_type": "life_event",
-                        "status": "open",
-                        "time_range": {
-                            "start": "2026-06-06T18:00:00+08:00",
-                            "end": "2026-06-07T00:00:00+08:00",
+                    "action": "delete_event",
+                    "source": source,
+                    "raw_text": text,
+                    "payload": {
+                        "selector": {
+                            "event_type": "schedule",
+                            "status": ["pending", "active"],
+                            "time_range": {
+                                "start": "2026-06-06T18:00:00+08:00",
+                                "end": "2026-06-07T00:00:00+08:00",
+                            },
+                            "target_description": "今晚的所有事项",
+                            "max_candidates": 20,
                         },
-                        "target_description": "今晚的所有事项",
-                        "max_candidates": 20,
                     },
-                    "fields": {},
                 },
                 confidence=0.9,
                 needs_confirmation=True,
@@ -1252,8 +1079,8 @@ def test_event_handler_two_stage_delete_all_creates_batch_pending(
     pending = db_session.query(PendingOperation).one()
     assert pending.action_name == "delete_event"
     assert pending.operation_payload["payload"]["selector"]["targets"] == [
-        {"event_type": "life_event", "id": first.id},
-        {"event_type": "life_event", "id": second.id},
+        {"event_type": "schedule", "id": first.id},
+        {"event_type": "schedule", "id": second.id},
     ]
     db_session.refresh(first)
     db_session.refresh(second)
@@ -1278,12 +1105,13 @@ def test_event_handler_ignores_duplicate_free_form_message_id(
     class FakeOperationParser:
         def parse(self, text: str, *, source: str, now=None):
             assert text == "晚上8点提醒我洗澡"
-            return RuleBasedOperationParser(tz=DEFAULT_TZ).parse(
-                "添加事项 洗澡",
+            return make_create_event(
+                event_type="schedule",
+                title="洗澡",
+                start_at="2026-06-05T20:00:00+08:00",
+                raw_text=text,
                 source=source,
             )
-
-    from app.operations.parser import RuleBasedOperationParser
 
     handler = FeishuEventHandler(
         feishu_settings,
@@ -1461,10 +1289,18 @@ def test_feishu_route_integration(feishu_settings, mock_feishu_client, db_sessio
     from app.db.session import get_db
     from app.feishu.event_handler import create_feishu_router
 
+    class HelpParser:
+        def parse(self, text: str, *, source: str, now=None):
+            raise ValueError("unsupported")
+
     app = FastAPI()
     app.include_router(
         create_feishu_router(
-            FeishuEventHandler(feishu_settings, client=mock_feishu_client),
+            FeishuEventHandler(
+                feishu_settings,
+                client=mock_feishu_client,
+                operation_parser=HelpParser(),
+            ),
         )
     )
     app.dependency_overrides[get_db] = lambda: db_session

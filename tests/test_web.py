@@ -16,9 +16,9 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app.main import create_app
-from app.operations.parser import RuleBasedOperationParser
 from app.operations.store import create_pending_operation
 from app.secretary.rules import DEFAULT_TZ
+from tests.conftest import make_create_event
 
 DASHBOARD_ROUTES = [
     "/dashboard/today",
@@ -111,15 +111,20 @@ def test_view_today_plan_shows_due_assignment(web_client, db_session):
 
 
 def test_today_dashboard_shows_control_center_summary(web_client, db_session):
-    crud.create_reminder(
+    reminder = crud.create_reminder(
         db_session,
         reminder_type="life_event_pre_event",
         target_type="life_event",
         scheduled_at=datetime(2026, 5, 30, 19, 45, tzinfo=DEFAULT_TZ),
         content="提醒：洗澡",
+        status=ReminderStatus.SENT,
     )
-    parsed = RuleBasedOperationParser(tz=DEFAULT_TZ).parse(
-        "添加事项 做程设作业",
+    reminder.sent_at = datetime(2026, 5, 30, 19, 45, tzinfo=DEFAULT_TZ)
+    db_session.commit()
+    parsed = make_create_event(
+        event_type="schedule",
+        title="做程设作业",
+        raw_text="添加事项 做程设作业",
         source="feishu",
     )
     create_pending_operation(db_session, parsed)
@@ -134,15 +139,17 @@ def test_today_dashboard_shows_control_center_summary(web_client, db_session):
     assert "洗澡" in response.text
 
 
-def test_reminders_page_shows_queue_summary(web_client, db_session):
-    crud.create_reminder(
+def test_reminders_page_shows_notification_log_summary(web_client, db_session):
+    first = crud.create_reminder(
         db_session,
         reminder_type="life_event_pre_event",
         target_type="life_event",
         scheduled_at=datetime(2026, 5, 30, 19, 45, tzinfo=DEFAULT_TZ),
         content="提醒：洗澡",
+        status=ReminderStatus.SENT,
     )
-    crud.create_reminder(
+    first.sent_at = datetime(2026, 5, 30, 19, 45, tzinfo=DEFAULT_TZ)
+    second = crud.create_reminder(
         db_session,
         reminder_type="life_event_pre_event",
         target_type="life_event",
@@ -150,6 +157,8 @@ def test_reminders_page_shows_queue_summary(web_client, db_session):
         status=ReminderStatus.SENT,
         content="提醒：跑步",
     )
+    second.sent_at = datetime(2026, 5, 30, 20, 45, tzinfo=DEFAULT_TZ)
+    db_session.commit()
     crud.create_reminder(
         db_session,
         reminder_type="life_event_pre_event",
@@ -163,55 +172,10 @@ def test_reminders_page_shows_queue_summary(web_client, db_session):
 
     assert response.status_code == 200
     assert "提醒队列" in response.text
-    assert "待发送 1" in response.text
-    assert "已发送 1" in response.text
+    assert "已发送 2" in response.text
     assert "失败 1" in response.text
     assert "下一条提醒" in response.text
     assert "洗澡" in response.text
-
-
-def test_reminders_page_can_cancel_pending_reminder(web_client, db_session):
-    reminder = crud.create_reminder(
-        db_session,
-        reminder_type="life_event_pre_event",
-        target_type="life_event",
-        scheduled_at=datetime(2026, 5, 30, 19, 45, tzinfo=DEFAULT_TZ),
-        content="提醒：洗澡",
-    )
-
-    response = web_client.post(
-        f"/dashboard/reminders/{reminder.id}/cancel",
-        follow_redirects=False,
-    )
-
-    db_session.refresh(reminder)
-    assert response.status_code == 303
-    assert response.headers["location"] == "/dashboard/reminders"
-    assert reminder.status == ReminderStatus.CANCELLED.value
-
-
-def test_reminders_page_can_update_pending_reminder_time(web_client, db_session):
-    reminder = crud.create_reminder(
-        db_session,
-        reminder_type="life_event_pre_event",
-        target_type="life_event",
-        scheduled_at=datetime(2026, 5, 30, 19, 45, tzinfo=DEFAULT_TZ),
-        content="提醒：洗澡",
-    )
-
-    response = web_client.post(
-        f"/dashboard/reminders/{reminder.id}/update",
-        data={"scheduled_at": "2026-05-30T20:30"},
-        follow_redirects=False,
-    )
-
-    db_session.refresh(reminder)
-    scheduled_at = reminder.scheduled_at
-    if scheduled_at is not None and scheduled_at.tzinfo is None:
-        scheduled_at = scheduled_at.replace(tzinfo=DEFAULT_TZ)
-    assert response.status_code == 303
-    assert response.headers["location"] == "/dashboard/reminders"
-    assert scheduled_at == datetime(2026, 5, 30, 20, 30, tzinfo=DEFAULT_TZ)
 
 
 def test_logs_page_shows_collapsed_action_debug(web_client, db_session):
@@ -268,8 +232,10 @@ def test_timetable_import_via_web_form(web_client, db_session):
 
 
 def test_pending_operations_page_can_confirm_operation(web_client, db_session):
-    parsed = RuleBasedOperationParser(tz=DEFAULT_TZ).parse(
-        "添加事项 做程设作业",
+    parsed = make_create_event(
+        event_type="schedule",
+        title="做程设作业",
+        raw_text="添加事项 做程设作业",
         source="feishu",
     )
     pending = create_pending_operation(db_session, parsed)
@@ -290,12 +256,35 @@ def test_pending_operations_page_can_confirm_operation(web_client, db_session):
     assert pending.result_resource_id == event.id
 
 
-def test_pending_operations_page_can_update_raw_command(web_client, db_session):
-    parsed = RuleBasedOperationParser(tz=DEFAULT_TZ).parse(
-        "添加事项 旧命令",
+def test_pending_operations_page_can_update_raw_command(
+    web_client, db_session, monkeypatch
+) -> None:
+    parsed = make_create_event(
+        event_type="schedule",
+        title="旧命令",
+        raw_text="添加事项 旧命令",
         source="feishu",
     )
     pending = create_pending_operation(db_session, parsed)
+
+    class FakeLLMParser:
+        def parse(self, text: str, *, source: str, now=None):
+            assert text == "添加事项 新命令"
+            return make_create_event(
+                event_type="schedule",
+                title="新命令",
+                raw_text=text,
+                source=source,
+            )
+
+    from app.operations.parser import OperationParser
+    from app.web import routes as web_routes
+
+    monkeypatch.setattr(
+        web_routes,
+        "build_operation_parser",
+        lambda _settings: OperationParser(FakeLLMParser()),
+    )
 
     response = web_client.post(
         f"/dashboard/pending-operations/{pending.id}/update",
@@ -306,12 +295,14 @@ def test_pending_operations_page_can_update_raw_command(web_client, db_session):
     db_session.refresh(pending)
     assert response.status_code == 303
     assert pending.raw_text == "添加事项 新命令"
-    assert pending.operation_payload["fields"]["title"] == "新命令"
+    assert pending.operation_payload["payload"]["event"]["title"] == "新命令"
 
 
 def test_pending_operations_page_shows_recent_operation_audit(web_client, db_session):
-    parsed = RuleBasedOperationParser(tz=DEFAULT_TZ).parse(
-        "添加事项 失败操作",
+    parsed = make_create_event(
+        event_type="schedule",
+        title="失败操作",
+        raw_text="添加事项 失败操作",
         source="feishu",
     )
     pending = create_pending_operation(db_session, parsed)
@@ -338,8 +329,10 @@ def test_logs_page_shows_message_logs_and_operation_audit(web_client, db_session
             reply_status="help",
         )
     )
-    parsed = RuleBasedOperationParser(tz=DEFAULT_TZ).parse(
-        "添加事项 失败操作",
+    parsed = make_create_event(
+        event_type="schedule",
+        title="失败操作",
+        raw_text="添加事项 失败操作",
         source="feishu",
     )
     pending = create_pending_operation(db_session, parsed)

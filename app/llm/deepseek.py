@@ -10,17 +10,10 @@ import httpx
 from app.operations.parser import ParsedOperation
 
 _SUPPORTED_RESOURCES = frozenset({"event"})
-_SUPPORTED_OPERATIONS = frozenset({"create", "read", "update", "delete", "query"})
 _EVENT_TYPES = frozenset({"course", "plan", "schedule", "deadline"})
-_LEGACY_EVENT_TYPES = frozenset({"assignment", "life_event", "course_session"})
-_ACCEPTED_EVENT_TYPES = _EVENT_TYPES | _LEGACY_EVENT_TYPES
-_EVENT_ACTIONS = {
-    "create": "create_event",
-    "update": "update_event",
-    "delete": "delete_event",
-    "query": "query_event",
-}
-_SUPPORTED_ACTIONS = frozenset(_EVENT_ACTIONS.values())
+_SUPPORTED_ACTIONS = frozenset(
+    {"create_event", "query_event", "update_event", "delete_event"}
+)
 
 _SYSTEM_PROMPT = """\
 你是 SmartCore 个人调度助手的语义解析器。将用户的自然语言转为 JSON Action。
@@ -125,14 +118,18 @@ class DeepSeekOperationParser:
             now = datetime.now(self._tz)
         raw_content = self._call_chat_completions(text, now)
         data = self._parse_json_content(raw_content)
-        action_name, payload = self._normalize_operation(data)
-        if isinstance(payload.get("action"), str):
-            payload = {**payload, "source": source, "raw_text": text}
+        action_name, action_payload = self._normalize_operation(data)
         return ParsedOperation(
             source=source,
             raw_text=text,
             action_name=action_name,
-            payload=payload,
+            payload={
+                **action_payload,
+                "source": source,
+                "raw_text": text,
+                "confidence": float(data.get("confidence", 0.5)),
+                "needs_confirmation": bool(data.get("needs_confirmation", True)),
+            },
             confidence=float(data.get("confidence", 0.5)),
             needs_confirmation=bool(data.get("needs_confirmation", True)),
         )
@@ -164,8 +161,9 @@ class DeepSeekOperationParser:
             )
             for item in candidates
         ]
-        fields = parsed.payload.get("fields") or {}
-        patch_summary = json.dumps(fields, ensure_ascii=False)
+        inner_payload = parsed.payload.get("payload") or {}
+        patch = inner_payload.get("patch") if isinstance(inner_payload, dict) else {}
+        patch_summary = json.dumps(patch or {}, ensure_ascii=False)
         user_content = (
             f"用户原话：{raw_text}\n"
             f"操作：{parsed.action_name}\n"
@@ -272,11 +270,9 @@ class DeepSeekOperationParser:
         return data
 
     def _normalize_operation(self, data: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-        if "action" in data:
-            return self._normalize_action_protocol(data)
-        if "operation" in data:
-            return self._normalize_unified_operation(data)
-        raise ValueError("operation or action is required")
+        if "action" not in data:
+            raise ValueError("action is required")
+        return self._normalize_action_protocol(data)
 
     def _normalize_action_protocol(
         self, data: dict[str, Any]
@@ -307,84 +303,21 @@ class DeepSeekOperationParser:
                 raise ValueError(
                     "update_event payload must include selector and patch"
                 )
+            filter_payload = (
+                selector.get("filter") if isinstance(selector.get("filter"), dict) else {}
+            )
+            event_type = selector.get("event_type") or filter_payload.get("event_type")
+            if event_type not in _EVENT_TYPES and event_type != "all":
+                raise ValueError(f"unsupported event_type: {event_type!r}")
         elif action_name == "delete_event":
             selector = payload_body.get("selector")
             if not isinstance(selector, dict):
                 raise ValueError("delete_event payload must include selector")
+            filter_payload = (
+                selector.get("filter") if isinstance(selector.get("filter"), dict) else {}
+            )
+            event_type = selector.get("event_type") or filter_payload.get("event_type")
+            if event_type not in _EVENT_TYPES and event_type != "all":
+                raise ValueError(f"unsupported event_type: {event_type!r}")
 
         return action_name, {"action": action_name, "payload": payload_body}
-
-    def _normalize_unified_operation(
-        self, data: dict[str, Any]
-    ) -> tuple[str, dict[str, Any]]:
-        operation = data.get("operation")
-        if operation == "read":
-            operation = "query"
-        if operation not in _SUPPORTED_OPERATIONS:
-            raise ValueError(f"unsupported operation: {operation!r}")
-        resource = data.get("resource")
-        if resource not in _SUPPORTED_RESOURCES:
-            raise ValueError(f"unsupported resource: {resource!r}")
-
-        selector = data.get("selector")
-        if not isinstance(selector, dict):
-            selector = {}
-        fields = data.get("fields")
-        if not isinstance(fields, dict):
-            fields = {}
-
-        return self._normalize_event_operation(operation, selector, fields)
-
-    def _normalize_event_operation(
-        self,
-        operation: str,
-        selector: dict[str, Any],
-        fields: dict[str, Any],
-    ) -> tuple[str, dict[str, Any]]:
-        if operation not in _EVENT_ACTIONS:
-            raise ValueError(f"unsupported event operation: {operation!r}")
-
-        action_name = _EVENT_ACTIONS[operation]
-        event_type = selector.get("event_type") or fields.get("event_type")
-
-        if operation == "create":
-            if event_type not in _ACCEPTED_EVENT_TYPES:
-                raise ValueError(f"unsupported event_type: {event_type!r}")
-            title_required_types = (
-                "assignment",
-                "life_event",
-                "deadline",
-                "schedule",
-                "plan",
-            )
-            if event_type in title_required_types and not fields.get("title"):
-                raise ValueError("fields must include title")
-            if event_type in ("course_session", "course") and not (
-                fields.get("course_name") or fields.get("title")
-            ):
-                raise ValueError("fields must include course_name or title for course")
-        elif operation in ("update", "delete"):
-            if selector.get("id") is None:
-                scope_keys = (
-                    "event_type",
-                    "time_range",
-                    "target_description",
-                    "status",
-                    "max_candidates",
-                    "refs",
-                    "mode",
-                )
-                if not any(selector.get(key) is not None for key in scope_keys):
-                    raise ValueError(
-                        "selector must include id or candidate scope for event update/delete"
-                    )
-            elif event_type not in _ACCEPTED_EVENT_TYPES:
-                raise ValueError(f"unsupported event_type: {event_type!r}")
-
-        payload = {
-            "operation": operation,
-            "resource": "event",
-            "selector": selector,
-            "fields": fields,
-        }
-        return action_name, payload

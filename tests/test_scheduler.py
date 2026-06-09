@@ -5,7 +5,7 @@ from datetime import date, datetime
 import pytest
 
 from app.db import crud
-from app.db.models import Reminder, ReminderStatus, WeekRule
+from app.db.models import ReminderStatus, WeekRule
 from app.scheduler.reminder_engine import (
     REMINDER_DAILY_DIGEST,
     REMINDER_DDL_EVE,
@@ -20,7 +20,6 @@ from app.scheduler.runner import SchedulerRunner
 from app.secretary.rules import DEFAULT_TZ
 
 SEMESTER_START = date(2026, 2, 23)
-TODAY = date(2026, 3, 2)
 
 
 @pytest.fixture
@@ -45,17 +44,20 @@ def sample_course(db_session):
 class RecordingSender:
     def __init__(self, *, fail_times: int = 0):
         self.messages: list[str] = []
+        self.cards: list[dict] = []
         self.fail_times = fail_times
         self.attempts = 0
 
-    def send(self, content: str) -> None:
+    def send(self, *, card=None, text: str = "") -> None:
         self.attempts += 1
         if self.attempts <= self.fail_times:
             raise NotificationSendError("send failed")
-        self.messages.append(content)
+        self.messages.append(text)
+        if card is not None:
+            self.cards.append(card)
 
 
-def test_duplicate_generation_does_not_create_reminders(db_session, engine, sample_course):
+def test_duplicate_scan_does_not_send_twice(db_session, engine, sample_course):
     crud.create_course_session(
         db_session,
         course_id=sample_course.id,
@@ -69,22 +71,18 @@ def test_duplicate_generation_does_not_create_reminders(db_session, engine, samp
         title="Essay draft",
         due_at=datetime(2026, 3, 2, 23, 59, tzinfo=DEFAULT_TZ),
     )
-    crud.create_assignment(
-        db_session,
-        title="Lab report",
-        due_at=datetime(2026, 3, 3, 23, 59, tzinfo=DEFAULT_TZ),
-    )
 
-    now = datetime(2026, 3, 2, 6, 0, tzinfo=DEFAULT_TZ)
-    first = engine.generate_reminders(db_session, now=now)
-    second = engine.generate_reminders(db_session, now=now)
+    sender = RecordingSender()
+    now = datetime(2026, 3, 2, 7, 0, tzinfo=DEFAULT_TZ)
+    first = engine.scan_and_notify(db_session, sender, now=now)
+    second = engine.scan_and_notify(db_session, sender, now=now)
 
     assert first > 0
     assert second == 0
-    assert db_session.query(Reminder).count() == first
+    assert len(sender.messages) == first
 
 
-def test_generates_all_reminder_types(db_session, engine, sample_course):
+def test_scan_collects_all_reminder_types(db_session, engine, sample_course):
     crud.create_course_session(
         db_session,
         course_id=sample_course.id,
@@ -104,11 +102,18 @@ def test_generates_all_reminder_types(db_session, engine, sample_course):
         due_at=datetime(2026, 3, 3, 23, 59, tzinfo=DEFAULT_TZ),
     )
 
-    now = datetime(2026, 3, 2, 6, 0, tzinfo=DEFAULT_TZ)
-    engine.generate_reminders(db_session, now=now)
+    morning = datetime(2026, 3, 2, 7, 0, tzinfo=DEFAULT_TZ)
+    pre_class = datetime(2026, 3, 2, 7, 45, tzinfo=DEFAULT_TZ)
+    ddl_today = datetime(2026, 3, 2, 8, 0, tzinfo=DEFAULT_TZ)
+    ddl_eve = datetime(2026, 3, 2, 20, 0, tzinfo=DEFAULT_TZ)
+    tomorrow_preview = datetime(2026, 3, 2, 21, 0, tzinfo=DEFAULT_TZ)
 
-    types = {item.reminder_type for item in db_session.query(Reminder).all()}
-    assert types == {
+    collected_types = set()
+    for moment in (morning, pre_class, ddl_today, ddl_eve, tomorrow_preview):
+        for item in engine.collect_due_notifications(db_session, now=moment):
+            collected_types.add(item.reminder_type)
+
+    assert collected_types == {
         REMINDER_DAILY_DIGEST,
         REMINDER_TOMORROW_PREVIEW,
         REMINDER_PRE_CLASS,
@@ -126,11 +131,12 @@ def test_sent_reminder_is_not_sent_again(db_session, engine):
         scheduled_at=scheduled_at,
         content="already sent",
         status=ReminderStatus.SENT,
+        dedup_key="daily_digest:2026-03-02",
     )
 
     sender = RecordingSender()
-    now = datetime(2026, 3, 2, 8, 0, tzinfo=DEFAULT_TZ)
-    sent = engine.dispatch_due_reminders(db_session, sender, now=now)
+    now = datetime(2026, 3, 2, 7, 0, tzinfo=DEFAULT_TZ)
+    sent = engine.scan_and_notify(db_session, sender, now=now)
 
     assert sent == 0
     assert sender.messages == []
@@ -144,15 +150,19 @@ def test_failed_send_increments_retry_count(db_session, engine):
         target_type="day",
         scheduled_at=scheduled_at,
         content="digest",
+        dedup_key="daily_digest:2026-03-02",
+        status=ReminderStatus.FAILED,
     )
+    reminder.retry_count = 0
+    db_session.commit()
 
     sender = RecordingSender(fail_times=1)
-    now = datetime(2026, 3, 2, 8, 0, tzinfo=DEFAULT_TZ)
-    engine.dispatch_due_reminders(db_session, sender, now=now)
+    now = datetime(2026, 3, 2, 7, 0, tzinfo=DEFAULT_TZ)
+    engine.scan_and_notify(db_session, sender, now=now)
 
     db_session.refresh(reminder)
     assert reminder.retry_count == 1
-    assert reminder.status == ReminderStatus.PENDING.value
+    assert reminder.status == ReminderStatus.FAILED.value
 
 
 def test_max_retries_marks_reminder_failed(db_session, engine):
@@ -163,12 +173,16 @@ def test_max_retries_marks_reminder_failed(db_session, engine):
         target_type="day",
         scheduled_at=scheduled_at,
         content="digest",
+        dedup_key="daily_digest:2026-03-02",
+        status=ReminderStatus.FAILED,
     )
+    reminder.retry_count = 0
+    db_session.commit()
 
     sender = RecordingSender(fail_times=10)
-    now = datetime(2026, 3, 2, 8, 0, tzinfo=DEFAULT_TZ)
+    now = datetime(2026, 3, 2, 7, 0, tzinfo=DEFAULT_TZ)
     for _ in range(engine.config.max_retries):
-        engine.dispatch_due_reminders(db_session, sender, now=now)
+        engine.scan_and_notify(db_session, sender, now=now)
 
     db_session.refresh(reminder)
     assert reminder.retry_count == engine.config.max_retries
@@ -185,27 +199,16 @@ def test_pending_reminders_continue_after_restart(db_session, scheduler_config, 
         week_rule=WeekRule.EVERY,
     )
 
-    now = datetime(2026, 3, 2, 6, 0, tzinfo=DEFAULT_TZ)
-    first_engine = ReminderEngine(scheduler_config)
-    first_engine.generate_reminders(db_session, now=now)
-
-    pending_count = (
-        db_session.query(Reminder)
-        .filter(Reminder.status == ReminderStatus.PENDING.value)
-        .count()
-    )
-    assert pending_count > 0
-
     sender = RecordingSender()
     restarted_engine = ReminderEngine(scheduler_config)
-    dispatch_at = datetime(2026, 3, 2, 22, 0, tzinfo=DEFAULT_TZ)
-    sent = restarted_engine.dispatch_due_reminders(db_session, sender, now=dispatch_at)
+    dispatch_at = datetime(2026, 3, 2, 21, 0, tzinfo=DEFAULT_TZ)
+    sent = restarted_engine.scan_and_notify(db_session, sender, now=dispatch_at)
 
     assert sent > 0
     assert len(sender.messages) == sent
 
 
-def test_runner_tick_generates_and_dispatches(db_session, scheduler_config, sample_course):
+def test_runner_tick_scans_and_dispatches(db_session, scheduler_config, sample_course):
     crud.create_course_session(
         db_session,
         course_id=sample_course.id,
@@ -217,15 +220,14 @@ def test_runner_tick_generates_and_dispatches(db_session, scheduler_config, samp
 
     sender = RecordingSender()
     runner = SchedulerRunner(lambda: db_session, sender, scheduler_config)
-    now = datetime(2026, 3, 2, 22, 0, tzinfo=DEFAULT_TZ)
-    created, sent = runner.tick(now=now)
+    now = datetime(2026, 3, 2, 21, 0, tzinfo=DEFAULT_TZ)
+    sent = runner.tick(now=now)
 
-    assert created > 0
     assert sent > 0
     assert sender.messages
 
 
-def test_cancelled_reminder_is_not_sent(db_session, engine):
+def test_cancelled_dedup_record_does_not_block_rescan(db_session, engine):
     scheduled_at = datetime(2026, 3, 2, 7, 0, tzinfo=DEFAULT_TZ)
     crud.create_reminder(
         db_session,
@@ -234,11 +236,12 @@ def test_cancelled_reminder_is_not_sent(db_session, engine):
         scheduled_at=scheduled_at,
         content="cancelled",
         status=ReminderStatus.CANCELLED,
+        dedup_key="daily_digest:2026-03-02",
     )
 
     sender = RecordingSender()
-    now = datetime(2026, 3, 2, 8, 0, tzinfo=DEFAULT_TZ)
-    sent = engine.dispatch_due_reminders(db_session, sender, now=now)
+    now = datetime(2026, 3, 2, 7, 0, tzinfo=DEFAULT_TZ)
+    sent = engine.scan_and_notify(db_session, sender, now=now)
 
-    assert sent == 0
-    assert sender.messages == []
+    assert sent == 1
+    assert sender.messages

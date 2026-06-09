@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.actions.executor import ActionExecutor
+from app.actions.protocol import default_reminder_times
 from app.db import crud
 from app.db.models import (
     Assignment,
@@ -13,56 +14,56 @@ from app.db.models import (
     PendingOperation,
     PendingOperationStatus,
     Reminder,
-    ReminderStatus,
 )
-from app.operations.parser import ParsedOperation, RuleBasedOperationParser
+from app.operations.parser import ParsedOperation
 from app.operations.store import create_pending_operation
+from app.scheduler.reminder_engine import ReminderEngine, SchedulerConfig
 from app.secretary.rules import DEFAULT_TZ
+from tests.conftest import make_create_event, make_delete_event, make_update_event
 
 
-def test_rule_parser_creates_assignment_operation() -> None:
-    parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
+class RecordingSender:
+    def __init__(self) -> None:
+        self.messages: list[str] = []
 
-    operation = parser.parse(
-        "添加作业 高数作业 2026-06-10 20:00",
-        source="feishu",
+    def send(self, *, card=None, text: str = "") -> None:
+        self.messages.append(text)
+
+
+def test_action_protocol_create_deadline_operation() -> None:
+    operation = make_create_event(
+        event_type="deadline",
+        title="高数作业",
+        start_at="2026-06-10T20:00:00+08:00",
+        raw_text="添加作业 高数作业 2026-06-10 20:00",
     )
 
     assert operation.source == "feishu"
-    assert operation.raw_text == "添加作业 高数作业 2026-06-10 20:00"
     assert operation.action_name == "create_event"
     assert operation.needs_confirmation is True
-    assert operation.confidence >= 0.9
-    assert operation.payload == {
-        "operation": "create",
-        "resource": "event",
-        "selector": {},
-        "fields": {
-            "event_type": "assignment",
-            "title": "高数作业",
-            "due_at": "2026-06-10T20:00:00+08:00",
-        },
-    }
+    assert operation.payload["action"] == "create_event"
+    assert operation.payload["payload"]["event"]["event_type"] == "deadline"
+    assert operation.payload["payload"]["event"]["title"] == "高数作业"
 
 
-def test_rule_parser_creates_life_event_operation() -> None:
-    parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
-
-    operation = parser.parse("添加事项 洗衣服", source="feishu")
+def test_action_protocol_create_schedule_operation() -> None:
+    operation = make_create_event(
+        event_type="schedule",
+        title="洗衣服",
+        raw_text="添加事项 洗衣服",
+    )
 
     assert operation.action_name == "create_event"
-    assert operation.needs_confirmation is True
-    assert operation.payload == {
-        "operation": "create",
-        "resource": "event",
-        "selector": {},
-        "fields": {"event_type": "life_event", "title": "洗衣服"},
-    }
+    assert operation.payload["payload"]["event"]["event_type"] == "schedule"
 
 
 def test_pending_operation_confirm_executes_action(db_session) -> None:
-    parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
-    parsed = parser.parse("添加作业 高数作业 2026-06-10 20:00", source="feishu")
+    parsed = make_create_event(
+        event_type="deadline",
+        title="高数作业",
+        start_at="2026-06-10T20:00:00+08:00",
+        raw_text="添加作业 高数作业 2026-06-10 20:00",
+    )
     pending = create_pending_operation(db_session, parsed)
 
     assert pending.id is not None
@@ -87,8 +88,11 @@ def test_pending_operation_confirm_executes_action(db_session) -> None:
 
 
 def test_rejected_operation_does_not_execute(db_session) -> None:
-    parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
-    parsed = parser.parse("添加作业 高数作业 2026-06-10 20:00", source="feishu")
+    parsed = make_create_event(
+        event_type="deadline",
+        title="高数作业",
+        start_at="2026-06-10T20:00:00+08:00",
+    )
     pending = create_pending_operation(db_session, parsed)
 
     executor = ActionExecutor(db_session)
@@ -100,8 +104,11 @@ def test_rejected_operation_does_not_execute(db_session) -> None:
 
 
 def test_pending_life_event_confirm_executes_action(db_session) -> None:
-    parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
-    parsed = parser.parse("添加事项 洗衣服", source="feishu")
+    parsed = make_create_event(
+        event_type="schedule",
+        title="洗衣服",
+        raw_text="添加事项 洗衣服",
+    )
     pending = create_pending_operation(db_session, parsed)
 
     executor = ActionExecutor(db_session)
@@ -116,9 +123,12 @@ def test_pending_life_event_confirm_executes_action(db_session) -> None:
 
 
 def test_pending_life_event_confirm_preserves_scheduled_at(db_session) -> None:
-    parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
-    parsed = parser.parse("添加事项 做程设作业", source="feishu")
-    parsed.payload["fields"]["scheduled_at"] = "2026-06-05T20:00:00+08:00"
+    parsed = make_create_event(
+        event_type="schedule",
+        title="做程设作业",
+        start_at="2026-06-05T20:00:00+08:00",
+        raw_text="添加事项 做程设作业",
+    )
     pending = create_pending_operation(db_session, parsed)
 
     executor = ActionExecutor(db_session)
@@ -131,105 +141,49 @@ def test_pending_life_event_confirm_preserves_scheduled_at(db_session) -> None:
     assert scheduled_at == datetime(2026, 6, 5, 20, 0, tzinfo=DEFAULT_TZ)
 
 
-def test_pending_life_event_confirm_creates_default_pre_event_reminder(
-    db_session,
-) -> None:
-    parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
-    parsed = parser.parse("添加事项 做程设作业", source="feishu")
-    parsed.payload["fields"]["scheduled_at"] = "2026-06-05T20:00:00+08:00"
+def test_pending_schedule_confirm_uses_default_reminder_scan_times(db_session) -> None:
+    start_at = datetime(2026, 6, 5, 20, 0, tzinfo=DEFAULT_TZ)
+    parsed = make_create_event(
+        event_type="schedule",
+        title="做程设作业",
+        start_at=start_at.isoformat(),
+        raw_text="添加事项 做程设作业",
+    )
     pending = create_pending_operation(db_session, parsed)
 
-    executor = ActionExecutor(db_session)
-    executor.confirm_and_apply(pending.id)
+    ActionExecutor(db_session).confirm_and_apply(pending.id)
 
     event = db_session.query(LifeEvent).filter_by(title="做程设作业").one()
-    reminder = db_session.query(Reminder).filter_by(target_type="life_event").one()
-    reminder_at = reminder.scheduled_at
-    if reminder_at is not None and reminder_at.tzinfo is None:
-        reminder_at = reminder_at.replace(tzinfo=DEFAULT_TZ)
-    assert reminder.target_id == event.id
-    assert reminder.reminder_type == "life_event_pre_event"
-    assert reminder_at == datetime(2026, 6, 5, 19, 45, tzinfo=DEFAULT_TZ)
-    assert "做程设作业" in (reminder.content or "")
+    engine = ReminderEngine(SchedulerConfig(tz=DEFAULT_TZ))
+    first_reminder = default_reminder_times(start_at)[0]
+    due = engine.collect_due_notifications(
+        db_session,
+        now=first_reminder,
+    )
+    assert any(item.target_id == event.id for item in due)
+    assert db_session.query(Reminder).count() == 0
 
 
-def test_pending_life_event_confirm_respects_custom_reminder_lead_minutes(
-    db_session,
-) -> None:
-    parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
-    parsed = parser.parse("添加事项 做程设作业", source="feishu")
-    scheduled_at = datetime(2026, 6, 5, 20, 0, tzinfo=DEFAULT_TZ)
-    parsed.payload["fields"]["scheduled_at"] = scheduled_at.isoformat()
-    parsed.payload["fields"]["reminder_lead_minutes"] = 30
-    pending = create_pending_operation(db_session, parsed)
-
-    executor = ActionExecutor(db_session)
-    executor.confirm_and_apply(pending.id)
-
-    reminder = db_session.query(Reminder).filter_by(target_type="life_event").one()
-    reminder_at = reminder.scheduled_at
-    if reminder_at is not None and reminder_at.tzinfo is None:
-        reminder_at = reminder_at.replace(tzinfo=DEFAULT_TZ)
-    assert reminder_at == scheduled_at - timedelta(minutes=30)
-
-
-def test_event_interface_create_supports_three_event_types(db_session) -> None:
+def test_event_interface_create_supports_public_event_types(db_session) -> None:
     operations = [
-        ParsedOperation(
-            source="feishu",
+        make_create_event(
+            event_type="deadline",
+            title="线代作业",
+            start_at="2026-06-10T20:00:00+08:00",
             raw_text="新增作业",
-            action_name="create_event",
-            payload={
-                "operation": "create",
-                "resource": "event",
-                "selector": {},
-                "fields": {
-                    "event_type": "assignment",
-                    "title": "线代作业",
-                    "due_at": "2026-06-10T20:00:00+08:00",
-                },
-            },
-            confidence=0.9,
-            needs_confirmation=True,
         ),
-        ParsedOperation(
-            source="feishu",
+        make_create_event(
+            event_type="schedule",
+            title="吃饭",
+            start_at="2026-06-05T22:00:00+08:00",
             raw_text="新增生活事项",
-            action_name="create_event",
-            payload={
-                "operation": "create",
-                "resource": "event",
-                "selector": {},
-                "fields": {
-                    "event_type": "life_event",
-                    "title": "吃饭",
-                    "scheduled_at": "2026-06-05T22:00:00+08:00",
-                    "reminder_lead_minutes": 15,
-                },
-            },
-            confidence=0.9,
-            needs_confirmation=True,
         ),
-        ParsedOperation(
-            source="feishu",
-            raw_text="新增课程",
-            action_name="create_event",
-            payload={
-                "operation": "create",
-                "resource": "event",
-                "selector": {},
-                "fields": {
-                    "event_type": "course_session",
-                    "course_name": "物理",
-                    "teacher": "Dr. Lee",
-                    "weekday": 2,
-                    "start_time": "10:00",
-                    "end_time": "11:40",
-                    "location": "B201",
-                },
-            },
-            confidence=0.9,
-            needs_confirmation=True,
+        make_create_event(
+            event_type="plan",
+            title="物理复习",
+            start_at="2026-06-05T10:00:00+08:00",
+            end_at="2026-06-05T11:40:00+08:00",
+            raw_text="新增计划",
         ),
     ]
 
@@ -239,47 +193,28 @@ def test_event_interface_create_supports_three_event_types(db_session) -> None:
         assert applied.status == PendingOperationStatus.APPLIED.value
 
     assert db_session.query(Assignment).filter_by(title="线代作业").one()
-    event = db_session.query(LifeEvent).filter_by(title="吃饭").one()
-    reminder = db_session.query(Reminder).filter_by(target_type="life_event").one()
-    session = db_session.query(CourseSession).one()
-    assert reminder.target_id == event.id
-    assert session.course.name == "物理"
-    assert session.location_override == "B201"
+    assert db_session.query(LifeEvent).filter_by(title="吃饭").one()
+    assert db_session.query(LifeEvent).filter_by(title="物理复习").one()
 
 
 def test_event_interface_update_and_delete_events(db_session) -> None:
     assignment = crud.create_assignment(db_session, title="旧作业")
     life_event = crud.create_life_event(db_session, title="旧事项")
 
-    update = ParsedOperation(
-        source="feishu",
+    update = make_update_event(
+        event_type="schedule",
+        resource_id=life_event.id,
+        patch={
+            "title": "新事项",
+            "start_at": "2026-06-05T21:00:00+08:00",
+            "notes": "updated",
+        },
         raw_text="修改事项",
-        action_name="update_event",
-        payload={
-            "operation": "update",
-            "resource": "event",
-            "selector": {"event_type": "life_event", "id": life_event.id},
-            "fields": {
-                "title": "新事项",
-                "scheduled_at": "2026-06-05T21:00:00+08:00",
-                "notes": "updated",
-            },
-        },
-        confidence=0.9,
-        needs_confirmation=True,
     )
-    delete = ParsedOperation(
-        source="feishu",
+    delete = make_delete_event(
+        event_type="deadline",
+        resource_id=assignment.id,
         raw_text="删除作业",
-        action_name="delete_event",
-        payload={
-            "operation": "delete",
-            "resource": "event",
-            "selector": {"event_type": "assignment", "id": assignment.id},
-            "fields": {},
-        },
-        confidence=0.9,
-        needs_confirmation=True,
     )
 
     ActionExecutor(db_session).confirm_and_apply(create_pending_operation(db_session, update).id)
@@ -296,44 +231,17 @@ def test_event_interface_update_and_delete_events(db_session) -> None:
     assert scheduled_at == datetime(2026, 6, 5, 21, 0, tzinfo=DEFAULT_TZ)
 
 
-def test_update_life_event_reschedules_pending_pre_event_reminder(db_session) -> None:
+def test_update_life_event_changes_scheduled_at(db_session) -> None:
     event = crud.create_life_event(
         db_session,
         title="做程序设计作业",
         scheduled_at=datetime(2026, 6, 6, 20, 0, tzinfo=DEFAULT_TZ),
     )
-    sent_reminder = crud.create_reminder(
-        db_session,
-        reminder_type="life_event_pre_event",
-        target_type="life_event",
-        target_id=event.id,
-        scheduled_at=datetime(2026, 6, 6, 19, 45, tzinfo=DEFAULT_TZ),
-        status=ReminderStatus.SENT,
-        content="提醒：旧提醒",
-    )
-    pending_reminder = crud.create_reminder(
-        db_session,
-        reminder_type="life_event_pre_event",
-        target_type="life_event",
-        target_id=event.id,
-        scheduled_at=datetime(2026, 6, 6, 19, 45, tzinfo=DEFAULT_TZ),
-        content="提醒：做程序设计作业",
-    )
-    parsed = ParsedOperation(
-        source="feishu",
+    parsed = make_update_event(
+        event_type="schedule",
+        resource_id=event.id,
+        patch={"start_at": "2026-06-06T22:00:00+08:00"},
         raw_text="把程设作业改到十点",
-        action_name="update_event",
-        payload={
-            "operation": "update",
-            "resource": "event",
-            "selector": {"event_type": "life_event", "id": event.id},
-            "fields": {
-                "scheduled_at": "2026-06-06T22:00:00+08:00",
-                "reminder_lead_minutes": 30,
-            },
-        },
-        confidence=0.9,
-        needs_confirmation=True,
     )
 
     applied = ActionExecutor(db_session).confirm_and_apply(
@@ -341,21 +249,11 @@ def test_update_life_event_reschedules_pending_pre_event_reminder(db_session) ->
     )
 
     db_session.refresh(event)
-    db_session.refresh(pending_reminder)
-    db_session.refresh(sent_reminder)
     event_time = event.scheduled_at
-    reminder_time = pending_reminder.scheduled_at
-    sent_time = sent_reminder.scheduled_at
     if event_time is not None and event_time.tzinfo is None:
         event_time = event_time.replace(tzinfo=DEFAULT_TZ)
-    if reminder_time is not None and reminder_time.tzinfo is None:
-        reminder_time = reminder_time.replace(tzinfo=DEFAULT_TZ)
-    if sent_time is not None and sent_time.tzinfo is None:
-        sent_time = sent_time.replace(tzinfo=DEFAULT_TZ)
     assert applied.status == PendingOperationStatus.APPLIED.value
     assert event_time == datetime(2026, 6, 6, 22, 0, tzinfo=DEFAULT_TZ)
-    assert reminder_time == datetime(2026, 6, 6, 21, 30, tzinfo=DEFAULT_TZ)
-    assert sent_time == datetime(2026, 6, 6, 19, 45, tzinfo=DEFAULT_TZ)
 
 
 def test_event_interface_update_and_delete_course_session(db_session) -> None:
@@ -369,23 +267,16 @@ def test_event_interface_update_and_delete_course_session(db_session) -> None:
         location_override="B201",
     )
 
-    update = ParsedOperation(
-        source="feishu",
-        raw_text="修改课程",
-        action_name="update_event",
-        payload={
-            "operation": "update",
-            "resource": "event",
-            "selector": {"event_type": "course_session", "id": session.id},
-            "fields": {
-                "weekday": 3,
-                "start_time": "14:00",
-                "end_time": "15:40",
-                "location": "C301",
-            },
+    update = make_update_event(
+        event_type="course",
+        resource_id=session.id,
+        patch={
+            "weekday": 3,
+            "start_time": "14:00",
+            "end_time": "15:40",
+            "location": "C301",
         },
-        confidence=0.9,
-        needs_confirmation=True,
+        raw_text="修改课程",
     )
 
     applied = ActionExecutor(db_session).confirm_and_apply(
@@ -399,18 +290,10 @@ def test_event_interface_update_and_delete_course_session(db_session) -> None:
     assert session.end_time == "15:40"
     assert session.location_override == "C301"
 
-    delete = ParsedOperation(
-        source="feishu",
+    delete = make_delete_event(
+        event_type="course",
+        resource_id=session.id,
         raw_text="删除课程",
-        action_name="delete_event",
-        payload={
-            "operation": "delete",
-            "resource": "event",
-            "selector": {"event_type": "course_session", "id": session.id},
-            "fields": {},
-        },
-        confidence=0.9,
-        needs_confirmation=True,
     )
 
     deleted = ActionExecutor(db_session).confirm_and_apply(
@@ -432,16 +315,13 @@ def test_event_interface_query_events(db_session) -> None:
 
     results = ActionExecutor(db_session).query_events(
         {
-            "operation": "query",
-            "resource": "event",
-            "selector": {},
-            "fields": {"event_type": "all", "status": "open"},
+            "filter": {"event_type": "all", "status": ["pending", "active"]},
         }
     )
 
     titles = {item["title"] for item in results}
     assert titles == {"待交作业", "待做事项"}
-    assert {item["event_type"] for item in results} == {"assignment", "life_event"}
+    assert {item["event_type"] for item in results} == {"deadline", "schedule"}
 
 
 def test_event_query_filters_by_time_range_and_returns_compact_candidates(
@@ -466,24 +346,29 @@ def test_event_query_filters_by_time_range_and_returns_compact_candidates(
 
     results = ActionExecutor(db_session).query_events(
         {
-            "operation": "query",
-            "resource": "event",
-            "selector": {
+            "filter": {
                 "event_type": "all",
-                "status": "open",
+                "status": ["pending", "active"],
                 "time_range": {
                     "start": "2026-06-06T18:00:00+08:00",
                     "end": "2026-06-07T00:00:00+08:00",
                 },
-                "max_candidates": 10,
+                "limit": 10,
             },
-            "fields": {},
         }
     )
 
     assert {item["title"] for item in results} == {"做程序设计作业", "今晚交线代"}
     for item in results:
-        assert set(item) <= {"event_type", "id", "status", "time_label", "title"}
+        assert set(item) <= {
+            "end_at",
+            "event_type",
+            "ref",
+            "start_at",
+            "status",
+            "time_label",
+            "title",
+        }
         assert item["time_label"]
 
 
@@ -500,10 +385,13 @@ def test_legacy_update_reminder_action_is_rejected(db_session) -> None:
         raw_text="把提醒改到 20:30",
         action_name="update_reminder",
         payload={
-            "operation": "update",
-            "resource": "reminder",
-            "selector": {"id": reminder.id},
-            "fields": {"scheduled_at": "2026-06-05T20:30:00+08:00"},
+            "action": "update_reminder",
+            "source": "feishu",
+            "raw_text": "把提醒改到 20:30",
+            "payload": {
+                "selector": {"id": reminder.id},
+                "patch": {"scheduled_at": "2026-06-05T20:30:00+08:00"},
+            },
         },
         confidence=0.86,
         needs_confirmation=True,
@@ -536,10 +424,10 @@ def test_legacy_cancel_reminder_action_is_rejected(db_session) -> None:
         raw_text="取消提醒",
         action_name="cancel_reminder",
         payload={
-            "operation": "cancel",
-            "resource": "reminder",
-            "selector": {"id": reminder.id},
-            "fields": {},
+            "action": "cancel_reminder",
+            "source": "feishu",
+            "raw_text": "取消提醒",
+            "payload": {"selector": {"id": reminder.id}},
         },
         confidence=0.86,
         needs_confirmation=True,
@@ -549,33 +437,11 @@ def test_legacy_cancel_reminder_action_is_rejected(db_session) -> None:
     applied = ActionExecutor(db_session).confirm_and_apply(pending.id)
 
     db_session.refresh(reminder)
-    assert reminder.status == ReminderStatus.PENDING.value
+    assert reminder.status == "pending"
     assert applied.status == PendingOperationStatus.FAILED.value
     assert "unsupported action" in (applied.error_message or "")
     assert applied.result_resource_type is None
     assert applied.result_resource_id is None
-
-
-def test_life_event_create_rolls_back_when_reminder_creation_fails(
-    db_session,
-    monkeypatch,
-) -> None:
-    parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
-    parsed = parser.parse("添加事项 洗澡", source="feishu")
-    parsed.payload["fields"]["scheduled_at"] = "2026-06-05T20:00:00+08:00"
-    pending = create_pending_operation(db_session, parsed)
-
-    def fail_create_reminder(*args, **kwargs):
-        raise RuntimeError("reminder write failed")
-
-    monkeypatch.setattr(crud, "create_reminder", fail_create_reminder)
-
-    applied = ActionExecutor(db_session).confirm_and_apply(pending.id)
-
-    assert applied.status == PendingOperationStatus.FAILED.value
-    assert "reminder write failed" in (applied.error_message or "")
-    assert db_session.query(LifeEvent).filter_by(title="洗澡").count() == 0
-    assert db_session.query(Reminder).count() == 0
 
 
 def test_delete_event_can_apply_resolved_batch_targets(db_session) -> None:
@@ -594,23 +460,13 @@ def test_delete_event_can_apply_resolved_batch_targets(db_session) -> None:
         title="明晚事项",
         scheduled_at=datetime(2026, 6, 7, 20, 0, tzinfo=DEFAULT_TZ),
     )
-    parsed = ParsedOperation(
-        source="feishu",
+    parsed = make_delete_event(
+        event_type="schedule",
+        targets=[
+            {"event_type": "schedule", "id": first.id},
+            {"event_type": "schedule", "id": second.id},
+        ],
         raw_text="删除今晚的所有事项",
-        action_name="delete_event",
-        payload={
-            "operation": "delete",
-            "resource": "event",
-            "selector": {
-                "targets": [
-                    {"event_type": "life_event", "id": first.id},
-                    {"event_type": "life_event", "id": second.id},
-                ]
-            },
-            "fields": {},
-        },
-        confidence=0.9,
-        needs_confirmation=True,
     )
 
     applied = ActionExecutor(db_session).confirm_and_apply(
@@ -634,23 +490,13 @@ def test_delete_event_batch_failure_does_not_partially_mutate_targets(
         title="今晚事项 A",
         scheduled_at=datetime(2026, 6, 6, 20, 0, tzinfo=DEFAULT_TZ),
     )
-    parsed = ParsedOperation(
-        source="feishu",
+    parsed = make_delete_event(
+        event_type="schedule",
+        targets=[
+            {"event_type": "schedule", "id": first.id},
+            {"event_type": "schedule", "id": 9999},
+        ],
         raw_text="删除两个事项",
-        action_name="delete_event",
-        payload={
-            "operation": "delete",
-            "resource": "event",
-            "selector": {
-                "targets": [
-                    {"event_type": "life_event", "id": first.id},
-                    {"event_type": "life_event", "id": 9999},
-                ]
-            },
-            "fields": {},
-        },
-        confidence=0.9,
-        needs_confirmation=True,
     )
 
     applied = ActionExecutor(db_session).confirm_and_apply(

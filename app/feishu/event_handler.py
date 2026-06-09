@@ -22,9 +22,8 @@ from app.feishu.commands import extract_message_text, format_help_message
 from app.feishu.security import FeishuSecurityError, parse_event_payload, validate_request_headers
 from app.llm.deepseek import DeepSeekOperationParser
 from app.operations.parser import (
-    CompositeOperationParser,
+    OperationParser,
     ParsedOperation,
-    RuleBasedOperationParser,
 )
 from app.secretary.rules import DEFAULT_TZ
 
@@ -49,26 +48,23 @@ class FeishuReply:
     db_result: dict[str, Any] | None = None
 
 
-def build_operation_parser(settings: Settings) -> CompositeOperationParser:
-    rule_parser = RuleBasedOperationParser(tz=DEFAULT_TZ)
-    llm_parser = None
-    if settings.llm_provider == "deepseek" and settings.deepseek_api_key:
-        llm_parser = DeepSeekOperationParser(
-            api_key=settings.deepseek_api_key,
-            base_url=settings.deepseek_base_url,
-            model=settings.llm_model,
-            tz=DEFAULT_TZ,
-        )
-    return CompositeOperationParser(rule_parser=rule_parser, llm_parser=llm_parser)
+def build_operation_parser(settings: Settings) -> OperationParser | None:
+    if settings.llm_provider != "deepseek" or not settings.deepseek_api_key:
+        return None
+    llm_parser = DeepSeekOperationParser(
+        api_key=settings.deepseek_api_key,
+        base_url=settings.deepseek_base_url,
+        model=settings.llm_model,
+        tz=DEFAULT_TZ,
+    )
+    return OperationParser(llm_parser)
 
 
 def _format_confirm_reply(pending: PendingOperation) -> str:
     if pending.status == PendingOperationStatus.FAILED.value:
         return f"执行失败：{pending.error_message or '未知错误'}"
-    title = pending.operation_payload.get("fields", {}).get("title", "")
-    if not title:
-        event = (pending.operation_payload.get("payload") or {}).get("event") or {}
-        title = event.get("title", "")
+    event = (pending.operation_payload.get("payload") or {}).get("event") or {}
+    title = event.get("title", "")
     if title:
         return f"已确认并执行：{title}"
     return "已确认并执行"
@@ -101,7 +97,7 @@ class FeishuEventHandler:
         self,
         settings: Settings,
         client: FeishuClient | None = None,
-        operation_parser: CompositeOperationParser | object | None = None,
+        operation_parser: OperationParser | object | None = None,
     ) -> None:
         self.settings = settings
         self.client = client or FeishuClient(
@@ -207,6 +203,13 @@ class FeishuEventHandler:
         if text.strip() in _HELP_KEYWORDS:
             return FeishuReply(
                 text=format_help_message(),
+                parsed_command="help",
+                reply_status="help",
+            )
+
+        if self._operation_parser is None:
+            return FeishuReply(
+                text="自然语言解析未配置，请设置 LLM_PROVIDER=deepseek 和 DEEPSEEK_API_KEY。",
                 parsed_command="help",
                 reply_status="help",
             )
@@ -342,33 +345,20 @@ class FeishuEventHandler:
         if not hasattr(self._operation_parser, "select_candidates"):
             return False
         payload = parsed.payload
-        if isinstance(payload.get("action"), str):
-            inner = payload.get("payload") or {}
-            if parsed.action_name == "query_event":
-                semantic = inner.get("semantic") or {}
-                return bool(semantic.get("target_description"))
-            if parsed.action_name in {"update_event", "delete_event"}:
-                selector = inner.get("selector") or {}
-                if selector.get("mode") == "semantic_ref":
-                    return True
-                return selector.get("id") is None and bool(
-                    selector.get("target_description") or selector.get("time_range")
-                )
+        if not isinstance(payload.get("action"), str):
             return False
-
-        selector = payload.get("selector") or {}
-        fields = payload.get("fields") or {}
+        inner = payload.get("payload") or {}
         if parsed.action_name == "query_event":
-            return bool(
-                selector.get("target_description") or fields.get("target_description")
-            )
+            semantic = inner.get("semantic") or {}
+            return bool(semantic.get("target_description"))
         if parsed.action_name in {"update_event", "delete_event"}:
+            selector = inner.get("selector") or {}
             if selector.get("id") is not None:
                 return False
             return bool(
-                selector.get("target_description")
+                selector.get("mode") == "semantic_ref"
+                or selector.get("target_description")
                 or selector.get("time_range")
-                or fields.get("target_description")
             )
         return False
 
@@ -484,17 +474,18 @@ class FeishuEventHandler:
         now_dt: datetime,
     ) -> dict[str, Any]:
         payload = parsed.payload
-        if isinstance(payload.get("action"), str):
-            selector = (payload.get("payload") or {}).get("selector") or {}
-        else:
-            selector = payload.get("selector") or {}
+        inner = payload.get("payload") or {}
+        selector = inner.get("selector") or {}
+        source_filter = inner.get("filter") if isinstance(inner.get("filter"), dict) else {}
 
         filter_payload: dict[str, Any] = {
             "event_type": "all",
             "status": ["pending", "active"],
-            "limit": selector.get("max_candidates") or 50,
+            "limit": selector.get("max_candidates") or source_filter.get("limit") or 50,
         }
-        if selector.get("time_range"):
+        if source_filter.get("time_range"):
+            filter_payload["time_range"] = source_filter["time_range"]
+        elif selector.get("time_range"):
             filter_payload["time_range"] = selector["time_range"]
         if selector.get("status") == "open":
             filter_payload["status"] = ["pending", "active"]
@@ -520,13 +511,7 @@ class FeishuEventHandler:
             patch = payload["payload"].get("patch")
             if isinstance(patch, dict):
                 return patch
-        fields = payload.get("fields") or {}
-        patch = dict(fields)
-        if fields.get("scheduled_at") and "start_at" not in patch:
-            patch["start_at"] = fields["scheduled_at"]
-        if fields.get("due_at") and "start_at" not in patch:
-            patch["start_at"] = fields["due_at"]
-        return patch
+        return {}
 
     def _build_ref_action(
         self,

@@ -87,14 +87,14 @@ Configuration is loaded from the process environment. In Docker Compose, use `de
 | `FEISHU_ENCRYPT_KEY` | If encrypted | Encrypt key when event subscription uses encryption |
 | `FEISHU_DEFAULT_CHAT_ID` | Recommended | Default chat ID for proactive reminders |
 | `FEISHU_REPLAY_MAX_AGE_SECONDS` | No | Max event timestamp age (default: `300`) |
-| `LLM_PROVIDER` | For LLM | Set to `deepseek` to enable natural-language operation parsing |
-| `DEEPSEEK_API_KEY` | For LLM | DeepSeek API key; keep only in server `.env` |
+| `SCHEDULER_ENABLED` | No | Enable background reminder scan and dispatch (default: `false`) |
+| `SCHEDULER_INTERVAL_SECONDS` | No | Background scheduler scan interval in seconds (default: `60`) |
+| `LLM_PROVIDER` | Yes (bot) | Set to `deepseek` to enable natural-language parsing |
+| `DEEPSEEK_API_KEY` | Yes (bot) | DeepSeek API key; keep only in server `.env` |
 | `DEEPSEEK_BASE_URL` | For LLM | DeepSeek-compatible API base URL |
 | `LLM_MODEL` | For LLM | Model name, for example `deepseek-chat` |
 | `DASHBOARD_BASE_URL` | For cards | Tailscale dashboard base URL used by Feishu card modify links |
 | `SEMESTER_START` | No | Semester start date (`YYYY-MM-DD`) for week calculations |
-| `SCHEDULER_ENABLED` | No | Enable background reminder generation and dispatch (default: `false`) |
-| `SCHEDULER_INTERVAL_SECONDS` | No | Background scheduler tick interval in seconds (default: `60`) |
 | `BACKUP_DIR` | No | Local backup directory (default: `backups/` or `/app/backups` in Docker) |
 | `PI_USER` | For sync | SSH user on the Raspberry Pi |
 | `PI_HOST` | For sync | Pi hostname or Tailscale name |
@@ -122,21 +122,19 @@ For local development without Docker, export variables in your shell or place a 
 7. Set `FEISHU_DEFAULT_CHAT_ID` to the chat where proactive reminders should be sent. You can find chat IDs via Feishu API or admin tools.
 8. Deploy and verify: Feishu sends a URL verification challenge; the app must respond successfully before events flow.
 
-### Supported commands
+### Supported interaction
 
-Users can send these text commands to the bot:
+All user text is parsed by DeepSeek into Action protocol JSON. Examples:
 
-| Command | Action |
+| Example input | Action |
 |---------|--------|
-| `今日` | Show today's plan |
-| `明日` | Show tomorrow's plan |
-| `本周DDL` | List assignments due this week |
-| `添加作业 ...` | Add an assignment |
-| `添加事项 ...` | Add a life event |
-| `完成 ...` | Mark an item complete |
-| `帮助` | Show help |
+| `今天有什么安排` / `今早有啥事` | Query today's plan |
+| `明天有什么安排` | Query tomorrow's plan |
+| `还有什么没做` / `本周 DDL` | Query open items |
+| `今晚八点提醒我做程设作业` | Create schedule (confirmation card) |
+| `添加作业 高数 2026-06-10 20:00` | Create deadline (confirmation card) |
 
-Invalid or unknown input returns the help message. Requests with a bad verification token, signature, or stale timestamp are rejected without running business logic.
+Write/update/delete operations return Feishu confirmation cards. Invalid input or missing LLM config returns the help message.
 
 ## Backup and restore
 

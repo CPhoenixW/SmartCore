@@ -102,23 +102,21 @@ def _format_update_detail_lines(payload: dict, tz: ZoneInfo) -> list[str]:
 
 
 def _normalize_card_payload(action_name: str, payload: dict) -> dict:
-    if payload.get("action"):
-        inner = payload.get("payload") or {}
-        if action_name == "create_event" and isinstance(inner.get("event"), dict):
-            event = inner["event"]
-            return {
-                "resource": "event",
-                "fields": event,
-            }
-        normalized = {
+    inner = payload.get("payload") or {}
+    if action_name == "create_event" and isinstance(inner.get("event"), dict):
+        event = inner["event"]
+        return {
             "resource": "event",
-            "selector": inner.get("selector") or {},
-            "fields": inner.get("patch") or {},
+            "fields": event,
         }
-        if inner.get("selected_candidates"):
-            normalized["selected_candidates"] = inner["selected_candidates"]
-        return normalized
-    return payload
+    normalized = {
+        "resource": "event",
+        "selector": inner.get("selector") or {},
+        "fields": inner.get("patch") or {},
+    }
+    if inner.get("selected_candidates"):
+        normalized["selected_candidates"] = inner["selected_candidates"]
+    return normalized
 
 
 def build_pending_operation_card(
@@ -158,17 +156,13 @@ def build_pending_operation_card(
         detail_lines.extend(_format_update_detail_lines(payload, tz))
     elif event_type:
         detail_lines.append(f"事件类型：{event_type}")
-    if action_name != "update_event" and event_type in {
-        "life_event",
-        "schedule",
-        "plan",
-    }:
-        legacy_fields = dict(fields)
-        if legacy_fields.get("start_at") and "scheduled_at" not in legacy_fields:
-            legacy_fields["scheduled_at"] = legacy_fields["start_at"]
+    if action_name != "update_event" and event_type in {"schedule", "plan"}:
+        detail_fields = dict(fields)
+        if detail_fields.get("start_at") and "scheduled_at" not in detail_fields:
+            detail_fields["scheduled_at"] = detail_fields["start_at"]
         detail_lines.extend(
             _format_life_event_detail_lines(
-                {k: v for k, v in legacy_fields.items() if k != "event_type"},
+                {k: v for k, v in detail_fields.items() if k != "event_type"},
                 tz,
             )
         )

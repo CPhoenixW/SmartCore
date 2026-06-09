@@ -209,8 +209,18 @@ class FeishuNotificationSender:
         self.client = client
         self.chat_id = chat_id
 
-    def send(self, content: str) -> None:
+    def send(
+        self,
+        *,
+        card: dict[str, Any] | None = None,
+        text: str = "",
+    ) -> None:
         try:
-            self.client.send_text(self.chat_id, content)
+            if card is not None:
+                self.client.send_interactive_card(self.chat_id, card=card)
+            elif text:
+                self.client.send_text(self.chat_id, text)
+            else:
+                raise NotificationSendError("empty notification payload")
         except (FeishuAPIError, httpx.HTTPError) as exc:
             raise NotificationSendError(str(exc)) from exc
