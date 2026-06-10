@@ -9,6 +9,8 @@ from app.config import get_settings
 from app.db import crud
 from app.db.models import (
     Assignment,
+    Course,
+    CourseSession,
     LifeEvent,
     MessageLog,
     PendingOperationStatus,
@@ -224,11 +226,74 @@ def test_timetable_import_via_web_form(web_client, db_session):
     assert response.status_code == 200
     assert "导入完成" in response.text
 
-    from app.db.models import Course
-
     course = db_session.query(Course).filter_by(name="Physics").one()
     assert course.default_location == "Room B201"
     assert len(course.sessions) == 1
+
+
+def test_timetable_import_replaces_previous_timetable(web_client, db_session):
+    old_course = crud.create_course(db_session, name="Old Course")
+    crud.create_course_session(
+        db_session,
+        course_id=old_course.id,
+        weekday=1,
+        start_time="08:00",
+        end_time="09:40",
+    )
+    csv_content = (
+        "course_name,teacher,default_location,weekday,start_time,end_time,"
+        "week_rule,week_range,location_override\n"
+        "New Course,Dr. New,Room N,2,19:00,20:30,every,,\n"
+    )
+
+    response = web_client.post(
+        "/dashboard/timetable",
+        data={"csv_content": csv_content},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 200
+    assert "导入完成" in response.text
+    assert db_session.query(CourseSession).count() == 1
+    assert db_session.query(Course).filter_by(name="Old Course").count() == 0
+    new_course = db_session.query(Course).filter_by(name="New Course").one()
+    assert new_course.sessions[0].weekday == 2
+
+
+def test_assignment_page_exposes_and_handles_delete_button(web_client, db_session):
+    assignment = crud.create_assignment(db_session, title="Delete me")
+
+    page = web_client.get("/dashboard/assignments")
+    assert page.status_code == 200
+    assert f"/dashboard/assignments/{assignment.id}/delete" in page.text
+    assert "删除" in page.text
+
+    response = web_client.post(
+        f"/dashboard/assignments/{assignment.id}/delete",
+        follow_redirects=False,
+    )
+
+    db_session.refresh(assignment)
+    assert response.status_code == 303
+    assert assignment.status == "cancelled"
+
+
+def test_life_event_page_exposes_and_handles_delete_button(web_client, db_session):
+    event = crud.create_life_event(db_session, title="Delete event")
+
+    page = web_client.get("/dashboard/life-events")
+    assert page.status_code == 200
+    assert f"/dashboard/life-events/{event.id}/delete" in page.text
+    assert "删除" in page.text
+
+    response = web_client.post(
+        f"/dashboard/life-events/{event.id}/delete",
+        follow_redirects=False,
+    )
+
+    db_session.refresh(event)
+    assert response.status_code == 303
+    assert event.status == "cancelled"
 
 
 def test_pending_operations_page_can_confirm_operation(web_client, db_session):

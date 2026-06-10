@@ -16,7 +16,7 @@ from app.config import Settings, get_settings
 from app.db import crud
 from app.db.models import MessageLog, PendingOperation, PendingOperationStatus
 from app.db.session import get_db
-from app.feishu.cards import build_pending_operation_card
+from app.feishu.cards import build_operation_success_card, build_pending_operation_card
 from app.feishu.client import FeishuClient
 from app.feishu.commands import extract_message_text, format_help_message
 from app.feishu.security import FeishuSecurityError, parse_event_payload, validate_request_headers
@@ -286,10 +286,14 @@ class FeishuEventHandler:
 
         context = event.get("context")
         open_message_id = None
+        open_chat_id = None
         if isinstance(context, dict):
             raw_message_id = context.get("open_message_id")
             if isinstance(raw_message_id, str) and raw_message_id:
                 open_message_id = raw_message_id
+            raw_chat_id = context.get("open_chat_id")
+            if isinstance(raw_chat_id, str) and raw_chat_id:
+                open_chat_id = raw_chat_id
 
         executor = ActionExecutor(db)
         if smartcore_action == "confirm_operation":
@@ -303,6 +307,11 @@ class FeishuEventHandler:
                     }
                 }
             self._delete_card_message(open_message_id)
+            if (
+                open_chat_id
+                and pending.status != PendingOperationStatus.FAILED.value
+            ):
+                self._send_success_card(open_chat_id, pending)
             return 200, {
                 "toast": {
                     "type": "success",
@@ -339,6 +348,20 @@ class FeishuEventHandler:
             logger.exception(
                 "failed to delete feishu card message: message_id=%s",
                 open_message_id,
+            )
+
+    def _send_success_card(self, chat_id: str, pending: PendingOperation) -> None:
+        card = build_operation_success_card(
+            action_name=pending.action_name,
+            payload=pending.operation_payload,
+        )
+        try:
+            self.client.send_interactive_card(chat_id, card=card)
+        except Exception:
+            logger.exception(
+                "failed to send feishu success card: chat_id=%s operation_id=%s",
+                chat_id,
+                pending.id,
             )
 
     def _supports_two_stage_selection(self, parsed: ParsedOperation) -> bool:

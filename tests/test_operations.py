@@ -14,6 +14,7 @@ from app.db.models import (
     PendingOperation,
     PendingOperationStatus,
     Reminder,
+    WeekRule,
 )
 from app.operations.parser import ParsedOperation
 from app.operations.store import create_pending_operation
@@ -370,6 +371,63 @@ def test_event_query_filters_by_time_range_and_returns_compact_candidates(
             "title",
         }
         assert item["time_label"]
+
+
+def test_event_query_time_range_filters_recurring_course_sessions(db_session) -> None:
+    evening_course = crud.create_course(db_session, name="Tonight Course")
+    morning_course = crud.create_course(db_session, name="Morning Course")
+    tomorrow_course = crud.create_course(db_session, name="Tomorrow Course")
+    crud.create_course_session(
+        db_session,
+        course_id=evening_course.id,
+        weekday=2,
+        start_time="19:00",
+        end_time="20:30",
+        week_rule=WeekRule.EVERY,
+        location_override="Room A",
+    )
+    crud.create_course_session(
+        db_session,
+        course_id=morning_course.id,
+        weekday=2,
+        start_time="09:00",
+        end_time="10:30",
+        week_rule=WeekRule.EVERY,
+    )
+    crud.create_course_session(
+        db_session,
+        course_id=tomorrow_course.id,
+        weekday=3,
+        start_time="19:00",
+        end_time="20:30",
+        week_rule=WeekRule.EVERY,
+    )
+
+    result = ActionExecutor(db_session).execute(
+        {
+            "action": "query_event",
+            "source": "feishu",
+            "raw_text": "今晚有哪些安排",
+            "payload": {
+                "filter": {
+                    "event_type": "all",
+                    "status": ["pending", "active"],
+                    "limit": 50,
+                    "time_range": {
+                        "start": "2026-06-09T18:00:00+08:00",
+                        "end": "2026-06-10T00:00:00+08:00",
+                    },
+                }
+            },
+        }
+    )
+
+    events = result["data"]["events"]
+    assert [item["title"] for item in events] == ["Tonight Course"]
+    assert events[0]["event_type"] == "course"
+    assert events[0]["start_at"] == "2026-06-09T19:00:00+08:00"
+    assert events[0]["end_at"] == "2026-06-09T20:30:00+08:00"
+    assert events[0]["time_label"] == "2026-06-09 19:00-20:30"
 
 
 def test_legacy_update_reminder_action_is_rejected(db_session) -> None:

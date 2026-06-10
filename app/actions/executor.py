@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.actions.protocol import (
     PUBLIC_EVENT_TYPES,
@@ -33,6 +33,7 @@ from app.db.models import (
 from app.operations.parser import ParsedOperation
 from app.operations.store import create_pending_operation
 from app.secretary.rules import DEFAULT_TZ
+from app.secretary.timetable import session_applies_on_date
 
 
 class ActionExecutor:
@@ -496,21 +497,54 @@ class ActionExecutor:
                 )
 
         if event_type in ("all", "course"):
-            for item in self._db.query(CourseSession).all():
-                title = item.course.name if item.course else ""
-                results.append(
-                    {
-                        "_storage_type": "course_session",
-                        "_id": item.id,
-                        "event_type": "course",
-                        "title": title,
-                        "status": "active",
-                        "start_at": None,
-                        "end_at": None,
-                        "time_label": "",
-                    }
-                )
+            sessions = (
+                self._db.query(CourseSession)
+                .options(joinedload(CourseSession.course))
+                .all()
+            )
+            if range_start is not None or range_end is not None:
+                min_date, max_date = self._time_range_date_bounds(range_start, range_end)
+                current = min_date
+                while current <= max_date:
+                    for item in sessions:
+                        if not session_applies_on_date(item, current):
+                            continue
+                        start_at, end_at = self._course_instance_datetimes(item, current)
+                        if not self._interval_overlaps_range(
+                            start_at, end_at, range_start, range_end
+                        ):
+                            continue
+                        title = item.course.name if item.course else ""
+                        results.append(
+                            {
+                                "_storage_type": "course_session",
+                                "_id": item.id,
+                                "event_type": "course",
+                                "title": title,
+                                "status": "active",
+                                "start_at": start_at.isoformat(),
+                                "end_at": end_at.isoformat() if end_at else None,
+                                "time_label": format_time_label(start_at, end_at),
+                            }
+                        )
+                    current += timedelta(days=1)
+            else:
+                for item in sessions:
+                    title = item.course.name if item.course else ""
+                    results.append(
+                        {
+                            "_storage_type": "course_session",
+                            "_id": item.id,
+                            "event_type": "course",
+                            "title": title,
+                            "status": "active",
+                            "start_at": None,
+                            "end_at": None,
+                            "time_label": "",
+                        }
+                    )
 
+        results.sort(key=lambda item: item.get("start_at") or "")
         return results[:limit]
 
     def _assign_candidate_refs(
@@ -756,6 +790,66 @@ class ActionExecutor:
             if self._datetime_in_range(getattr(event, attr), range_start, range_end):
                 return True
         return False
+
+    @staticmethod
+    def _time_range_date_bounds(
+        range_start: datetime | None,
+        range_end: datetime | None,
+    ) -> tuple[date, date]:
+        anchor = range_start or range_end
+        if anchor is None:
+            raise ValueError("time range requires start or end")
+        min_date = anchor.date()
+        if range_start is not None:
+            min_date = range_start.date()
+        if range_end is None:
+            return min_date, min_date
+        if range_end.time() == time.min:
+            max_date = range_end.date() - timedelta(days=1)
+        else:
+            max_date = range_end.date()
+        if range_start is not None:
+            min_date = range_start.date()
+        return min_date, max(max_date, min_date)
+
+    @staticmethod
+    def _parse_session_clock(value: str | None) -> time | None:
+        if not value:
+            return None
+        hour_text, minute_text = value.split(":", 1)
+        return time(int(hour_text), int(minute_text))
+
+    def _course_instance_datetimes(
+        self,
+        session: CourseSession,
+        target: date,
+    ) -> tuple[datetime, datetime | None]:
+        start_clock = self._parse_session_clock(session.start_time)
+        end_clock = self._parse_session_clock(session.end_time)
+        start_at = datetime.combine(target, start_clock or time.min, tzinfo=DEFAULT_TZ)
+        end_at = (
+            datetime.combine(target, end_clock, tzinfo=DEFAULT_TZ) if end_clock else None
+        )
+        return start_at, end_at
+
+    def _interval_overlaps_range(
+        self,
+        start_at: datetime | None,
+        end_at: datetime | None,
+        range_start: datetime | None,
+        range_end: datetime | None,
+    ) -> bool:
+        start = self._normalize_datetime(start_at)
+        if start is None:
+            return False
+        end = self._normalize_datetime(end_at) or start
+        range_start_norm = self._normalize_datetime(range_start)
+        range_end_norm = self._normalize_datetime(range_end)
+        if range_end_norm is not None and start >= range_end_norm:
+            return False
+        if range_start_norm is not None and end <= range_start_norm:
+            return False
+        return True
 
     def _apply_create_event(self, pending: PendingOperation) -> PendingOperation:
         payload = pending.operation_payload

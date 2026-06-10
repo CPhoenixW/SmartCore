@@ -49,9 +49,12 @@
         <td>{{ item.deadline_at.strftime("%Y-%m-%d %H:%M") if item.deadline_at else "—" }}</td>
         <td><span class="status status-{{ item.status }}">{{ item.status }}</span></td>
         <td>
-          {% if item.status != "done" %}
+          {% if item.status not in ["done", "cancelled"] %}
           <form method="post" action="/dashboard/life-events/{{ item.id }}/complete" class="inline-form">
             <button type="submit" class="link-button">完成</button>
+          </form>
+          <form method="post" action="/dashboard/life-events/{{ item.id }}/delete" class="inline-form">
+            <button type="submit" class="link-button">删除</button>
           </form>
           {% else %}
           —

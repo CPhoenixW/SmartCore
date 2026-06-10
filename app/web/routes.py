@@ -238,6 +238,17 @@ def create_web_router() -> APIRouter:
             db.commit()
         return RedirectResponse(url="/dashboard/assignments", status_code=303)
 
+    @router.post("/assignments/{assignment_id}/delete")
+    def delete_assignment(
+        assignment_id: int,
+        db: Session = Depends(get_db),
+    ) -> RedirectResponse:
+        assignment = db.get(Assignment, assignment_id)
+        if assignment:
+            assignment.status = AssignmentStatus.CANCELLED.value
+            db.commit()
+        return RedirectResponse(url="/dashboard/assignments", status_code=303)
+
     @router.get("/life-events", response_class=HTMLResponse)
     def life_events_page(
         request: Request,
@@ -297,6 +308,17 @@ def create_web_router() -> APIRouter:
         event = db.get(LifeEvent, event_id)
         if event:
             event.status = LifeEventStatus.DONE.value
+            db.commit()
+        return RedirectResponse(url="/dashboard/life-events", status_code=303)
+
+    @router.post("/life-events/{event_id}/delete")
+    def delete_life_event(
+        event_id: int,
+        db: Session = Depends(get_db),
+    ) -> RedirectResponse:
+        event = db.get(LifeEvent, event_id)
+        if event:
+            event.status = LifeEventStatus.CANCELLED.value
             db.commit()
         return RedirectResponse(url="/dashboard/life-events", status_code=303)
 

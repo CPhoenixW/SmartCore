@@ -393,6 +393,8 @@ def test_pending_operation_card_shows_event_and_reminder_times():
                     "event_type": "schedule",
                     "title": "洗澡",
                     "start_at": "2026-06-05T20:00:00+08:00",
+                    "end_at": "2026-06-05T21:00:00+08:00",
+                    "notes": "不要显示这段模型备注",
                 }
             },
         },
@@ -400,8 +402,16 @@ def test_pending_operation_card_shows_event_and_reminder_times():
     )
 
     serialized = json.dumps(card, ensure_ascii=False)
-    assert "事项：洗澡" in serialized
-    assert "计划时间：2026-06-05 20:00" in serialized
+    assert "操作：新增事项" in serialized
+    assert "事件类型：schedule" in serialized
+    assert "事项名称：洗澡" in serialized
+    assert "开始时间：2026-06-05 20:00" in serialized
+    assert "结束时间：2026-06-05 21:00" in serialized
+    assert "提醒时间：2026-06-05 19:30" in serialized
+    assert "提醒时间：2026-06-05 19:45" in serialized
+    assert "原始命令" not in serialized
+    assert "资源：" not in serialized
+    assert "不要显示这段模型备注" not in serialized
 
 
 def test_pending_operation_card_shows_resolved_update_target_and_new_times():
@@ -429,10 +439,15 @@ def test_pending_operation_card_shows_resolved_update_target_and_new_times():
     )
 
     serialized = json.dumps(card, ensure_ascii=False)
-    assert "将修改：" in serialized
+    assert "操作：修改事项" in serialized
+    assert "事件类型：schedule" in serialized
+    assert "事项名称：做程序设计作业" in serialized
     assert "做程序设计作业" in serialized
-    assert "原计划时间：2026-06-06 20:00" in serialized
-    assert "新计划时间：2026-06-06 22:00" in serialized
+    assert "开始时间：2026-06-06 22:00" in serialized
+    assert "提醒时间：2026-06-06 21:30" in serialized
+    assert "提醒时间：2026-06-06 21:45" in serialized
+    assert "原始命令" not in serialized
+    assert "资源：" not in serialized
     assert "scheduled_at" not in serialized
     assert "reminder_lead_minutes" not in serialized
 
@@ -1222,6 +1237,7 @@ def test_event_handler_card_confirm_callback_applies_pending_operation_and_delet
     body = json.dumps(_message_event("添加事项 做程设作业"))
     event_handler.handle(body.encode(), _signed_headers(body), db_session, now=FIXED_NOW)
     pending = db_session.query(PendingOperation).one()
+    mock_feishu_client.send_interactive_card.reset_mock()
 
     callback_body = json.dumps(_card_action_event("confirm_operation", pending.id))
     status, payload = event_handler.handle(
@@ -1239,6 +1255,12 @@ def test_event_handler_card_confirm_callback_applies_pending_operation_and_delet
     assert payload["toast"]["type"] == "success"
     assert "已确认" in payload["toast"]["content"]
     mock_feishu_client.delete_message.assert_called_once_with("om_card_1")
+    mock_feishu_client.send_interactive_card.assert_called_once()
+    success_card = mock_feishu_client.send_interactive_card.call_args.kwargs["card"]
+    success_serialized = json.dumps(success_card, ensure_ascii=False)
+    assert "操作成功" in success_serialized
+    assert "新增事项" in success_serialized
+    assert "做程设作业" in success_serialized
 
 
 def test_event_handler_card_reject_callback_rejects_pending_operation_and_deletes_card(
