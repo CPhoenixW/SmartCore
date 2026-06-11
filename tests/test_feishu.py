@@ -19,6 +19,7 @@ from app.db.models import (
     MessageLog,
     PendingOperation,
     PendingOperationStatus,
+    WeekRule,
 )
 from app.feishu.cards import build_pending_operation_card
 from app.feishu.client import FeishuClient
@@ -319,9 +320,12 @@ def test_event_handler_converts_message_to_command(
     )
     assert status == 200
     assert payload["code"] == 0
-    mock_feishu_client.send_text.assert_called_once()
-    reply_text = mock_feishu_client.send_text.call_args[0][1]
-    assert "事件查询" in reply_text or "暂无" in reply_text
+    mock_feishu_client.send_text.assert_not_called()
+    mock_feishu_client.send_interactive_card.assert_called_once()
+    card = mock_feishu_client.send_interactive_card.call_args.kwargs["card"]
+    serialized = json.dumps(card, ensure_ascii=False)
+    assert "事件查询" in serialized
+    assert "暂无" in serialized
     log = db_session.query(MessageLog).order_by(MessageLog.id.desc()).first()
     assert log is not None
     assert log.raw_content == "今天有啥事"
@@ -595,8 +599,12 @@ def test_feishu_text_entry_uses_action_result_reply_without_legacy_command_branc
 
     assert status == 200
     assert payload["code"] == 0
-    reply_text = mock_feishu_client.send_text.call_args[0][1]
-    assert "事件查询" in reply_text or "暂无" in reply_text
+    mock_feishu_client.send_text.assert_not_called()
+    mock_feishu_client.send_interactive_card.assert_called_once()
+    card = mock_feishu_client.send_interactive_card.call_args.kwargs["card"]
+    serialized = json.dumps(card, ensure_ascii=False)
+    assert "事件查询" in serialized
+    assert "暂无" in serialized
     log = db_session.query(MessageLog).order_by(MessageLog.id.desc()).first()
     assert log is not None
     assert log.parsed_command == "query_event"
@@ -652,15 +660,95 @@ def test_event_handler_llm_query_event_replies_without_pending_operation(
     assert status == 200
     assert payload["code"] == 0
     assert db_session.query(PendingOperation).count() == 0
-    reply_text = mock_feishu_client.send_text.call_args[0][1]
-    assert "事件查询" in reply_text
-    assert "线代作业" in reply_text
-    assert "买电池" in reply_text
-    mock_feishu_client.send_interactive_card.assert_not_called()
+    mock_feishu_client.send_text.assert_not_called()
+    mock_feishu_client.send_interactive_card.assert_called_once()
+    card = mock_feishu_client.send_interactive_card.call_args.kwargs["card"]
+    serialized = json.dumps(card, ensure_ascii=False)
+    assert "事件查询" in serialized
+    assert "线代作业" in serialized
+    assert "买电池" in serialized
     log = db_session.query(MessageLog).order_by(MessageLog.id.desc()).first()
     assert log is not None
     assert log.parsed_command == "query_event"
     assert log.reply_status == "ok"
+
+
+def test_event_handler_query_event_sends_rich_card_with_course_times(
+    feishu_settings,
+    mock_feishu_client,
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setenv("SEMESTER_START", "2026-02-24")
+    get_settings.cache_clear()
+    linux_course = crud.create_course(
+        db_session,
+        name="Linux操作系统",
+        default_location="实验楼 302",
+    )
+    crud.create_course_session(
+        db_session,
+        course_id=linux_course.id,
+        weekday=5,
+        start_time="18:30",
+        end_time="21:00",
+        week_rule=WeekRule.EVEN,
+    )
+
+    class FakeOperationParser:
+        def parse(self, text: str, *, source: str, now=None):
+            assert text == "明天有什么安排"
+            return ParsedOperation(
+                source=source,
+                raw_text=text,
+                action_name="query_event",
+                payload={
+                    "action": "query_event",
+                    "source": source,
+                    "raw_text": text,
+                    "payload": {
+                        "filter": {
+                            "event_type": "all",
+                            "status": ["pending", "active"],
+                            "limit": 50,
+                            "time_range": {
+                                "start": "2026-06-12T00:00:00+08:00",
+                                "end": "2026-06-13T00:00:00+08:00",
+                            },
+                        }
+                    },
+                },
+                confidence=0.95,
+                needs_confirmation=False,
+            )
+
+    handler = FeishuEventHandler(
+        feishu_settings,
+        client=mock_feishu_client,
+        operation_parser=FakeOperationParser(),
+    )
+    body = json.dumps(_message_event("明天有什么安排"))
+
+    status, payload = handler.handle(
+        body.encode(),
+        _signed_headers(body),
+        db_session,
+        now=FIXED_NOW,
+    )
+
+    assert status == 200
+    assert payload["code"] == 0
+    mock_feishu_client.send_text.assert_not_called()
+    mock_feishu_client.send_interactive_card.assert_called_once()
+    card = mock_feishu_client.send_interactive_card.call_args.kwargs["card"]
+    serialized = json.dumps(card, ensure_ascii=False)
+    assert "事件查询" in serialized
+    assert "共 1 项" in serialized
+    assert "Linux操作系统" in serialized
+    assert "course" in serialized
+    assert "2026-06-12 18:30-21:00" in serialized
+    assert "实验楼 302" in serialized
+    get_settings.cache_clear()
 
 
 def test_event_handler_two_stage_query_selects_from_compact_candidates(
@@ -745,10 +833,13 @@ def test_event_handler_two_stage_query_selects_from_compact_candidates(
     assert status == 200
     assert payload["code"] == 0
     assert db_session.query(PendingOperation).count() == 0
-    reply_text = mock_feishu_client.send_text.call_args[0][1]
-    assert "做程序设计作业" in reply_text
-    assert "明天跑步" not in reply_text
-    assert "长备注" not in reply_text
+    mock_feishu_client.send_text.assert_not_called()
+    mock_feishu_client.send_interactive_card.assert_called_once()
+    card = mock_feishu_client.send_interactive_card.call_args.kwargs["card"]
+    serialized = json.dumps(card, ensure_ascii=False)
+    assert "做程序设计作业" in serialized
+    assert "明天跑步" not in serialized
+    assert "长备注" not in serialized
 
 
 def test_event_handler_two_stage_update_resolves_candidate_before_pending(
@@ -1201,7 +1292,8 @@ def test_event_handler_ignores_duplicate_read_message_id(
         .count()
         == 1
     )
-    mock_feishu_client.send_text.assert_called_once()
+    mock_feishu_client.send_text.assert_not_called()
+    mock_feishu_client.send_interactive_card.assert_called_once()
 
 
 def test_event_handler_reject_operation_does_not_apply(

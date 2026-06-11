@@ -16,7 +16,11 @@ from app.config import Settings, get_settings
 from app.db import crud
 from app.db.models import MessageLog, PendingOperation, PendingOperationStatus
 from app.db.session import get_db
-from app.feishu.cards import build_operation_success_card, build_pending_operation_card
+from app.feishu.cards import (
+    build_operation_success_card,
+    build_pending_operation_card,
+    build_query_event_card,
+)
 from app.feishu.client import FeishuClient
 from app.feishu.commands import extract_message_text, format_help_message
 from app.feishu.security import FeishuSecurityError, parse_event_payload, validate_request_headers
@@ -254,11 +258,36 @@ class FeishuEventHandler:
                     db_result=result,
                 )
 
+        if action_name == "query_event":
+            events = (result.get("data") or {}).get("events") or []
+            return FeishuReply(
+                card=build_query_event_card(events),
+                parsed_command=action_name,
+                reply_status="ok",
+                action_input=action,
+                db_result=result,
+            )
+
         return FeishuReply(
             text=format_result_reply(result),
             parsed_command=action_name,
             reply_status="ok",
             action_input=action,
+            db_result=result,
+        )
+
+    def _query_event_feishu_reply(
+        self,
+        *,
+        query_action: dict[str, Any],
+        result: dict[str, Any],
+        events: list[dict[str, Any]],
+    ) -> FeishuReply:
+        return FeishuReply(
+            card=build_query_event_card(events),
+            parsed_command="query_event",
+            reply_status="ok",
+            action_input=query_action,
             db_result=result,
         )
 
@@ -418,12 +447,10 @@ class FeishuEventHandler:
                     "data": {"events": []},
                     "debug": query_result.get("debug", {}),
                 }
-                return FeishuReply(
-                    text=format_result_reply(result),
-                    parsed_command="query_event",
-                    reply_status="ok",
-                    action_input=query_action,
-                    db_result=result,
+                return self._query_event_feishu_reply(
+                    query_action=query_action,
+                    result=result,
+                    events=[],
                 )
             result = {
                 "ok": True,
@@ -433,12 +460,10 @@ class FeishuEventHandler:
                 "data": {"events": selected},
                 "debug": query_result.get("debug", {}),
             }
-            return FeishuReply(
-                text=format_result_reply(result),
-                parsed_command="query_event",
-                reply_status="ok",
-                action_input=query_action,
-                db_result=result,
+            return self._query_event_feishu_reply(
+                query_action=query_action,
+                result=result,
+                events=selected,
             )
 
         if parsed.action_name == "update_event":

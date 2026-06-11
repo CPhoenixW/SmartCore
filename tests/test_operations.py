@@ -430,6 +430,60 @@ def test_event_query_time_range_filters_recurring_course_sessions(db_session) ->
     assert events[0]["time_label"] == "2026-06-09 19:00-20:30"
 
 
+def test_event_query_uses_configured_semester_start_for_week_rules(
+    db_session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("SEMESTER_START", "2026-02-24")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    linux_course = crud.create_course(db_session, name="Linux操作系统")
+    crud.create_course_session(
+        db_session,
+        course_id=linux_course.id,
+        weekday=5,
+        start_time="18:30",
+        end_time="21:00",
+        week_rule=WeekRule.EVEN,
+        location_override="实验楼 302",
+    )
+    odd_course = crud.create_course(db_session, name="只在单周上的课")
+    crud.create_course_session(
+        db_session,
+        course_id=odd_course.id,
+        weekday=5,
+        start_time="18:30",
+        end_time="21:00",
+        week_rule=WeekRule.ODD,
+    )
+
+    result = ActionExecutor(db_session).execute(
+        {
+            "action": "query_event",
+            "source": "feishu",
+            "raw_text": "明天有什么安排",
+            "payload": {
+                "filter": {
+                    "event_type": "all",
+                    "status": ["pending", "active"],
+                    "limit": 50,
+                    "time_range": {
+                        "start": "2026-06-12T00:00:00+08:00",
+                        "end": "2026-06-13T00:00:00+08:00",
+                    },
+                }
+            },
+        }
+    )
+
+    events = result["data"]["events"]
+    assert [item["title"] for item in events] == ["Linux操作系统"]
+    assert events[0]["start_at"] == "2026-06-12T18:30:00+08:00"
+    assert events[0]["end_at"] == "2026-06-12T21:00:00+08:00"
+    get_settings.cache_clear()
+
+
 def test_legacy_update_reminder_action_is_rejected(db_session) -> None:
     reminder = crud.create_reminder(
         db_session,

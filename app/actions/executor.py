@@ -18,6 +18,7 @@ from app.actions.protocol import (
     read_sc_type,
     sc_type_tag,
 )
+from app.config import get_settings
 from app.db import crud
 from app.db.models import (
     Assignment,
@@ -33,7 +34,7 @@ from app.db.models import (
 from app.operations.parser import ParsedOperation
 from app.operations.store import create_pending_operation
 from app.secretary.rules import DEFAULT_TZ
-from app.secretary.timetable import session_applies_on_date
+from app.secretary.timetable import resolve_location, session_applies_on_date
 
 
 class ActionExecutor:
@@ -497,6 +498,7 @@ class ActionExecutor:
                 )
 
         if event_type in ("all", "course"):
+            semester_start = get_settings().semester_start
             sessions = (
                 self._db.query(CourseSession)
                 .options(joinedload(CourseSession.course))
@@ -507,7 +509,9 @@ class ActionExecutor:
                 current = min_date
                 while current <= max_date:
                     for item in sessions:
-                        if not session_applies_on_date(item, current):
+                        if not session_applies_on_date(
+                            item, current, semester_start=semester_start
+                        ):
                             continue
                         start_at, end_at = self._course_instance_datetimes(item, current)
                         if not self._interval_overlaps_range(
@@ -515,18 +519,20 @@ class ActionExecutor:
                         ):
                             continue
                         title = item.course.name if item.course else ""
-                        results.append(
-                            {
-                                "_storage_type": "course_session",
-                                "_id": item.id,
-                                "event_type": "course",
-                                "title": title,
-                                "status": "active",
-                                "start_at": start_at.isoformat(),
-                                "end_at": end_at.isoformat() if end_at else None,
-                                "time_label": format_time_label(start_at, end_at),
-                            }
-                        )
+                        location = resolve_location(item)
+                        entry: dict[str, Any] = {
+                            "_storage_type": "course_session",
+                            "_id": item.id,
+                            "event_type": "course",
+                            "title": title,
+                            "status": "active",
+                            "start_at": start_at.isoformat(),
+                            "end_at": end_at.isoformat() if end_at else None,
+                            "time_label": format_time_label(start_at, end_at),
+                        }
+                        if location:
+                            entry["location"] = location
+                        results.append(entry)
                     current += timedelta(days=1)
             else:
                 for item in sessions:
@@ -559,17 +565,18 @@ class ActionExecutor:
         for index, item in enumerate(sorted_items, start=1):
             ref = f"c{index}"
             ref_index[ref] = (item["_storage_type"], item["_id"])
-            public_items.append(
-                {
-                    "ref": ref,
-                    "event_type": item["event_type"],
-                    "title": item["title"],
-                    "status": item["status"],
-                    "start_at": item.get("start_at"),
-                    "end_at": item.get("end_at"),
-                    "time_label": item.get("time_label", ""),
-                }
-            )
+            public_item: dict[str, Any] = {
+                "ref": ref,
+                "event_type": item["event_type"],
+                "title": item["title"],
+                "status": item["status"],
+                "start_at": item.get("start_at"),
+                "end_at": item.get("end_at"),
+                "time_label": item.get("time_label", ""),
+            }
+            if item.get("location"):
+                public_item["location"] = item["location"]
+            public_items.append(public_item)
         return public_items, ref_index
 
     def _build_ref_index_from_selector(

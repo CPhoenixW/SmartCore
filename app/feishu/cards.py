@@ -240,6 +240,45 @@ def build_pending_operation_card(
     }
 
 
+def _build_query_event_detail_lines(events: list[dict[str, Any]]) -> list[str]:
+    lines = [f"共 {len(events)} 项"]
+    if not events:
+        lines.append("暂无匹配安排。")
+        return lines
+
+    for item in events:
+        if len(events) > 1:
+            lines.append("")
+        lines.append(f"事件类型：{item.get('event_type', '')}")
+        title = item.get("title")
+        if title:
+            lines.append(f"事项名称：{title}")
+        time_label = item.get("time_label")
+        if time_label:
+            lines.append(f"时间：{time_label}")
+        location = item.get("location")
+        if location:
+            lines.append(f"地点：{location}")
+    return lines
+
+
+def build_query_event_card(events: list[dict[str, Any]]) -> dict[str, Any]:
+    detail_lines = _build_query_event_detail_lines(events)
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": "事件查询"},
+            "template": "blue",
+        },
+        "elements": [
+            {
+                "tag": "div",
+                "text": {"tag": "plain_text", "content": "\n".join(detail_lines)},
+            }
+        ],
+    }
+
+
 def build_operation_success_card(
     *,
     action_name: str,
