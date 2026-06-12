@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = False
     scheduler_interval_seconds: int = 60
 
+    agent_api_token: str = ""
+    openclaw_events_endpoint: str = ""
+    openclaw_events_token: str = ""
+
     backup_dir: str = str(PROJECT_ROOT / "backups")
     pi_user: str = ""
     pi_host: str = ""

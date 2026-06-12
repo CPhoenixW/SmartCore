@@ -114,3 +114,19 @@ def test_env_example_uses_placeholders_only() -> None:
     assert "TUNNEL_BOUNDARY_BIND=" in env_example
     assert "127.0.0.1" in env_example
     assert "172.17.0.1" in env_example
+
+
+def test_deploy_contract_documents_server_dev_and_openclaw() -> None:
+    deploy = Path(__file__).resolve().parents[1].joinpath("deploy.md").read_text(
+        encoding="utf-8"
+    )
+    for phrase in (
+        "prod_repo: /opt/smartcore",
+        "dev_repo: /opt/smartcore-dev",
+        "OpenClaw",
+        "OPENCLAW_EVENTS_ENDPOINT",
+        "/agent/db/*",
+        "/agent/feedback/*",
+        "SmartCore scheduler scans DB every minute",
+    ):
+        assert phrase in deploy

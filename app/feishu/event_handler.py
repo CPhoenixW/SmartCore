@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
@@ -145,6 +146,11 @@ class FeishuEventHandler:
             event_type = payload["header"].get("event_type")
         if event_type and event_type not in ALLOWED_EVENT_TYPES:
             return 200, {"code": 0, "msg": "ignored event type"}
+
+        if self._openclaw_forwarding_enabled():
+            if event_type == "card.action.trigger":
+                return self._forward_card_action_to_openclaw(payload, db)
+            return self._forward_text_message_to_openclaw(payload, db)
 
         if event_type == "card.action.trigger":
             return self._handle_card_action(payload, db)
@@ -617,6 +623,147 @@ class FeishuEventHandler:
             return f"无法确定要{action_label}的事件：{detail}，请补充更多信息。"
         detail = reason or "请补充更具体的目标描述"
         return f"无法确定要{action_label}的事件：{detail}。"
+
+    def _openclaw_forwarding_enabled(self) -> bool:
+        return bool(self.settings.openclaw_events_endpoint)
+
+    def _openclaw_request_headers(self) -> dict[str, str]:
+        token = self.settings.openclaw_events_token
+        if not token:
+            return {}
+        return {"Authorization": f"Bearer {token}"}
+
+    def _post_openclaw_event(self, event: dict[str, Any]) -> None:
+        httpx.post(
+            self.settings.openclaw_events_endpoint,
+            json=event,
+            headers=self._openclaw_request_headers() or None,
+            timeout=10.0,
+        )
+
+    def _normalize_message_event(
+        self,
+        payload: dict[str, Any],
+        *,
+        message_id: str,
+        text: str,
+    ) -> dict[str, Any]:
+        chat_id = self._resolve_chat_id(payload)
+        user_id = self._resolve_user_id(payload)
+        event: dict[str, Any] = {
+            "event_id": f"feishu:{message_id}",
+            "source": "feishu",
+            "event_type": "message",
+            "message": {
+                "message_id": message_id,
+                "text": text,
+            },
+            "feishu_payload": payload,
+        }
+        if chat_id:
+            event["chat"] = {"chat_id": chat_id}
+        if user_id:
+            event["user"] = {"user_id": user_id}
+        return event
+
+    def _normalize_card_action_event(self, payload: dict[str, Any]) -> dict[str, Any]:
+        event_body = payload.get("event")
+        if not isinstance(event_body, dict):
+            event_body = {}
+        action = event_body.get("action")
+        context = event_body.get("context")
+        open_message_id = None
+        if isinstance(context, dict):
+            raw_message_id = context.get("open_message_id")
+            if isinstance(raw_message_id, str) and raw_message_id:
+                open_message_id = raw_message_id
+        event_id = f"feishu:card:{open_message_id or 'unknown'}"
+        chat_id = self._resolve_chat_id(payload)
+        user_id = self._resolve_user_id(payload)
+        normalized: dict[str, Any] = {
+            "event_id": event_id,
+            "source": "feishu",
+            "event_type": "card_action",
+            "card_action": {
+                "action": action,
+                "context": context,
+            },
+            "feishu_payload": payload,
+        }
+        if chat_id:
+            normalized["chat"] = {"chat_id": chat_id}
+        if user_id:
+            normalized["user"] = {"user_id": user_id}
+        return normalized
+
+    def _forward_text_message_to_openclaw(
+        self,
+        payload: dict[str, Any],
+        db: Session,
+    ) -> tuple[int, dict[str, Any]]:
+        message_id, text = extract_message_text(payload)
+        if not text:
+            return 200, {"code": 0, "msg": "no text message"}
+
+        if message_id and db.query(MessageLog).filter_by(
+            source="feishu",
+            external_message_id=message_id,
+        ).first():
+            return 200, {"code": 0, "msg": "duplicate message ignored"}
+
+        normalized = self._normalize_message_event(
+            payload,
+            message_id=message_id or "",
+            text=text,
+        )
+        reply_status = "forwarded"
+        try:
+            self._post_openclaw_event(normalized)
+        except Exception:
+            logger.exception(
+                "failed to forward feishu message to openclaw: message_id=%s",
+                message_id,
+            )
+            reply_status = "forward_failed"
+
+        if message_id:
+            crud.create_message_log(
+                db,
+                source="feishu",
+                external_message_id=message_id,
+                raw_content=text,
+                parsed_command="openclaw_forward",
+                reply_status=reply_status,
+            )
+        return 200, {"code": 0, "msg": "ok"}
+
+    def _forward_card_action_to_openclaw(
+        self,
+        payload: dict[str, Any],
+        db: Session,
+    ) -> tuple[int, dict[str, Any]]:
+        normalized = self._normalize_card_action_event(payload)
+        try:
+            self._post_openclaw_event(normalized)
+        except Exception:
+            logger.exception("failed to forward feishu card action to openclaw")
+            return 200, {"toast": {"type": "error", "content": "事件转发失败"}}
+        return 200, {"code": 0, "msg": "ok"}
+
+    def _resolve_user_id(self, payload: dict[str, Any]) -> str | None:
+        event = payload.get("event")
+        if not isinstance(event, dict):
+            return None
+        sender = event.get("sender")
+        if not isinstance(sender, dict):
+            return None
+        sender_id = sender.get("sender_id")
+        if isinstance(sender_id, dict):
+            for key in ("open_id", "user_id", "union_id"):
+                value = sender_id.get(key)
+                if isinstance(value, str) and value:
+                    return value
+        return None
 
     def _resolve_chat_id(self, payload: dict[str, Any]) -> str | None:
         event = payload.get("event")

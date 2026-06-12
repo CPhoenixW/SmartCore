@@ -333,6 +333,60 @@ def test_event_handler_converts_message_to_command(
     assert log.reply_status == "ok"
 
 
+def test_event_handler_forwards_message_to_openclaw_when_configured(
+    feishu_settings,
+    mock_feishu_client,
+    db_session,
+    monkeypatch,
+):
+    feishu_settings.openclaw_events_endpoint = "http://openclaw.local/events"
+    forwarded: list[dict[str, Any]] = []
+
+    def fake_post(url, *, json, headers=None, timeout=None):
+        forwarded.append(
+            {
+                "url": url,
+                "json": json,
+                "headers": headers or {},
+                "timeout": timeout,
+            }
+        )
+        return httpx.Response(200, json={"ok": True})
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    class RejectingParser:
+        def parse(self, text: str, *, source: str, now=None):
+            raise AssertionError("local parser must not run when OpenClaw forwarding is enabled")
+
+    handler = FeishuEventHandler(
+        feishu_settings,
+        client=mock_feishu_client,
+        operation_parser=RejectingParser(),
+    )
+    body = json.dumps(_message_event("明天晚上有什么安排", message_id="om_openclaw_1"))
+
+    status, payload = handler.handle(
+        body.encode(),
+        _signed_headers(body),
+        db_session,
+        now=FIXED_NOW,
+    )
+
+    assert status == 200
+    assert payload["code"] == 0
+    assert forwarded
+    event = forwarded[0]["json"]
+    assert forwarded[0]["url"] == "http://openclaw.local/events"
+    assert event["source"] == "feishu"
+    assert event["event_type"] == "message"
+    assert event["message"]["message_id"] == "om_openclaw_1"
+    assert event["message"]["text"] == "明天晚上有什么安排"
+    assert event["chat"]["chat_id"] == "oc_chat_1"
+    mock_feishu_client.send_text.assert_not_called()
+    mock_feishu_client.send_interactive_card.assert_not_called()
+
+
 def test_event_handler_unknown_command_returns_help(
     feishu_settings, mock_feishu_client, db_session
 ):

@@ -12,6 +12,7 @@
 - [06-Cursor CLI 执行计划](./06-cursor-cli-execution-plan.md)
 - [07-智能体操作与输出架构](./07-agent-operation-notification-architecture.md)
 - [08-GitHub 推送与服务器部署手册](./08-github-push-and-server-deploy.md)
+- [09-OpenClaw 与 SmartCore 桥接架构](./09-openclaw-smartcore-bridge.md)
 
 ## v1 核心结论
 
