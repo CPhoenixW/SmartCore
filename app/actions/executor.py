@@ -239,6 +239,11 @@ class ActionExecutor:
             range_end=range_end,
             limit=limit,
         )
+        keyword = str(filter_payload.get("keyword") or "").strip().lower()
+        if keyword:
+            internal = [
+                item for item in internal if self._internal_event_matches_keyword(item, keyword)
+            ][:limit]
         events, _ = self._assign_candidate_refs(internal)
         return make_result(
             action="query_event",
@@ -552,6 +557,14 @@ class ActionExecutor:
 
         results.sort(key=lambda item: item.get("start_at") or "")
         return results[:limit]
+
+    @staticmethod
+    def _internal_event_matches_keyword(item: dict[str, Any], keyword: str) -> bool:
+        haystack = " ".join(
+            str(item.get(field) or "")
+            for field in ("event_type", "title", "status", "time_label", "location")
+        ).lower()
+        return keyword in haystack
 
     def _assign_candidate_refs(
         self,

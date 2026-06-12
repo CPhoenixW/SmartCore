@@ -149,8 +149,8 @@ class FeishuEventHandler:
 
         if self._openclaw_forwarding_enabled():
             if event_type == "card.action.trigger":
-                return self._forward_card_action_to_openclaw(payload, db)
-            return self._forward_text_message_to_openclaw(payload, db)
+                return self._forward_card_action_to_openclaw(payload, db, now=now)
+            return self._forward_text_message_to_openclaw(payload, db, now=now)
 
         if event_type == "card.action.trigger":
             return self._handle_card_action(payload, db)
@@ -634,12 +634,18 @@ class FeishuEventHandler:
         return {"Authorization": f"Bearer {token}"}
 
     def _post_openclaw_event(self, event: dict[str, Any]) -> None:
-        httpx.post(
+        response = httpx.post(
             self.settings.openclaw_events_endpoint,
             json=event,
             headers=self._openclaw_request_headers() or None,
             timeout=10.0,
         )
+        if response.is_error:
+            raise httpx.HTTPStatusError(
+                f"OpenClaw event endpoint returned {response.status_code}",
+                request=response.request,
+                response=response,
+            )
 
     def _normalize_message_event(
         self,
@@ -647,9 +653,15 @@ class FeishuEventHandler:
         *,
         message_id: str,
         text: str,
+        now: float | None,
     ) -> dict[str, Any]:
         chat_id = self._resolve_chat_id(payload)
         user_id = self._resolve_user_id(payload)
+        now_dt = (
+            datetime.fromtimestamp(now, DEFAULT_TZ)
+            if now is not None
+            else datetime.now(DEFAULT_TZ)
+        )
         event: dict[str, Any] = {
             "event_id": f"feishu:{message_id}",
             "source": "feishu",
@@ -657,6 +669,10 @@ class FeishuEventHandler:
             "message": {
                 "message_id": message_id,
                 "text": text,
+            },
+            "request": {
+                "timezone": "Asia/Shanghai",
+                "now": now_dt.isoformat(),
             },
             "feishu_payload": payload,
         }
@@ -666,7 +682,12 @@ class FeishuEventHandler:
             event["user"] = {"user_id": user_id}
         return event
 
-    def _normalize_card_action_event(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def _normalize_card_action_event(
+        self,
+        payload: dict[str, Any],
+        *,
+        now: float | None,
+    ) -> dict[str, Any]:
         event_body = payload.get("event")
         if not isinstance(event_body, dict):
             event_body = {}
@@ -680,6 +701,11 @@ class FeishuEventHandler:
         event_id = f"feishu:card:{open_message_id or 'unknown'}"
         chat_id = self._resolve_chat_id(payload)
         user_id = self._resolve_user_id(payload)
+        now_dt = (
+            datetime.fromtimestamp(now, DEFAULT_TZ)
+            if now is not None
+            else datetime.now(DEFAULT_TZ)
+        )
         normalized: dict[str, Any] = {
             "event_id": event_id,
             "source": "feishu",
@@ -687,6 +713,10 @@ class FeishuEventHandler:
             "card_action": {
                 "action": action,
                 "context": context,
+            },
+            "request": {
+                "timezone": "Asia/Shanghai",
+                "now": now_dt.isoformat(),
             },
             "feishu_payload": payload,
         }
@@ -700,6 +730,8 @@ class FeishuEventHandler:
         self,
         payload: dict[str, Any],
         db: Session,
+        *,
+        now: float | None,
     ) -> tuple[int, dict[str, Any]]:
         message_id, text = extract_message_text(payload)
         if not text:
@@ -715,6 +747,7 @@ class FeishuEventHandler:
             payload,
             message_id=message_id or "",
             text=text,
+            now=now,
         )
         reply_status = "forwarded"
         try:
@@ -741,8 +774,10 @@ class FeishuEventHandler:
         self,
         payload: dict[str, Any],
         db: Session,
+        *,
+        now: float | None,
     ) -> tuple[int, dict[str, Any]]:
-        normalized = self._normalize_card_action_event(payload)
+        normalized = self._normalize_card_action_event(payload, now=now)
         try:
             self._post_openclaw_event(normalized)
         except Exception:

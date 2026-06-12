@@ -308,3 +308,63 @@ def build_operation_success_card(
             }
         ],
     }
+
+
+def build_reminder_action_card(
+    *,
+    title: str,
+    event_type: str,
+    scheduled_label: str | None = None,
+    minutes_until: int | None = None,
+    notes: str | None = None,
+    event_id: str | int | None = None,
+) -> dict[str, Any]:
+    detail_lines = [
+        f"事件类型：{event_type}",
+        f"事项名称：{title}",
+    ]
+    if scheduled_label:
+        detail_lines.append(f"时间：{scheduled_label}")
+    if minutes_until is not None:
+        detail_lines.append(f"倒计时：约 {minutes_until} 分钟")
+    if notes:
+        detail_lines.append(f"备注：{notes}")
+
+    actions: list[dict[str, Any]] = [
+        {
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "完成"},
+            "type": "primary",
+            "value": {
+                "smartcore_action": "openclaw_card_intent",
+                "intent": "complete_event",
+                "event_id": event_id,
+            },
+        },
+        {
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "延后 30 分钟"},
+            "type": "default",
+            "value": {
+                "smartcore_action": "openclaw_card_intent",
+                "intent": "delay_event",
+                "event_id": event_id,
+                "delay_minutes": 30,
+            },
+        },
+    ]
+
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": "事项提醒"},
+            "template": "turquoise",
+        },
+        "elements": [
+            {
+                "tag": "div",
+                "text": {"tag": "plain_text", "content": "\n".join(detail_lines)},
+            },
+            {"tag": "action", "actions": actions},
+        ],
+    }
