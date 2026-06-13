@@ -23,10 +23,11 @@ Use this skill when a user asks about schedules, classes, assignments, deadlines
 
 ## Required Tool Rules
 
+- Before calling any `/agent/*` endpoint, follow the exact JSON bodies in `references/smartcore-tools.md`.
 - Query requests must use `/agent/db/query_events`.
-- For relative dates such as 今天, 明天, 今晚, 本周, compute explicit `time_range.start` and `time_range.end` using the event `request.timezone` and `request.now`.
+- For relative dates such as 今天, 明天, 今晚, 本周, compute explicit `filter.time_range.start` and `filter.time_range.end` using the event `request.timezone` and `request.now`; do not send top-level `start_time` or `end_time`.
 - Create requests must use `/agent/db/create_event`.
-- Update requests must use `/agent/db/update_event`; query candidates first unless the target id is known.
+- Update requests must use `/agent/db/update_event`; query candidates first unless the target id is known, then use either `selector.id` or `selector.refs` exactly as documented.
 - Delete/cancel requests must use `/agent/db/delete_event`; query candidates and clarify before destructive actions.
 - Feedback must use `/agent/feedback/send_text`, `/agent/feedback/send_query_result_card`, `/agent/feedback/send_operation_success_card`, or `/agent/feedback/send_reminder_card`.
 - When SmartCore returns `pending_confirmation`, present or explain that SmartCore has created a confirmation step. Do not claim the write is applied until SmartCore confirms it.

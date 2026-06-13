@@ -55,3 +55,32 @@ def test_openclaw_runtime_plan_keeps_smartcore_authoritative() -> None:
         "dashboard exposes an agent status page",
     ):
         assert phrase in content
+
+def test_openclaw_tool_reference_documents_exact_request_bodies() -> None:
+    content = TOOLS_REF.read_text(encoding="utf-8")
+    required = (
+        '"filter"',
+        '"time_range"',
+        '"source_event_id"',
+        '"raw_text"',
+        '"payload"',
+        '"event"',
+        '"selector"',
+        '"patch"',
+        '"refs"',
+        '"target"',
+        '"chat_id"',
+        'Do not put `user_id`, `chat_id`, `timezone`, `start_time`, or `end_time` at the top level',
+        'Preferred time filter shape is `filter.time_range.start` and `filter.time_range.end`',
+        'Use exactly the `events` list returned by `query_events`',
+    )
+    for phrase in required:
+        assert phrase in content
+
+
+def test_openclaw_skill_points_to_exact_tool_reference() -> None:
+    content = SKILL.read_text(encoding="utf-8")
+    assert 'follow the exact JSON bodies in `references/smartcore-tools.md`' in content
+    assert 'do not send top-level `start_time` or `end_time`' in content
+    assert '`selector.id` or `selector.refs`' in content
+
