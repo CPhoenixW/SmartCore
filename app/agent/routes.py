@@ -225,6 +225,16 @@ class SendReminderCardRequest(BaseModel):
     data: ReminderCardData
 
 
+def _normalize_query_filter(filter_payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(filter_payload)
+    if "time_range" not in normalized:
+        start = normalized.pop("start_time", None)
+        end = normalized.pop("end_time", None)
+        if start or end:
+            normalized["time_range"] = {"start": start, "end": end}
+    return normalized
+
+
 def require_agent_token(
     settings: Settings = Depends(get_settings),
     x_smartcore_agent_token: str | None = Header(default=None, alias=AGENT_TOKEN_HEADER),
@@ -252,7 +262,7 @@ def create_agent_router() -> APIRouter:
             "action": "query_event",
             "source": "openclaw",
             "raw_text": body.raw_text,
-            "payload": {"filter": body.filter},
+            "payload": {"filter": _normalize_query_filter(body.filter)},
         }
         if body.source_event_id:
             action["source_event_id"] = body.source_event_id

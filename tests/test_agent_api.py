@@ -158,6 +158,39 @@ def test_agent_query_events_uses_action_executor_contract(db_session, monkeypatc
     assert body["data"]["events"][0]["title"] == "OpenClaw 架构设计"
 
 
+def test_agent_query_events_accepts_legacy_start_end_filter_keys(
+    db_session, monkeypatch
+) -> None:
+    crud.create_life_event(
+        db_session,
+        title="周一晚自习",
+        scheduled_at=datetime(2026, 6, 15, 20, 0, tzinfo=DEFAULT_TZ),
+    )
+    crud.create_life_event(
+        db_session,
+        title="周二晚自习",
+        scheduled_at=datetime(2026, 6, 16, 20, 0, tzinfo=DEFAULT_TZ),
+    )
+    client = _client(monkeypatch)
+
+    response = client.post(
+        "/agent/db/query_events",
+        headers={"X-SmartCore-Agent-Token": "agent-secret"},
+        json={
+            "filter": {
+                "event_type": "all",
+                "status": ["pending", "active"],
+                "start_time": "2026-06-15T00:00:00+08:00",
+                "end_time": "2026-06-16T00:00:00+08:00",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    events = response.json()["data"]["events"]
+    assert [item["title"] for item in events] == ["周一晚自习"]
+
+
 def test_agent_query_events_supports_keyword_filter(db_session, monkeypatch) -> None:
     crud.create_life_event(
         db_session,
