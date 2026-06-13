@@ -83,4 +83,3 @@ def test_openclaw_skill_points_to_exact_tool_reference() -> None:
     assert 'follow the exact JSON bodies in `references/smartcore-tools.md`' in content
     assert 'do not send top-level `start_time` or `end_time`' in content
     assert '`selector.id` or `selector.refs`' in content
-
