@@ -39,6 +39,19 @@ def test_agent_tools_manifest_exposes_openclaw_contract(monkeypatch) -> None:
     assert by_name["query_events"]["endpoint"] == "/agent/db/query_events"
     assert by_name["query_events"]["risk"] == "read"
     assert by_name["query_events"]["confirmation_required"] is False
+    for required in (
+        "query_events",
+        "create_event",
+        "update_event",
+        "delete_event",
+        "send_text",
+        "send_query_result_card",
+        "send_operation_success_card",
+        "send_reminder_card",
+    ):
+        assert required in by_name
+        assert by_name[required]["input_schema"]
+
     assert by_name["create_event"]["endpoint"] == "/agent/db/create_event"
     assert by_name["create_event"]["confirmation_required"] is True
     assert by_name["update_event"]["endpoint"] == "/agent/db/update_event"
@@ -51,6 +64,66 @@ def test_agent_tools_manifest_exposes_openclaw_contract(monkeypatch) -> None:
         "/agent/feedback/send_operation_success_card"
     )
     assert by_name["send_reminder_card"]["endpoint"] == "/agent/feedback/send_reminder_card"
+    assert by_name["query_events"]["input_schema"]["filter"]["time_range"] == {
+        "start": "ISO-8601",
+        "end": "ISO-8601",
+    }
+
+
+def test_agent_create_update_delete_events_return_pending_confirmation(
+    db_session, monkeypatch
+) -> None:
+    life_event = crud.create_life_event(
+        db_session,
+        title="晚自习",
+        scheduled_at=datetime(2026, 6, 12, 20, 0, tzinfo=DEFAULT_TZ),
+    )
+    client = _client(monkeypatch)
+    headers = {"X-SmartCore-Agent-Token": "agent-secret"}
+
+    create_response = client.post(
+        "/agent/db/create_event",
+        headers=headers,
+        json={
+            "payload": {
+                "event": {
+                    "event_type": "schedule",
+                    "title": "OpenClaw 联调",
+                    "start_at": "2026-06-12T21:00:00+08:00",
+                }
+            },
+            "source_event_id": "feishu:om_create",
+            "raw_text": "今晚九点联调 OpenClaw",
+        },
+    )
+    update_response = client.post(
+        "/agent/db/update_event",
+        headers=headers,
+        json={
+            "payload": {
+                "selector": {"event_type": "schedule", "id": life_event.id},
+                "patch": {"title": "晚自习复盘"},
+            },
+            "source_event_id": "feishu:om_update",
+            "raw_text": "把晚自习改成复盘",
+        },
+    )
+    delete_response = client.post(
+        "/agent/db/delete_event",
+        headers=headers,
+        json={
+            "payload": {"selector": {"event_type": "schedule", "id": life_event.id}},
+            "source_event_id": "feishu:om_delete",
+            "raw_text": "取消晚自习",
+        },
+    )
+
+    for response in (create_response, update_response, delete_response):
+        assert response.status_code == 200
+        body = response.json()
+        assert body["ok"] is True
+        assert body["status"] == "pending_confirmation"
+        assert body["operation_id"] is not None
 
 
 def test_agent_query_events_uses_action_executor_contract(db_session, monkeypatch) -> None:

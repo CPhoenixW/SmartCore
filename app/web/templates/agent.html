@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Agent 桥接 · SmartCore{% endblock %}
+
+{% block content %}
+<section class="page-header">
+  <h2>Agent 桥接</h2>
+  <p>OpenClaw 与 SmartCore 的运行边界、配置状态和最近转发记录。</p>
+</section>
+
+<section class="summary-grid">
+  {% for item in status_cards %}
+  <article class="metric-card">
+    <span class="metric-label">{{ item.label }}</span>
+    <strong>{{ "已配置" if item.configured else "未配置" }}</strong>
+    <p>{{ item.detail }}</p>
+  </article>
+  {% endfor %}
+</section>
+
+<section class="card">
+  <h3>最近 OpenClaw 转发</h3>
+  {% if openclaw_logs %}
+  <div class="table-scroll">
+  <table class="data-table log-table">
+    <thead>
+      <tr>
+        <th>外部消息 ID</th>
+        <th>原始内容</th>
+        <th>解析命令</th>
+        <th>转发状态</th>
+        <th>创建时间</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for log in openclaw_logs %}
+      <tr>
+        <td>{{ log.external_message_id or "—" }}</td>
+        <td>{{ log.raw_content or "—" }}</td>
+        <td>{{ log.parsed_command or "—" }}</td>
+        <td><span class="status status-{{ log.reply_status or 'unknown' }}">{{ log.reply_status or "—" }}</span></td>
+        <td>{{ log.created_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p>暂无 OpenClaw 转发记录。</p>
+  {% endif %}
+</section>
+{% endblock %}

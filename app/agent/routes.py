@@ -18,6 +18,25 @@ from app.feishu.client import FeishuClient
 
 AGENT_TOKEN_HEADER = "X-SmartCore-Agent-Token"
 
+_EVENT_SCHEMA: dict[str, Any] = {
+    "event": {
+        "event_type": "course|plan|schedule|deadline",
+        "title": "text",
+        "start_at": "ISO-8601, required except unscheduled schedule/deadline",
+        "end_at": "optional ISO-8601",
+        "location": "optional text",
+        "notes": "optional text",
+        "unscheduled": "optional boolean",
+    }
+}
+_SELECTOR_SCHEMA: dict[str, Any] = {
+    "selector": {
+        "event_type": "course|plan|schedule|deadline",
+        "id": "optional SmartCore event id",
+        "targets": "optional list of candidate objects returned by query_events",
+    }
+}
+
 _AGENT_TOOLS: list[dict[str, Any]] = [
     {
         "name": "query_events",
@@ -25,7 +44,7 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         "method": "POST",
         "risk": "read",
         "confirmation_required": False,
-        "description": "Query SmartCore events by type, status, keyword, and time range.",
+        "description": "Query SmartCore events by type, status, keyword, and explicit time range.",
         "input_schema": {
             "filter": {
                 "event_type": "all|schedule|deadline|plan|course",
@@ -33,7 +52,14 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
                 "time_range": {"start": "ISO-8601", "end": "ISO-8601"},
                 "keyword": "optional text",
                 "limit": 50,
-            }
+            },
+            "source_event_id": "optional normalized event id",
+            "raw_text": "optional user utterance",
+        },
+        "output_schema": {
+            "ok": "boolean",
+            "status": "applied|failed",
+            "data": {"events": "list of normalized SmartCore events"},
         },
     },
     {
@@ -42,6 +68,13 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         "method": "POST",
         "risk": "write",
         "confirmation_required": True,
+        "description": "Create a SmartCore event through pending-operation confirmation.",
+        "input_schema": {
+            "payload": _EVENT_SCHEMA,
+            "source_event_id": "optional normalized event id",
+            "raw_text": "original user utterance",
+        },
+        "output_schema": {"status": "pending_confirmation|failed", "operation_id": "integer"},
     },
     {
         "name": "update_event",
@@ -49,6 +82,18 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         "method": "POST",
         "risk": "write",
         "confirmation_required": True,
+        "description": (
+            "Update a SmartCore event. Query candidates first when the target is ambiguous."
+        ),
+        "input_schema": {
+            "payload": {
+                **_SELECTOR_SCHEMA,
+                "patch": "fields to update, such as title/start_at/end_at/notes/status",
+            },
+            "source_event_id": "optional normalized event id",
+            "raw_text": "original user utterance",
+        },
+        "output_schema": {"status": "pending_confirmation|failed", "operation_id": "integer"},
     },
     {
         "name": "delete_event",
@@ -56,6 +101,16 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         "method": "POST",
         "risk": "destructive",
         "confirmation_required": True,
+        "description": (
+            "Cancel/delete a SmartCore event through confirmation. "
+            "Clarify before destructive actions."
+        ),
+        "input_schema": {
+            "payload": _SELECTOR_SCHEMA,
+            "source_event_id": "optional normalized event id",
+            "raw_text": "original user utterance",
+        },
+        "output_schema": {"status": "pending_confirmation|failed", "operation_id": "integer"},
     },
     {
         "name": "send_text",
@@ -63,6 +118,9 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         "method": "POST",
         "risk": "notify",
         "confirmation_required": False,
+        "description": "Send plain text feedback through SmartCore's Feishu client.",
+        "input_schema": {"target": {"chat_id": "Feishu chat id"}, "text": "message text"},
+        "output_schema": {"ok": "boolean", "result": "Feishu API result"},
     },
     {
         "name": "send_query_result_card",
@@ -70,6 +128,9 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         "method": "POST",
         "risk": "notify",
         "confirmation_required": False,
+        "description": "Render SmartCore's query-result Feishu card for event lists.",
+        "input_schema": {"target": {"chat_id": "Feishu chat id"}, "data": {"events": "list"}},
+        "output_schema": {"ok": "boolean", "result": "Feishu API result"},
     },
     {
         "name": "send_operation_success_card",
@@ -77,6 +138,15 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         "method": "POST",
         "risk": "notify",
         "confirmation_required": False,
+        "description": "Render SmartCore's operation-success Feishu card.",
+        "input_schema": {
+            "target": {"chat_id": "Feishu chat id"},
+            "data": {
+                "action_name": "create_event|update_event|delete_event",
+                "payload": "action payload",
+            },
+        },
+        "output_schema": {"ok": "boolean", "result": "Feishu API result"},
     },
     {
         "name": "send_reminder_card",
@@ -84,6 +154,19 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         "method": "POST",
         "risk": "notify",
         "confirmation_required": False,
+        "description": "Render an actionable reminder card whose buttons round-trip to OpenClaw.",
+        "input_schema": {
+            "target": {"chat_id": "Feishu chat id"},
+            "data": {
+                "title": "event title",
+                "event_type": "course|plan|schedule|deadline",
+                "scheduled_label": "display time label",
+                "minutes_until": "optional integer",
+                "notes": "optional text",
+                "event_id": "optional SmartCore event id",
+            },
+        },
+        "output_schema": {"ok": "boolean", "result": "Feishu API result"},
     },
 ]
 

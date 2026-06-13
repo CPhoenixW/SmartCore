@@ -416,3 +416,33 @@ def test_logs_page_shows_message_logs_and_operation_audit(web_client, db_session
     assert "操作审计" in response.text
     assert "失败操作" in response.text
     assert "schema mismatch" in response.text
+
+
+def test_agent_status_page_shows_openclaw_bridge_configuration(web_client, db_session, monkeypatch):
+    monkeypatch.setenv("OPENCLAW_EVENTS_ENDPOINT", "http://127.0.0.1:18789/api/smartcore/events")
+    monkeypatch.setenv("OPENCLAW_EVENTS_TOKEN", "bridge-secret")
+    monkeypatch.setenv("AGENT_API_TOKEN", "agent-secret")
+    monkeypatch.setenv("SCHEDULER_ENABLED", "true")
+    get_settings.cache_clear()
+    db_session.add(
+        MessageLog(
+            source="feishu",
+            external_message_id="om_openclaw",
+            raw_content="今天有什么安排",
+            parsed_command="openclaw_forward",
+            reply_status="forwarded",
+        )
+    )
+    db_session.commit()
+
+    response = web_client.get("/dashboard/agent")
+
+    assert response.status_code == 200
+    assert "Agent 桥接" in response.text
+    assert "OpenClaw 事件入口" in response.text
+    assert "已配置" in response.text
+    assert "Agent API Token" in response.text
+    assert "Scheduler" in response.text
+    assert "openclaw_forward" in response.text
+    assert "forwarded" in response.text
+    assert "om_openclaw" in response.text

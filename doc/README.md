@@ -21,3 +21,4 @@
 - 手机和电脑通过 Tailscale 访问内部 Web 面板。
 - 树莓派 v1 不跑核心业务，只作为数据库快照备份接收节点。
 - 业务逻辑采用规则优先，LLM 只作为后续增强，不作为提醒可靠性的依赖。
+- [10-OpenClaw Skill Runtime Plan](./10-openclaw-skill-runtime.md)

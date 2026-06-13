@@ -438,6 +438,51 @@ def create_web_router() -> APIRouter:
             db.commit()
         return RedirectResponse(url="/dashboard/pending-operations", status_code=303)
 
+    @router.get("/agent", response_class=HTMLResponse)
+    def agent_status_page(
+        request: Request,
+        db: Session = Depends(get_db),
+    ) -> HTMLResponse:
+        settings = get_settings()
+        openclaw_logs = (
+            db.query(MessageLog)
+            .filter(MessageLog.parsed_command == "openclaw_forward")
+            .order_by(MessageLog.created_at.desc())
+            .limit(50)
+            .all()
+        )
+        status_cards = [
+            {
+                "label": "OpenClaw 事件入口",
+                "configured": bool(settings.openclaw_events_endpoint),
+                "detail": settings.openclaw_events_endpoint or "未配置",
+            },
+            {
+                "label": "OpenClaw 事件 Token",
+                "configured": bool(settings.openclaw_events_token),
+                "detail": "已配置" if settings.openclaw_events_token else "未配置",
+            },
+            {
+                "label": "Agent API Token",
+                "configured": bool(settings.agent_api_token),
+                "detail": "已配置" if settings.agent_api_token else "未配置",
+            },
+            {
+                "label": "Scheduler",
+                "configured": settings.scheduler_enabled,
+                "detail": "已启用" if settings.scheduler_enabled else "未启用",
+            },
+        ]
+        return templates.TemplateResponse(
+            request,
+            "agent.html",
+            {
+                "active_page": "agent",
+                "status_cards": status_cards,
+                "openclaw_logs": openclaw_logs,
+            },
+        )
+
     @router.get("/logs", response_class=HTMLResponse)
     def logs_page(
         request: Request,
