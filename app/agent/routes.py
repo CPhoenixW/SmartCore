@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.db.session import get_db
+from app.feishu.client import FeishuAPIError, FeishuClient
 from app.new_core import crud
 from app.screen.manager import screenManager
 
@@ -25,6 +26,30 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
     {"name": "sendCard", "method": "POST", "path": "/agent/sendCard"},
     {"name": "screenPush", "method": "POST", "path": "/agent/screenPush"},
 ]
+
+_feishuClient: FeishuClient | None = None
+
+
+def _getFeishuClient(settings: Settings) -> FeishuClient | None:
+    if not settings.feishu_app_id or not settings.feishu_app_secret:
+        return None
+    global _feishuClient
+    if _feishuClient is None:
+        _feishuClient = FeishuClient(settings.feishu_app_id, settings.feishu_app_secret)
+    return _feishuClient
+
+
+def _resolveReceiveId(body: dict[str, Any], settings: Settings) -> str | None:
+    for key in ("receiveId", "receive_id", "chatId", "chat_id"):
+        value = body.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    default = settings.feishu_default_chat_id
+    return default if default else None
+
+
+def _failed(errors: list[str]) -> dict[str, Any]:
+    return {"ok": False, "stat": "failed", "errors": errors}
 
 
 def requireAgentToken(
@@ -94,17 +119,23 @@ def createAgentRouter() -> APIRouter:
     def evtUpdate(body: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
         evtId = body.get("evtId")
         if not evtId:
-            return {"ok": False, "stat": "failed", "errors": ["evtId required"]}
+            return _failed(["evtId required"])
         patch = {key: body[key] for key in ("title", "desc", "prio", "stat") if key in body}
-        data = crud.updateEvt(db, evtId, **patch)
+        try:
+            data = crud.updateEvt(db, evtId, **patch)
+        except ValueError as exc:
+            return _failed([str(exc)])
         return {"ok": True, "stat": "done", "data": data}
 
     @router.post("/evtDelete", dependencies=[Depends(requireAgentToken)])
     def evtDelete(body: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
         evtId = body.get("evtId")
         if not evtId:
-            return {"ok": False, "stat": "failed", "errors": ["evtId required"]}
-        data = crud.cancelEvt(db, evtId, src="openclaw")
+            return _failed(["evtId required"])
+        try:
+            data = crud.cancelEvt(db, evtId, src="openclaw")
+        except ValueError as exc:
+            return _failed([str(exc)])
         return {"ok": True, "stat": "done", "data": data}
 
     @router.post("/ideaCapture", dependencies=[Depends(requireAgentToken)])
@@ -118,22 +149,60 @@ def createAgentRouter() -> APIRouter:
 
     @router.post("/ideaToEvt", dependencies=[Depends(requireAgentToken)])
     def ideaToEvt(body: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
-        data = crud.ideaToLifeEvt(
-            db,
-            ideaId=body["ideaId"],
-            title=body.get("title", ""),
-            dueAt=body.get("dueAt"),
-            src="openclaw",
-        )
+        ideaId = body.get("ideaId")
+        if not ideaId:
+            return _failed(["ideaId required"])
+        try:
+            data = crud.ideaToLifeEvt(
+                db,
+                ideaId=ideaId,
+                title=body.get("title", ""),
+                dueAt=body.get("dueAt"),
+                src="openclaw",
+            )
+        except ValueError as exc:
+            return _failed([str(exc)])
         return {"ok": True, "stat": "done", "data": data}
 
     @router.post("/sendText", dependencies=[Depends(requireAgentToken)])
-    def sendText(body: dict[str, Any]) -> dict[str, Any]:
-        return {"ok": True, "stat": "done", "data": {"text": body.get("text", "")}}
+    def sendText(
+        body: dict[str, Any],
+        settings: Settings = Depends(get_settings),
+    ) -> dict[str, Any]:
+        text = body.get("text")
+        if not isinstance(text, str) or not text.strip():
+            return _failed(["text required"])
+        receive_id = _resolveReceiveId(body, settings)
+        if not receive_id:
+            return _failed(["receiveId/chat_id required or configure FEISHU_DEFAULT_CHAT_ID"])
+        client = _getFeishuClient(settings)
+        if client is None:
+            return _failed(["feishu not configured"])
+        try:
+            data = client.send_text(receive_id, text.strip())
+        except FeishuAPIError as exc:
+            return _failed([str(exc)])
+        return {"ok": True, "stat": "done", "data": data}
 
     @router.post("/sendCard", dependencies=[Depends(requireAgentToken)])
-    def sendCard(body: dict[str, Any]) -> dict[str, Any]:
-        return {"ok": True, "stat": "done", "data": body}
+    def sendCard(
+        body: dict[str, Any],
+        settings: Settings = Depends(get_settings),
+    ) -> dict[str, Any]:
+        card = body.get("card")
+        if not isinstance(card, dict):
+            return _failed(["card required"])
+        receive_id = _resolveReceiveId(body, settings)
+        if not receive_id:
+            return _failed(["receiveId/chat_id required or configure FEISHU_DEFAULT_CHAT_ID"])
+        client = _getFeishuClient(settings)
+        if client is None:
+            return _failed(["feishu not configured"])
+        try:
+            data = client.send_interactive_card(receive_id, card)
+        except FeishuAPIError as exc:
+            return _failed([str(exc)])
+        return {"ok": True, "stat": "done", "data": data}
 
     @router.post("/screenPush", dependencies=[Depends(requireAgentToken)])
     async def screenPush(body: dict[str, Any]) -> dict[str, Any]:

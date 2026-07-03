@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.db.session import get_db
-from app.feishu.commands import extract_message_text
+from app.feishu.commands import extract_message_text, extract_routing_context
 from app.feishu.security import FeishuSecurityError, parse_event_payload, validate_request_headers
 from app.new_core import crud
 
@@ -105,8 +105,11 @@ class FeishuEventHandler:
             if now is not None
             else datetime.now(_DEFAULT_TZ)
         )
-        return {
+        chat, user = extract_routing_context(payload)
+        normalized: dict[str, Any] = {
             "eventType": "message",
+            "message_id": message_id,
+            "text": text,
             "message": {
                 "message_id": message_id,
                 "text": text,
@@ -117,6 +120,13 @@ class FeishuEventHandler:
             },
             "feishu_payload": payload,
         }
+        if chat_id := chat.get("chat_id"):
+            normalized["chat_id"] = chat_id
+        if chat:
+            normalized["chat"] = chat
+        if user:
+            normalized["user"] = user
+        return normalized
 
     def _normalizeCardAction(
         self,
@@ -130,11 +140,25 @@ class FeishuEventHandler:
             else datetime.now(_DEFAULT_TZ)
         )
         event_body = payload.get("event") if isinstance(payload.get("event"), dict) else {}
-        return {
+        context = event_body.get("context") if isinstance(event_body.get("context"), dict) else {}
+        chat: dict[str, str] = {}
+        if open_chat_id := context.get("open_chat_id"):
+            if isinstance(open_chat_id, str) and open_chat_id:
+                chat["chat_id"] = open_chat_id
+        operator = event_body.get("operator")
+        user: dict[str, str] = {}
+        if isinstance(operator, dict):
+            operator_id = operator.get("operator_id")
+            if isinstance(operator_id, dict):
+                for key in ("open_id", "union_id", "user_id"):
+                    value = operator_id.get(key)
+                    if isinstance(value, str) and value:
+                        user[key] = value
+        normalized: dict[str, Any] = {
             "eventType": "card_action",
             "card_action": {
                 "action": event_body.get("action"),
-                "context": event_body.get("context"),
+                "context": context,
             },
             "request": {
                 "timezone": "Asia/Shanghai",
@@ -142,6 +166,13 @@ class FeishuEventHandler:
             },
             "feishu_payload": payload,
         }
+        if chat_id := chat.get("chat_id"):
+            normalized["chat_id"] = chat_id
+        if chat:
+            normalized["chat"] = chat
+        if user:
+            normalized["user"] = user
+        return normalized
 
     def _forwardTextMessage(
         self,

@@ -27,6 +27,36 @@ def normalize_message_text(text: str) -> str:
     return GROUP_MENTION_PREFIX_PATTERN.sub("", text.strip()).strip()
 
 
+def extract_routing_context(event_payload: dict) -> tuple[dict[str, str], dict[str, str]]:
+    """Extract chat and user routing fields from a Feishu event payload."""
+    event = event_payload.get("event")
+    if not isinstance(event, dict):
+        return {}, {}
+
+    chat: dict[str, str] = {}
+    message = event.get("message")
+    if isinstance(message, dict):
+        for key in ("chat_id", "chat_type"):
+            value = message.get(key)
+            if isinstance(value, str) and value:
+                chat[key] = value
+
+    user: dict[str, str] = {}
+    sender = event.get("sender")
+    if isinstance(sender, dict):
+        sender_type = sender.get("sender_type")
+        if isinstance(sender_type, str) and sender_type:
+            user["sender_type"] = sender_type
+        sender_id = sender.get("sender_id")
+        if isinstance(sender_id, dict):
+            for key in ("open_id", "union_id", "user_id"):
+                value = sender_id.get(key)
+                if isinstance(value, str) and value:
+                    user[key] = value
+
+    return chat, user
+
+
 def extract_message_text(event_payload: dict) -> tuple[str | None, str | None]:
     event = event_payload.get("event")
     if not isinstance(event, dict):

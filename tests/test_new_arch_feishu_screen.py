@@ -10,12 +10,17 @@ def _message_event(text: str) -> dict:
         "schema": "2.0",
         "header": {"event_type": "im.message.receive_v1", "token": "verify-token"},
         "event": {
+            "sender": {
+                "sender_id": {"user_id": "u_1"},
+                "sender_type": "user",
+            },
             "message": {
                 "message_id": "om_1",
                 "chat_id": "oc_1",
+                "chat_type": "p2p",
                 "message_type": "text",
                 "content": json.dumps({"text": text}, ensure_ascii=False),
-            }
+            },
         },
     }
 
@@ -42,6 +47,8 @@ def test_feishu_message_is_logged_and_forwarded_to_openclaw(app_env, monkeypatch
     assert resp.status_code == 200
     assert forwarded["json"]["eventType"] == "message"
     assert forwarded["json"]["message"]["text"] == "今晚八点提醒我写报告"
+    assert forwarded["json"]["chat_id"] == "oc_1"
+    assert forwarded["json"]["chat"]["chat_id"] == "oc_1"
     assert client.get("/api/msgLog").json()["data"][0]["stat"] == "forwarded"
 
 
