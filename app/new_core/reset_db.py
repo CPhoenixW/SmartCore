@@ -6,6 +6,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from app.config import get_settings
+from app.db.schema_paths import dropSqlPath, schemaSqlPath
 from app.db.session import SessionLocal, dispose_engine, init_db
 
 _DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
@@ -15,6 +16,10 @@ def _remove_sqlite_files(db_path: Path) -> None:
     for path in (db_path, Path(f"{db_path}-wal"), Path(f"{db_path}-shm")):
         if path.exists():
             path.unlink()
+
+
+def resetDatabaseScriptPaths() -> tuple[Path, Path]:
+    return dropSqlPath(), schemaSqlPath()
 
 
 def resetDatabase() -> Path | None:

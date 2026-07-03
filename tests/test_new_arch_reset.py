@@ -50,4 +50,16 @@ def test_reset_database_removes_unknown_old_tables(app_env) -> None:
         db.close()
 
     assert "oldTable" not in tables
-    assert "evtBase" in tables
+    assert tables == {
+        "evtBase",
+        "lifeEvt",
+        "ddlEvt",
+        "courseTpl",
+        "courseInst",
+        "idea",
+        "ideaToEvt",
+        "devState",
+        "notifyLog",
+        "msgLog",
+        "actLog",
+    }

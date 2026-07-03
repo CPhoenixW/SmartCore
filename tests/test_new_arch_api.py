@@ -146,6 +146,13 @@ def test_work_and_screen_pages_are_accessible_over_tailnet(app_env) -> None:
 def test_work_dashboard_has_operational_controls(app_env) -> None:
     client = TestClient(create_app())
     html = client.get("/work").text
+    js = client.get("/static/work/work.js").text
+
+    assert 'href="/static/work/work.css"' in html
+    assert 'src="/static/work/work.js"' in html
+    assert 'data-app="smartcore-work"' in html
+    assert client.get("/static/work/work.css").status_code == 200
+    assert client.get("/static/work/work.js").status_code == 200
 
     assert 'id="lifeEvtForm"' in html
     assert 'id="ddlEvtForm"' in html
@@ -154,20 +161,24 @@ def test_work_dashboard_has_operational_controls(app_env) -> None:
     assert 'id="evtListTodo"' in html
     assert 'id="evtListDone"' in html
     assert 'id="evtListCancelled"' in html
-    assert 'data-action="completeEvt"' in html
-    assert 'data-action="cancelEvt"' in html
-    assert 'data-action="setPrio"' in html
+    assert 'id="evtSearch"' in html
+    assert 'id="apiStatus"' in html
     assert 'id="devStatePanel"' in html
     assert 'id="notifyLogPanel"' in html
     assert 'id="msgLogPanel"' in html
     assert 'id="actLogPanel"' in html
     assert 'data-action="refreshEvt"' in html
-    assert "/api/lifeEvt" in html
-    assert "/api/ddlEvt" in html
-    assert "/api/idea" in html
-    assert "/api/evt" in html
-    assert 'href="/api/evt"' not in html
+    assert 'data-endpoint="/api/lifeEvt"' in html
+    assert 'data-endpoint="/api/ddlEvt"' in html
+    assert 'data-endpoint="/api/idea"' in html
+
+    assert 'data-action="completeEvt"' in js
+    assert 'data-action="cancelEvt"' in js
+    assert 'data-action="setPrio"' in js
+    assert '"/api/evt"' in js
+
     assert "pending" not in html.lower()
+    assert "pending" not in js.lower()
     assert "/dashboard" not in html
 
 

@@ -12,7 +12,7 @@ def test_new_arch_tables_are_the_only_business_tables(app_env) -> None:
     finally:
         db.close()
 
-    assert {
+    expected = {
         "evtBase",
         "lifeEvt",
         "ddlEvt",
@@ -24,10 +24,8 @@ def test_new_arch_tables_are_the_only_business_tables(app_env) -> None:
         "notifyLog",
         "msgLog",
         "actLog",
-    }.issubset(tables)
-    assert "assignments" not in tables
-    assert "life_events" not in tables
-    assert "pending_operations" not in tables
+    }
+    assert tables == expected
 
 
 def test_life_and_ddl_events_create_act_logs(app_env) -> None:

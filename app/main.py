@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.agent.routes import createAgentRouter, createDevRouter
 from app.api.routes import router as apiRouter
@@ -41,6 +43,9 @@ def create_app() -> FastAPI:
     app.include_router(create_feishu_router())
     app.include_router(workRouter)
     app.include_router(screenRouter)
+
+    static_dir = Path(__file__).resolve().parent / "web" / "static"
+    app.mount("/static/work", StaticFiles(directory=static_dir), name="work_static")
 
     return app
 

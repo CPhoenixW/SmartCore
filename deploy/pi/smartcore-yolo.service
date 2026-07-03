@@ -1,0 +1,15 @@
+[Unit]
+Description=SmartCore YOLO device state reporter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/phoenix/yolo
+EnvironmentFile=/home/phoenix/yolo/.smartcore.env
+ExecStart=/home/phoenix/yolo/.venv/bin/python /home/phoenix/yolo/detect_usb.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

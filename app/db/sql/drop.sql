@@ -1,0 +1,13 @@
+-- Drop all new-arch tables (reverse dependency order).
+
+DROP TABLE IF EXISTS actLog;
+DROP TABLE IF EXISTS msgLog;
+DROP TABLE IF EXISTS notifyLog;
+DROP TABLE IF EXISTS devState;
+DROP TABLE IF EXISTS ideaToEvt;
+DROP TABLE IF EXISTS idea;
+DROP TABLE IF EXISTS courseInst;
+DROP TABLE IF EXISTS courseTpl;
+DROP TABLE IF EXISTS ddlEvt;
+DROP TABLE IF EXISTS lifeEvt;
+DROP TABLE IF EXISTS evtBase;

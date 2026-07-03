@@ -1,10 +1,12 @@
 from collections.abc import Callable, Generator
+from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import get_settings
+from app.db.schema_paths import schemaSqlPath
 
 
 class Base(DeclarativeBase):
@@ -66,10 +68,26 @@ def reset_engine_for_tests() -> None:
     dispose_engine()
 
 
+def _execute_sqlite_script(db_path: Path, script_path: Path) -> None:
+    import sqlite3
+
+    sql = script_path.read_text(encoding="utf-8")
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.executescript(sql)
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def init_db() -> None:
     from app.new_core import models  # noqa: F401
 
     settings = get_settings()
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
+    if settings.database_url.startswith("sqlite"):
+        _execute_sqlite_script(settings.database_path, schemaSqlPath())
+        return
+
     engine, _ = _ensure_engine()
     Base.metadata.create_all(bind=engine)
