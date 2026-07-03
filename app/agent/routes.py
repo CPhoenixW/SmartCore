@@ -120,7 +120,19 @@ def createAgentRouter() -> APIRouter:
         evtId = body.get("evtId")
         if not evtId:
             return _failed(["evtId required"])
-        patch = {key: body[key] for key in ("title", "desc", "prio", "stat") if key in body}
+        update_fields = (
+            "title",
+            "desc",
+            "prio",
+            "stat",
+            "dueAt",
+            "doneAt",
+            "ddlAt",
+            "hardDdl",
+            "classDate",
+            "attendStat",
+        )
+        patch = {key: body[key] for key in update_fields if key in body}
         try:
             data = crud.updateEvt(db, evtId, **patch)
         except ValueError as exc:

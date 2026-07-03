@@ -3,8 +3,12 @@ from app.new_core import crud
 from app.new_core.scheduler import runReminderTick
 
 
-def test_reminder_tick_routes_due_life_event_and_dedups(app_env) -> None:
+def test_reminder_tick_routes_due_life_event_and_dedups(app_env, monkeypatch) -> None:
     init_db()
+    monkeypatch.setattr(
+        "app.new_core.notify.screenManager.broadcastFromThread",
+        lambda message: True,
+    )
     db = SessionLocal()
     try:
         crud.upsertDevState(db, devId="pi", state="working", confidence=0.95)
@@ -35,7 +39,11 @@ def test_reminder_tick_routes_due_life_event_and_dedups(app_env) -> None:
     assert logs[-1]["dedupKey"] == f"lifeDue:{event['evtId']}"
 
 
-def test_reminder_tick_routes_due_ddl_to_feishu_when_away(app_env) -> None:
+def test_reminder_tick_routes_due_ddl_to_feishu_when_away(app_env, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.new_core.notify._sendFeishu",
+        lambda title, content: (True, "chat", None),
+    )
     init_db()
     db = SessionLocal()
     try:

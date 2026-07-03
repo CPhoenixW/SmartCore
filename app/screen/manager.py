@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -13,9 +14,11 @@ class ScreenManager:
     def __init__(self) -> None:
         self._connections: set[WebSocket] = set()
         self._lock = asyncio.Lock()
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()
+        self._loop = asyncio.get_running_loop()
         async with self._lock:
             self._connections.add(websocket)
         await websocket.send_json(
@@ -37,6 +40,16 @@ class ScreenManager:
                 await websocket.send_json(message)
             except Exception:
                 await self.disconnect(websocket)
+
+    def broadcastFromThread(self, message: dict, *, timeout: float = 2.0) -> bool:
+        if not self.online or self._loop is None:
+            return False
+        try:
+            future = asyncio.run_coroutine_threadsafe(self.broadcast(message), self._loop)
+            future.result(timeout=timeout)
+        except (RuntimeError, concurrent.futures.TimeoutError):
+            return False
+        return True
 
     @property
     def online(self) -> bool:

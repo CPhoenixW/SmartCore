@@ -94,6 +94,15 @@ function toIsoFromLocal(val) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
 }
 
+function toLocalInputValue(iso, kind = "datetime") {
+  if (!iso) return "";
+  if (kind === "date") return String(iso).slice(0, 10);
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function touchRefresh() {
   lastRefreshEl.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
 }
@@ -192,6 +201,11 @@ function renderEvtBoard(evts) {
     $(`evtList${id}`).innerHTML = groups[stat].length ? groups[stat].map(renderEvtCard).join("") : '<span class="empty">无</span>';
     $(`${stat}Count`).textContent = groups[stat].length;
   }
+  const doneCount = groups.done.length;
+  const cancelledCount = groups.cancelled.length;
+  const todoCount = groups.todo.length;
+  $("archiveCount").textContent = doneCount + cancelledCount;
+  $("evtArchiveDetails").open = doneCount + cancelledCount > 0 && todoCount === 0;
   applyEvtSearch();
   if (activeEvtId) markActiveEvtCard(activeEvtId);
 }
@@ -203,15 +217,37 @@ function syncEvtDetailActions(stat) {
   $("reopenEvtDetailBtn")?.toggleAttribute("hidden", canClose);
 }
 
+function evtTimeFieldName(evt) {
+  if (evt.evtType === "life") return "dueAt";
+  if (evt.evtType === "ddl") return "ddlAt";
+  if (evt.evtType === "course") return "classDate";
+  return null;
+}
+
+function syncEvtTimeField(evt) {
+  const field = $("evtTimeField");
+  const form = $("evtDetailForm");
+  const input = form?.elements.evtTime;
+  const name = evtTimeFieldName(evt);
+  if (!field || !input || !name) return;
+  form.dataset.timeField = name;
+  field.hidden = false;
+  input.type = name === "classDate" ? "date" : "datetime-local";
+  input.value = toLocalInputValue(evt[name], name === "classDate" ? "date" : "datetime");
+  field.firstChild.textContent = name === "classDate" ? "上课日期" : "提醒时间";
+}
+
 function populateEvtDetail(evt) {
   const form = $("evtDetailForm");
   if (!form || !evt) return;
   form.dataset.evtId = evt.evtId;
+  form.dataset.evtType = evt.evtType || "";
   form.dataset.stat = evt.stat || "todo";
   form.elements.title.value = evt.title || "";
   form.elements.desc.value = evt.desc || "";
   form.elements.stat.value = evt.stat || "todo";
   form.elements.prio.value = evt.prio || "mid";
+  syncEvtTimeField(evt);
   syncEvtDetailActions(evt.stat || "todo");
 }
 
@@ -247,6 +283,11 @@ async function saveEvtDetail() {
       desc: form.elements.desc.value.trim() || null,
       stat: form.elements.stat.value,
       prio: form.elements.prio.value,
+      ...(form.dataset.timeField ? {
+        [form.dataset.timeField]: form.dataset.timeField === "classDate"
+          ? (form.elements.evtTime.value || null)
+          : toIsoFromLocal(form.elements.evtTime.value),
+      } : {}),
     }),
   });
   if (resp.ok) {

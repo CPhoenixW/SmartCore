@@ -425,6 +425,27 @@ def updateEvt(db: Session, evtId: str, **fields: Any) -> dict[str, Any]:
     for key in ("title", "desc", "prio", "stat"):
         if key in fields and fields[key] is not None:
             setattr(base, key, fields[key])
+    if base.evtType == "life":
+        life = db.get(LifeEvt, evtId)
+        if life is not None:
+            if "dueAt" in fields:
+                life.dueAt = fields["dueAt"]
+            if "doneAt" in fields:
+                life.doneAt = fields["doneAt"]
+    elif base.evtType == "ddl":
+        ddl = db.get(DdlEvt, evtId)
+        if ddl is not None:
+            if "ddlAt" in fields:
+                ddl.ddlAt = fields["ddlAt"]
+            if "hardDdl" in fields and fields["hardDdl"] is not None:
+                ddl.hardDdl = bool(fields["hardDdl"])
+    elif base.evtType == "course":
+        inst = db.get(CourseInst, evtId)
+        if inst is not None:
+            if "classDate" in fields:
+                inst.classDate = fields["classDate"]
+            if "attendStat" in fields and fields["attendStat"] is not None:
+                inst.attendStat = fields["attendStat"]
     base.updatedAt = nowIso()
     db.commit()
     db.refresh(base)

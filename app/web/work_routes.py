@@ -83,10 +83,18 @@ _WORK_HTML = """<!doctype html>
           <button type="button" class="btn btn-sm" data-action="refreshEvt">刷新</button>
         </div>
       </div>
-      <div class="panel-body evt-columns">
-        <div class="evt-col"><div class="evt-col-head">todo <span class="count" id="todoCount">0</span></div><div id="evtListTodo" class="evt-col-list"></div></div>
-        <div class="evt-col"><div class="evt-col-head">done <span class="count" id="doneCount">0</span></div><div id="evtListDone" class="evt-col-list"></div></div>
-        <div class="evt-col"><div class="evt-col-head">cancelled <span class="count" id="cancelledCount">0</span></div><div id="evtListCancelled" class="evt-col-list"></div></div>
+      <div class="panel-body evt-board-layout">
+        <section class="todo-focus" aria-labelledby="todoBoardTitle">
+          <div class="evt-col-head primary" id="todoBoardTitle">todo <span class="count" id="todoCount">0</span></div>
+          <div id="evtListTodo" class="evt-col-list todo-list"></div>
+        </section>
+        <details class="archive-panel" id="evtArchiveDetails">
+          <summary>已完成 / 已取消 <span class="count" id="archiveCount">0</span></summary>
+          <div class="evt-archive-grid">
+            <div class="evt-col"><div class="evt-col-head">done <span class="count" id="doneCount">0</span></div><div id="evtListDone" class="evt-col-list compact-list"></div></div>
+            <div class="evt-col"><div class="evt-col-head">cancelled <span class="count" id="cancelledCount">0</span></div><div id="evtListCancelled" class="evt-col-list compact-list"></div></div>
+          </div>
+        </details>
       </div>
     </section>
   </section>
@@ -182,6 +190,7 @@ _WORK_HTML = """<!doctype html>
       <label class="drawer-field">描述<textarea name="desc" rows="4" placeholder="可选描述"></textarea></label>
       <label class="drawer-field">状态<select name="stat"><option value="todo">待办</option><option value="done">完成</option><option value="cancelled">已取消</option></select></label>
       <label class="drawer-field">优先级<select name="prio"><option value="high">高</option><option value="mid">中</option><option value="low">低</option></select></label>
+      <label class="drawer-field" id="evtTimeField">时间<input name="evtTime" type="datetime-local"></label>
       <div class="drawer-form-actions">
         <button type="button" class="btn btn-primary" data-action="saveEvtDetail">保存</button>
         <button type="button" class="btn btn-success" id="completeEvtDetailBtn" data-action="completeEvtDetail">完成</button>

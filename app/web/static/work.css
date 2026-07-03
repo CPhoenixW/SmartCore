@@ -467,6 +467,64 @@ textarea:focus-visible {
   font-size: 0.76rem;
 }
 
+.evt-board-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.65rem;
+}
+
+.todo-focus {
+  min-width: 0;
+}
+
+.todo-focus .evt-col-head.primary {
+  font-size: 0.78rem;
+  color: var(--text);
+  border-bottom-color: #bfdbfe;
+}
+
+.todo-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.55rem;
+}
+
+.todo-list .evt-card {
+  margin-bottom: 0;
+  min-height: 128px;
+  border-color: #dbeafe;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.archive-panel {
+  border-top: 1px solid var(--border);
+  padding-top: 0.45rem;
+}
+
+.archive-panel summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 650;
+  list-style-position: inside;
+}
+
+.evt-archive-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.45rem;
+}
+
+.compact-list .evt-card {
+  opacity: 0.78;
+  padding: 0.48rem 0.55rem;
+}
+
+.compact-list .board-card-desc {
+  display: none;
+}
+
 .evt-columns {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -474,7 +532,9 @@ textarea:focus-visible {
 }
 
 @media (max-width: 900px) {
-  .evt-columns {
+  .evt-columns,
+  .evt-archive-grid,
+  .todo-list {
     grid-template-columns: 1fr;
   }
 }
@@ -993,12 +1053,19 @@ textarea:focus-visible {
     padding: 0.45rem;
   }
 
-  .evt-columns {
-    grid-template-columns: repeat(3, minmax(180px, 1fr));
+  .evt-columns,
+  .evt-board-layout {
+    grid-template-columns: minmax(0, 1fr);
     gap: 0.42rem;
   }
 
-  .panel-body.evt-columns {
+  .todo-list,
+  .evt-archive-grid {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
+  .panel-body.evt-columns,
+  .panel-body.evt-board-layout {
     padding: 0.5rem;
   }
 

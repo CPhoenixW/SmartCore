@@ -3,8 +3,12 @@ from app.new_core import crud
 from app.new_core.notify import routeNotify
 
 
-def test_notify_router_uses_screen_when_working_and_screen_online(app_env) -> None:
+def test_notify_router_uses_screen_when_working_and_screen_online(app_env, monkeypatch) -> None:
     init_db()
+    monkeypatch.setattr(
+        "app.new_core.notify.screenManager.broadcastFromThread",
+        lambda message: True,
+    )
     db = SessionLocal()
     try:
         crud.upsertDevState(db, devId="pi", state="working", confidence=0.9)
@@ -23,7 +27,11 @@ def test_notify_router_uses_screen_when_working_and_screen_online(app_env) -> No
     assert logs[-1]["channel"] == "screen"
 
 
-def test_notify_router_falls_back_to_feishu_when_screen_offline(app_env) -> None:
+def test_notify_router_falls_back_to_feishu_when_screen_offline(app_env, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.new_core.notify._sendFeishu",
+        lambda title, content: (True, "chat", None),
+    )
     init_db()
     db = SessionLocal()
     try:
@@ -41,7 +49,11 @@ def test_notify_router_falls_back_to_feishu_when_screen_offline(app_env) -> None
     assert result["stat"] == "fallback"
 
 
-def test_notify_router_uses_feishu_when_away_or_unknown(app_env) -> None:
+def test_notify_router_uses_feishu_when_away_or_unknown(app_env, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.new_core.notify._sendFeishu",
+        lambda title, content: (True, "chat", None),
+    )
     init_db()
     db = SessionLocal()
     try:
