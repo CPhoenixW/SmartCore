@@ -1,3 +1,12 @@
+@font-face {
+  font-family: "DSEG7";
+  src: url("https://cdn.jsdelivr.net/npm/dseg@0.46.0/fonts/DSEG7-Classic/DSEG7Classic-Regular.woff2")
+    format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --bg: #eef2f7;
   --panel: #ffffff;
@@ -6,6 +15,8 @@
   --text: #1e293b;
   --muted: #64748b;
   --accent: #2563eb;
+  --digit: #1a2332;
+  --digit-glow: rgba(37, 99, 235, 0.22);
   --ok: #16a34a;
   --warn: #d97706;
   --bad: #dc2626;
@@ -41,48 +52,68 @@ body[data-theme="light"] {
 
 .screen-shell.mode-away {
   grid-template-columns: 1fr;
+  padding: 0;
+  background: linear-gradient(160deg, #f8fafc 0%, #e8eef5 42%, #f1f5f9 100%);
 }
 
-.screen-shell.mode-away .info-pane {
+.screen-shell.mode-away .info-pane,
+.screen-shell.mode-away .brand-row,
+.screen-shell.mode-away .state-row {
   display: none;
 }
 
 .screen-shell.mode-away .time-pane {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
   justify-content: center;
   align-items: center;
-  text-align: center;
 }
 
 .screen-shell.mode-away .clock-stack {
   text-align: center;
+  gap: 18px;
 }
 
-.screen-shell.mode-away .brand-row {
-  position: absolute;
-  top: 18px;
-  right: 18px;
-  left: 18px;
+.screen-shell.mode-away .digit-clock {
+  font-size: clamp(96px, 22vw, 220px);
+  justify-content: center;
+  color: var(--digit);
+  text-shadow:
+    0 0 24px var(--digit-glow),
+    0 0 64px rgba(37, 99, 235, 0.08);
 }
 
-.screen-shell.mode-away .time-pane {
-  position: relative;
+.screen-shell.mode-away .clock-date {
+  font-size: clamp(20px, 3.2vw, 32px);
+  letter-spacing: 0.06em;
+  text-transform: none;
+  font-weight: 400;
+  color: #64748b;
 }
 
 .time-pane,
 .info-pane {
   min-width: 0;
   min-height: 0;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.04);
 }
 
 .time-pane {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 22px;
+  padding: 8px 4px 8px 8px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.info-pane {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.04);
 }
 
 .brand-row,
@@ -118,22 +149,45 @@ body[data-theme="light"] {
 }
 
 .clock-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   text-align: left;
+  flex: 1;
+  justify-content: center;
 }
 
-#clock {
-  font-size: clamp(74px, 16vw, 170px);
-  line-height: 0.95;
+.digit-clock {
+  display: flex;
+  align-items: center;
+  font-family: "DSEG7", "Courier New", monospace;
+  font-size: clamp(72px, 15vw, 168px);
+  line-height: 1;
+  font-weight: normal;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0;
-  font-weight: 600;
-  color: #1e293b;
+  letter-spacing: 0.06em;
+  color: var(--digit);
+  user-select: none;
 }
 
-#clockDate {
-  margin-top: 12px;
+.digit-sep {
+  display: inline-block;
+  padding: 0 0.06em;
+  opacity: 1;
+  transform: translateY(-0.04em);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+.digit-sep.blink-off {
+  opacity: 0.08;
+  transform: translateY(-0.04em) scale(0.92);
+}
+
+.clock-date {
+  margin: 0;
   color: var(--muted);
-  font-size: clamp(18px, 3vw, 28px);
+  font-size: clamp(17px, 2.6vw, 26px);
+  letter-spacing: 0.02em;
 }
 
 .state-row {
@@ -247,7 +301,7 @@ body[data-theme="light"] {
     grid-template-rows: auto 1fr;
   }
 
-  #clock {
+  .digit-clock {
     font-size: clamp(68px, 24vw, 128px);
   }
 }

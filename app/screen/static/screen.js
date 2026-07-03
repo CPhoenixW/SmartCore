@@ -2,7 +2,9 @@
   const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
   const wsUrl = `${wsProto}//${location.host}/screen/ws`;
   const shellEl = document.querySelector(".screen-shell");
-  const clockEl = document.getElementById("clock");
+  const clockHoursEl = document.getElementById("clockHours");
+  const clockSepEl = document.getElementById("clockSep");
+  const clockMinsEl = document.getElementById("clockMins");
   const clockDateEl = document.getElementById("clockDate");
   const stateEl = document.getElementById("currentState");
   const stateCaptionEl = document.getElementById("stateCaption");
@@ -12,25 +14,39 @@
   const wsStatusText = document.getElementById("wsStatusText");
   const lastMsgAt = document.getElementById("lastMsgAt");
   const heartbeat = document.getElementById("heartbeat");
-  const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
   let ws = null;
   let reconnectTimer = null;
   let serverOffsetMs = 0;
   let hasReminders = false;
-  let currentMode = null;
+  let currentMode = "away";
 
   function setWsConnected(connected) {
     wsStatusEl.classList.toggle("connected", connected);
     wsStatusText.textContent = connected ? "已连接" : "离线";
   }
 
+  function formatDate(now) {
+    if (currentMode === "away") {
+      return now.toLocaleDateString("en-US", {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      });
+    }
+    const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+    return `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${weekdays[now.getDay()]}`;
+  }
+
   function tickClock() {
     const now = new Date(Date.now() + serverOffsetMs);
     const h = String(now.getHours()).padStart(2, "0");
     const m = String(now.getMinutes()).padStart(2, "0");
-    clockEl.textContent = `${h}:${m}`;
-    clockDateEl.textContent =
-      `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${weekdays[now.getDay()]}`;
+    clockHoursEl.textContent = h;
+    clockMinsEl.textContent = m;
+    clockSepEl.classList.toggle("blink-off", now.getSeconds() % 2 === 1);
+    clockDateEl.textContent = formatDate(now);
+    clockDateEl.lang = currentMode === "away" ? "en" : "zh-CN";
     heartbeat.textContent = now.toLocaleTimeString("zh-CN", { hour12: false });
   }
 
@@ -44,7 +60,7 @@
   function applyLayoutMode(state) {
     const working = state === "working";
     const mode = working ? "working" : "away";
-    if (currentMode === mode) return;
+    const changed = currentMode !== mode;
     currentMode = mode;
 
     shellEl.dataset.mode = mode;
@@ -53,6 +69,9 @@
 
     if (stateRowEl) {
       stateRowEl.hidden = !working;
+    }
+    if (changed) {
+      tickClock();
     }
   }
 

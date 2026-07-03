@@ -27,8 +27,10 @@ _SCREEN_HTML = """<!doctype html>
       <div id="wsStatus" data-ws-ui="status"><span class="dot"></span><span id="wsStatusText">连接中</span></div>
     </div>
     <div class="clock-stack">
-      <div id="clock" data-ws-ui="clock">--:--</div>
-      <div id="clockDate">—</div>
+      <div id="clock" class="digit-clock" data-ws-ui="clock" aria-hidden="true">
+        <span id="clockHours">--</span><span id="clockSep" class="digit-sep">:</span><span id="clockMins">--</span>
+      </div>
+      <div id="clockDate" class="clock-date">—</div>
     </div>
     <div class="state-row">
       <div class="state-copy">

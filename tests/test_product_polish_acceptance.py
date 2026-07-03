@@ -97,6 +97,11 @@ def test_screen_is_light_landscape_side_panel_with_live_state_classes(app_env) -
 
     assert "function renderState" in js
     assert "function applyLayoutMode" in js
+    assert "function formatDate" in js
+    assert 'id="clockHours"' in html
+    assert 'class="digit-sep"' in html
+    assert "clockSepEl.classList.toggle" in js
+    assert "toLocaleDateString(\"en-US\"" in js
     assert "stateCaption" in js
     assert "className = next" in js
     assert 'data.kind === "devState"' in js
@@ -104,8 +109,11 @@ def test_screen_is_light_landscape_side_panel_with_live_state_classes(app_env) -
     assert "mode-away" in js
     assert "setWsConnected(false)" in js
 
+    assert 'font-family: "DSEG7"' in css
+    assert ".digit-sep.blink-off" in css
     assert ".screen-shell.mode-away" in css
     assert ".screen-shell.mode-away .info-pane" in css
+    assert ".screen-shell.mode-away .brand-row" in css
 
 
 def test_openclaw_agent_skill_can_operate_database_end_to_end(app_env) -> None:
