@@ -1,3 +1,3 @@
-from app.web.routes import create_web_router
+from app.web.work_routes import router as workRouter
 
-__all__ = ["create_web_router"]
+__all__ = ["workRouter"]

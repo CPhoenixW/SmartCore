@@ -7,8 +7,6 @@ from typing import Any
 
 import httpx
 
-from app.scheduler.reminder_engine import NotificationSendError
-
 FEISHU_API_BASE = "https://open.feishu.cn/open-apis"
 TOKEN_REFRESH_SAFETY_SECONDS = 300
 DEFAULT_TOKEN_TTL_SECONDS = 7200
@@ -200,27 +198,3 @@ class FeishuClient:
         if payload.get("code") != 0:
             raise FeishuAPIError(payload.get("msg", "failed to delete message"))
         return payload
-
-
-class FeishuNotificationSender:
-    """Adapter so the scheduler can deliver reminders through Feishu."""
-
-    def __init__(self, client: FeishuClient, chat_id: str) -> None:
-        self.client = client
-        self.chat_id = chat_id
-
-    def send(
-        self,
-        *,
-        card: dict[str, Any] | None = None,
-        text: str = "",
-    ) -> None:
-        try:
-            if card is not None:
-                self.client.send_interactive_card(self.chat_id, card=card)
-            elif text:
-                self.client.send_text(self.chat_id, text)
-            else:
-                raise NotificationSendError("empty notification payload")
-        except (FeishuAPIError, httpx.HTTPError) as exc:
-            raise NotificationSendError(str(exc)) from exc

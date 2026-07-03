@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     scheduler_interval_seconds: int = 60
 
     agent_api_token: str = ""
+    device_api_token: str = ""
     openclaw_events_endpoint: str = ""
     openclaw_events_token: str = ""
 

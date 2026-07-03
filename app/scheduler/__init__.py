@@ -1,15 +1,3 @@
-from app.scheduler.reminder_engine import (
-    NotificationSender,
-    NotificationSendError,
-    ReminderEngine,
-    SchedulerConfig,
-)
-from app.scheduler.runner import SchedulerRunner
+from app.scheduler.service import SchedulerService, build_scheduler_service
 
-__all__ = [
-    "NotificationSendError",
-    "NotificationSender",
-    "ReminderEngine",
-    "SchedulerConfig",
-    "SchedulerRunner",
-]
+__all__ = ["SchedulerService", "build_scheduler_service"]

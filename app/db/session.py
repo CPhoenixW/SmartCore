@@ -53,46 +53,23 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
-def _ensure_message_log_trace_columns() -> None:
-    from sqlalchemy import inspect, text
-
-    engine, _ = _ensure_engine()
-    inspector = inspect(engine)
-    if "message_logs" not in inspector.get_table_names():
-        return
-    existing = {column["name"] for column in inspector.get_columns("message_logs")}
-    statements = []
-    if "action_input" not in existing:
-        statements.append("ALTER TABLE message_logs ADD COLUMN action_input JSON")
-    if "db_result" not in existing:
-        statements.append("ALTER TABLE message_logs ADD COLUMN db_result JSON")
-    if not statements:
-        return
-    with engine.begin() as connection:
-        for statement in statements:
-            connection.execute(text(statement))
+def dispose_engine() -> None:
+    global _engine, _session_factory, _bound_database_url
+    if _engine is not None:
+        _engine.dispose()
+    _engine = None
+    _session_factory = None
+    _bound_database_url = None
 
 
-def _ensure_reminder_dedup_key_column() -> None:
-    from sqlalchemy import inspect, text
-
-    engine, _ = _ensure_engine()
-    inspector = inspect(engine)
-    if "reminders" not in inspector.get_table_names():
-        return
-    existing = {column["name"] for column in inspector.get_columns("reminders")}
-    if "dedup_key" in existing:
-        return
-    with engine.begin() as connection:
-        connection.execute(text("ALTER TABLE reminders ADD COLUMN dedup_key VARCHAR(200)"))
+def reset_engine_for_tests() -> None:
+    dispose_engine()
 
 
 def init_db() -> None:
-    from app.db import models  # noqa: F401
+    from app.new_core import models  # noqa: F401
 
     settings = get_settings()
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
     engine, _ = _ensure_engine()
     Base.metadata.create_all(bind=engine)
-    _ensure_message_log_trace_columns()
-    _ensure_reminder_dedup_key_column()
