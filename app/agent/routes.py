@@ -153,7 +153,7 @@ def createDevRouter() -> APIRouter:
     router = APIRouter(tags=["device"])
 
     @router.post("/dev/state", dependencies=[Depends(requireDeviceToken)])
-    def postDevState(body: DevStateBody, db: Session = Depends(get_db)) -> dict[str, Any]:
+    async def postDevState(body: DevStateBody, db: Session = Depends(get_db)) -> dict[str, Any]:
         state = crud.upsertDevState(
             db,
             devId=body.devId,
@@ -161,6 +161,16 @@ def createDevRouter() -> APIRouter:
             confidence=body.confidence,
             seenAt=body.seenAt,
             meta=body.meta,
+        )
+        await screenManager.broadcast(
+            {
+                "kind": "devState",
+                "devId": state["devId"],
+                "state": state["state"],
+                "confidence": state.get("confidence"),
+                "seenAt": state.get("seenAt"),
+                "meta": state.get("meta"),
+            }
         )
         return {"ok": True, "data": state}
 

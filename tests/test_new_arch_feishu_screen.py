@@ -80,3 +80,22 @@ def test_screen_websocket_sends_dev_state_after_connect(app_env) -> None:
         assert dev_msg["kind"] == "devState"
         assert dev_msg["state"] == "working"
         assert dev_msg["devId"] == "pi"
+
+
+def test_dev_state_broadcasts_to_connected_screen(app_env) -> None:
+    client = TestClient(create_app())
+
+    with client.websocket_connect("/screen/ws") as ws:
+        assert ws.receive_json()["kind"] == "state"
+
+        posted = client.post(
+            "/dev/state",
+            headers={"X-SmartCore-Device-Token": "device-secret"},
+            json={"devId": "pi", "state": "away", "confidence": 0.91},
+        )
+        assert posted.status_code == 200
+
+        dev_msg = ws.receive_json()
+        assert dev_msg["kind"] == "devState"
+        assert dev_msg["state"] == "away"
+        assert dev_msg["devId"] == "pi"

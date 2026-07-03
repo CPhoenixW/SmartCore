@@ -1,10 +1,12 @@
 (function () {
   const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
   const wsUrl = `${wsProto}//${location.host}/screen/ws`;
+  const shellEl = document.querySelector(".screen-shell");
   const clockEl = document.getElementById("clock");
   const clockDateEl = document.getElementById("clockDate");
   const stateEl = document.getElementById("currentState");
   const stateCaptionEl = document.getElementById("stateCaption");
+  const stateRowEl = document.querySelector(".state-row");
   const reminderEl = document.getElementById("reminderArea");
   const wsStatusEl = document.getElementById("wsStatus");
   const wsStatusText = document.getElementById("wsStatusText");
@@ -15,6 +17,7 @@
   let reconnectTimer = null;
   let serverOffsetMs = 0;
   let hasReminders = false;
+  let currentMode = null;
 
   function setWsConnected(connected) {
     wsStatusEl.classList.toggle("connected", connected);
@@ -38,6 +41,21 @@
     unknown: "状态未知",
   };
 
+  function applyLayoutMode(state) {
+    const working = state === "working";
+    const mode = working ? "working" : "away";
+    if (currentMode === mode) return;
+    currentMode = mode;
+
+    shellEl.dataset.mode = mode;
+    shellEl.classList.toggle("mode-working", working);
+    shellEl.classList.toggle("mode-away", !working);
+
+    if (stateRowEl) {
+      stateRowEl.hidden = !working;
+    }
+  }
+
   function renderState(state) {
     const next = state || "unknown";
     stateEl.textContent = next;
@@ -45,9 +63,11 @@
     if (stateCaptionEl) {
       stateCaptionEl.textContent = STATE_CAPTIONS[next] || next;
     }
+    applyLayoutMode(next);
   }
 
   function addReminder(title, content) {
+    if (currentMode !== "working") return;
     if (!hasReminders) {
       reminderEl.innerHTML = "";
       reminderEl.classList.remove("empty");
@@ -68,6 +88,7 @@
       serverOffsetMs = new Date(data.serverNow).getTime() - Date.now();
       tickClock();
     } else if (data.kind === "devState") {
+      if (data.devId && data.devId !== "pi") return;
       renderState(data.state);
     } else if (data.kind === "reminder") {
       addReminder(data.title, data.content);

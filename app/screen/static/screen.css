@@ -39,6 +39,35 @@ body[data-theme="light"] {
   padding: 18px;
 }
 
+.screen-shell.mode-away {
+  grid-template-columns: 1fr;
+}
+
+.screen-shell.mode-away .info-pane {
+  display: none;
+}
+
+.screen-shell.mode-away .time-pane {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+.screen-shell.mode-away .clock-stack {
+  text-align: center;
+}
+
+.screen-shell.mode-away .brand-row {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  left: 18px;
+}
+
+.screen-shell.mode-away .time-pane {
+  position: relative;
+}
+
 .time-pane,
 .info-pane {
   min-width: 0;

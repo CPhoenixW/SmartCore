@@ -96,10 +96,16 @@ def test_screen_is_light_landscape_side_panel_with_live_state_classes(app_env) -
     assert ".screen-shell" in css
 
     assert "function renderState" in js
+    assert "function applyLayoutMode" in js
     assert "stateCaption" in js
     assert "className = next" in js
     assert 'data.kind === "devState"' in js
+    assert "mode-working" in js
+    assert "mode-away" in js
     assert "setWsConnected(false)" in js
+
+    assert ".screen-shell.mode-away" in css
+    assert ".screen-shell.mode-away .info-pane" in css
 
 
 def test_openclaw_agent_skill_can_operate_database_end_to_end(app_env) -> None:
