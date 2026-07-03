@@ -236,7 +236,8 @@ def test_screen_page_has_websocket_ui_markers(app_env) -> None:
     assert 'data-ws-ui="clock"' in html
     assert 'id="currentState"' in html
     assert 'data-ws-ui="state"' in html
-    assert 'id="reminderArea"' in html
+    assert 'id="todayEvtList"' in html
+    assert 'id="reminderPage"' in html
     assert 'data-ws-ui="reminder"' in html
     assert 'id="wsStatus"' in html
     assert 'data-ws-ui="status"' in html

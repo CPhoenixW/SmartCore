@@ -83,7 +83,8 @@ def test_screen_is_light_landscape_side_panel_with_live_state_classes(app_env) -
     assert 'data-theme="light"' in html
     assert 'id="currentState"' in html
     assert 'id="stateCaption"' in html
-    assert 'id="reminderArea"' in html
+    assert 'id="todayEvtList"' in html
+    assert 'id="reminderPage"' in html
     assert "横屏" not in html
 
     assert "--bg: #080b10" not in css

@@ -150,9 +150,9 @@ header h1 {
 
 .work-nav {
   display: flex;
-  gap: 0.3rem;
+  gap: 0.65rem;
   overflow-x: auto;
-  padding: 0.45rem 0.75rem;
+  padding: 0.42rem 0.95rem;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   position: sticky;
@@ -162,26 +162,35 @@ header h1 {
 
 .nav-tab {
   flex: 0 0 auto;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface2);
+  position: relative;
+  border: none;
+  border-radius: 0;
+  background: transparent;
   color: var(--muted);
-  padding: 0.38rem 0.72rem;
+  padding: 0.36rem 0.12rem;
   cursor: pointer;
   font-size: 0.8rem;
-  font-weight: 500;
-  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  font-weight: 560;
+  transition: color 0.15s;
 }
 
 .nav-tab:hover {
-  border-color: var(--border-strong);
   color: var(--text);
 }
 
 .nav-tab.active {
   color: var(--accent);
-  border-color: #93c5fd;
-  background: var(--accent-soft);
+}
+
+.nav-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -0.43rem;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
 }
 
 .view-shell {

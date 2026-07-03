@@ -43,12 +43,20 @@ _SCREEN_HTML = """<!doctype html>
   </section>
   <section class="info-pane">
     <div class="pane-head">
-      <span class="pane-label">Reminders</span>
+      <span class="pane-label">Today</span>
       <span id="lastMsgAt" class="pane-meta">—</span>
     </div>
-    <div id="reminderArea" data-ws-ui="reminder" class="empty">No reminders</div>
+    <div id="todayEvtList" class="today-list empty">No events today</div>
   </section>
 </main>
+<section id="reminderPage" data-ws-ui="reminder" class="reminder-page" aria-live="assertive" aria-hidden="true">
+  <div class="reminder-shell">
+    <span class="reminder-kicker">Reminder</span>
+    <h1 id="reminderPageTitle">提醒</h1>
+    <p id="reminderPageContent">—</p>
+    <button id="reminderDismiss" type="button">知道了</button>
+  </div>
+</section>
 <script src="/static/screen/screen.js"></script>
 </body>
 </html>"""
