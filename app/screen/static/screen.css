@@ -65,7 +65,12 @@ body[data-theme="light"] {
   flex: 1;
   justify-content: center;
   gap: 12px;
-  padding: 12px 0 20px;
+  padding: 16px 0 20px 40px;
+  align-items: flex-start;
+}
+
+.screen-shell.mode-working .digit-clock {
+  margin-left: 16px;
 }
 
 .screen-shell.mode-working .clock-date {
@@ -74,6 +79,8 @@ body[data-theme="light"] {
   font-weight: 380;
   letter-spacing: 0.04em;
   color: #64748b;
+  margin-top: 14px;
+  margin-left: 32px;
 }
 
 .screen-shell.mode-working .info-pane {
