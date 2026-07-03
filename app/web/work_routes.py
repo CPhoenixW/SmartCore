@@ -14,29 +14,32 @@ _WORK_HTML = """<!doctype html>
 <title>SmartCore Work</title>
 <link rel="stylesheet" href="/static/work/work.css">
 </head>
-<body data-app="smartcore-work">
+<body data-app="smartcore-work" data-theme="light">
 <header class="app-header">
   <div>
     <h1>SmartCore 工作台</h1>
-    <p>事件、灵感、课程、设备和日志分视图管理</p>
   </div>
   <div class="header-meta">
     <span class="status-pill busy" id="apiStatus">API …</span>
-    <span id="lastRefresh">—</span>
+    <span class="live-indicator" id="liveIndicator" aria-live="polite">
+      <span class="live-dot" id="liveDot"></span>
+      <span id="lastRefresh">—</span>
+    </span>
     <button type="button" class="btn btn-sm" data-action="refreshAll">全部刷新</button>
   </div>
 </header>
 <nav class="work-nav" aria-label="工作台视图">
-  <button type="button" class="nav-tab active" data-view-tab="evt">今日/事项</button>
+  <button type="button" class="nav-tab active" data-view-tab="evtAdd">添加事件</button>
+  <button type="button" class="nav-tab" data-view-tab="evtBoard">事项看板</button>
   <button type="button" class="nav-tab" data-view-tab="idea">灵感</button>
   <button type="button" class="nav-tab" data-view-tab="course">课程</button>
   <button type="button" class="nav-tab" data-view-tab="dev">设备</button>
   <button type="button" class="nav-tab" data-view-tab="log">日志</button>
 </nav>
 <main class="view-shell">
-  <section class="view active" data-view="evt">
+  <section class="view active" data-view="evtAdd">
     <section class="panel" id="quickCreatePanel">
-      <div class="panel-head"><span>快速创建</span></div>
+      <div class="panel-head"><span>添加事件</span></div>
       <div class="panel-body quick-grid">
         <form class="quick-form" id="lifeEvtForm" data-endpoint="/api/lifeEvt">
           <strong>lifeEvt</strong>
@@ -57,6 +60,8 @@ _WORK_HTML = """<!doctype html>
         </form>
       </div>
     </section>
+  </section>
+  <section class="view" data-view="evtBoard">
     <section class="panel" id="evtBoard">
       <div class="panel-head">
         <span>事项看板</span>
@@ -74,7 +79,7 @@ _WORK_HTML = """<!doctype html>
   </section>
   <section class="view" data-view="idea">
     <section class="panel">
-      <div class="panel-head"><span>灵感捕获</span></div>
+      <div class="panel-head"><span>灵感</span></div>
       <div class="panel-body">
         <form class="quick-form wide-form" id="ideaForm" data-endpoint="/api/idea">
           <label>内容<textarea name="content" required placeholder="随手想法、任务雏形、待整理输入"></textarea></label>

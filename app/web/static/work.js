@@ -1,7 +1,10 @@
 const apiStatusEl = document.getElementById("apiStatus");
 const lastRefreshEl = document.getElementById("lastRefresh");
+const liveDotEl = document.getElementById("liveDot");
 const flashEl = document.getElementById("flash");
 const evtSearchEl = document.getElementById("evtSearch");
+const DEV_REFRESH_MS = 15000;
+const VIEW_REFRESH_MS = 30000;
 let evtCache = [];
 let tplCache = [];
 
@@ -59,6 +62,10 @@ function touchRefresh() {
   lastRefreshEl.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
 }
 
+function setLivePulse(on) {
+  liveDotEl?.classList.toggle("pulse", on);
+}
+
 function activeView(name) {
   document.querySelectorAll("[data-view-tab]").forEach((tab) => {
     tab.classList.toggle("active", tab.dataset.viewTab === name);
@@ -67,6 +74,18 @@ function activeView(name) {
     view.classList.toggle("active", view.dataset.view === name);
   });
   location.hash = name;
+}
+
+function getActiveViewName() {
+  return document.querySelector("[data-view].active")?.dataset.view || "evtAdd";
+}
+
+function isUserTyping() {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  return Boolean(el.isContentEditable);
 }
 
 function evtExtra(evt) {
@@ -180,7 +199,41 @@ async function loadActLog() {
 }
 
 async function refreshAll() {
-  await Promise.all([loadEvts(), loadIdeas(), loadCourses(), loadDevState(), loadNotifyLog(), loadMsgLog(), loadActLog()]);
+  setLivePulse(true);
+  try {
+    await Promise.all([loadEvts(), loadIdeas(), loadCourses(), loadDevState(), loadNotifyLog(), loadMsgLog(), loadActLog()]);
+  } finally {
+    setLivePulse(false);
+  }
+}
+
+async function refreshActiveView() {
+  if (isUserTyping()) return;
+  const view = getActiveViewName();
+  setLivePulse(true);
+  try {
+    if (view === "evtAdd" || view === "evtBoard") await loadEvts();
+    else if (view === "idea") await loadIdeas();
+    else if (view === "course") await loadCourses();
+    else if (view === "dev") await loadDevState();
+    else if (view === "log") {
+      const logTab = document.querySelector(".log-tab.active")?.dataset.logTab;
+      if (logTab === "msg") await loadMsgLog();
+      else if (logTab === "act") await loadActLog();
+      else await loadNotifyLog();
+    }
+  } finally {
+    setLivePulse(false);
+  }
+}
+
+async function refreshDevStatePeriodic() {
+  setLivePulse(true);
+  try {
+    await loadDevState();
+  } finally {
+    setLivePulse(false);
+  }
 }
 
 function formVal(form, name) { return form.elements[name]?.value?.trim() || ""; }
@@ -257,5 +310,9 @@ document.querySelectorAll(".log-tab").forEach((tab) => {
 });
 
 evtSearchEl?.addEventListener("input", applyEvtSearch);
-activeView((location.hash || "#evt").slice(1));
+
+const initialView = (location.hash || "#evtAdd").slice(1);
+activeView(["evtAdd", "evtBoard", "idea", "course", "dev", "log"].includes(initialView) ? initialView : "evtAdd");
 refreshAll();
+setInterval(refreshDevStatePeriodic, DEV_REFRESH_MS);
+setInterval(refreshActiveView, VIEW_REFRESH_MS);

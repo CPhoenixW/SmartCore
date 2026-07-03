@@ -147,27 +147,43 @@ def test_work_dashboard_has_operational_controls(app_env) -> None:
     client = TestClient(create_app())
     html = client.get("/work").text
     js = client.get("/static/work/work.js").text
+    css = client.get("/static/work/work.css").text
 
     assert 'href="/static/work/work.css"' in html
     assert 'src="/static/work/work.js"' in html
     assert 'data-app="smartcore-work"' in html
+    assert 'data-theme="light"' in html
     assert client.get("/static/work/work.css").status_code == 200
     assert client.get("/static/work/work.js").status_code == 200
 
-    assert 'id="lifeEvtForm"' in html
-    assert 'id="ddlEvtForm"' in html
+    assert "--surface: #ffffff" in css
+    assert 'body[data-theme="light"]' in css
+
+    assert "添加事件" in html
+    assert "事项看板" in html
+    for view in ("evtAdd", "evtBoard", "idea", "course", "dev", "log"):
+        assert f'data-view-tab="{view}"' in html
+        assert f'data-view="{view}"' in html
+
+    evt_add_start = html.index('data-view="evtAdd"')
+    evt_board_start = html.index('data-view="evtBoard"')
+    evt_add_section = html[evt_add_start:evt_board_start]
+    evt_board_section = html[evt_board_start:html.index('data-view="idea"')]
+    assert 'id="lifeEvtForm"' in evt_add_section
+    assert 'id="ddlEvtForm"' in evt_add_section
+    assert 'id="lifeEvtForm"' not in evt_board_section
+    assert 'id="ddlEvtForm"' not in evt_board_section
+
     assert 'id="ideaForm"' in html
     assert 'id="courseTplForm"' in html
     assert 'id="courseInstForm"' in html
-    for view in ("evt", "idea", "course", "dev", "log"):
-        assert f'data-view-tab="{view}"' in html
-        assert f'data-view="{view}"' in html
     assert 'id="evtBoard"' in html
     assert 'id="evtListTodo"' in html
     assert 'id="evtListDone"' in html
     assert 'id="evtListCancelled"' in html
     assert 'id="evtSearch"' in html
     assert 'id="apiStatus"' in html
+    assert 'id="liveIndicator"' in html
     assert 'id="devStatePanel"' in html
     assert 'id="notifyLogPanel"' in html
     assert 'id="msgLogPanel"' in html
@@ -178,6 +194,16 @@ def test_work_dashboard_has_operational_controls(app_env) -> None:
     assert 'data-endpoint="/api/idea"' in html
     assert 'data-endpoint="/api/courseTpl"' in html
     assert 'data-endpoint="/api/courseInst"' in html
+
+    assert "事件、灵感、课程、设备和日志" not in html
+    assert "分视图管理" not in html
+
+    assert "refreshActiveView" in js
+    assert "refreshDevStatePeriodic" in js
+    assert "isUserTyping" in js
+    assert "setInterval" in js
+    assert "DEV_REFRESH_MS" in js
+    assert "VIEW_REFRESH_MS" in js
 
     assert 'data-action="completeEvt"' in js
     assert 'data-action="cancelEvt"' in js
