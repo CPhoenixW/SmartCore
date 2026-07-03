@@ -7,6 +7,11 @@ const DEV_REFRESH_MS = 15000;
 const VIEW_REFRESH_MS = 30000;
 let evtCache = [];
 let tplCache = [];
+let activeEvtId = null;
+
+const EVT_TYPE_LABELS = { life: "生活", ddl: "截止", course: "课程" };
+const EVT_STAT_LABELS = { todo: "待办", done: "完成", cancelled: "已取消" };
+const EVT_PRIO_LABELS = { high: "高", mid: "中", low: "低" };
 
 function $(id) { return document.getElementById(id); }
 
@@ -88,30 +93,35 @@ function isUserTyping() {
   return Boolean(el.isContentEditable);
 }
 
+function isEvtDetailOpen() {
+  return $("evtDetailDrawer")?.classList.contains("open") ?? false;
+}
+
 function evtExtra(evt) {
-  if (evt.evtType === "life") return `due ${fmtDtLocal(evt.dueAt)}`;
-  if (evt.evtType === "ddl") return `ddl ${fmtDtLocal(evt.ddlAt)}${evt.hardDdl ? " · hard" : ""}`;
-  return `course ${evt.classDate || "—"}`;
+  if (evt.evtType === "life") return `截止 ${fmtDtLocal(evt.dueAt)}`;
+  if (evt.evtType === "ddl") return `DDL ${fmtDtLocal(evt.ddlAt)}${evt.hardDdl ? " · 硬性" : ""}`;
+  return `上课 ${evt.classDate || "—"}`;
+}
+
+function shortDesc(desc, max = 88) {
+  if (!desc) return "";
+  const text = String(desc).trim();
+  return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
 function renderEvtCard(evt) {
-  return `<div class="evt-card" data-evt-id="${evt.evtId}" data-search="${escapeHtml(`${evt.title} ${evt.desc || ""} ${evt.evtType} ${evt.prio} ${evt.stat}`.toLowerCase())}">
-    <div class="title-row">
-      <input class="inline-title" data-action="fieldEdit" data-field="title" data-evt-id="${evt.evtId}" value="${escapeHtml(evt.title)}">
-      <select data-action="fieldEdit" data-field="stat" data-evt-id="${evt.evtId}">
-        ${["todo", "done", "cancelled"].map((s) => `<option value="${s}"${evt.stat === s ? " selected" : ""}>${s}</option>`).join("")}
-      </select>
+  const desc = shortDesc(evt.desc);
+  const ariaLabel = `打开事项：${evt.title}`;
+  return `<article class="evt-card" role="button" data-action="openEvtDetail" data-evt-id="${evt.evtId}" tabindex="0" aria-label="${escapeHtml(ariaLabel)}" data-search="${escapeHtml(`${evt.title} ${evt.desc || ""} ${evt.evtType} ${evt.prio} ${evt.stat}`.toLowerCase())}">
+    <div class="board-card-title">${escapeHtml(evt.title)}</div>
+    <div class="board-card-meta">
+      <span class="tag">${escapeHtml(EVT_TYPE_LABELS[evt.evtType] || evt.evtType)}</span>
+      <span class="tag stat-${escapeHtml(evt.stat)}">${escapeHtml(EVT_STAT_LABELS[evt.stat] || evt.stat)}</span>
+      <span class="tag prio-${escapeHtml(evt.prio)}">${escapeHtml(EVT_PRIO_LABELS[evt.prio] || evt.prio)}</span>
+      <span class="board-card-time">${escapeHtml(evtExtra(evt))}</span>
     </div>
-    <textarea class="inline-desc" data-action="fieldEdit" data-field="desc" data-evt-id="${evt.evtId}" placeholder="描述">${escapeHtml(evt.desc || "")}</textarea>
-    <div class="meta-line"><span class="tag">${evt.evtType}</span><span class="tag prio-${evt.prio}">${evt.prio}</span> ${evtExtra(evt)}</div>
-    <div class="evt-actions">
-      <select data-action="fieldEdit" data-field="prio" data-evt-id="${evt.evtId}">
-        ${["high", "mid", "low"].map((p) => `<option value="${p}"${evt.prio === p ? " selected" : ""}>${p}</option>`).join("")}
-      </select>
-      <button type="button" class="btn btn-sm btn-success" data-action="completeEvt" data-evt-id="${evt.evtId}">完成</button>
-      <button type="button" class="btn btn-sm btn-danger" data-action="cancelEvt" data-evt-id="${evt.evtId}">取消</button>
-    </div>
-  </div>`;
+    ${desc ? `<div class="board-card-desc">${escapeHtml(desc)}</div>` : ""}
+  </article>`;
 }
 
 function applyEvtSearch() {
@@ -119,6 +129,12 @@ function applyEvtSearch() {
   document.querySelectorAll(".evt-card").forEach((card) => {
     card.classList.toggle("hidden-by-search", q && !(card.dataset.search || "").includes(q));
   });
+}
+
+function markActiveEvtCard(evtId) {
+  document.querySelectorAll(".evt-card.active").forEach((card) => card.classList.remove("active"));
+  if (!evtId) return;
+  document.querySelector(`.evt-card[data-evt-id="${evtId}"]`)?.classList.add("active");
 }
 
 function renderEvtBoard(evts) {
@@ -131,6 +147,87 @@ function renderEvtBoard(evts) {
     $(`${stat}Count`).textContent = groups[stat].length;
   }
   applyEvtSearch();
+  if (activeEvtId) markActiveEvtCard(activeEvtId);
+}
+
+function populateEvtDetail(evt) {
+  const form = $("evtDetailForm");
+  if (!form || !evt) return;
+  form.dataset.evtId = evt.evtId;
+  form.elements.title.value = evt.title || "";
+  form.elements.desc.value = evt.desc || "";
+  form.elements.stat.value = evt.stat || "todo";
+  form.elements.prio.value = evt.prio || "mid";
+}
+
+function openEvtDetail(evtId) {
+  const evt = evtCache.find((e) => e.evtId === evtId);
+  if (!evt) return;
+  activeEvtId = evtId;
+  populateEvtDetail(evt);
+  const drawer = $("evtDetailDrawer");
+  drawer?.classList.add("open");
+  drawer?.setAttribute("aria-hidden", "false");
+  markActiveEvtCard(evtId);
+  $("evtDetailForm")?.elements.title?.focus();
+}
+
+function closeEvtDetail() {
+  activeEvtId = null;
+  const drawer = $("evtDetailDrawer");
+  drawer?.classList.remove("open");
+  drawer?.setAttribute("aria-hidden", "true");
+  markActiveEvtCard(null);
+}
+
+async function saveEvtDetail() {
+  const form = $("evtDetailForm");
+  const evtId = form?.dataset.evtId;
+  if (!evtId) return;
+  const resp = await api(`/api/evt/${evtId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: form.elements.title.value.trim(),
+      desc: form.elements.desc.value.trim() || null,
+      stat: form.elements.stat.value,
+      prio: form.elements.prio.value,
+    }),
+  });
+  if (resp.ok) {
+    showFlash("已更新");
+    closeEvtDetail();
+    await loadEvts();
+    await loadActLog();
+  }
+}
+
+async function completeEvtDetail() {
+  const evtId = $("evtDetailForm")?.dataset.evtId;
+  if (!evtId) return;
+  const resp = await api(`/api/evt/${evtId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ stat: "done" }),
+  });
+  if (resp.ok) {
+    showFlash("已完成");
+    closeEvtDetail();
+    await loadEvts();
+    await loadActLog();
+  }
+}
+
+async function cancelEvtDetail() {
+  const evtId = $("evtDetailForm")?.dataset.evtId;
+  if (!evtId) return;
+  const resp = await api(`/api/evt/${evtId}`, { method: "DELETE" });
+  if (resp.ok) {
+    showFlash("已取消");
+    closeEvtDetail();
+    await loadEvts();
+    await loadActLog();
+  }
 }
 
 async function loadEvts() {
@@ -262,7 +359,8 @@ async function refreshActiveView() {
   const view = getActiveViewName();
   setLivePulse(true);
   try {
-    if (view === "evtAdd" || view === "evtBoard") await loadEvts();
+    if (view === "evtAdd") await loadEvts();
+    else if (view === "evtBoard" && !isEvtDetailOpen()) await loadEvts();
     else if (view === "idea") await loadIdeas();
     else if (view === "course") await loadCourses();
     else if (view === "dev") await loadDevState();
@@ -326,8 +424,13 @@ document.body.addEventListener("click", async (ev) => {
   else if (a === "refreshNotify") await loadNotifyLog();
   else if (a === "refreshMsg") await loadMsgLog();
   else if (a === "refreshAct") await loadActLog();
-  else if (a === "completeEvt") await patchEvt(btn.dataset.evtId, { stat: "done" });
-  else if (a === "cancelEvt") await api(`/api/evt/${btn.dataset.evtId}`, { method: "DELETE" }).then(loadEvts);
+  else if (a === "openEvtDetail") openEvtDetail(btn.dataset.evtId);
+  else if (a === "closeEvtDetail") closeEvtDetail();
+  else if (a === "saveEvtDetail") await saveEvtDetail();
+  else if (a === "completeEvtDetail") await completeEvtDetail();
+  else if (a === "cancelEvtDetail") await cancelEvtDetail();
+  else if (btn.matches('[data-action="completeEvt"]')) await patchEvt(btn.dataset.evtId, { stat: "done" });
+  else if (btn.matches('[data-action="cancelEvt"]')) await api(`/api/evt/${btn.dataset.evtId}`, { method: "DELETE" }).then(loadEvts);
   else if (a === "ideaToEvt") {
     const title = document.querySelector(`[data-idea-title="${btn.dataset.ideaId}"]`)?.value || "灵感事项";
     await api(`/api/idea/${btn.dataset.ideaId}/toEvt`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, dueAt: null }) });
@@ -351,6 +454,20 @@ document.body.addEventListener("blur", async (ev) => {
   if (!evt || String(evt[el.dataset.field] || "") === el.value) return;
   await patchEvt(el.dataset.evtId, { [el.dataset.field]: el.value });
 }, true);
+
+document.body.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && isEvtDetailOpen()) {
+    ev.preventDefault();
+    closeEvtDetail();
+    return;
+  }
+  const card = ev.target.closest('[data-action="openEvtDetail"]');
+  if (!card) return;
+  if (ev.key === "Enter" || ev.key === " ") {
+    ev.preventDefault();
+    openEvtDetail(card.dataset.evtId);
+  }
+});
 
 document.querySelectorAll(".log-tab").forEach((tab) => {
   tab.addEventListener("click", () => {

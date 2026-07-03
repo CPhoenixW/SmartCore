@@ -170,6 +170,26 @@ _WORK_HTML = """<!doctype html>
     </section>
   </section>
 </main>
+<div id="evtDetailDrawer" class="evt-detail-drawer" aria-hidden="true">
+  <div class="evt-detail-backdrop" data-action="closeEvtDetail"></div>
+  <aside class="evt-detail-panel" role="dialog" aria-labelledby="evtDetailTitle">
+    <div class="evt-detail-head">
+      <h2 id="evtDetailTitle">事项详情</h2>
+      <button type="button" class="btn btn-sm evt-detail-close" data-action="closeEvtDetail" aria-label="关闭">×</button>
+    </div>
+    <form id="evtDetailForm" class="drawer-form">
+      <label class="drawer-field">标题<input name="title" required autocomplete="off"></label>
+      <label class="drawer-field">描述<textarea name="desc" rows="4" placeholder="可选描述"></textarea></label>
+      <label class="drawer-field">状态<select name="stat"><option value="todo">待办</option><option value="done">完成</option><option value="cancelled">已取消</option></select></label>
+      <label class="drawer-field">优先级<select name="prio"><option value="high">高</option><option value="mid">中</option><option value="low">低</option></select></label>
+      <div class="drawer-form-actions">
+        <button type="button" class="btn btn-primary" data-action="saveEvtDetail">保存</button>
+        <button type="button" class="btn btn-success" data-action="completeEvtDetail">完成</button>
+        <button type="button" class="btn btn-danger" data-action="cancelEvtDetail">取消事项</button>
+      </div>
+    </form>
+  </aside>
+</div>
 <div class="flash" id="flash"></div>
 <script type="module" src="/static/work/work.js"></script>
 </body>
