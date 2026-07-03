@@ -46,6 +46,12 @@ def create_app() -> FastAPI:
 
     static_dir = Path(__file__).resolve().parent / "web" / "static"
     app.mount("/static/work", StaticFiles(directory=static_dir), name="work_static")
+    screen_static_dir = Path(__file__).resolve().parent / "screen" / "static"
+    app.mount(
+        "/static/screen",
+        StaticFiles(directory=screen_static_dir),
+        name="screen_static",
+    )
 
     return app
 

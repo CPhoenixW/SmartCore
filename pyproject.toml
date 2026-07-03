@@ -19,6 +19,7 @@ dependencies = [
     "python-multipart",
     "jinja2",
     "cryptography",
+    "websockets",
 ]
 
 [project.optional-dependencies]
@@ -34,7 +35,7 @@ where = ["."]
 include = ["app*"]
 
 [tool.setuptools.package-data]
-"app" = ["db/sql/*.sql", "web/static/*"]
+"app" = ["db/sql/*.sql", "web/static/*", "screen/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

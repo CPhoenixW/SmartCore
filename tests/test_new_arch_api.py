@@ -157,6 +157,11 @@ def test_work_dashboard_has_operational_controls(app_env) -> None:
     assert 'id="lifeEvtForm"' in html
     assert 'id="ddlEvtForm"' in html
     assert 'id="ideaForm"' in html
+    assert 'id="courseTplForm"' in html
+    assert 'id="courseInstForm"' in html
+    for view in ("evt", "idea", "course", "dev", "log"):
+        assert f'data-view-tab="{view}"' in html
+        assert f'data-view="{view}"' in html
     assert 'id="evtBoard"' in html
     assert 'id="evtListTodo"' in html
     assert 'id="evtListDone"' in html
@@ -171,11 +176,17 @@ def test_work_dashboard_has_operational_controls(app_env) -> None:
     assert 'data-endpoint="/api/lifeEvt"' in html
     assert 'data-endpoint="/api/ddlEvt"' in html
     assert 'data-endpoint="/api/idea"' in html
+    assert 'data-endpoint="/api/courseTpl"' in html
+    assert 'data-endpoint="/api/courseInst"' in html
 
     assert 'data-action="completeEvt"' in js
     assert 'data-action="cancelEvt"' in js
-    assert 'data-action="setPrio"' in js
+    assert 'data-action="fieldEdit"' in js
+    assert 'data-action="ideaToEvt"' in js
+    assert 'data-action="undoAct"' in js
     assert '"/api/evt"' in js
+    assert '"/api/courseTpl"' in js
+    assert '"/api/courseInst"' in js
 
     assert "pending" not in html.lower()
     assert "pending" not in js.lower()
@@ -185,9 +196,13 @@ def test_work_dashboard_has_operational_controls(app_env) -> None:
 def test_screen_page_has_websocket_ui_markers(app_env) -> None:
     client = TestClient(create_app())
     html = client.get("/screen").text
+    js = client.get("/static/screen/screen.js").text
 
-    assert "/screen/ws" in html
-    assert "WebSocket" in html
+    assert 'href="/static/screen/screen.css"' in html
+    assert 'src="/static/screen/screen.js"' in html
+    assert 'data-app="smartcore-screen"' in html
+    assert client.get("/static/screen/screen.css").status_code == 200
+    assert client.get("/static/screen/screen.js").status_code == 200
     assert 'id="clock"' in html
     assert 'data-ws-ui="clock"' in html
     assert 'id="currentState"' in html
@@ -196,4 +211,7 @@ def test_screen_page_has_websocket_ui_markers(app_env) -> None:
     assert 'data-ws-ui="reminder"' in html
     assert 'id="wsStatus"' in html
     assert 'data-ws-ui="status"' in html
-    assert "handleWsMessage" in html
+    assert "/screen/ws" in js
+    assert "WebSocket" in js
+    assert "handleWsMessage" in js
+    assert "screen-shell" in html

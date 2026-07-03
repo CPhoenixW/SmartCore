@@ -2,11 +2,12 @@ const apiStatusEl = document.getElementById("apiStatus");
 const lastRefreshEl = document.getElementById("lastRefresh");
 const flashEl = document.getElementById("flash");
 const evtSearchEl = document.getElementById("evtSearch");
-
 let evtCache = [];
+let tplCache = [];
+
+function $(id) { return document.getElementById(id); }
 
 function setApiStatus(state, label) {
-  if (!apiStatusEl) return;
   apiStatusEl.className = `status-pill ${state}`;
   apiStatusEl.textContent = label;
 }
@@ -16,15 +17,11 @@ async function api(path, opts) {
   try {
     const resp = await fetch(path, opts);
     const data = await resp.json();
-    if (!resp.ok) {
-      setApiStatus("err", `API ${resp.status}`);
-      return { ok: false, ...data };
-    }
-    setApiStatus("ok", "API 在线");
-    return data;
+    setApiStatus(resp.ok ? "ok" : "err", resp.ok ? "API 在线" : `API ${resp.status}`);
+    return { ok: resp.ok, ...data };
   } catch {
     setApiStatus("err", "API 离线");
-    return { ok: false };
+    return { ok: false, data: null };
   }
 }
 
@@ -34,13 +31,17 @@ function showFlash(msg) {
   setTimeout(() => flashEl.classList.remove("show"), 2200);
 }
 
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function fmtDtLocal(iso) {
   if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleString("zh-CN", { hour12: false });
-  } catch {
-    return iso;
-  }
+  try { return new Date(iso).toLocaleString("zh-CN", { hour12: false }); } catch { return iso; }
 }
 
 function toIsoFromLocal(val) {
@@ -51,182 +52,72 @@ function toIsoFromLocal(val) {
   const off = -d.getTimezoneOffset();
   const sign = off >= 0 ? "+" : "-";
   const abs = Math.abs(off);
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T` +
-    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
-    `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
-  );
-}
-
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function prioTag(prio) {
-  return `<span class="tag prio-${prio}">${prio}</span>`;
-}
-
-function renderEvtCard(evt) {
-  const extra =
-    evt.evtType === "life"
-      ? `due ${fmtDtLocal(evt.dueAt)}`
-      : evt.evtType === "ddl"
-        ? `ddl ${fmtDtLocal(evt.ddlAt)}${evt.hardDdl ? " · hard" : ""}`
-        : `course ${evt.classDate || "—"}`;
-
-  const prioSel = `<select data-evt-id="${evt.evtId}" data-action="setPrio" aria-label="优先级">
-      <option value="high"${evt.prio === "high" ? " selected" : ""}>high</option>
-      <option value="mid"${evt.prio === "mid" ? " selected" : ""}>mid</option>
-      <option value="low"${evt.prio === "low" ? " selected" : ""}>low</option>
-    </select>`;
-
-  let actions = "";
-  if (evt.stat === "todo") {
-    actions = `<button type="button" class="btn btn-sm btn-success" data-action="completeEvt" data-evt-id="${evt.evtId}">完成</button>
-        <button type="button" class="btn btn-sm btn-danger" data-action="cancelEvt" data-evt-id="${evt.evtId}">取消</button>`;
-  }
-
-  return `<div class="evt-card" data-evt-id="${evt.evtId}" data-search="${escapeHtml(
-    `${evt.title} ${evt.evtType} ${evt.prio} ${extra}`.toLowerCase(),
-  )}">
-      <div class="title-row">
-        <span class="title" data-action="editTitle" data-evt-id="${evt.evtId}" title="点击编辑标题">${escapeHtml(evt.title)}</span>
-        <button type="button" class="btn btn-sm" data-action="editTitle" data-evt-id="${evt.evtId}" aria-label="编辑标题">✎</button>
-      </div>
-      <div class="meta-line">
-        <span class="tag">${evt.evtType}</span>${prioTag(evt.prio)} ${extra}
-      </div>
-      <div class="evt-actions">${prioSel}${actions}</div>
-    </div>`;
-}
-
-function applyEvtSearch() {
-  const q = (evtSearchEl?.value || "").trim().toLowerCase();
-  document.querySelectorAll(".evt-card").forEach((card) => {
-    const hay = card.dataset.search || "";
-    card.classList.toggle("hidden-by-search", q.length > 0 && !hay.includes(q));
-  });
-}
-
-function renderEvtBoard(evts) {
-  evtCache = evts;
-  const groups = { todo: [], done: [], cancelled: [] };
-  evts.forEach((e) => {
-    if (groups[e.stat]) groups[e.stat].push(e);
-  });
-
-  ["todo", "done", "cancelled"].forEach((stat) => {
-    const listEl = document.getElementById(
-      "evtList" + stat.charAt(0).toUpperCase() + stat.slice(1),
-    );
-    const countEl = document.getElementById(stat + "Count");
-    const items = groups[stat];
-    countEl.textContent = items.length;
-    listEl.innerHTML = items.length
-      ? items.map(renderEvtCard).join("")
-      : '<span class="empty">无</span>';
-  });
-  applyEvtSearch();
-  touchRefresh();
-}
-
-async function loadEvts() {
-  const resp = await api("/api/evt");
-  renderEvtBoard(resp.data || []);
-}
-
-async function loadIdeas() {
-  const resp = await api("/api/idea");
-  const ideas = resp.data || [];
-  const el = document.getElementById("ideaList");
-  el.innerHTML = ideas.length
-    ? ideas
-        .map(
-          (i) => `<div class="log-item">
-          <div class="log-title">${escapeHtml(i.content)}</div>
-          <div class="log-meta">${i.handled ? "handled" : "open"} · ${fmtDtLocal(i.createdAt)}</div>
-        </div>`,
-        )
-        .join("")
-    : '<span class="empty">无</span>';
-}
-
-async function loadDevState() {
-  const resp = await api("/api/devState");
-  const rows = resp.data || [];
-  const el = document.getElementById("devStateBody");
-  if (!rows.length) {
-    el.innerHTML = '<span class="empty">暂无设备上报</span>';
-    return;
-  }
-  const latest = rows[0];
-  const cls = ["working", "away", "offline"].includes(latest.state) ? latest.state : "";
-  const meta = latest.meta && typeof latest.meta === "object" ? latest.meta : {};
-  const identity = meta.identity ? `<br>identity: ${escapeHtml(meta.identity)}` : "";
-  const detail = meta.detail ? `<br>detail: ${escapeHtml(meta.detail)}` : "";
-  el.innerHTML = `<div class="dev-card">
-      <div><span class="dev-badge ${cls}">${escapeHtml(latest.state)}</span></div>
-      <div class="log-meta">
-        devId: ${escapeHtml(latest.devId)}<br>
-        confidence: ${latest.confidence ?? "—"}<br>
-        seenAt: ${fmtDtLocal(latest.seenAt)}${identity}${detail}
-      </div>
-    </div>`;
-}
-
-function renderLogList(elId, rows, renderFn) {
-  const el = document.getElementById(elId);
-  el.innerHTML = rows.length
-    ? rows
-        .slice()
-        .reverse()
-        .slice(0, 40)
-        .map(renderFn)
-        .join("")
-    : '<span class="empty">无</span>';
-}
-
-async function loadNotifyLog() {
-  const resp = await api("/api/notifyLog");
-  renderLogList("notifyLogList", resp.data || [], (r) =>
-    `<div class="log-item"><div class="log-title">${escapeHtml(r.title)}</div>
-       <div class="log-meta">${r.stat} · ${escapeHtml(r.targetKind || "")} · ${fmtDtLocal(r.scheduledAt)}</div></div>`,
-  );
-}
-
-async function loadMsgLog() {
-  const resp = await api("/api/msgLog");
-  renderLogList("msgLogList", resp.data || [], (r) =>
-    `<div class="log-item"><div class="log-title">${escapeHtml(r.rawText || "—")}</div>
-       <div class="log-meta">${r.src} · ${r.stat || "—"} · ${fmtDtLocal(r.createdAt)}</div></div>`,
-  );
-}
-
-async function loadActLog() {
-  const resp = await api("/api/actLog");
-  renderLogList("actLogList", resp.data || [], (r) =>
-    `<div class="log-item"><div class="log-title">${escapeHtml(r.actType)} → ${escapeHtml(r.targetKind || "")}</div>
-       <div class="log-meta">${r.src} · ${fmtDtLocal(r.createdAt)}</div></div>`,
-  );
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
 }
 
 function touchRefresh() {
   lastRefreshEl.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
 }
 
-async function refreshAll() {
-  await Promise.all([
-    loadEvts(),
-    loadIdeas(),
-    loadDevState(),
-    loadNotifyLog(),
-    loadMsgLog(),
-    loadActLog(),
-  ]);
+function activeView(name) {
+  document.querySelectorAll("[data-view-tab]").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.viewTab === name);
+  });
+  document.querySelectorAll("[data-view]").forEach((view) => {
+    view.classList.toggle("active", view.dataset.view === name);
+  });
+  location.hash = name;
+}
+
+function evtExtra(evt) {
+  if (evt.evtType === "life") return `due ${fmtDtLocal(evt.dueAt)}`;
+  if (evt.evtType === "ddl") return `ddl ${fmtDtLocal(evt.ddlAt)}${evt.hardDdl ? " · hard" : ""}`;
+  return `course ${evt.classDate || "—"}`;
+}
+
+function renderEvtCard(evt) {
+  return `<div class="evt-card" data-evt-id="${evt.evtId}" data-search="${escapeHtml(`${evt.title} ${evt.desc || ""} ${evt.evtType} ${evt.prio} ${evt.stat}`.toLowerCase())}">
+    <div class="title-row">
+      <input class="inline-title" data-action="fieldEdit" data-field="title" data-evt-id="${evt.evtId}" value="${escapeHtml(evt.title)}">
+      <select data-action="fieldEdit" data-field="stat" data-evt-id="${evt.evtId}">
+        ${["todo", "done", "cancelled"].map((s) => `<option value="${s}"${evt.stat === s ? " selected" : ""}>${s}</option>`).join("")}
+      </select>
+    </div>
+    <textarea class="inline-desc" data-action="fieldEdit" data-field="desc" data-evt-id="${evt.evtId}" placeholder="描述">${escapeHtml(evt.desc || "")}</textarea>
+    <div class="meta-line"><span class="tag">${evt.evtType}</span><span class="tag prio-${evt.prio}">${evt.prio}</span> ${evtExtra(evt)}</div>
+    <div class="evt-actions">
+      <select data-action="fieldEdit" data-field="prio" data-evt-id="${evt.evtId}">
+        ${["high", "mid", "low"].map((p) => `<option value="${p}"${evt.prio === p ? " selected" : ""}>${p}</option>`).join("")}
+      </select>
+      <button type="button" class="btn btn-sm btn-success" data-action="completeEvt" data-evt-id="${evt.evtId}">完成</button>
+      <button type="button" class="btn btn-sm btn-danger" data-action="cancelEvt" data-evt-id="${evt.evtId}">取消</button>
+    </div>
+  </div>`;
+}
+
+function applyEvtSearch() {
+  const q = (evtSearchEl?.value || "").trim().toLowerCase();
+  document.querySelectorAll(".evt-card").forEach((card) => {
+    card.classList.toggle("hidden-by-search", q && !(card.dataset.search || "").includes(q));
+  });
+}
+
+function renderEvtBoard(evts) {
+  evtCache = evts;
+  const groups = { todo: [], done: [], cancelled: [] };
+  evts.forEach((e) => { (groups[e.stat] || groups.todo).push(e); });
+  for (const stat of ["todo", "done", "cancelled"]) {
+    const id = stat.charAt(0).toUpperCase() + stat.slice(1);
+    $(`evtList${id}`).innerHTML = groups[stat].length ? groups[stat].map(renderEvtCard).join("") : '<span class="empty">无</span>';
+    $(`${stat}Count`).textContent = groups[stat].length;
+  }
+  applyEvtSearch();
+}
+
+async function loadEvts() {
+  const resp = await api("/api/evt");
+  renderEvtBoard(resp.data || []);
+  touchRefresh();
 }
 
 async function patchEvt(evtId, body) {
@@ -235,151 +126,136 @@ async function patchEvt(evtId, body) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!resp.ok) throw new Error("patch failed");
-  return resp.data;
-}
-
-async function completeEvt(evtId) {
-  await patchEvt(evtId, { stat: "done" });
-  showFlash("已标记完成");
+  if (resp.ok) showFlash("已更新");
   await loadEvts();
   await loadActLog();
 }
 
-async function cancelEvt(evtId) {
-  await api(`/api/evt/${evtId}`, { method: "DELETE" });
-  showFlash("已取消");
-  await loadEvts();
-  await loadActLog();
+async function loadIdeas() {
+  const resp = await api("/api/idea");
+  const ideas = resp.data || [];
+  $("ideaList").innerHTML = ideas.length ? ideas.map((i) => `<div class="list-card">
+    <div class="list-title">${escapeHtml(i.content)}</div>
+    <div class="log-meta">${i.handled ? "handled" : "open"} · ${fmtDtLocal(i.createdAt)}</div>
+    <div class="evt-actions">
+      <input placeholder="转换标题" data-idea-title="${i.ideaId}" value="${escapeHtml(i.content.slice(0, 24))}">
+      <button class="btn btn-sm btn-primary" data-action="ideaToEvt" data-idea-id="${i.ideaId}">转 lifeEvt</button>
+    </div>
+  </div>`).join("") : '<span class="empty">无</span>';
 }
 
-async function setPrio(evtId, prio) {
-  await patchEvt(evtId, { prio });
-  showFlash("优先级已更新");
-  await loadEvts();
+async function loadCourses() {
+  const [tplResp, instResp] = await Promise.all([api("/api/courseTpl"), api("/api/courseInst")]);
+  tplCache = tplResp.data || [];
+  $("courseTplList").innerHTML = tplCache.length ? tplCache.map((t) => `<div class="list-card"><div class="list-title">${escapeHtml(t.courseName)}</div><div class="log-meta">${escapeHtml(t.tplId)} · 周${t.weekday} · ${escapeHtml(t.room || "")}</div></div>`).join("") : '<span class="empty">无</span>';
+  $("courseInstList").innerHTML = (instResp.data || []).length ? instResp.data.map((c) => `<div class="list-card"><div class="list-title">${escapeHtml(c.title)}</div><div class="log-meta">${escapeHtml(c.tplId)} · ${escapeHtml(c.classDate || "—")} · ${escapeHtml(c.attendStat)}</div></div>`).join("") : '<span class="empty">无</span>';
 }
 
-async function editTitle(evtId) {
-  const evt = evtCache.find((e) => e.evtId === evtId);
-  if (!evt) return;
-  const card = document.querySelector(`.evt-card[data-evt-id="${evtId}"] .title-row`);
-  if (!card || card.querySelector(".title-input")) return;
-
-  const input = document.createElement("input");
-  input.type = "text";
-  input.className = "title-input";
-  input.value = evt.title;
-  input.setAttribute("aria-label", "编辑标题");
-
-  const save = async () => {
-    const title = input.value.trim();
-    if (!title || title === evt.title) {
-      await loadEvts();
-      return;
-    }
-    await patchEvt(evtId, { title });
-    showFlash("标题已更新");
-    await loadEvts();
-    await loadActLog();
-  };
-
-  input.addEventListener("keydown", (ev) => {
-    if (ev.key === "Enter") {
-      ev.preventDefault();
-      save();
-    } else if (ev.key === "Escape") {
-      loadEvts();
-    }
-  });
-  input.addEventListener("blur", () => save());
-
-  card.innerHTML = "";
-  card.appendChild(input);
-  input.focus();
-  input.select();
+async function loadDevState() {
+  const resp = await api("/api/devState");
+  const rows = resp.data || [];
+  $("devStateBody").innerHTML = rows.length ? rows.slice(0, 24).map((r) => {
+    const meta = r.meta && typeof r.meta === "object" ? r.meta : {};
+    return `<div class="list-card"><span class="dev-badge ${escapeHtml(r.state)}">${escapeHtml(r.state)}</span><div class="log-meta">devId: ${escapeHtml(r.devId)} · confidence: ${r.confidence ?? "—"} · ${fmtDtLocal(r.seenAt)}<br>${escapeHtml(meta.rawStatus || "")} ${escapeHtml(meta.identity || "")}</div></div>`;
+  }).join("") : '<span class="empty">暂无设备上报</span>';
 }
 
-function bindQuickForm(formId, buildBody) {
-  const form = document.getElementById(formId);
+function renderLogList(elId, rows, renderFn) {
+  $(elId).innerHTML = rows.length ? rows.slice().reverse().slice(0, 60).map(renderFn).join("") : '<span class="empty">无</span>';
+}
+
+async function loadNotifyLog() {
+  const resp = await api("/api/notifyLog");
+  renderLogList("notifyLogList", resp.data || [], (r) => `<div class="list-card"><div class="list-title">${escapeHtml(r.title)}</div><div class="log-meta">${escapeHtml(r.stat)} · ${escapeHtml(r.channel || r.targetKind || "")} · ${fmtDtLocal(r.scheduledAt)}</div></div>`);
+}
+
+async function loadMsgLog() {
+  const resp = await api("/api/msgLog");
+  renderLogList("msgLogList", resp.data || [], (r) => `<div class="list-card"><div class="list-title">${escapeHtml(r.rawText || "—")}</div><div class="log-meta">${escapeHtml(r.src)} · ${escapeHtml(r.stat || "—")} · ${fmtDtLocal(r.createdAt)}</div></div>`);
+}
+
+async function loadActLog() {
+  const resp = await api("/api/actLog");
+  renderLogList("actLogList", resp.data || [], (r) => `<div class="list-card"><div class="list-title">${escapeHtml(r.actType)} → ${escapeHtml(r.targetKind || "")}</div><div class="log-meta">${escapeHtml(r.src)} · ${fmtDtLocal(r.createdAt)}</div>${r.undoToken ? `<button class="btn btn-sm" data-action="undoAct" data-undo-token="${escapeHtml(r.undoToken)}">undo</button>` : ""}</div>`);
+}
+
+async function refreshAll() {
+  await Promise.all([loadEvts(), loadIdeas(), loadCourses(), loadDevState(), loadNotifyLog(), loadMsgLog(), loadActLog()]);
+}
+
+function formVal(form, name) { return form.elements[name]?.value?.trim() || ""; }
+function numOrNull(v) { return v ? Number(v) : null; }
+
+function bindQuickForm(formId, buildBody, after) {
+  const form = $(formId);
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    const endpoint = form.dataset.endpoint;
-    const body = buildBody(form);
-    const resp = await api(endpoint, {
+    const resp = await api(form.dataset.endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify(buildBody(form)),
     });
     if (resp.ok) {
       form.reset();
       showFlash("创建成功");
-      await refreshAll();
-    }
-  });
-
-  form.addEventListener("keydown", (ev) => {
-    if ((ev.ctrlKey || ev.metaKey) && ev.key === "Enter") {
-      ev.preventDefault();
-      form.requestSubmit();
+      await (after || refreshAll)();
     }
   });
 }
 
-function bindLogTabs() {
-  const tabs = document.querySelectorAll(".log-tab");
-  const panes = document.querySelectorAll(".log-pane");
-  tabs.forEach((tab) => {
-    tab.addEventListener("click", () => {
-      const name = tab.dataset.logTab;
-      tabs.forEach((t) => t.classList.toggle("active", t === tab));
-      panes.forEach((p) => p.classList.toggle("active", p.dataset.logPane === name));
-    });
-  });
-}
-
-bindQuickForm("lifeEvtForm", (form) => ({
-  title: form.title.value.trim(),
-  dueAt: toIsoFromLocal(form.dueAt.value),
-  prio: form.prio.value,
-}));
-
-bindQuickForm("ddlEvtForm", (form) => ({
-  title: form.title.value.trim(),
-  ddlAt: toIsoFromLocal(form.ddlAt.value),
-  hardDdl: form.hardDdl.checked,
-  prio: form.prio.value,
-}));
-
-bindQuickForm("ideaForm", (form) => ({
-  content: form.content.value.trim(),
-  srcType: "text",
-}));
+bindQuickForm("lifeEvtForm", (f) => ({ title: formVal(f, "title"), desc: formVal(f, "desc") || null, dueAt: toIsoFromLocal(formVal(f, "dueAt")), prio: formVal(f, "prio") }), loadEvts);
+bindQuickForm("ddlEvtForm", (f) => ({ title: formVal(f, "title"), desc: formVal(f, "desc") || null, ddlAt: toIsoFromLocal(formVal(f, "ddlAt")), hardDdl: f.elements.hardDdl.checked, prio: formVal(f, "prio") }), loadEvts);
+bindQuickForm("ideaForm", (f) => ({ content: formVal(f, "content"), srcType: "text" }), loadIdeas);
+bindQuickForm("courseTplForm", (f) => ({ courseName: formVal(f, "courseName"), teacher: formVal(f, "teacher") || null, room: formVal(f, "room") || null, weekday: Number(formVal(f, "weekday")), startTime: formVal(f, "startTime") || null, endTime: formVal(f, "endTime") || null, startWeek: numOrNull(formVal(f, "startWeek")), endWeek: numOrNull(formVal(f, "endWeek")), weekMode: formVal(f, "weekMode"), semester: formVal(f, "semester") || null }), loadCourses);
+bindQuickForm("courseInstForm", (f) => ({ title: formVal(f, "title"), tplId: formVal(f, "tplId"), classDate: formVal(f, "classDate") || null, attendStat: formVal(f, "attendStat") }), loadCourses);
 
 document.body.addEventListener("click", async (ev) => {
+  const tab = ev.target.closest("[data-view-tab]");
+  if (tab) return activeView(tab.dataset.viewTab);
   const btn = ev.target.closest("[data-action]");
   if (!btn) return;
-  const action = btn.dataset.action;
-  if (action === "refreshEvt") await loadEvts();
-  else if (action === "refreshIdea") await loadIdeas();
-  else if (action === "refreshDev") await loadDevState();
-  else if (action === "refreshNotify") await loadNotifyLog();
-  else if (action === "refreshMsg") await loadMsgLog();
-  else if (action === "refreshAct") await loadActLog();
-  else if (action === "refreshAll") await refreshAll();
-  else if (action === "completeEvt") await completeEvt(btn.dataset.evtId);
-  else if (action === "cancelEvt") await cancelEvt(btn.dataset.evtId);
-  else if (action === "editTitle") await editTitle(btn.dataset.evtId);
+  const a = btn.dataset.action;
+  if (a === "refreshAll") await refreshAll();
+  else if (a === "refreshEvt") await loadEvts();
+  else if (a === "refreshIdea") await loadIdeas();
+  else if (a === "refreshCourse") await loadCourses();
+  else if (a === "refreshDev") await loadDevState();
+  else if (a === "refreshNotify") await loadNotifyLog();
+  else if (a === "refreshMsg") await loadMsgLog();
+  else if (a === "refreshAct") await loadActLog();
+  else if (a === "completeEvt") await patchEvt(btn.dataset.evtId, { stat: "done" });
+  else if (a === "cancelEvt") await api(`/api/evt/${btn.dataset.evtId}`, { method: "DELETE" }).then(loadEvts);
+  else if (a === "ideaToEvt") {
+    const title = document.querySelector(`[data-idea-title="${btn.dataset.ideaId}"]`)?.value || "灵感事项";
+    await api(`/api/idea/${btn.dataset.ideaId}/toEvt`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, dueAt: null }) });
+    await Promise.all([loadIdeas(), loadEvts(), loadActLog()]);
+  } else if (a === "undoAct") {
+    await api(`/api/undo/${btn.dataset.undoToken}`, { method: "POST" });
+    await refreshAll();
+  }
 });
 
 document.body.addEventListener("change", async (ev) => {
-  const sel = ev.target.closest('[data-action="setPrio"]');
-  if (!sel) return;
-  await setPrio(sel.dataset.evtId, sel.value);
+  const el = ev.target.closest('[data-action="fieldEdit"]');
+  if (!el) return;
+  await patchEvt(el.dataset.evtId, { [el.dataset.field]: el.value });
 });
 
-if (evtSearchEl) {
-  evtSearchEl.addEventListener("input", applyEvtSearch);
-}
+document.body.addEventListener("blur", async (ev) => {
+  const el = ev.target.closest('input[data-action="fieldEdit"], textarea[data-action="fieldEdit"]');
+  if (!el) return;
+  const evt = evtCache.find((e) => e.evtId === el.dataset.evtId);
+  if (!evt || String(evt[el.dataset.field] || "") === el.value) return;
+  await patchEvt(el.dataset.evtId, { [el.dataset.field]: el.value });
+}, true);
 
-bindLogTabs();
+document.querySelectorAll(".log-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".log-tab").forEach((t) => t.classList.toggle("active", t === tab));
+    document.querySelectorAll(".log-pane").forEach((p) => p.classList.toggle("active", p.dataset.logPane === tab.dataset.logTab));
+  });
+});
+
+evtSearchEl?.addEventListener("input", applyEvtSearch);
+activeView((location.hash || "#evt").slice(1));
 refreshAll();
