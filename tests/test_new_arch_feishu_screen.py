@@ -66,6 +66,7 @@ def test_screen_websocket_receives_initial_state_and_push(app_env) -> None:
             json={"title": "测试提醒", "content": "该看下一项了"},
         )
         assert pushed.status_code == 200
+        assert pushed.json()["delivered"] >= 1
         message = ws.receive_json()
         assert message["kind"] == "reminder"
         assert message["title"] == "测试提醒"

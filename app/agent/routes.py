@@ -218,14 +218,18 @@ def createAgentRouter() -> APIRouter:
 
     @router.post("/screenPush", dependencies=[Depends(requireAgentToken)])
     async def screenPush(body: dict[str, Any]) -> dict[str, Any]:
-        await screenManager.broadcast(
+        delivered = await screenManager.broadcast(
             {
                 "kind": "reminder",
                 "title": body.get("title", ""),
                 "content": body.get("content", ""),
             }
         )
-        return {"ok": True, "stat": "done"}
+        return {
+            "ok": delivered > 0,
+            "stat": "done" if delivered else "offline",
+            "delivered": delivered,
+        }
 
     return router
 
