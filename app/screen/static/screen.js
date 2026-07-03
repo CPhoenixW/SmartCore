@@ -27,12 +27,9 @@
 
   function formatDate(now) {
     if (currentMode === "away") {
-      return now.toLocaleDateString("en-US", {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      });
+      const weekday = now.toLocaleDateString("en-US", { weekday: "long" });
+      const month = now.toLocaleDateString("en-US", { month: "long" });
+      return `${weekday} ${month} ${now.getDate()} ${now.getFullYear()}`;
     }
     const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
     return `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${weekdays[now.getDay()]}`;
