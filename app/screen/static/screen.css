@@ -73,7 +73,7 @@ body[data-theme="light"] {
 
 .screen-shell.mode-away .clock-stack {
   text-align: center;
-  gap: 18px;
+  gap: 28px;
 }
 
 .screen-shell.mode-away .digit-clock {
@@ -91,6 +91,7 @@ body[data-theme="light"] {
   font-weight: 380;
   letter-spacing: 0.04em;
   color: #64748b;
+  margin-top: 8px;
 }
 
 .time-pane,
