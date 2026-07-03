@@ -19,7 +19,7 @@ _SCREEN_HTML = """<!doctype html>
 <title>SmartCore Screen</title>
 <link rel="stylesheet" href="/static/screen/screen.css">
 </head>
-<body data-app="smartcore-screen">
+<body data-app="smartcore-screen" data-theme="light">
 <main class="screen-shell">
   <section class="time-pane">
     <div class="brand-row">
@@ -31,7 +31,10 @@ _SCREEN_HTML = """<!doctype html>
       <div id="clockDate">—</div>
     </div>
     <div class="state-row">
-      <span class="state-label">当前状态</span>
+      <div class="state-copy">
+        <span class="state-label">当前状态</span>
+        <span id="stateCaption" class="state-caption">状态未知</span>
+      </div>
       <span id="currentState" data-ws-ui="state" class="unknown">unknown</span>
     </div>
   </section>
@@ -42,7 +45,7 @@ _SCREEN_HTML = """<!doctype html>
     </div>
     <div id="reminderArea" data-ws-ui="reminder" class="empty">暂无提醒</div>
     <div class="hint-row">
-      <span>横屏副屏模式</span>
+      <span>副屏模式</span>
       <span id="heartbeat">--</span>
     </div>
   </section>

@@ -1,25 +1,35 @@
 :root {
-  --bg: #080b10;
-  --panel: #111827;
-  --panel2: #172033;
-  --line: #263247;
-  --text: #eef4ff;
-  --muted: #91a0b8;
-  --accent: #38bdf8;
-  --ok: #4ade80;
-  --warn: #facc15;
-  --bad: #fb7185;
+  --bg: #eef2f7;
+  --panel: #ffffff;
+  --panel2: #f8fafc;
+  --line: #dbe3ee;
+  --text: #1e293b;
+  --muted: #64748b;
+  --accent: #2563eb;
+  --ok: #16a34a;
+  --warn: #d97706;
+  --bad: #dc2626;
 }
-* { box-sizing: border-box; }
-html, body {
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
   width: 100%;
   height: 100%;
   margin: 0;
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
-  font-family: Inter, "Segoe UI", system-ui, sans-serif;
+  font-family: "Segoe UI", system-ui, sans-serif;
 }
+
+body[data-theme="light"] {
+  color-scheme: light;
+}
+
 .screen-shell {
   display: grid;
   grid-template-columns: minmax(340px, 42vw) 1fr;
@@ -28,20 +38,27 @@ html, body {
   height: 100vh;
   padding: 18px;
 }
-.time-pane, .info-pane {
+
+.time-pane,
+.info-pane {
   min-width: 0;
   min-height: 0;
   border: 1px solid var(--line);
   background: var(--panel);
   border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.04);
 }
+
 .time-pane {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   padding: 22px;
 }
-.brand-row, .pane-head, .hint-row {
+
+.brand-row,
+.pane-head,
+.hint-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -49,61 +66,109 @@ html, body {
   color: var(--muted);
   font-size: clamp(14px, 2vw, 18px);
 }
+
 #wsStatus {
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
+
 .dot {
   width: 10px;
   height: 10px;
   border-radius: 50%;
   background: var(--bad);
 }
-#wsStatus.connected { color: var(--ok); }
-#wsStatus.connected .dot { background: var(--ok); }
-.clock-stack { text-align: left; }
+
+#wsStatus.connected {
+  color: var(--ok);
+}
+
+#wsStatus.connected .dot {
+  background: var(--ok);
+}
+
+.clock-stack {
+  text-align: left;
+}
+
 #clock {
   font-size: clamp(74px, 16vw, 170px);
-  line-height: .95;
+  line-height: 0.95;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
   font-weight: 600;
+  color: #1e293b;
 }
+
 #clockDate {
   margin-top: 12px;
   color: var(--muted);
   font-size: clamp(18px, 3vw, 28px);
 }
+
 .state-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
 }
+
+.state-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .state-label {
   color: var(--muted);
   font-size: clamp(14px, 2vw, 18px);
 }
+
+.state-caption {
+  color: var(--text);
+  font-size: clamp(16px, 2.4vw, 22px);
+  font-weight: 600;
+}
+
 #currentState {
   min-width: 150px;
   text-align: center;
   padding: 12px 18px;
   border-radius: 999px;
-  background: #303949;
-  color: var(--text);
+  background: #e2e8f0;
+  color: #334155;
   font-size: clamp(20px, 4vw, 34px);
   font-weight: 700;
 }
-#currentState.working { background: #14532d; color: #bbf7d0; }
-#currentState.away { background: #713f12; color: #fef3c7; }
-#currentState.offline, #currentState.unknown { background: #374151; color: #d1d5db; }
+
+#currentState.working {
+  background: #dcfce7;
+  color: #166534;
+}
+
+#currentState.away {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+#currentState.offline,
+#currentState.unknown {
+  background: #f1f5f9;
+  color: #475569;
+}
+
 .info-pane {
   display: flex;
   flex-direction: column;
   padding: 18px;
 }
-.pane-head { flex: 0 0 auto; padding-bottom: 14px; }
+
+.pane-head {
+  flex: 0 0 auto;
+  padding-bottom: 14px;
+}
+
 #reminderArea {
   flex: 1 1 auto;
   min-height: 0;
@@ -113,6 +178,7 @@ html, body {
   background: var(--panel2);
   padding: 16px;
 }
+
 #reminderArea.empty {
   display: flex;
   align-items: center;
@@ -120,30 +186,39 @@ html, body {
   color: var(--muted);
   font-size: clamp(22px, 5vw, 44px);
 }
+
 .reminder-card {
   border-left: 4px solid var(--accent);
   padding: 16px 18px;
   margin-bottom: 12px;
   border-radius: 8px;
-  background: #0f172a;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
 }
+
 .rem-title {
   font-size: clamp(22px, 4vw, 40px);
   font-weight: 700;
   margin-bottom: 8px;
 }
+
 .rem-content {
   color: var(--muted);
   font-size: clamp(16px, 2.6vw, 26px);
 }
+
 .hint-row {
   flex: 0 0 auto;
   padding-top: 14px;
 }
+
 @media (orientation: portrait) {
   .screen-shell {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
   }
-  #clock { font-size: clamp(68px, 24vw, 128px); }
+
+  #clock {
+    font-size: clamp(68px, 24vw, 128px);
+  }
 }

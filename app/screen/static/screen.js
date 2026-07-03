@@ -4,6 +4,7 @@
   const clockEl = document.getElementById("clock");
   const clockDateEl = document.getElementById("clockDate");
   const stateEl = document.getElementById("currentState");
+  const stateCaptionEl = document.getElementById("stateCaption");
   const reminderEl = document.getElementById("reminderArea");
   const wsStatusEl = document.getElementById("wsStatus");
   const wsStatusText = document.getElementById("wsStatusText");
@@ -30,10 +31,20 @@
     heartbeat.textContent = now.toLocaleTimeString("zh-CN", { hour12: false });
   }
 
+  const STATE_CAPTIONS = {
+    working: "专注工作中",
+    away: "暂时离开",
+    offline: "设备离线",
+    unknown: "状态未知",
+  };
+
   function renderState(state) {
     const next = state || "unknown";
     stateEl.textContent = next;
     stateEl.className = next;
+    if (stateCaptionEl) {
+      stateCaptionEl.textContent = STATE_CAPTIONS[next] || next;
+    }
   }
 
   function addReminder(title, content) {

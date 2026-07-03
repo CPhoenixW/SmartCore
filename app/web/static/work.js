@@ -170,13 +170,63 @@ async function loadCourses() {
   $("courseInstList").innerHTML = (instResp.data || []).length ? instResp.data.map((c) => `<div class="list-card"><div class="list-title">${escapeHtml(c.title)}</div><div class="log-meta">${escapeHtml(c.tplId)} · ${escapeHtml(c.classDate || "—")} · ${escapeHtml(c.attendStat)}</div></div>`).join("") : '<span class="empty">无</span>';
 }
 
-async function loadDevState() {
-  const resp = await api("/api/devState");
-  const rows = resp.data || [];
+const WORK_STATE_LABELS = {
+  working: "工作中",
+  away: "离开",
+  offline: "离线",
+  unknown: "未知",
+};
+
+function pickPrimaryDevState(rows) {
+  if (!rows?.length) return null;
+  const pi = rows.find((r) => r.devId === "pi");
+  return pi || rows[0];
+}
+
+function formatStateAge(seenAt) {
+  if (!seenAt) return "—";
+  try {
+    const diff = Date.now() - new Date(seenAt).getTime();
+    if (diff < 60_000) return "刚刚";
+    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+    if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+    return fmtDtLocal(seenAt);
+  } catch {
+    return "—";
+  }
+}
+
+function renderPrimaryDevState(row) {
+  const root = $("currentWorkState");
+  const labelEl = $("workStateLabel");
+  const sourceEl = $("workStateSource");
+  const ageEl = $("workStateAge");
+  if (!root || !labelEl || !sourceEl || !ageEl) return;
+  const state = row?.state || "unknown";
+  root.dataset.state = state;
+  labelEl.textContent = WORK_STATE_LABELS[state] || state;
+  sourceEl.textContent = row ? `来源 ${row.devId}` : "暂无设备";
+  ageEl.textContent = row ? formatStateAge(row.seenAt) : "—";
+}
+
+function updateWorkPresence(row) {
+  renderPrimaryDevState(row);
+}
+
+function renderDevStateList(rows) {
   $("devStateBody").innerHTML = rows.length ? rows.slice(0, 24).map((r) => {
     const meta = r.meta && typeof r.meta === "object" ? r.meta : {};
     return `<div class="list-card"><span class="dev-badge ${escapeHtml(r.state)}">${escapeHtml(r.state)}</span><div class="log-meta">devId: ${escapeHtml(r.devId)} · confidence: ${r.confidence ?? "—"} · ${fmtDtLocal(r.seenAt)}<br>${escapeHtml(meta.rawStatus || "")} ${escapeHtml(meta.identity || "")}</div></div>`;
   }).join("") : '<span class="empty">暂无设备上报</span>';
+}
+
+async function loadDevState() {
+  const resp = await api("/api/devState");
+  const rows = resp.data || [];
+  renderDevStateList(rows);
+  const primary = pickPrimaryDevState(rows);
+  renderPrimaryDevState(primary);
+  updateWorkPresence(primary);
 }
 
 function renderLogList(elId, rows, renderFn) {

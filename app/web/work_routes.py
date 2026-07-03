@@ -16,8 +16,17 @@ _WORK_HTML = """<!doctype html>
 </head>
 <body data-app="smartcore-work" data-theme="light">
 <header class="app-header">
-  <div>
+  <div class="header-brand">
     <h1>SmartCore 工作台</h1>
+    <div class="work-state" id="currentWorkState" data-state="unknown">
+      <div class="presence-card" id="piStateCard">
+        <span class="work-state-label" id="workStateLabel">未知</span>
+        <span class="work-state-meta">
+          <span id="workStateSource">暂无设备</span>
+          <span id="workStateAge">—</span>
+        </span>
+      </div>
+    </div>
   </div>
   <div class="header-meta">
     <span class="status-pill busy" id="apiStatus">API …</span>
@@ -42,21 +51,25 @@ _WORK_HTML = """<!doctype html>
       <div class="panel-head"><span>添加事件</span></div>
       <div class="panel-body quick-grid">
         <form class="quick-form" id="lifeEvtForm" data-endpoint="/api/lifeEvt">
-          <strong>lifeEvt</strong>
-          <label>标题<input name="title" required placeholder="生活事项" autocomplete="off"></label>
-          <label>描述<textarea name="desc" placeholder="可选描述"></textarea></label>
-          <label>截止时间<input name="dueAt" type="datetime-local"></label>
-          <label>优先级<select name="prio"><option value="high">high</option><option value="mid" selected>mid</option><option value="low">low</option></select></label>
-          <button type="submit" class="btn btn-primary">创建 lifeEvt</button>
+          <strong>普通事项</strong>
+          <div class="field-group">
+            <label>标题<span class="input-shell"><input name="title" required placeholder="生活事项" autocomplete="off"></span></label>
+            <label>描述<span class="input-shell"><textarea name="desc" placeholder="可选描述"></textarea></span></label>
+            <label>截止时间<span class="input-shell"><input name="dueAt" type="datetime-local"></span></label>
+            <label>优先级<span class="input-shell"><select name="prio"><option value="high">high</option><option value="mid" selected>mid</option><option value="low">low</option></select></span></label>
+          </div>
+          <button type="submit" class="btn btn-primary">创建普通事项</button>
         </form>
         <form class="quick-form" id="ddlEvtForm" data-endpoint="/api/ddlEvt">
-          <strong>ddlEvt</strong>
-          <label>标题<input name="title" required placeholder="截止日期事项" autocomplete="off"></label>
-          <label>描述<textarea name="desc" placeholder="可选描述"></textarea></label>
-          <label>DDL<input name="ddlAt" type="datetime-local"></label>
-          <label>优先级<select name="prio"><option value="high">high</option><option value="mid" selected>mid</option><option value="low">low</option></select></label>
-          <label class="check-line"><input type="checkbox" name="hardDdl"> hardDdl</label>
-          <button type="submit" class="btn btn-primary">创建 ddlEvt</button>
+          <strong>截止事项</strong>
+          <div class="field-group">
+            <label>标题<span class="input-shell"><input name="title" required placeholder="截止日期事项" autocomplete="off"></span></label>
+            <label>描述<span class="input-shell"><textarea name="desc" placeholder="可选描述"></textarea></span></label>
+            <label>截止时间<span class="input-shell"><input name="ddlAt" type="datetime-local"></span></label>
+            <label>优先级<span class="input-shell"><select name="prio"><option value="high">high</option><option value="mid" selected>mid</option><option value="low">low</option></select></span></label>
+            <label class="check-line"><input type="checkbox" name="hardDdl"> 硬性截止</label>
+          </div>
+          <button type="submit" class="btn btn-primary">创建截止事项</button>
         </form>
       </div>
     </section>
