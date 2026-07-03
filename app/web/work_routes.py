@@ -84,9 +84,9 @@ _WORK_HTML = """<!doctype html>
         </div>
       </div>
       <div class="panel-body evt-columns">
-        <div class="evt-col"><div class="evt-col-head">todo <span class="count" id="todoCount">0</span></div><div id="evtListTodo"></div></div>
-        <div class="evt-col"><div class="evt-col-head">done <span class="count" id="doneCount">0</span></div><div id="evtListDone"></div></div>
-        <div class="evt-col"><div class="evt-col-head">cancelled <span class="count" id="cancelledCount">0</span></div><div id="evtListCancelled"></div></div>
+        <div class="evt-col"><div class="evt-col-head">todo <span class="count" id="todoCount">0</span></div><div id="evtListTodo" class="evt-col-list"></div></div>
+        <div class="evt-col"><div class="evt-col-head">done <span class="count" id="doneCount">0</span></div><div id="evtListDone" class="evt-col-list"></div></div>
+        <div class="evt-col"><div class="evt-col-head">cancelled <span class="count" id="cancelledCount">0</span></div><div id="evtListCancelled" class="evt-col-list"></div></div>
       </div>
     </section>
   </section>
@@ -184,8 +184,9 @@ _WORK_HTML = """<!doctype html>
       <label class="drawer-field">优先级<select name="prio"><option value="high">高</option><option value="mid">中</option><option value="low">低</option></select></label>
       <div class="drawer-form-actions">
         <button type="button" class="btn btn-primary" data-action="saveEvtDetail">保存</button>
-        <button type="button" class="btn btn-success" data-action="completeEvtDetail">完成</button>
-        <button type="button" class="btn btn-danger" data-action="cancelEvtDetail">取消事项</button>
+        <button type="button" class="btn btn-success" id="completeEvtDetailBtn" data-action="completeEvtDetail">完成</button>
+        <button type="button" class="btn btn-danger" id="cancelEvtDetailBtn" data-action="cancelEvtDetail">取消事项</button>
+        <button type="button" class="btn" id="reopenEvtDetailBtn" data-action="reopenEvtDetail" hidden>恢复为待办</button>
       </div>
     </form>
   </aside>

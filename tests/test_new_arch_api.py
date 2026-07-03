@@ -207,7 +207,10 @@ def test_work_dashboard_has_operational_controls(app_env) -> None:
 
     assert 'data-action="completeEvt"' in js
     assert 'data-action="cancelEvt"' in js
-    assert 'data-action="fieldEdit"' in js
+    assert 'data-action="openEvtDetail"' in js
+    assert 'data-action="fieldEdit"' not in js
+    assert 'id="evtDetailDrawer"' in html
+    assert 'id="evtDetailForm"' in html
     assert 'data-action="ideaToEvt"' in js
     assert 'data-action="undoAct"' in js
     assert '"/api/evt"' in js

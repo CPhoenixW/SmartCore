@@ -14,7 +14,7 @@
   --danger: #dc2626;
   --prio-high: #dc2626;
   --prio-mid: #ca8a04;
-  --prio-low: #94a3b8;
+  --prio-low: #2563eb;
   --radius: 8px;
   --shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 14px rgba(15, 23, 42, 0.04);
   --gap: 0.6rem;
@@ -508,8 +508,8 @@ textarea:focus-visible {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.5rem 0.6rem;
-  margin-bottom: 0.35rem;
+  padding: 0.6rem 0.65rem;
+  margin-bottom: 0.42rem;
   font-size: 0.78rem;
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
@@ -575,7 +575,8 @@ textarea:focus-visible {
 
 .board-card-meta .tag.prio-low {
   color: var(--prio-low);
-  border-color: var(--border);
+  border-color: #bfdbfe;
+  background: #eff6ff;
 }
 
 .board-card-meta .tag.stat-todo {
@@ -609,6 +610,81 @@ textarea:focus-visible {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.evt-col-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.board-card-main {
+  min-width: 0;
+}
+
+.board-card-title {
+  margin: 0 0 0.3rem;
+}
+
+.board-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+}
+
+.board-card-time.overdue {
+  color: var(--danger);
+  font-weight: 650;
+}
+
+.board-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  flex: 0 0 auto;
+}
+
+.icon-btn {
+  width: 1.55rem;
+  height: 1.55rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  line-height: 1;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.15s;
+}
+
+.icon-btn:hover {
+  transform: translateY(-1px);
+}
+
+.icon-btn.success {
+  color: #166534;
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.icon-btn.danger {
+  color: #991b1b;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.icon-btn.ghost {
+  color: var(--accent);
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+[hidden] {
+  display: none !important;
 }
 
 .evt-detail-drawer {
@@ -901,4 +977,43 @@ textarea:focus-visible {
 
 .flash.show {
   opacity: 1;
+}
+
+@media (max-width: 920px) and (orientation: landscape), (max-height: 520px) and (orientation: landscape) {
+  .app-header {
+    padding: 0.45rem 0.7rem;
+  }
+
+  .work-nav {
+    top: 40px;
+    padding: 0.34rem 0.6rem;
+  }
+
+  .view-shell {
+    padding: 0.45rem;
+  }
+
+  .evt-columns {
+    grid-template-columns: repeat(3, minmax(180px, 1fr));
+    gap: 0.42rem;
+  }
+
+  .panel-body.evt-columns {
+    padding: 0.5rem;
+  }
+
+  .evt-col-list {
+    max-height: calc(100vh - 178px);
+    overflow-y: auto;
+    padding-right: 0.12rem;
+  }
+
+  .evt-card {
+    padding: 0.48rem 0.52rem;
+    margin-bottom: 0.32rem;
+  }
+
+  .board-card-desc {
+    -webkit-line-clamp: 1;
+  }
 }
