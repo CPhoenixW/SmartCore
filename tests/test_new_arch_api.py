@@ -141,3 +141,48 @@ def test_work_and_screen_pages_are_accessible_over_tailnet(app_env) -> None:
 
     assert client.get("/work").status_code == 200
     assert client.get("/screen").status_code == 200
+
+
+def test_work_dashboard_has_operational_controls(app_env) -> None:
+    client = TestClient(create_app())
+    html = client.get("/work").text
+
+    assert 'id="lifeEvtForm"' in html
+    assert 'id="ddlEvtForm"' in html
+    assert 'id="ideaForm"' in html
+    assert 'id="evtBoard"' in html
+    assert 'id="evtListTodo"' in html
+    assert 'id="evtListDone"' in html
+    assert 'id="evtListCancelled"' in html
+    assert 'data-action="completeEvt"' in html
+    assert 'data-action="cancelEvt"' in html
+    assert 'data-action="setPrio"' in html
+    assert 'id="devStatePanel"' in html
+    assert 'id="notifyLogPanel"' in html
+    assert 'id="msgLogPanel"' in html
+    assert 'id="actLogPanel"' in html
+    assert 'data-action="refreshEvt"' in html
+    assert "/api/lifeEvt" in html
+    assert "/api/ddlEvt" in html
+    assert "/api/idea" in html
+    assert "/api/evt" in html
+    assert 'href="/api/evt"' not in html
+    assert "pending" not in html.lower()
+    assert "/dashboard" not in html
+
+
+def test_screen_page_has_websocket_ui_markers(app_env) -> None:
+    client = TestClient(create_app())
+    html = client.get("/screen").text
+
+    assert "/screen/ws" in html
+    assert "WebSocket" in html
+    assert 'id="clock"' in html
+    assert 'data-ws-ui="clock"' in html
+    assert 'id="currentState"' in html
+    assert 'data-ws-ui="state"' in html
+    assert 'id="reminderArea"' in html
+    assert 'data-ws-ui="reminder"' in html
+    assert 'id="wsStatus"' in html
+    assert 'data-ws-ui="status"' in html
+    assert "handleWsMessage" in html

@@ -62,3 +62,21 @@ def test_screen_websocket_receives_initial_state_and_push(app_env) -> None:
         message = ws.receive_json()
         assert message["kind"] == "reminder"
         assert message["title"] == "测试提醒"
+
+
+def test_screen_websocket_sends_dev_state_after_connect(app_env) -> None:
+    client = TestClient(create_app())
+    client.post(
+        "/dev/state",
+        headers={"X-SmartCore-Device-Token": "device-secret"},
+        json={"devId": "pi", "state": "working", "confidence": 0.88},
+    )
+
+    with client.websocket_connect("/screen/ws") as ws:
+        initial = ws.receive_json()
+        assert initial["kind"] == "state"
+
+        dev_msg = ws.receive_json()
+        assert dev_msg["kind"] == "devState"
+        assert dev_msg["state"] == "working"
+        assert dev_msg["devId"] == "pi"
