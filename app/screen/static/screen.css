@@ -43,11 +43,81 @@ body[data-theme="light"] {
 
 .screen-shell {
   display: grid;
-  grid-template-columns: minmax(340px, 42vw) 1fr;
-  gap: 18px;
+  grid-template-columns: minmax(300px, 38vw) 1fr;
+  gap: 0;
   width: 100vw;
   height: 100vh;
-  padding: 18px;
+  padding: 0;
+}
+
+.screen-shell.mode-working {
+  background: linear-gradient(155deg, #f8fafc 0%, #eef2f7 48%, #f1f5f9 100%);
+  grid-template-columns: minmax(300px, 38vw) minmax(0, 1fr);
+}
+
+.screen-shell.mode-working .time-pane {
+  padding: 22px 28px 24px 28px;
+  justify-content: flex-start;
+  gap: 0;
+}
+
+.screen-shell.mode-working .clock-stack {
+  flex: 1;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 0 20px;
+}
+
+.screen-shell.mode-working .clock-date {
+  font-family: "MiSansLatin", "Times New Roman", Times, serif;
+  font-size: clamp(16px, 2.2vw, 24px);
+  font-weight: 380;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.screen-shell.mode-working .info-pane {
+  display: flex;
+  flex-direction: column;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  padding: 28px 32px 24px 24px;
+  border-left: 1px solid rgba(148, 163, 184, 0.28);
+  margin: 22px 24px 22px 0;
+}
+
+.screen-shell.mode-working .brand-row {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.screen-shell.mode-working .state-row {
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.screen-shell.mode-working #currentState {
+  min-width: auto;
+  padding: 5px 12px;
+  font-size: clamp(12px, 1.6vw, 15px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.screen-shell.mode-working .state-caption {
+  font-size: clamp(14px, 1.8vw, 18px);
+  font-weight: 500;
+  color: #475569;
+}
+
+.screen-shell.mode-working .state-label {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .screen-shell.mode-away {
@@ -94,7 +164,6 @@ body[data-theme="light"] {
   margin-top: 8px;
 }
 
-.time-pane,
 .info-pane {
   min-width: 0;
   min-height: 0;
@@ -111,15 +180,84 @@ body[data-theme="light"] {
 }
 
 .info-pane {
-  border: 1px solid var(--line);
-  background: var(--panel);
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.04);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
 }
 
-.brand-row,
-.pane-head,
-.hint-row {
+.pane-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 16px;
+}
+
+.pane-label {
+  font-family: "MiSansLatin", "Times New Roman", Times, serif;
+  font-size: 12px;
+  font-weight: 380;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.pane-meta {
+  font-size: 12px;
+  color: #cbd5e1;
+  font-variant-numeric: tabular-nums;
+}
+
+#reminderArea {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+
+#reminderArea.empty {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  color: #cbd5e1;
+  font-family: "MiSansLatin", "Times New Roman", Times, serif;
+  font-size: clamp(14px, 1.8vw, 18px);
+  letter-spacing: 0.04em;
+}
+
+.reminder-card {
+  border: none;
+  border-left: 2px solid rgba(37, 99, 235, 0.55);
+  padding: 6px 0 6px 12px;
+  margin-bottom: 14px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.reminder-card:last-child {
+  margin-bottom: 0;
+}
+
+.rem-title {
+  font-family: "MiSansLatin", "Segoe UI", sans-serif;
+  font-size: clamp(15px, 1.9vw, 20px);
+  font-weight: 600;
+  line-height: 1.35;
+  margin-bottom: 4px;
+  color: #334155;
+}
+
+.rem-content {
+  color: #94a3b8;
+  font-size: clamp(12px, 1.4vw, 15px);
+  line-height: 1.45;
+}
+
+.brand-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -240,60 +378,6 @@ body[data-theme="light"] {
 #currentState.unknown {
   background: #f1f5f9;
   color: #475569;
-}
-
-.info-pane {
-  display: flex;
-  flex-direction: column;
-  padding: 18px;
-}
-
-.pane-head {
-  flex: 0 0 auto;
-  padding-bottom: 14px;
-}
-
-#reminderArea {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: var(--panel2);
-  padding: 16px;
-}
-
-#reminderArea.empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--muted);
-  font-size: clamp(22px, 5vw, 44px);
-}
-
-.reminder-card {
-  border-left: 4px solid var(--accent);
-  padding: 16px 18px;
-  margin-bottom: 12px;
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
-}
-
-.rem-title {
-  font-size: clamp(22px, 4vw, 40px);
-  font-weight: 700;
-  margin-bottom: 8px;
-}
-
-.rem-content {
-  color: var(--muted);
-  font-size: clamp(16px, 2.6vw, 26px);
-}
-
-.hint-row {
-  flex: 0 0 auto;
-  padding-top: 14px;
 }
 
 @media (orientation: portrait) {

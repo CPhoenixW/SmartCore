@@ -43,14 +43,10 @@ _SCREEN_HTML = """<!doctype html>
   </section>
   <section class="info-pane">
     <div class="pane-head">
-      <span>提醒</span>
-      <span id="lastMsgAt">等待消息</span>
+      <span class="pane-label">Reminders</span>
+      <span id="lastMsgAt" class="pane-meta">—</span>
     </div>
-    <div id="reminderArea" data-ws-ui="reminder" class="empty">暂无提醒</div>
-    <div class="hint-row">
-      <span>副屏模式</span>
-      <span id="heartbeat">--</span>
-    </div>
+    <div id="reminderArea" data-ws-ui="reminder" class="empty">No reminders</div>
   </section>
 </main>
 <script src="/static/screen/screen.js"></script>

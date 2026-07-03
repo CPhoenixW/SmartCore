@@ -13,7 +13,6 @@
   const wsStatusEl = document.getElementById("wsStatus");
   const wsStatusText = document.getElementById("wsStatusText");
   const lastMsgAt = document.getElementById("lastMsgAt");
-  const heartbeat = document.getElementById("heartbeat");
   let ws = null;
   let reconnectTimer = null;
   let serverOffsetMs = 0;
@@ -25,14 +24,14 @@
     wsStatusText.textContent = connected ? "已连接" : "离线";
   }
 
+  function formatEnglishDate(now) {
+    const weekday = now.toLocaleDateString("en-US", { weekday: "long" });
+    const month = now.toLocaleDateString("en-US", { month: "long" });
+    return `${weekday} ${month} ${now.getDate()} ${now.getFullYear()}`;
+  }
+
   function formatDate(now) {
-    if (currentMode === "away") {
-      const weekday = now.toLocaleDateString("en-US", { weekday: "long" });
-      const month = now.toLocaleDateString("en-US", { month: "long" });
-      return `${weekday} ${month} ${now.getDate()} ${now.getFullYear()}`;
-    }
-    const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-    return `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${weekdays[now.getDay()]}`;
+    return formatEnglishDate(now);
   }
 
   function tickClock() {
@@ -43,8 +42,7 @@
     clockMinsEl.textContent = m;
     clockSepEl.classList.toggle("blink-off", now.getSeconds() % 2 === 1);
     clockDateEl.textContent = formatDate(now);
-    clockDateEl.lang = currentMode === "away" ? "en" : "zh-CN";
-    heartbeat.textContent = now.toLocaleTimeString("zh-CN", { hour12: false });
+    clockDateEl.lang = "en";
   }
 
   const STATE_CAPTIONS = {
@@ -92,7 +90,7 @@
     const card = document.createElement("div");
     card.className = "reminder-card";
     card.innerHTML = '<div class="rem-title"></div><div class="rem-content"></div>';
-    card.querySelector(".rem-title").textContent = title || "提醒";
+    card.querySelector(".rem-title").textContent = title || "Reminder";
     card.querySelector(".rem-content").textContent = content || "";
     reminderEl.prepend(card);
     while (reminderEl.children.length > 8) reminderEl.removeChild(reminderEl.lastChild);
