@@ -93,6 +93,8 @@ body[data-theme="light"] {
   border-left: 1px solid rgba(148, 163, 184, 0.28);
   margin: 22px 20px 22px 0;
   max-width: 100%;
+  min-height: 0;
+  gap: 0;
 }
 
 .screen-shell.mode-working .brand-row {
@@ -191,6 +193,35 @@ body[data-theme="light"] {
   display: flex;
   flex-direction: column;
   padding: 0;
+  min-height: 0;
+}
+
+.reminder-zone {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.reminder-zone.latest {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.reminder-zone.day-plan {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.reminder-zone.expired {
+  min-height: 0;
+}
+
+.reminder-zone .pane-head {
+  padding-bottom: 10px;
+}
+
+.reminder-zone .today-list {
+  flex: 1 1 auto;
 }
 
 .pane-head {
@@ -287,6 +318,24 @@ body[data-theme="light"] {
   white-space: nowrap;
 }
 
+.expired-reminder {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(248, 113, 113, 0.18);
+}
+
+.expired-reminder strong,
+.expired-reminder span {
+  color: var(--bad);
+  font-size: clamp(13px, 1.7vw, 16px);
+}
+
+.expired-reminder strong {
+  font-weight: 700;
+}
+
 .reminder-page {
   position: fixed;
   inset: 0;
@@ -332,14 +381,30 @@ body[data-theme="light"] {
   line-height: 1.28;
 }
 
-#reminderDismiss {
+.reminder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+}
+
+.reminder-actions button {
   border: none;
   border-radius: 999px;
   padding: 12px 28px;
-  background: #2563eb;
-  color: #fff;
   font-size: 18px;
   font-weight: 650;
+  cursor: pointer;
+}
+
+#reminderDone {
+  background: #2563eb;
+  color: #fff;
+}
+
+#reminderSnooze {
+  background: #e2e8f0;
+  color: #334155;
 }
 
 .brand-row {

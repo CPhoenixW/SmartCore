@@ -44,7 +44,7 @@ def runReminderTick(
     for base, life in lifeRows:
         if not _isDue(life.dueAt, nowDt):
             continue
-        dedupKey = f"lifeDue:{base.evtId}"
+        dedupKey = f"lifeDue:{base.evtId}:{life.dueAt}"
         if crud.notifyDedupExists(db, dedupKey):
             continue
         routeNotify(
@@ -53,6 +53,7 @@ def runReminderTick(
             content=life.dueAt or base.title,
             screenOnline=screenOnline,
             dedupKey=dedupKey,
+            evtId=base.evtId,
         )
         sent += 1
 
@@ -64,7 +65,7 @@ def runReminderTick(
     for base, ddl in ddlRows:
         if not _isDue(ddl.ddlAt, nowDt):
             continue
-        dedupKey = f"ddlDue:{base.evtId}"
+        dedupKey = f"ddlDue:{base.evtId}:{ddl.ddlAt}"
         if crud.notifyDedupExists(db, dedupKey):
             continue
         routeNotify(
@@ -73,6 +74,7 @@ def runReminderTick(
             content=ddl.ddlAt or base.title,
             screenOnline=screenOnline,
             dedupKey=dedupKey,
+            evtId=base.evtId,
         )
         sent += 1
 

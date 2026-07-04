@@ -42,11 +42,25 @@ _SCREEN_HTML = """<!doctype html>
     </div>
   </section>
   <section class="info-pane">
-    <div class="pane-head">
-      <span class="pane-label">Today</span>
-      <span id="lastMsgAt" class="pane-meta">—</span>
+    <div class="reminder-zone latest">
+      <div class="pane-head">
+        <span class="pane-label">Latest Reminder</span>
+      </div>
+      <div id="latestReminderList" class="today-list empty">No active reminder</div>
     </div>
-    <div id="todayEvtList" class="today-list empty">No events today</div>
+    <div class="reminder-zone day-plan">
+      <div class="pane-head">
+        <span class="pane-label">Today</span>
+        <span id="lastMsgAt" class="pane-meta">—</span>
+      </div>
+      <div id="todayEvtList" class="today-list empty">No events today</div>
+    </div>
+    <div class="reminder-zone expired">
+      <div class="pane-head">
+        <span class="pane-label">Expired</span>
+      </div>
+      <div id="expiredReminderList" class="today-list empty">No expired reminders</div>
+    </div>
   </section>
 </main>
 <section id="reminderPage" data-ws-ui="reminder" class="reminder-page" aria-live="assertive" aria-hidden="true">
@@ -54,7 +68,10 @@ _SCREEN_HTML = """<!doctype html>
     <span class="reminder-kicker">Reminder</span>
     <h1 id="reminderPageTitle">提醒</h1>
     <p id="reminderPageContent">—</p>
-    <button id="reminderDismiss" type="button">知道了</button>
+    <div class="reminder-actions">
+      <button id="reminderDone" type="button">已完成</button>
+      <button id="reminderSnooze" type="button">延时 10 分钟</button>
+    </div>
   </div>
 </section>
 <script src="/static/screen/screen.js"></script>

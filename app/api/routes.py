@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.new_core import crud
+from app.new_core.models import nowIso
 
 router = APIRouter(prefix="/api", tags=["api"])
 
@@ -207,5 +208,27 @@ def list_act_log(db: Session = Depends(get_db)) -> dict[str, Any]:
 def undo_action(undoToken: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
         return crud.undoByToken(db, undoToken)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+class ReminderActionBody(BaseModel):
+    evtId: str
+    action: str
+    now: str | None = None
+
+
+@router.post("/reminder/action")
+def reminder_action(body: ReminderActionBody, db: Session = Depends(get_db)) -> dict[str, Any]:
+    try:
+        return ok(
+            crud.applyReminderAction(
+                db,
+                evtId=body.evtId,
+                action=body.action,
+                now=body.now or nowIso(),
+                src="screen",
+            )
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

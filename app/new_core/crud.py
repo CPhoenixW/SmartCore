@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import secrets
+from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -21,6 +23,15 @@ from app.new_core.models import (
     newId,
     nowIso,
 )
+
+_DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
+
+
+def _parseNow(now: str) -> datetime:
+    parsed = datetime.fromisoformat(now)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=_DEFAULT_TZ)
+    return parsed
 
 
 def _evtDict(base: EvtBase, **extra: Any) -> dict[str, Any]:
@@ -549,6 +560,32 @@ def msgLogExists(db: Session, *, src: str, externalId: str) -> bool:
     )
 
 
+def applyReminderAction(
+    db: Session,
+    *,
+    evtId: str,
+    action: str,
+    now: str,
+    src: str,
+) -> dict[str, Any]:
+    base = db.get(EvtBase, evtId)
+    if base is None:
+        raise ValueError(f"evt not found: {evtId}")
+    if action == "done":
+        fields: dict[str, Any] = {"stat": "done"}
+        if base.evtType == "life":
+            fields["doneAt"] = now
+        return updateEvt(db, evtId, **fields)
+    if action == "snooze10":
+        newInstant = (_parseNow(now) + timedelta(minutes=10)).isoformat()
+        if base.evtType == "life":
+            return updateEvt(db, evtId, dueAt=newInstant)
+        if base.evtType == "ddl":
+            return updateEvt(db, evtId, ddlAt=newInstant)
+        raise ValueError(f"snooze not supported for evtType: {base.evtType}")
+    raise ValueError(f"unknown reminder action: {action}")
+
+
 def undoByToken(db: Session, undoToken: str) -> dict[str, Any]:
     row = db.scalars(select(ActLog).where(ActLog.undoToken == undoToken)).first()
     if row is None:
@@ -577,3 +614,9 @@ def undoByToken(db: Session, undoToken: str) -> dict[str, Any]:
         afterData=row.beforeData,
     )
     return {"ok": True, "stat": "done"}
+
+
+def sendReminder(db: Session, **kwargs: Any) -> dict[str, Any]:
+    from app.new_core.notify import sendReminder as _sendReminder
+
+    return _sendReminder(db, **kwargs)

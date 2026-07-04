@@ -65,6 +65,11 @@ class FeishuEventHandler:
         if event_type and event_type not in ALLOWED_EVENT_TYPES:
             return 200, {"code": 0, "msg": "ignored event type"}
 
+        if event_type == "card.action.trigger":
+            handled, response = self._handleSmartcoreReminderAction(payload, db, now=now)
+            if handled:
+                return 200, response
+
         if not self.settings.openclaw_events_endpoint:
             return 200, {"code": 0, "msg": "openclaw not configured"}
 
@@ -173,6 +178,49 @@ class FeishuEventHandler:
         if user:
             normalized["user"] = user
         return normalized
+
+    def _handleSmartcoreReminderAction(
+        self,
+        payload: dict[str, Any],
+        db: Session,
+        *,
+        now: float | None,
+    ) -> tuple[bool, dict[str, Any]]:
+        event_body = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+        action = event_body.get("action")
+        if not isinstance(action, dict):
+            return False, {}
+        value = action.get("value")
+        if not isinstance(value, dict) or value.get("kind") != "smartcoreReminder":
+            return False, {}
+
+        evt_id = value.get("evtId")
+        action_name = value.get("action")
+        if not isinstance(evt_id, str) or not evt_id:
+            return True, {"toast": {"type": "error", "content": "缺少事件 ID"}}
+        if action_name == "reminderDone":
+            mapped = "done"
+        elif action_name == "reminderSnooze10":
+            mapped = "snooze10"
+        else:
+            return True, {"toast": {"type": "error", "content": "未知操作"}}
+
+        now_dt = (
+            datetime.fromtimestamp(now, _DEFAULT_TZ)
+            if now is not None
+            else datetime.now(_DEFAULT_TZ)
+        )
+        try:
+            crud.applyReminderAction(
+                db,
+                evtId=evt_id,
+                action=mapped,
+                now=now_dt.isoformat(),
+                src="feishu",
+            )
+        except ValueError:
+            return True, {"toast": {"type": "error", "content": "事件不存在或无法更新"}}
+        return True, {"toast": {"type": "success", "content": "已更新"}}
 
     def _forwardTextMessage(
         self,

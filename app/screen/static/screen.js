@@ -9,19 +9,25 @@
   const stateEl = document.getElementById("currentState");
   const stateCaptionEl = document.getElementById("stateCaption");
   const stateRowEl = document.querySelector(".state-row");
+  const latestReminderListEl = document.getElementById("latestReminderList");
   const todayEvtListEl = document.getElementById("todayEvtList");
+  const expiredReminderListEl = document.getElementById("expiredReminderList");
   const wsStatusEl = document.getElementById("wsStatus");
   const wsStatusText = document.getElementById("wsStatusText");
   const lastMsgAt = document.getElementById("lastMsgAt");
   const reminderPageEl = document.getElementById("reminderPage");
   const reminderPageTitleEl = document.getElementById("reminderPageTitle");
   const reminderPageContentEl = document.getElementById("reminderPageContent");
-  const reminderDismissEl = document.getElementById("reminderDismiss");
+  const reminderDoneEl = document.getElementById("reminderDone");
+  const reminderSnoozeEl = document.getElementById("reminderSnooze");
   let ws = null;
   let reconnectTimer = null;
   let serverOffsetMs = 0;
   let currentMode = "away";
   let audioCtx = null;
+  let activeReminder = null;
+  let expireTimer = null;
+  const expiredReminders = [];
 
   function setWsConnected(connected) {
     wsStatusEl.classList.toggle("connected", connected);
@@ -111,27 +117,59 @@
       .sort((a, b) => new Date(getEvtDateValue(a)).getTime() - new Date(getEvtDateValue(b)).getTime());
   }
 
+  function renderLatestReminder() {
+    latestReminderListEl.innerHTML = "";
+    if (!activeReminder) {
+      latestReminderListEl.classList.add("empty");
+      latestReminderListEl.textContent = "No active reminder";
+      return;
+    }
+    latestReminderListEl.classList.remove("empty");
+    const card = document.createElement("article");
+    card.className = "today-primary";
+    card.innerHTML = '<div class="today-time"></div><h2></h2><p></p>';
+    card.querySelector(".today-time").textContent = activeReminder.content || fmtEvtTime(activeReminder);
+    card.querySelector("h2").textContent = activeReminder.title || "未命名提醒";
+    card.querySelector("p").textContent = activeReminder.evtId ? `事件 ${activeReminder.evtId.slice(0, 8)}` : "等待确认";
+    latestReminderListEl.appendChild(card);
+  }
+
+  function renderExpiredReminders() {
+    expiredReminderListEl.innerHTML = "";
+    if (!expiredReminders.length) {
+      expiredReminderListEl.classList.add("empty");
+      expiredReminderListEl.textContent = "No expired reminders";
+      return;
+    }
+    expiredReminderListEl.classList.remove("empty");
+    expiredReminders.forEach((item) => {
+      const row = document.createElement("article");
+      row.className = "expired-reminder";
+      row.innerHTML = "<strong></strong><span></span>";
+      row.querySelector("strong").textContent = item.title || "未命名提醒";
+      row.querySelector("span").textContent = item.content || "";
+      expiredReminderListEl.appendChild(row);
+    });
+  }
+
   function renderTodayEvents(events) {
     const todayEvents = getTodayEvents(events || []);
+    const activeEvtId = activeReminder?.evtId;
+    const filtered = activeEvtId
+      ? todayEvents.filter((evt) => evt.evtId !== activeEvtId)
+      : todayEvents;
     todayEvtListEl.innerHTML = "";
-    todayEvtListEl.classList.toggle("empty", todayEvents.length === 0);
-    if (!todayEvents.length) {
+    todayEvtListEl.classList.toggle("empty", filtered.length === 0);
+    if (!filtered.length) {
       todayEvtListEl.textContent = "No events today";
       return;
     }
-    todayEvents.forEach((evt, index) => {
+    filtered.forEach((evt) => {
       const card = document.createElement("article");
-      card.className = index === 0 ? "today-primary" : "today-compact";
-      if (index === 0) {
-        card.innerHTML = '<div class="today-time"></div><h2></h2><p></p>';
-        card.querySelector(".today-time").textContent = `${evtTypeLabel(evt)} · ${fmtEvtTime(evt)}`;
-        card.querySelector("h2").textContent = evt.title || "未命名事件";
-        card.querySelector("p").textContent = evt.desc || "没有描述";
-      } else {
-        card.innerHTML = '<span class="today-chip"></span><strong></strong>';
-        card.querySelector(".today-chip").textContent = `${evtTypeLabel(evt)} ${fmtEvtTime(evt)}`;
-        card.querySelector("strong").textContent = evt.title || "未命名事件";
-      }
+      card.className = "today-compact";
+      card.innerHTML = '<span class="today-chip"></span><strong></strong>';
+      card.querySelector(".today-chip").textContent = `${evtTypeLabel(evt)} ${fmtEvtTime(evt)}`;
+      card.querySelector("strong").textContent = evt.title || "未命名事件";
       todayEvtListEl.appendChild(card);
     });
   }
@@ -166,24 +204,72 @@
       osc.frequency.setValueAtTime(880, now + offset);
       gain.gain.setValueAtTime(0.0001, now + offset);
       gain.gain.exponentialRampToValueAtTime(0.16, now + offset + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.14);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.16);
       osc.connect(gain).connect(ctx.destination);
       osc.start(now + offset);
       osc.stop(now + offset + 0.16);
     });
   }
 
-  function showReminderPage(title, content) {
-    reminderPageTitleEl.textContent = title || "提醒";
-    reminderPageContentEl.textContent = content || "";
-    reminderPageEl.classList.add("show");
-    reminderPageEl.setAttribute("aria-hidden", "false");
-    playReminderSound();
+  function clearExpireTimer() {
+    if (expireTimer) {
+      clearTimeout(expireTimer);
+      expireTimer = null;
+    }
   }
 
   function hideReminderPage() {
     reminderPageEl.classList.remove("show");
     reminderPageEl.setAttribute("aria-hidden", "true");
+    clearExpireTimer();
+  }
+
+  function showReminderPage(title, content, evtId) {
+    activeReminder = { title, content, evtId: evtId || null };
+    reminderPageTitleEl.textContent = title || "提醒";
+    reminderPageContentEl.textContent = content || "";
+    reminderPageEl.classList.add("show");
+    reminderPageEl.setAttribute("aria-hidden", "false");
+    renderLatestReminder();
+    loadTodayEvents();
+    playReminderSound();
+    clearExpireTimer();
+    expireTimer = setTimeout(expireActiveReminder, 60000);
+  }
+
+  function expireActiveReminder() {
+    if (!activeReminder) return;
+    expiredReminders.unshift({ ...activeReminder });
+    activeReminder = null;
+    hideReminderPage();
+    renderLatestReminder();
+    renderExpiredReminders();
+    loadTodayEvents();
+  }
+
+  async function submitReminderAction(action) {
+    if (!activeReminder?.evtId) {
+      hideReminderPage();
+      activeReminder = null;
+      renderLatestReminder();
+      return;
+    }
+    try {
+      await fetch("/api/reminder/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          evtId: activeReminder.evtId,
+          action,
+        }),
+      });
+    } catch {
+      // Keep UI responsive even if the API is temporarily offline.
+    }
+    activeReminder = null;
+    hideReminderPage();
+    renderLatestReminder();
+    loadTodayEvents();
   }
 
   function handleWsMessage(data) {
@@ -196,8 +282,7 @@
       if (data.devId && data.devId !== "pi") return;
       renderState(data.state);
     } else if (data.kind === "reminder") {
-      showReminderPage(data.title, data.content);
-      loadTodayEvents();
+      showReminderPage(data.title, data.content, data.evtId);
     }
   }
 
@@ -209,7 +294,7 @@
       try {
         handleWsMessage(JSON.parse(event.data));
       } catch {
-        showReminderPage("消息", event.data);
+        showReminderPage("消息", event.data, null);
       }
     };
     ws.onclose = () => {
@@ -220,13 +305,21 @@
     ws.onerror = () => setWsConnected(false);
   }
 
-  reminderDismissEl?.addEventListener("click", hideReminderPage);
+  reminderDoneEl?.addEventListener("click", () => submitReminderAction("done"));
+  reminderSnoozeEl?.addEventListener("click", () => submitReminderAction("snooze10"));
   document.body.addEventListener("pointerdown", () => getAudioCtx()?.resume?.(), { once: true });
   setInterval(tickClock, 1000);
   setInterval(loadTodayEvents, 60000);
   tickClock();
   renderState("unknown");
+  renderLatestReminder();
+  renderExpiredReminders();
   loadTodayEvents();
   connectWs();
   window.handleWsMessage = handleWsMessage;
+  window.expireActiveReminder = expireActiveReminder;
+  window.submitReminderAction = submitReminderAction;
+  window.showReminderPage = showReminderPage;
+  window.renderTodayEvents = renderTodayEvents;
+  window.loadTodayEvents = loadTodayEvents;
 })();

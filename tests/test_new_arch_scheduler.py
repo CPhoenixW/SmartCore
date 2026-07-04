@@ -36,7 +36,7 @@ def test_reminder_tick_routes_due_life_event_and_dedups(app_env, monkeypatch) ->
     assert first["sent"] == 1
     assert second["sent"] == 0
     assert logs[-1]["channel"] == "screen"
-    assert logs[-1]["dedupKey"] == f"lifeDue:{event['evtId']}"
+    assert logs[-1]["dedupKey"] == f"lifeDue:{event['evtId']}:{event['dueAt']}"
 
 
 def test_reminder_tick_routes_due_ddl_to_feishu_when_away(app_env, monkeypatch) -> None:
@@ -67,4 +67,4 @@ def test_reminder_tick_routes_due_ddl_to_feishu_when_away(app_env, monkeypatch) 
 
     assert result["sent"] == 1
     assert logs[-1]["channel"] == "feishu"
-    assert logs[-1]["dedupKey"] == f"ddlDue:{event['evtId']}"
+    assert logs[-1]["dedupKey"] == f"ddlDue:{event['evtId']}:{event['ddlAt']}"
