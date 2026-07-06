@@ -83,7 +83,6 @@ def updateCurrentUser(
     if avatarUrl is not None:
         user.avatarUrl = avatarUrl.strip() or None
     user.updatedAt = nowIso()
-    _recordAct(db, userId=user.userId, src="api", action="update", targetKind="user", targetId=user.userId)
     db.commit()
     db.refresh(user)
     return _userDict(user)
