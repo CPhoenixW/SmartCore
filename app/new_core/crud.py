@@ -74,7 +74,7 @@ def _evtDict(base: EvtBase, **extra: Any) -> dict[str, Any]:
 
 
 def _planDict(base: EvtBase, plan: PlanEvt) -> dict[str, Any]:
-    return _evtDict(base, stTime=plan.stTime, durationMin=plan.durationMin, dueAt=plan.stTime)
+    return _evtDict(base, stTime=plan.stTime, durationMin=plan.durationMin)
 
 
 def _ddl_links(db: Session, ddlEvtId: str) -> list[dict[str, Any]]:
@@ -96,7 +96,6 @@ def _ddlDict(db: Session, base: EvtBase, ddl: DdlEvt) -> dict[str, Any]:
     return _evtDict(
         base,
         endTime=ddl.endTime,
-        ddlAt=ddl.endTime,
         hardDdl=ddl.hardDdl,
         plans=_ddl_links(db, base.evtId),
     )
@@ -108,20 +107,14 @@ def _courseDict(base: EvtBase, course: CourseEvt) -> dict[str, Any]:
         courseName=course.courseName,
         teacher=course.teacher,
         location=course.location,
-        room=course.location,
         stTime=course.stTime,
-        startTime=course.stTime,
         endTime=course.endTime,
         stDate=course.stDate,
         endDate=course.endDate,
-        classDate=course.stDate,
         weekDay=course.weekDay,
-        weekday=course.weekDay,
         startWeek=course.startWeek,
         endWeek=course.endWeek,
         weekMode=course.weekMode,
-        tplId=course.evtId,
-        attendStat="unknown",
     )
 
 
@@ -139,9 +132,7 @@ def _ideaDict(idea: Idea) -> dict[str, Any]:
 
 def _devStateDict(row: DeviceStateLog) -> dict[str, Any]:
     return {
-        "stateId": row.stateLogId,
         "stateLogId": row.stateLogId,
-        "devId": row.deviceId,
         "deviceId": row.deviceId,
         "state": row.state,
         "confidence": row.confidence,
@@ -174,7 +165,6 @@ def _msgLogDict(row: MsgLog) -> dict[str, Any]:
         "msgId": row.msgId,
         "userId": row.userId,
         "channel": row.channel,
-        "src": row.channel,
         "direction": row.direction,
         "externalId": row.externalId,
         "sourceDeviceId": row.sourceDeviceId,
@@ -190,11 +180,8 @@ def _actLogDict(row: ActLog) -> dict[str, Any]:
         "actId": row.actId,
         "userId": row.userId,
         "actorKind": row.actorKind,
-        "src": row.actorKind,
         "actorId": row.actorId,
-        "actor": row.actorId,
         "action": row.action,
-        "actType": row.action,
         "targetKind": row.targetKind,
         "targetId": row.targetId,
         "sourceDeviceId": row.sourceDeviceId,
@@ -210,26 +197,22 @@ def _recordAct(
     userId: str = DEFAULT_USER_ID,
     actorKind: str | None = None,
     actorId: str | None = None,
-    action: str | None = None,
-    targetKind: str | None = None,
-    targetId: str | None = None,
+    action: str,
+    targetKind: str,
+    targetId: str,
     sourceDeviceId: str | None = None,
     result: str = "ok",
     errorMessage: str | None = None,
     src: str | None = None,
-    actType: str | None = None,
-    beforeData: dict | None = None,
-    afterData: dict | None = None,
-    undoToken: str | None = None,
 ) -> ActLog:
     _ensure_user(db, userId)
     row = ActLog(
         userId=userId,
         actorKind=_actor_kind(src, actorKind),
         actorId=actorId,
-        action=action or actType or "update",
-        targetKind=targetKind or "evt",
-        targetId=targetId or "",
+        action=action,
+        targetKind=targetKind,
+        targetId=targetId,
         sourceDeviceId=sourceDeviceId,
         result=result,
         errorMessage=errorMessage,
@@ -284,18 +267,6 @@ def createPlanEvt(
     return result
 
 
-def createLifeEvt(
-    db: Session,
-    *,
-    title: str,
-    dueAt: str | None,
-    src: str,
-    desc: str | None = None,
-    prio: str = "mid",
-) -> dict[str, Any]:
-    return createPlanEvt(db, title=title, stTime=dueAt or nowIso(), durationMin=30, src=src, desc=desc, prio=prio)
-
-
 def _create_linked_plan(
     db: Session,
     *,
@@ -320,26 +291,22 @@ def createDdlEvt(
     db: Session,
     *,
     title: str,
-    endTime: str | None = None,
-    ddlAt: str | None = None,
+    endTime: str,
     hardDdl: bool = False,
     src: str = "api",
     desc: str | None = None,
     prio: str = "high",
     userId: str = DEFAULT_USER_ID,
 ) -> dict[str, Any]:
-    finalEndTime = endTime or ddlAt
-    if not finalEndTime:
-        raise ValueError("endTime is required for ddlEvt")
     _ensure_user(db, userId)
     base = _base_event(userId=userId, title=title, evtType="ddl", desc=desc, prio=prio)
     db.add(base)
     db.flush()
-    ddl = DdlEvt(evtId=base.evtId, endTime=finalEndTime, hardDdl=hardDdl)
+    ddl = DdlEvt(evtId=base.evtId, endTime=endTime, hardDdl=hardDdl)
     db.add(ddl)
     _recordAct(db, userId=userId, src=src, action="create", targetKind="ddlEvt", targetId=base.evtId)
     try:
-        end_dt = _parseNow(finalEndTime)
+        end_dt = _parseNow(endTime)
         defaults = [
             ("one_day_before", end_dt - timedelta(days=1)),
             ("one_hour_before", end_dt - timedelta(hours=1)),
@@ -369,14 +336,11 @@ def createCourseEvt(
     title: str | None = None,
     teacher: str | None = None,
     location: str | None = None,
-    room: str | None = None,
-    stTime: str | None = None,
-    startTime: str | None = None,
-    endTime: str | None = None,
-    stDate: str | None = None,
-    endDate: str | None = None,
-    weekDay: int | None = None,
-    weekday: int | None = None,
+    stTime: str,
+    endTime: str,
+    stDate: str,
+    endDate: str,
+    weekDay: int,
     startWeek: int | None = None,
     endWeek: int | None = None,
     weekMode: str = "all",
@@ -384,13 +348,7 @@ def createCourseEvt(
     prio: str = "mid",
     src: str = "api",
     userId: str = DEFAULT_USER_ID,
-    **_: Any,
 ) -> dict[str, Any]:
-    final_st = stTime or startTime
-    final_weekday = weekDay if weekDay is not None else weekday
-    final_location = location or room
-    if not final_st or not endTime or not stDate or not endDate or final_weekday is None:
-        raise ValueError("courseEvt requires stTime, endTime, stDate, endDate and weekDay")
     _ensure_user(db, userId)
     base = _base_event(userId=userId, title=title or courseName, evtType="course", desc=desc, prio=prio)
     db.add(base)
@@ -399,12 +357,12 @@ def createCourseEvt(
         evtId=base.evtId,
         courseName=courseName,
         teacher=teacher,
-        location=final_location,
-        stTime=final_st,
+        location=location,
+        stTime=stTime,
         endTime=endTime,
         stDate=stDate,
         endDate=endDate,
-        weekDay=final_weekday,
+        weekDay=weekDay,
         startWeek=startWeek,
         endWeek=endWeek,
         weekMode=weekMode,
@@ -413,33 +371,6 @@ def createCourseEvt(
     _recordAct(db, userId=userId, src=src, action="create", targetKind="courseEvt", targetId=base.evtId)
     db.commit()
     return _courseDict(base, course)
-
-
-def createCourseTpl(db: Session, **fields: Any) -> dict[str, Any]:
-    courseName = fields.pop("courseName")
-    return createCourseEvt(db, courseName=courseName, **fields)
-
-
-def createCourseInst(
-    db: Session,
-    *,
-    title: str,
-    tplId: str | None = None,
-    classDate: str | None,
-    attendStat: str = "unknown",
-    src: str = "api",
-) -> dict[str, Any]:
-    return createCourseEvt(
-        db,
-        title=title,
-        courseName=title,
-        stTime="08:00",
-        endTime="08:45",
-        stDate=classDate or datetime.now(_DEFAULT_TZ).date().isoformat(),
-        endDate=classDate or datetime.now(_DEFAULT_TZ).date().isoformat(),
-        weekDay=datetime.now(_DEFAULT_TZ).isoweekday(),
-        src=src,
-    )
 
 
 def createIdea(
@@ -460,8 +391,29 @@ def createIdea(
     return result
 
 
-def ideaToLifeEvt(db: Session, *, ideaId: str, title: str, dueAt: str | None, src: str) -> dict[str, Any]:
-    raise ValueError("idea no longer converts to event")
+def updateIdea(db: Session, ideaId: str, *, content: str | None = None, handled: bool | None = None) -> dict[str, Any]:
+    row = db.get(Idea, ideaId)
+    if row is None:
+        raise ValueError(f"idea not found: {ideaId}")
+    if content is not None:
+        row.content = content
+    if handled is not None:
+        row.handled = handled
+    result = _ideaDict(row)
+    _recordAct(db, userId=row.userId, src="api", action="update", targetKind="idea", targetId=ideaId)
+    db.commit()
+    return result
+
+
+def deleteIdea(db: Session, ideaId: str) -> dict[str, Any]:
+    row = db.get(Idea, ideaId)
+    if row is None:
+        raise ValueError(f"idea not found: {ideaId}")
+    result = _ideaDict(row)
+    _recordAct(db, userId=row.userId, src="api", action="delete", targetKind="idea", targetId=ideaId)
+    db.delete(row)
+    db.commit()
+    return result
 
 
 def listEvt(db: Session, *, userId: str = DEFAULT_USER_ID) -> list[dict[str, Any]]:
@@ -487,24 +439,12 @@ def listPlanEvt(db: Session) -> list[dict[str, Any]]:
     return [item for item in listEvt(db) if item["evtType"] == "plan"]
 
 
-def listLifeEvt(db: Session) -> list[dict[str, Any]]:
-    return listPlanEvt(db)
-
-
 def listDdlEvt(db: Session) -> list[dict[str, Any]]:
     return [item for item in listEvt(db) if item["evtType"] == "ddl"]
 
 
 def listCourseEvt(db: Session) -> list[dict[str, Any]]:
     return [item for item in listEvt(db) if item["evtType"] == "course"]
-
-
-def listCourseInst(db: Session) -> list[dict[str, Any]]:
-    return listCourseEvt(db)
-
-
-def listCourseTpl(db: Session) -> list[dict[str, Any]]:
-    return listCourseEvt(db)
 
 
 def listIdeas(db: Session, *, userId: str = DEFAULT_USER_ID) -> list[dict[str, Any]]:
@@ -533,11 +473,24 @@ def listActLog(db: Session) -> list[dict[str, Any]]:
 
 
 def getLatestDevState(db: Session, *, devId: str = "pi") -> dict[str, Any] | None:
-    row = db.scalars(select(DeviceStateLog).where(DeviceStateLog.deviceId == devId).order_by(DeviceStateLog.seenAt.desc()).limit(1)).first()
+    row = db.scalars(
+        select(DeviceStateLog)
+        .where(DeviceStateLog.deviceId == devId)
+        .order_by(DeviceStateLog.seenAt.desc())
+        .limit(1)
+    ).first()
     return _devStateDict(row) if row else None
 
 
-def upsertDevState(db: Session, *, devId: str, state: str, confidence: float | None = None, seenAt: str | None = None, meta: dict | None = None) -> dict[str, Any]:
+def upsertDevState(
+    db: Session,
+    *,
+    devId: str,
+    state: str,
+    confidence: float | None = None,
+    seenAt: str | None = None,
+    meta: dict | None = None,
+) -> dict[str, Any]:
     _ensure_user(db)
     device = db.get(Device, devId)
     if device is None:
@@ -564,8 +517,6 @@ def updateEvt(db: Session, evtId: str, **fields: Any) -> dict[str, Any]:
         if plan is not None:
             if "stTime" in fields and fields["stTime"] is not None:
                 plan.stTime = fields["stTime"]
-            if "dueAt" in fields and fields["dueAt"] is not None:
-                plan.stTime = fields["dueAt"]
             if "durationMin" in fields and fields["durationMin"] is not None:
                 plan.durationMin = int(fields["durationMin"])
     elif base.evtType == "ddl":
@@ -573,17 +524,26 @@ def updateEvt(db: Session, evtId: str, **fields: Any) -> dict[str, Any]:
         if ddl is not None:
             if "endTime" in fields and fields["endTime"] is not None:
                 ddl.endTime = fields["endTime"]
-            if "ddlAt" in fields and fields["ddlAt"] is not None:
-                ddl.endTime = fields["ddlAt"]
             if "hardDdl" in fields and fields["hardDdl"] is not None:
                 ddl.hardDdl = bool(fields["hardDdl"])
     elif base.evtType == "course":
         course = db.get(CourseEvt, evtId)
         if course is not None:
-            mapping = {"courseName": "courseName", "teacher": "teacher", "location": "location", "room": "location", "stTime": "stTime", "startTime": "stTime", "endTime": "endTime", "stDate": "stDate", "classDate": "stDate", "endDate": "endDate", "weekDay": "weekDay", "weekday": "weekDay", "startWeek": "startWeek", "endWeek": "endWeek", "weekMode": "weekMode"}
-            for key, attr in mapping.items():
+            for key in (
+                "courseName",
+                "teacher",
+                "location",
+                "stTime",
+                "endTime",
+                "stDate",
+                "endDate",
+                "weekDay",
+                "startWeek",
+                "endWeek",
+                "weekMode",
+            ):
                 if key in fields and fields[key] is not None:
-                    setattr(course, attr, fields[key])
+                    setattr(course, key, fields[key])
     base.updatedAt = nowIso()
     _recordAct(db, userId=base.userId, src="api", action="update", targetKind="evt", targetId=evtId)
     db.commit()
@@ -605,18 +565,57 @@ def notifyDedupExists(db: Session, dedupKey: str) -> bool:
     return db.scalars(select(NotifyLog).where(NotifyLog.dedupKey == dedupKey)).first() is not None
 
 
-def writeNotifyLog(db: Session, *, dedupKey: str | None, channel: str, title: str, content: str, stat: str, targetId: str | None = None, evtId: str | None = None, failReason: str | None = None) -> dict[str, Any]:
+def writeNotifyLog(
+    db: Session,
+    *,
+    dedupKey: str | None,
+    channel: str,
+    title: str,
+    content: str,
+    stat: str,
+    targetId: str | None = None,
+    evtId: str | None = None,
+    failReason: str | None = None,
+) -> dict[str, Any]:
     _ensure_user(db)
-    row = NotifyLog(userId=DEFAULT_USER_ID, evtId=evtId, channel=channel, receiver=targetId, title=title, content=content, scheduledAt=nowIso(), sentAt=nowIso(), stat=stat, failReason=failReason, dedupKey=dedupKey)
+    row = NotifyLog(
+        userId=DEFAULT_USER_ID,
+        evtId=evtId,
+        channel=channel,
+        receiver=targetId,
+        title=title,
+        content=content,
+        scheduledAt=nowIso(),
+        sentAt=nowIso(),
+        stat=stat,
+        failReason=failReason,
+        dedupKey=dedupKey,
+    )
     db.add(row)
     db.commit()
     db.refresh(row)
     return _notifyLogDict(row)
 
 
-def createMsgLog(db: Session, *, src: str, externalId: str | None, rawText: str | None, intent: str | None, stat: str) -> dict[str, Any]:
+def createMsgLog(
+    db: Session,
+    *,
+    src: str,
+    externalId: str | None,
+    rawText: str | None,
+    intent: str | None,
+    stat: str,
+) -> dict[str, Any]:
     _ensure_user(db)
-    row = MsgLog(userId=DEFAULT_USER_ID, channel=src if src in _ALLOWED_MSG_CHANNELS else "system", direction="in", externalId=externalId, rawText=rawText, intent=intent, stat=stat)
+    row = MsgLog(
+        userId=DEFAULT_USER_ID,
+        channel=src if src in _ALLOWED_MSG_CHANNELS else "system",
+        direction="in",
+        externalId=externalId,
+        rawText=rawText,
+        intent=intent,
+        stat=stat,
+    )
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -642,10 +641,6 @@ def applyReminderAction(db: Session, *, evtId: str, action: str, now: str, src: 
             return updateEvt(db, evtId, endTime=newInstant)
         raise ValueError(f"snooze not supported for evtType: {base.evtType}")
     raise ValueError(f"unknown reminder action: {action}")
-
-
-def undoByToken(db: Session, undoToken: str) -> dict[str, Any]:
-    raise ValueError("undo is disabled in the simplified serial schema")
 
 
 def sendReminder(db: Session, **kwargs: Any) -> dict[str, Any]:
