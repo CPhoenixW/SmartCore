@@ -80,6 +80,37 @@ def _execute_sqlite_script(db_path: Path, script_path: Path) -> None:
         conn.close()
 
 
+def _sqlite_columns(conn: object, table: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {str(row[1]) for row in rows}
+
+
+def _apply_sqlite_migrations(db_path: Path) -> None:
+    """Keep existing development SQLite databases compatible with current models.
+
+    schema.sql uses CREATE TABLE IF NOT EXISTS, so it cannot add columns to an
+    already-created table. These targeted ALTERs prevent 500s after model fields
+    are added while keeping the database contents intact.
+    """
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    try:
+        tables = {str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "appUser" in tables:
+            cols = _sqlite_columns(conn, "appUser")
+            if "language" not in cols:
+                conn.execute("ALTER TABLE appUser ADD COLUMN language VARCHAR(10) NOT NULL DEFAULT 'zh'")
+            if "avatarUrl" not in cols:
+                conn.execute("ALTER TABLE appUser ADD COLUMN avatarUrl VARCHAR(500)")
+            if "updatedAt" not in cols:
+                conn.execute("ALTER TABLE appUser ADD COLUMN updatedAt VARCHAR(64)")
+                conn.execute("UPDATE appUser SET updatedAt = COALESCE(createdAt, strftime('%Y-%m-%dT%H:%M:%f+08:00', 'now')) WHERE updatedAt IS NULL")
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def init_db() -> None:
     from app.new_core import models  # noqa: F401
 
@@ -87,6 +118,7 @@ def init_db() -> None:
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
     if settings.database_url.startswith("sqlite"):
         _execute_sqlite_script(settings.database_path, schemaSqlPath())
+        _apply_sqlite_migrations(settings.database_path)
         return
 
     engine, _ = _ensure_engine()
