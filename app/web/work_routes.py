@@ -97,7 +97,7 @@ _OVERVIEW_BODY = f"""
   <article class="summary-card"><span>未来 48 小时</span><strong id="ovDeadline">0</strong></article>
   <article class="summary-card"><span>灵感 Inbox</span><strong id="ovIdeas">0</strong></article>
 </section>
-<section class="content-grid overview-grid">
+<section class="content-grid two-one overview-grid">
   <article class="card"><header><h2>今日事项</h2><a class="link" href="/work/update">全部事件</a></header><div class="card-body list" id="overviewTasks"></div></article>
   <aside class="card sticky-card"><header><h2>编辑事件</h2></header><div class="card-body">{_EVT_EDIT_FORM}</div></aside>
 </section>
@@ -105,11 +105,9 @@ _OVERVIEW_BODY = f"""
   <article class="card"><header><h2>即将截止</h2></header><div class="card-body list" id="overviewTimeline"></div></article>
   <article class="card"><header><h2>最近灵感</h2><a class="link" href="/work/inspire">整理</a></header><div class="card-body list" id="overviewIdeas"></div></article>
 </section>
-<section class="quick-grid">
-  <a class="quick-card" href="/work/add"><strong>添加事件</strong><span>创建事项或 DDL</span></a>
-  <a class="quick-card" href="/work/inspire"><strong>记录灵感</strong><span>保存想法并转事项</span></a>
-  <a class="quick-card" href="/work/course"><strong>课表管理</strong><span>维护课程模板</span></a>
-  <a class="quick-card" href="/work/log"><strong>操作日志</strong><span>查看增删改记录</span></a>
+<section class="content-grid two">
+  <a class="card quick-card" href="/work/add"><div class="card-body"><strong>添加事件</strong><p class="row-meta">创建事项或 DDL</p></div></a>
+  <a class="card quick-card" href="/work/inspire"><div class="card-body"><strong>记录灵感</strong><p class="row-meta">保存想法并转事项</p></div></a>
 </section>
 """
 
