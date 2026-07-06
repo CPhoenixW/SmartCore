@@ -90,12 +90,20 @@ def _add_sqlite_column(conn: object, table: str, column: str, ddl: str) -> None:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
 
 
+def _rebuild_table_if_incompatible(conn: object, table: str, required_columns: set[str], create_sql: str) -> None:
+    cols = _sqlite_columns(conn, table)
+    if not required_columns.issubset(cols):
+        conn.execute(f"DROP TABLE IF EXISTS {table}")
+        conn.execute(create_sql)
+
+
 def _apply_sqlite_migrations(db_path: Path) -> None:
     """Keep existing development SQLite databases compatible with current models.
 
     schema.sql uses CREATE TABLE IF NOT EXISTS, so it cannot add columns to an
     already-created table. These targeted ALTERs prevent 500s after model fields
-    are added while keeping the database contents intact.
+    are added while keeping the database contents intact. Log tables are rebuilt
+    if their historical schema is incompatible because they are derived audit data.
     """
     import sqlite3
 
@@ -114,21 +122,71 @@ def _apply_sqlite_migrations(db_path: Path) -> None:
         if "idea" in tables:
             _add_sqlite_column(conn, "idea", "userId", "userId VARCHAR(32) NOT NULL DEFAULT 'default'")
             conn.execute("UPDATE idea SET userId = COALESCE(userId, 'default')")
+        if "actLog" in tables:
+            _rebuild_table_if_incompatible(
+                conn,
+                "actLog",
+                {"actId", "userId", "actorKind", "actorId", "action", "targetKind", "targetId", "sourceDeviceId", "result", "errorMessage", "createdAt"},
+                """
+                CREATE TABLE actLog (
+                    actId VARCHAR(32) PRIMARY KEY,
+                    userId VARCHAR(32) NOT NULL,
+                    actorKind VARCHAR(20) NOT NULL,
+                    actorId VARCHAR(100),
+                    action VARCHAR(30) NOT NULL,
+                    targetKind VARCHAR(30) NOT NULL,
+                    targetId VARCHAR(32) NOT NULL,
+                    sourceDeviceId VARCHAR(50),
+                    result VARCHAR(20) NOT NULL DEFAULT 'ok',
+                    errorMessage TEXT,
+                    createdAt VARCHAR(64) NOT NULL
+                )
+                """,
+            )
         if "notifyLog" in tables:
-            _add_sqlite_column(conn, "notifyLog", "userId", "userId VARCHAR(32) NOT NULL DEFAULT 'default'")
-            _add_sqlite_column(conn, "notifyLog", "sourceDeviceId", "sourceDeviceId VARCHAR(50)")
-            _add_sqlite_column(conn, "notifyLog", "receiver", "receiver VARCHAR(100)")
-            _add_sqlite_column(conn, "notifyLog", "routeReason", "routeReason VARCHAR(50)")
-            _add_sqlite_column(conn, "notifyLog", "scheduledAt", "scheduledAt VARCHAR(64)")
-            _add_sqlite_column(conn, "notifyLog", "sentAt", "sentAt VARCHAR(64)")
-            _add_sqlite_column(conn, "notifyLog", "failReason", "failReason TEXT")
-            _add_sqlite_column(conn, "notifyLog", "dedupKey", "dedupKey VARCHAR(200)")
-            conn.execute("UPDATE notifyLog SET userId = COALESCE(userId, 'default')")
-            conn.execute("UPDATE notifyLog SET scheduledAt = COALESCE(scheduledAt, createdAt, sentAt, strftime('%Y-%m-%dT%H:%M:%f+08:00', 'now')) WHERE scheduledAt IS NULL")
+            _rebuild_table_if_incompatible(
+                conn,
+                "notifyLog",
+                {"notifyId", "userId", "evtId", "channel", "receiver", "sourceDeviceId", "routeReason", "title", "content", "scheduledAt", "sentAt", "stat", "failReason", "dedupKey"},
+                """
+                CREATE TABLE notifyLog (
+                    notifyId VARCHAR(32) PRIMARY KEY,
+                    userId VARCHAR(32) NOT NULL,
+                    evtId VARCHAR(32),
+                    channel VARCHAR(20) NOT NULL,
+                    receiver VARCHAR(100),
+                    sourceDeviceId VARCHAR(50),
+                    routeReason VARCHAR(50),
+                    title VARCHAR(300) NOT NULL,
+                    content TEXT NOT NULL,
+                    scheduledAt VARCHAR(64) NOT NULL,
+                    sentAt VARCHAR(64),
+                    stat VARCHAR(20) NOT NULL,
+                    failReason TEXT,
+                    dedupKey VARCHAR(200) UNIQUE
+                )
+                """,
+            )
         if "msgLog" in tables:
-            _add_sqlite_column(conn, "msgLog", "userId", "userId VARCHAR(32) NOT NULL DEFAULT 'default'")
-            _add_sqlite_column(conn, "msgLog", "sourceDeviceId", "sourceDeviceId VARCHAR(50)")
-            conn.execute("UPDATE msgLog SET userId = COALESCE(userId, 'default')")
+            _rebuild_table_if_incompatible(
+                conn,
+                "msgLog",
+                {"msgId", "userId", "channel", "direction", "externalId", "sourceDeviceId", "rawText", "intent", "stat", "createdAt"},
+                """
+                CREATE TABLE msgLog (
+                    msgId VARCHAR(32) PRIMARY KEY,
+                    userId VARCHAR(32) NOT NULL,
+                    channel VARCHAR(30) NOT NULL,
+                    direction VARCHAR(10) NOT NULL,
+                    externalId VARCHAR(200),
+                    sourceDeviceId VARCHAR(50),
+                    rawText TEXT,
+                    intent VARCHAR(100),
+                    stat VARCHAR(50),
+                    createdAt VARCHAR(64) NOT NULL
+                )
+                """,
+            )
         conn.commit()
     finally:
         conn.close()
