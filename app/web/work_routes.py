@@ -6,12 +6,13 @@ from fastapi.responses import HTMLResponse
 router = APIRouter(tags=["work"])
 
 _PAGE_META = {
-    "overview": ("总览", "快速查看待办、截止事项、灵感与快捷入口"),
-    "add": ("添加事件", "创建计划事项、截止事项，并支持自然语言预填"),
-    "update": ("更新事件", "查看、修改、完成、取消已有事件"),
-    "inspire": ("灵感", "记录和整理灵感"),
-    "course": ("课表", "查看和修改课程事件"),
-    "log": ("日志", "查看事件增删改查、通知和消息日志"),
+    "overview": ("总览", "待办、DDL、灵感"),
+    "add": ("添加事件", "自然语言预填"),
+    "update": ("更新事件", "查看和修改事项"),
+    "inspire": ("灵感", "记录和整理"),
+    "course": ("课表", "课程事件管理"),
+    "log": ("日志", "日志追踪"),
+    "settings": ("设置", "用户与偏好"),
 }
 
 _NAV = [
@@ -21,6 +22,7 @@ _NAV = [
     ("inspire", "/work/inspire", "灵感", "◇"),
     ("course", "/work/course", "课表", "□"),
     ("log", "/work/log", "日志", "≡"),
+    ("settings", "/work/settings", "设置", "⚙"),
 ]
 
 
@@ -59,7 +61,10 @@ def _shell(active: str, body_html: str) -> str:
       <div class="topbar-actions">
         <span class="status-pill" id="apiStatus">API 待命</span>
         <span class="top-muted" id="lastRefresh">未刷新</span>
-        <button type="button" class="btn" id="refreshPageBtn">刷新</button>
+        <a class="top-avatar" id="topUserLink" href="/work/settings" aria-label="用户设置">
+          <img id="topAvatarImg" alt="" hidden>
+          <span id="topAvatarText">SC</span>
+        </a>
       </div>
     </header>
     <main class="page-main">
@@ -169,6 +174,28 @@ _LOG_BODY = """
 <section class="card"><header><h2>操作日志</h2><div class="tabs"><button class="tab active" data-log-tab="act">事件操作</button><button class="tab" data-log-tab="notify">提醒</button><button class="tab" data-log-tab="msg">消息</button></div></header><div class="card-body"><div class="filter-row"><input id="logKeyword" placeholder="搜索日志..." autocomplete="off"><select id="logStatusFilter"><option value="">全部状态</option><option value="ok">ok</option><option value="failed">failed</option><option value="pending">pending</option><option value="sent">sent</option></select></div><div id="logList" class="list"></div></div></section>
 """
 
+_SETTINGS_BODY = """
+<section class="content-grid two-one">
+  <article class="card">
+    <header><h2>用户设置</h2><button type="submit" form="userSettingsForm" class="btn btn-primary">保存设置</button></header>
+    <div class="card-body">
+      <form id="userSettingsForm" class="edit-form">
+        <label class="field required"><span>用户名称</span><input name="displayName" required placeholder="默认用户"></label>
+        <label class="field"><span>语言</span><select name="language"><option value="zh">中文</option><option value="en">English</option></select></label>
+        <label class="field"><span>头像 URL</span><input name="avatarUrl" placeholder="https://... 或留空使用文字头像"></label>
+      </form>
+    </div>
+  </article>
+  <aside class="card">
+    <header><h2>头像预览</h2></header>
+    <div class="card-body settings-preview">
+      <div class="settings-avatar"><img id="settingsAvatarImg" alt="" hidden><span id="settingsAvatarText">SC</span></div>
+      <div><div class="row-title" id="settingsNamePreview">默认用户</div><div class="row-meta" id="settingsLanguagePreview">中文</div></div>
+    </div>
+  </aside>
+</section>
+"""
+
 
 @router.get("/work", response_class=HTMLResponse)
 def workOverview() -> str:
@@ -198,3 +225,8 @@ def workCourse() -> str:
 @router.get("/work/log", response_class=HTMLResponse)
 def workLog() -> str:
     return _shell("log", _LOG_BODY)
+
+
+@router.get("/work/settings", response_class=HTMLResponse)
+def workSettings() -> str:
+    return _shell("settings", _SETTINGS_BODY)
