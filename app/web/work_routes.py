@@ -6,8 +6,8 @@ from fastapi.responses import HTMLResponse
 router = APIRouter(tags=["work"])
 
 _PAGE_META = {
-    "overview": ("总览", "统一查看今日事项、DDL、灵感和系统状态"),
-    "add": ("添加事件", "创建普通事项、截止事项，并预留自然语言解析入口"),
+    "overview": ("总览", "快速查看待办、截止事项、灵感与快捷入口"),
+    "add": ("添加事件", "创建普通事项、截止事项，并支持自然语言预填"),
     "update": ("更新事件", "查看、修改、完成、取消已有事件"),
     "inspire": ("灵感", "添加、查看、整理灵感，并转换为事项"),
     "course": ("课表", "查看和修改课程模板、课程实例"),
@@ -77,21 +77,38 @@ def _shell(active: str, body_html: str) -> str:
 </body>
 </html>"""
 
+_EVT_EDIT_FORM = """
+<form id="evtEditForm" class="edit-form">
+  <input name="evtId" type="hidden">
+  <label class="field required"><span>标题</span><input name="title" required></label>
+  <label class="field"><span>描述</span><textarea name="desc" rows="4"></textarea></label>
+  <div class="form-row"><label class="field"><span>状态</span><select name="stat"><option value="todo">待办</option><option value="done">完成</option><option value="cancelled">已取消</option></select></label><label class="field"><span>优先级</span><select name="prio"><option value="mid">中</option><option value="high">高</option><option value="low">低</option></select></label></div>
+  <label class="field" id="evtTimeField"><span>时间</span><input name="evtTime" type="datetime-local"></label>
+  <label class="check-line" id="hardDdlField"><input name="hardDdl" type="checkbox"><span>硬性截止</span></label>
+  <div class="button-row"><button type="submit" class="btn btn-primary">保存</button><button type="button" class="btn" id="markDoneBtn">完成</button><button type="button" class="btn btn-danger" id="cancelEvtBtn">取消</button></div>
+</form>
+"""
 
-_OVERVIEW_BODY = """
+_OVERVIEW_BODY = f"""
 <section class="summary-grid">
   <article class="summary-card"><span>待办事项</span><strong id="ovTodo">0</strong></article>
+  <article class="summary-card"><span>今日事项</span><strong id="ovToday">0</strong></article>
   <article class="summary-card"><span>未来 48 小时</span><strong id="ovDeadline">0</strong></article>
   <article class="summary-card"><span>灵感 Inbox</span><strong id="ovIdeas">0</strong></article>
-  <article class="summary-card"><span>设备状态</span><strong id="ovDevice">—</strong></article>
 </section>
-<section class="content-grid two-one">
-  <article class="card"><header><h2>今日事项</h2><a class="link" href="/work/update">管理</a></header><div class="card-body list" id="overviewTasks"></div></article>
-  <article class="card"><header><h2>提醒路由</h2></header><div class="card-body" id="overviewRoute"></div></article>
+<section class="content-grid overview-grid">
+  <article class="card"><header><h2>今日事项</h2><a class="link" href="/work/update">全部事件</a></header><div class="card-body list" id="overviewTasks"></div></article>
+  <aside class="card sticky-card"><header><h2>编辑事件</h2></header><div class="card-body">{_EVT_EDIT_FORM}</div></aside>
 </section>
 <section class="content-grid two">
   <article class="card"><header><h2>即将截止</h2></header><div class="card-body list" id="overviewTimeline"></div></article>
   <article class="card"><header><h2>最近灵感</h2><a class="link" href="/work/inspire">整理</a></header><div class="card-body list" id="overviewIdeas"></div></article>
+</section>
+<section class="quick-grid">
+  <a class="quick-card" href="/work/add"><strong>添加事件</strong><span>创建事项或 DDL</span></a>
+  <a class="quick-card" href="/work/inspire"><strong>记录灵感</strong><span>保存想法并转事项</span></a>
+  <a class="quick-card" href="/work/course"><strong>课表管理</strong><span>维护课程模板</span></a>
+  <a class="quick-card" href="/work/log"><strong>操作日志</strong><span>查看增删改记录</span></a>
 </section>
 """
 
@@ -128,10 +145,10 @@ _ADD_BODY = """
 </section>
 """
 
-_UPDATE_BODY = """
+_UPDATE_BODY = f"""
 <section class="content-grid two-one">
   <article class="card"><header><h2>事件列表</h2><select id="evtStatusFilter"><option value="todo">待办</option><option value="done">完成</option><option value="cancelled">已取消</option><option value="all">全部</option></select></header><div class="card-body list" id="evtList"></div></article>
-  <aside class="card"><header><h2>编辑事件</h2></header><div class="card-body"><form id="evtEditForm" class="edit-form"><input name="evtId" type="hidden"><label class="field required"><span>标题</span><input name="title" required></label><label class="field"><span>描述</span><textarea name="desc" rows="4"></textarea></label><div class="form-row"><label class="field"><span>状态</span><select name="stat"><option value="todo">待办</option><option value="done">完成</option><option value="cancelled">已取消</option></select></label><label class="field"><span>优先级</span><select name="prio"><option value="mid">中</option><option value="high">高</option><option value="low">低</option></select></label></div><label class="field" id="evtTimeField"><span>时间</span><input name="evtTime" type="datetime-local"></label><label class="check-line" id="hardDdlField"><input name="hardDdl" type="checkbox"><span>硬性截止</span></label><div class="button-row"><button type="submit" class="btn btn-primary">保存</button><button type="button" class="btn" id="markDoneBtn">完成</button><button type="button" class="btn btn-danger" id="cancelEvtBtn">取消</button></div></form></div></aside>
+  <aside class="card sticky-card"><header><h2>编辑事件</h2></header><div class="card-body">{_EVT_EDIT_FORM}</div></aside>
 </section>
 """
 
