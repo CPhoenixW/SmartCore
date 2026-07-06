@@ -11,8 +11,6 @@ from app.db.session import init_db
 from app.feishu.event_handler import create_feishu_router
 from app.scheduler.service import build_scheduler_service
 from app.screen.routes import router as screenRouter
-from app.web.add_routes import router as workAddRouter
-from app.web.board_routes import router as workBoardRouter
 from app.web.work_routes import router as workRouter
 
 
@@ -44,8 +42,6 @@ def create_app() -> FastAPI:
     app.include_router(createAgentRouter())
     app.include_router(create_feishu_router())
     app.include_router(workRouter)
-    app.include_router(workAddRouter)
-    app.include_router(workBoardRouter)
     app.include_router(screenRouter)
 
     static_dir = Path(__file__).resolve().parent / "web" / "static"
