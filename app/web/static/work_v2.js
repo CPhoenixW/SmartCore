@@ -1,6 +1,6 @@
 const page = document.body.dataset.page;
 const $ = (id) => document.getElementById(id);
-const state = { ideas: [], courses: [], logs: { act: [], notify: [], msg: [] }, logTab: "act", createTab: "plan", user: null };
+const state = { ideas: [], courses: [], logs: { act: [], notify: [], msg: [] }, logTab: "act", createTab: "plan", user: null, editingIdeaId: null };
 const prioLabels = { high: "高", mid: "中", low: "低" };
 const languageLabels = { zh: "中文", en: "English" };
 
@@ -11,534 +11,66 @@ function esc(value) {
     .replace(/>/g, "&gt;")
     .replace(/\"/g, "&quot;");
 }
+function toast(text) { const el = $("toast"); if (!el) return; el.textContent = text; el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 2200); }
+function setApiStatus(kind, text) { const el = $("apiStatus"); if (!el) return; el.className = `status-pill ${kind || ""}`.trim(); el.textContent = text; }
+function touchRefresh() { const el = $("lastRefresh"); if (el) el.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false }); }
+async function apiGet(path) { setApiStatus("busy", "API 请求中"); const resp = await fetch(path); const data = await resp.json().catch(() => ({})); if (!resp.ok || data.ok === false) throw new Error(data.detail || data.msg || `HTTP ${resp.status}`); setApiStatus("ok", "API 在线"); return data.data ?? []; }
+async function apiGetQuiet(path) { const resp = await fetch(path); const data = await resp.json().catch(() => ({})); if (!resp.ok || data.ok === false) throw new Error(data.detail || data.msg || `HTTP ${resp.status}`); return data.data; }
+async function apiSend(path, options) { setApiStatus("busy", "API 请求中"); const resp = await fetch(path, options); const data = await resp.json().catch(() => ({})); if (!resp.ok || data.ok === false) { setApiStatus("err", "API 异常"); throw new Error(data.detail || data.msg || `HTTP ${resp.status}`); } setApiStatus("ok", "API 在线"); touchRefresh(); return data.data; }
+function formVal(form, name) { return form?.elements[name]?.value?.trim() || ""; }
+function numOrNull(value) { return value === "" || value == null ? null : Number(value); }
+function toIsoFromLocal(value) { if (!value) return null; const d = new Date(value); if (Number.isNaN(d.getTime())) return null; const pad = (n) => String(n).padStart(2, "0"); const off = -d.getTimezoneOffset(); const sign = off >= 0 ? "+" : "-"; const abs = Math.abs(off); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`; }
+function toLocalInputValue(value) { if (!value) return ""; const d = value instanceof Date ? value : new Date(value); if (Number.isNaN(d.getTime())) return ""; const pad = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function rowEmpty(text) { return `<div class="empty">${esc(text)}</div>`; }
+function tagClass(value) { if (value === "high") return "red"; if (value === "mid") return "orange"; return "blue"; }
+function normalizePrio(value, fallbackTab = "plan") { const text = String(value || "").trim().toLowerCase(); if (["high", "高", "urgent", "important", "紧急", "重要"].includes(text)) return "high"; if (["low", "低", "later", "不急", "不重要"].includes(text)) return "low"; if (["mid", "middle", "medium", "normal", "普通", "中"].includes(text)) return "mid"; return fallbackTab === "ddl" ? "high" : "mid"; }
+function normalizeTab(parsed) { const raw = String(parsed?.tab || parsed?.evtType || parsed?.type || "plan").trim().toLowerCase(); return ["ddl", "deadline", "截止", "截止事项"].includes(raw) ? "ddl" : "plan"; }
+function normalizeParsed(raw) { const p = raw || {}; const tab = normalizeTab(p); const result = { tab, evtType: tab, title: String(p.title || "").trim(), desc: String(p.desc ?? p.description ?? "").trim(), prio: normalizePrio(p.prio || p.priority, tab), durationMin: Number(p.durationMin || p.duration || 30), hardDdl: Boolean(p.hardDdl) }; if (tab === "ddl") result.endTime = toLocalInputValue(p.endTime || p.deadline || p.at); else result.stTime = toLocalInputValue(p.stTime || p.startTime || p.at); return result; }
 
-function toast(text) {
-  const el = $("toast");
-  if (!el) return;
-  el.textContent = text;
-  el.classList.add("show");
-  setTimeout(() => el.classList.remove("show"), 2200);
-}
+function avatarText(name) { const text = String(name || "SC").trim(); return text.slice(0, 2).toUpperCase() || "SC"; }
+function applyAvatar(textId, imgId, user) { const img = $(imgId); const text = $(textId); if (!img || !text) return; text.textContent = avatarText(user?.displayName); if (user?.avatarUrl) { img.src = user.avatarUrl; img.hidden = false; text.hidden = true; } else { img.removeAttribute("src"); img.hidden = true; text.hidden = false; } }
+function updateSettingsPreview() { const form = $("userSettingsForm"); if (!form) return; const user = { displayName: formVal(form, "displayName") || "默认用户", language: formVal(form, "language") || "zh", avatarUrl: formVal(form, "avatarUrl") || null }; applyAvatar("settingsAvatarText", "settingsAvatarImg", user); if ($("settingsNamePreview")) $("settingsNamePreview").textContent = user.displayName; if ($("settingsLanguagePreview")) $("settingsLanguagePreview").textContent = languageLabels[user.language] || user.language; }
+function applyUserUI(user) { state.user = user; applyAvatar("topAvatarText", "topAvatarImg", user); const form = $("userSettingsForm"); if (form) { form.elements.displayName.value = user.displayName || ""; form.elements.language.value = user.language || "zh"; form.elements.avatarUrl.value = user.avatarUrl || ""; updateSettingsPreview(); } }
+async function loadCurrentUser() { try { applyUserUI(await apiGetQuiet("/api/user/me")); } catch { applyUserUI({ displayName: "SC", language: "zh", avatarUrl: null }); } }
+async function saveSettings(ev) { ev.preventDefault(); const form = ev.currentTarget; const body = { displayName: formVal(form, "displayName"), language: formVal(form, "language") || "zh", avatarUrl: formVal(form, "avatarUrl") || null }; try { applyUserUI(await apiSend("/api/user/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })); toast("设置已保存"); } catch (err) { toast(err.message); } }
 
-function setApiStatus(kind, text) {
-  const el = $("apiStatus");
-  if (!el) return;
-  el.className = `status-pill ${kind || ""}`.trim();
-  el.textContent = text;
-}
+function setCreateTab(tab) { state.createTab = tab; document.querySelectorAll("[data-create-tab]").forEach((btn) => btn.classList.toggle("active", btn.dataset.createTab === tab)); $("planForm")?.classList.toggle("active", tab === "plan"); $("ddlForm")?.classList.toggle("active", tab === "ddl"); renderCreatePreview(); }
+function createForm() { return state.createTab === "ddl" ? $("ddlForm") : $("planForm"); }
+function createPayload() { const form = createForm(); if (state.createTab === "ddl") return { title: formVal(form, "title"), desc: formVal(form, "desc") || null, endTime: toIsoFromLocal(formVal(form, "endTime")), hardDdl: form.elements.hardDdl.checked, prio: formVal(form, "prio") || "high" }; return { title: formVal(form, "title"), desc: formVal(form, "desc") || null, stTime: toIsoFromLocal(formVal(form, "stTime")), durationMin: Number(formVal(form, "durationMin") || 30), prio: formVal(form, "prio") || "mid" }; }
+function renderCreatePreview(created = null) { const body = $("createPreview"); if (!body) return; const p = created || createPayload(); const title = p.title || "等待填写标题"; const time = state.createTab === "ddl" ? (formVal(createForm(), "endTime") || "未设置") : (formVal(createForm(), "stTime") || "未设置"); const link = created?.evtId ? `<div class="row-actions"><a class="btn" href="/work/update?evtId=${encodeURIComponent(created.evtId)}">打开编辑页</a></div>` : ""; body.innerHTML = `<div class="preview-card"><div class="preview-title">${esc(title)}</div><div class="tags"><span class="tag ${state.createTab === "ddl" ? "purple" : "blue"}">${state.createTab === "ddl" ? "DDL" : "计划"}</span><span class="tag ${tagClass(p.prio)}">${esc(prioLabels[p.prio] || p.prio)}</span><span class="tag blue">${esc(time)}</span>${state.createTab === "plan" ? `<span class="tag green">${esc(p.durationMin || 30)} 分钟</span>` : ""}</div>${p.desc ? `<p class="preview-desc">${esc(p.desc)}</p>` : ""}${link}</div>`; }
+function applyParsed(parsed) { const p = normalizeParsed(parsed); setCreateTab(p.tab); const form = createForm(); form.elements.title.value = p.title || ""; form.elements.desc.value = p.desc || ""; form.elements.prio.value = normalizePrio(p.prio, p.tab); if (p.tab === "ddl") { form.elements.endTime.value = p.endTime || ""; form.elements.hardDdl.checked = Boolean(p.hardDdl); } else { form.elements.stTime.value = p.stTime || ""; form.elements.durationMin.value = p.durationMin || 30; } renderCreatePreview(); }
+async function parseNatural() { const text = $("naturalText")?.value.trim(); if (!text) return toast("请先输入内容"); try { toast("正在调用大模型解析..."); setApiStatus("busy", "模型解析中"); const resp = await apiSend("/api/llm/parse", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, scene: "create_event" }) }); if (!resp?.parsed) throw new Error("大模型没有返回可用解析结果"); applyParsed(resp.parsed); setApiStatus("ok", "模型解析完成"); toast("已使用大模型结果预填"); } catch (err) { setApiStatus("err", "模型解析失败"); toast(err.message || "大模型解析失败"); } }
+async function submitCreate(ev) { ev.preventDefault(); const form = ev.currentTarget; const body = createPayload(); if (!body.title) return toast("请填写标题"); try { const created = await apiSend(form.dataset.endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); form.reset(); renderCreatePreview(created); toast("创建成功，已自动更新预览"); } catch (err) { toast(err.message); } }
+function applyTemplate(name) { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(23, 59, 0, 0); if (name === "homework" || name === "exam") { setCreateTab("ddl"); const f = $("ddlForm"); f.elements.title.value = name === "homework" ? "作业 DDL" : "考试复习"; f.elements.desc.value = name === "homework" ? "课程作业截止" : "复习重点章节并完成例题"; f.elements.endTime.value = toLocalInputValue(d); f.elements.prio.value = "high"; f.elements.hardDdl.checked = name === "homework"; } else { setCreateTab("plan"); const f = $("planForm"); f.elements.title.value = name === "project" ? "项目跟进" : "计划事项"; f.elements.desc.value = name === "project" ? "检查阶段任务进展" : ""; f.elements.stTime.value = toLocalInputValue(d); f.elements.durationMin.value = 30; f.elements.prio.value = "mid"; } renderCreatePreview(); }
+function initAdd() { document.querySelectorAll("[data-create-tab]").forEach((b) => b.addEventListener("click", () => setCreateTab(b.dataset.createTab))); document.querySelectorAll("#planForm,#ddlForm").forEach((f) => { f.addEventListener("input", renderCreatePreview); f.addEventListener("change", renderCreatePreview); f.addEventListener("submit", submitCreate); }); document.querySelectorAll(".template").forEach((b) => b.addEventListener("click", () => applyTemplate(b.dataset.template))); $("parseNaturalBtn")?.addEventListener("click", parseNatural); renderCreatePreview(); }
 
-function touchRefresh() {
-  const el = $("lastRefresh");
-  if (el) el.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
-}
-
-async function apiGet(path) {
-  setApiStatus("busy", "API 请求中");
-  const resp = await fetch(path);
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok || data.ok === false) throw new Error(data.detail || data.msg || `HTTP ${resp.status}`);
-  setApiStatus("ok", "API 在线");
-  return data.data ?? [];
-}
-
-async function apiSend(path, options) {
-  setApiStatus("busy", "API 请求中");
-  const resp = await fetch(path, options);
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok || data.ok === false) {
-    setApiStatus("err", "API 异常");
-    throw new Error(data.detail || data.msg || `HTTP ${resp.status}`);
+function ideaRow(idea) {
+  const editing = state.editingIdeaId === idea.ideaId;
+  if (editing) {
+    return `<div class="row-card idea-card editing"><textarea class="nl-input" rows="4" data-idea-edit="${esc(idea.ideaId)}">${esc(idea.content)}</textarea><div class="row-meta">${idea.handled ? "handled" : "open"} · ${esc(idea.createdAt || "")}</div><div class="row-actions"><button class="btn btn-primary" data-action="saveIdeaEdit" data-id="${esc(idea.ideaId)}">保存修改</button><button class="btn" data-action="cancelIdeaEdit">取消</button></div></div>`;
   }
-  setApiStatus("ok", "API 在线");
-  touchRefresh();
-  return data.data;
+  return `<div class="row-card idea-card"><div class="row-title">${esc(idea.content)}</div><div class="row-meta">${idea.handled ? "handled" : "open"} · ${esc(idea.createdAt || "")}</div><div class="row-actions"><button class="btn" data-action="editIdea" data-id="${esc(idea.ideaId)}">编辑</button><button class="btn" data-action="toggleIdea" data-id="${esc(idea.ideaId)}" data-handled="${idea.handled ? "0" : "1"}">${idea.handled ? "标为 open" : "标为 handled"}</button><button class="btn btn-danger" data-action="deleteIdea" data-id="${esc(idea.ideaId)}">删除</button></div></div>`;
 }
+function renderIdeas() { const filter = $("ideaFilter")?.value || "open"; const rows = state.ideas.filter((i) => filter === "all" || (filter === "open" ? !i.handled : i.handled)); $("ideaList").innerHTML = rows.length ? rows.slice().reverse().map(ideaRow).join("") : rowEmpty("暂无灵感"); }
+async function initInspire() { try { state.ideas = await apiGet("/api/idea"); renderIdeas(); touchRefresh(); } catch (err) { toast(err.message); setApiStatus("err", "API 异常"); } }
+async function saveIdea() { const content = $("ideaContent").value.trim(); if (!content) return toast("请填写灵感"); try { await apiSend("/api/idea", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, srcType: "text" }) }); $("ideaContent").value = ""; await initInspire(); toast("已保存"); } catch (err) { toast(err.message); } }
+async function saveIdeaEdit(ideaId) { const input = document.querySelector(`[data-idea-edit="${CSS.escape(ideaId)}"]`); const content = input?.value.trim() || ""; if (!content) return toast("灵感内容不能为空"); try { await apiSend(`/api/idea/${ideaId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content }) }); state.editingIdeaId = null; await initInspire(); toast("灵感已更新"); } catch (err) { toast(err.message); } }
 
-async function apiGetQuiet(path) {
-  const resp = await fetch(path);
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok || data.ok === false) throw new Error(data.detail || data.msg || `HTTP ${resp.status}`);
-  return data.data;
-}
+function renderCourse() { $("courseTplList").innerHTML = state.courses.length ? state.courses.map((c) => `<div class="row-card"><div class="row-title">${esc(c.courseName || c.title)}</div><div class="row-meta">周${esc(c.weekDay)} · ${esc(c.stTime || "—")} - ${esc(c.endTime || "—")} · ${esc(c.location || "")}</div><div class="row-actions"><button class="btn" data-action="editCourse" data-id="${esc(c.evtId)}">编辑</button></div></div>`).join("") : rowEmpty("暂无课程"); }
+function fillCourse(c = null) { const f = $("courseTplForm"); f.reset(); f.elements.evtId.value = c?.evtId || ""; for (const key of ["courseName", "teacher", "location", "stDate", "endDate", "weekDay", "stTime", "endTime", "startWeek", "endWeek", "weekMode"]) if (c?.[key] != null) f.elements[key].value = c[key]; }
+async function saveCourse(ev) { ev.preventDefault(); const f = ev.currentTarget; const body = { courseName: formVal(f, "courseName"), title: formVal(f, "courseName"), teacher: formVal(f, "teacher") || null, location: formVal(f, "location") || null, stDate: formVal(f, "stDate"), endDate: formVal(f, "endDate"), weekDay: Number(formVal(f, "weekDay")), stTime: formVal(f, "stTime"), endTime: formVal(f, "endTime"), startWeek: numOrNull(formVal(f, "startWeek")), endWeek: numOrNull(formVal(f, "endWeek")), weekMode: formVal(f, "weekMode") || "all" }; const id = formVal(f, "evtId"); try { await apiSend(id ? `/api/evt/${id}` : "/api/courseEvt", { method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); await initCourse(false); toast("已保存课程"); } catch (err) { toast(err.message); } }
+async function initCourse(showLoading = true) { try { if (showLoading) setApiStatus("busy", "API 请求中"); state.courses = await apiGet("/api/courseEvt"); renderCourse(); touchRefresh(); } catch (err) { toast(err.message); setApiStatus("err", "API 异常"); } }
 
-function formVal(form, name) {
-  return form?.elements[name]?.value?.trim() || "";
-}
+function logSearchText(row) { return Object.entries(row || {}).map(([key, value]) => `${key}:${typeof value === "object" ? JSON.stringify(value) : value ?? ""}`).join(" ").toLowerCase(); }
+function logTitle(row) { if (state.logTab === "act") return `${row.action || "操作"} · ${row.targetKind || "target"}`; if (state.logTab === "notify") return `${row.title || "提醒"} · ${row.channel || "channel"}`; return `${row.intent || row.channel || "消息"}`; }
+function logMeta(row) { return [row.createdAt || row.scheduledAt || row.sentAt || "", row.result || row.stat || row.direction || "", row.targetId || row.evtId || row.externalId || row.msgId || row.notifyId || row.actId || ""].filter(Boolean).join(" · "); }
+function renderLogs() { const q = $("logKeyword")?.value.trim().toLowerCase() || ""; const stat = $("logStatusFilter")?.value || ""; const rows = (state.logs[state.logTab] || []).slice().reverse().filter((r) => (!q || logSearchText(r).includes(q)) && (!stat || r.stat === stat || r.result === stat)); $("logList").innerHTML = rows.length ? rows.slice(0, 120).map((r) => `<details class="log-row"><summary><span class="row-title">${esc(logTitle(r))}</span><span class="row-meta">${esc(logMeta(r))}</span></summary><pre class="log-json">${esc(JSON.stringify(r, null, 2))}</pre></details>`).join("") : rowEmpty("暂无日志"); }
+async function initLog() { try { const [act, notify, msg] = await Promise.all([apiGet("/api/log/act"), apiGet("/api/log/notify"), apiGet("/api/log/msg")]); state.logs = { act, notify, msg }; renderLogs(); touchRefresh(); } catch (err) { toast(err.message); setApiStatus("err", "API 异常"); } }
+function initSettings() { const form = $("userSettingsForm"); if (!form) return; form.addEventListener("input", updateSettingsPreview); form.addEventListener("change", updateSettingsPreview); form.addEventListener("submit", saveSettings); updateSettingsPreview(); }
 
-function numOrNull(value) {
-  return value === "" || value == null ? null : Number(value);
-}
-
-function toIsoFromLocal(value) {
-  if (!value) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  const pad = (n) => String(n).padStart(2, "0");
-  const off = -d.getTimezoneOffset();
-  const sign = off >= 0 ? "+" : "-";
-  const abs = Math.abs(off);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
-}
-
-function toLocalInputValue(value) {
-  if (!value) return "";
-  const d = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function rowEmpty(text) {
-  return `<div class="empty">${esc(text)}</div>`;
-}
-
-function tagClass(value) {
-  if (value === "high") return "red";
-  if (value === "mid") return "orange";
-  return "blue";
-}
-
-function normalizePrio(value, fallbackTab = "plan") {
-  const text = String(value || "").trim().toLowerCase();
-  if (["high", "高", "urgent", "important", "紧急", "重要"].includes(text)) return "high";
-  if (["low", "低", "later", "不急", "不重要"].includes(text)) return "low";
-  if (["mid", "middle", "medium", "normal", "普通", "中"].includes(text)) return "mid";
-  return fallbackTab === "ddl" ? "high" : "mid";
-}
-
-function normalizeTab(parsed) {
-  const raw = String(parsed?.tab || parsed?.evtType || parsed?.type || "plan").trim().toLowerCase();
-  return ["ddl", "deadline", "截止", "截止事项"].includes(raw) ? "ddl" : "plan";
-}
-
-function normalizeParsed(raw) {
-  const p = raw || {};
-  const tab = normalizeTab(p);
-  const result = {
-    tab,
-    evtType: tab,
-    title: String(p.title || "").trim(),
-    desc: String(p.desc ?? p.description ?? "").trim(),
-    prio: normalizePrio(p.prio || p.priority, tab),
-    durationMin: Number(p.durationMin || p.duration || 30),
-    hardDdl: Boolean(p.hardDdl),
-  };
-  if (tab === "ddl") result.endTime = toLocalInputValue(p.endTime || p.deadline || p.at);
-  else result.stTime = toLocalInputValue(p.stTime || p.startTime || p.at);
-  return result;
-}
-
-function avatarText(name) {
-  const text = String(name || "SC").trim();
-  return text.slice(0, 2).toUpperCase() || "SC";
-}
-
-function applyAvatar(containerTextId, containerImgId, user) {
-  const img = $(containerImgId);
-  const text = $(containerTextId);
-  if (!img || !text) return;
-  text.textContent = avatarText(user?.displayName);
-  if (user?.avatarUrl) {
-    img.src = user.avatarUrl;
-    img.hidden = false;
-    text.hidden = true;
-  } else {
-    img.removeAttribute("src");
-    img.hidden = true;
-    text.hidden = false;
-  }
-}
-
-function applyUserUI(user) {
-  state.user = user;
-  applyAvatar("topAvatarText", "topAvatarImg", user);
-  const form = $("userSettingsForm");
-  if (form) {
-    form.elements.displayName.value = user.displayName || "";
-    form.elements.language.value = user.language || "zh";
-    form.elements.avatarUrl.value = user.avatarUrl || "";
-    updateSettingsPreview();
-  }
-}
-
-async function loadCurrentUser() {
-  try {
-    const user = await apiGetQuiet("/api/user/me");
-    applyUserUI(user);
-  } catch {
-    applyUserUI({ displayName: "SC", language: "zh", avatarUrl: null });
-  }
-}
-
-function updateSettingsPreview() {
-  const form = $("userSettingsForm");
-  if (!form) return;
-  const user = {
-    displayName: formVal(form, "displayName") || "默认用户",
-    language: formVal(form, "language") || "zh",
-    avatarUrl: formVal(form, "avatarUrl") || null,
-  };
-  applyAvatar("settingsAvatarText", "settingsAvatarImg", user);
-  const namePreview = $("settingsNamePreview");
-  const langPreview = $("settingsLanguagePreview");
-  if (namePreview) namePreview.textContent = user.displayName;
-  if (langPreview) langPreview.textContent = languageLabels[user.language] || user.language;
-}
-
-async function saveSettings(ev) {
-  ev.preventDefault();
-  const form = ev.currentTarget;
-  const body = {
-    displayName: formVal(form, "displayName"),
-    language: formVal(form, "language") || "zh",
-    avatarUrl: formVal(form, "avatarUrl") || null,
-  };
-  try {
-    const user = await apiSend("/api/user/me", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    applyUserUI(user);
-    toast("设置已保存");
-  } catch (err) {
-    toast(err.message);
-  }
-}
-
-function setCreateTab(tab) {
-  state.createTab = tab;
-  document.querySelectorAll("[data-create-tab]").forEach((btn) => btn.classList.toggle("active", btn.dataset.createTab === tab));
-  $("planForm")?.classList.toggle("active", tab === "plan");
-  $("ddlForm")?.classList.toggle("active", tab === "ddl");
-  renderCreatePreview();
-}
-
-function createForm() {
-  return state.createTab === "ddl" ? $("ddlForm") : $("planForm");
-}
-
-function createPayload() {
-  const form = createForm();
-  if (state.createTab === "ddl") {
-    return {
-      title: formVal(form, "title"),
-      desc: formVal(form, "desc") || null,
-      endTime: toIsoFromLocal(formVal(form, "endTime")),
-      hardDdl: form.elements.hardDdl.checked,
-      prio: formVal(form, "prio") || "high",
-    };
-  }
-  return {
-    title: formVal(form, "title"),
-    desc: formVal(form, "desc") || null,
-    stTime: toIsoFromLocal(formVal(form, "stTime")),
-    durationMin: Number(formVal(form, "durationMin") || 30),
-    prio: formVal(form, "prio") || "mid",
-  };
-}
-
-function renderCreatePreview(created = null) {
-  const body = $("createPreview");
-  if (!body) return;
-  const p = created || createPayload();
-  const title = p.title || "等待填写标题";
-  const time = state.createTab === "ddl" ? (formVal(createForm(), "endTime") || "未设置") : (formVal(createForm(), "stTime") || "未设置");
-  const link = created?.evtId ? `<div class="row-actions"><a class="btn" href="/work/update?evtId=${encodeURIComponent(created.evtId)}">打开编辑页</a></div>` : "";
-  body.innerHTML = `<div class="preview-card"><div class="preview-title">${esc(title)}</div><div class="tags"><span class="tag ${state.createTab === "ddl" ? "purple" : "blue"}">${state.createTab === "ddl" ? "DDL" : "计划"}</span><span class="tag ${tagClass(p.prio)}">${esc(prioLabels[p.prio] || p.prio)}</span><span class="tag blue">${esc(time)}</span>${state.createTab === "plan" ? `<span class="tag green">${esc(p.durationMin || 30)} 分钟</span>` : ""}</div>${p.desc ? `<p class="preview-desc">${esc(p.desc)}</p>` : ""}${link}</div>`;
-}
-
-function applyParsed(parsed) {
-  const p = normalizeParsed(parsed);
-  setCreateTab(p.tab);
-  const form = createForm();
-  form.elements.title.value = p.title || "";
-  form.elements.desc.value = p.desc || "";
-  form.elements.prio.value = normalizePrio(p.prio, p.tab);
-  if (p.tab === "ddl") {
-    form.elements.endTime.value = p.endTime || "";
-    form.elements.hardDdl.checked = Boolean(p.hardDdl);
-  } else {
-    form.elements.stTime.value = p.stTime || "";
-    form.elements.durationMin.value = p.durationMin || 30;
-  }
-  renderCreatePreview();
-}
-
-async function parseNatural() {
-  const text = $("naturalText")?.value.trim();
-  if (!text) return toast("请先输入内容");
-  try {
-    toast("正在调用大模型解析...");
-    setApiStatus("busy", "模型解析中");
-    const resp = await apiSend("/api/llm/parse", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, scene: "create_event", now: new Date().toISOString() }),
-    });
-    if (!resp?.parsed) throw new Error("大模型没有返回可用解析结果");
-    applyParsed(resp.parsed);
-    setApiStatus("ok", "模型解析完成");
-    toast("已使用大模型结果预填");
-  } catch (err) {
-    setApiStatus("err", "模型解析失败");
-    toast(err.message || "大模型解析失败");
-  }
-}
-
-async function submitCreate(ev) {
-  ev.preventDefault();
-  const form = ev.currentTarget;
-  const body = createPayload();
-  if (!body.title) return toast("请填写标题");
-  const endpoint = form.dataset.endpoint;
-  try {
-    const created = await apiSend(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    form.reset();
-    renderCreatePreview(created);
-    toast("创建成功，已自动更新预览");
-  } catch (err) {
-    toast(err.message);
-  }
-}
-
-function applyTemplate(name) {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(23, 59, 0, 0);
-  if (name === "homework" || name === "exam") {
-    setCreateTab("ddl");
-    const f = $("ddlForm");
-    f.elements.title.value = name === "homework" ? "作业 DDL" : "考试复习";
-    f.elements.desc.value = name === "homework" ? "课程作业截止" : "复习重点章节并完成例题";
-    f.elements.endTime.value = toLocalInputValue(d);
-    f.elements.prio.value = "high";
-    f.elements.hardDdl.checked = name === "homework";
-  } else {
-    setCreateTab("plan");
-    const f = $("planForm");
-    f.elements.title.value = name === "project" ? "项目跟进" : "计划事项";
-    f.elements.desc.value = name === "project" ? "检查阶段任务进展" : "";
-    f.elements.stTime.value = toLocalInputValue(d);
-    f.elements.durationMin.value = 30;
-    f.elements.prio.value = "mid";
-  }
-  renderCreatePreview();
-}
-
-function initAdd() {
-  document.querySelectorAll("[data-create-tab]").forEach((b) => b.addEventListener("click", () => setCreateTab(b.dataset.createTab)));
-  document.querySelectorAll("#planForm,#ddlForm").forEach((f) => {
-    f.addEventListener("input", renderCreatePreview);
-    f.addEventListener("change", renderCreatePreview);
-    f.addEventListener("submit", submitCreate);
-  });
-  document.querySelectorAll(".template").forEach((b) => b.addEventListener("click", () => applyTemplate(b.dataset.template)));
-  $("parseNaturalBtn")?.addEventListener("click", parseNatural);
-  renderCreatePreview();
-}
-
-function renderIdeas() {
-  const filter = $("ideaFilter")?.value || "open";
-  const rows = state.ideas.filter((i) => filter === "all" || (filter === "open" ? !i.handled : i.handled));
-  $("ideaList").innerHTML = rows.length ? rows.slice().reverse().map((i) => `<div class="row-card"><div class="row-title">${esc(i.content)}</div><div class="row-meta">${i.handled ? "handled" : "open"} · ${esc(i.createdAt || "")}</div><div class="row-actions"><button class="btn" data-action="toggleIdea" data-id="${esc(i.ideaId)}" data-handled="${i.handled ? "0" : "1"}">${i.handled ? "标为 open" : "标为 handled"}</button><button class="btn btn-danger" data-action="deleteIdea" data-id="${esc(i.ideaId)}">删除</button></div></div>`).join("") : rowEmpty("暂无灵感");
-}
-
-async function initInspire() {
-  try {
-    state.ideas = await apiGet("/api/idea");
-    renderIdeas();
-    touchRefresh();
-  } catch (err) {
-    toast(err.message);
-    setApiStatus("err", "API 异常");
-  }
-}
-
-async function saveIdea() {
-  const content = $("ideaContent").value.trim();
-  if (!content) return toast("请填写灵感");
-  try {
-    await apiSend("/api/idea", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, srcType: "text" }) });
-    $("ideaContent").value = "";
-    await initInspire();
-    toast("已保存");
-  } catch (err) {
-    toast(err.message);
-  }
-}
-
-function renderCourse() {
-  $("courseTplList").innerHTML = state.courses.length ? state.courses.map((c) => `<div class="row-card"><div class="row-title">${esc(c.courseName || c.title)}</div><div class="row-meta">周${esc(c.weekDay)} · ${esc(c.stTime || "—")} - ${esc(c.endTime || "—")} · ${esc(c.location || "")}</div><div class="row-actions"><button class="btn" data-action="editCourse" data-id="${esc(c.evtId)}">编辑</button></div></div>`).join("") : rowEmpty("暂无课程");
-}
-
-function fillCourse(c = null) {
-  const f = $("courseTplForm");
-  f.reset();
-  f.elements.evtId.value = c?.evtId || "";
-  for (const key of ["courseName", "teacher", "location", "stDate", "endDate", "weekDay", "stTime", "endTime", "startWeek", "endWeek", "weekMode"]) {
-    if (c?.[key] != null) f.elements[key].value = c[key];
-  }
-}
-
-async function saveCourse(ev) {
-  ev.preventDefault();
-  const f = ev.currentTarget;
-  const body = {
-    courseName: formVal(f, "courseName"),
-    title: formVal(f, "courseName"),
-    teacher: formVal(f, "teacher") || null,
-    location: formVal(f, "location") || null,
-    stDate: formVal(f, "stDate"),
-    endDate: formVal(f, "endDate"),
-    weekDay: Number(formVal(f, "weekDay")),
-    stTime: formVal(f, "stTime"),
-    endTime: formVal(f, "endTime"),
-    startWeek: numOrNull(formVal(f, "startWeek")),
-    endWeek: numOrNull(formVal(f, "endWeek")),
-    weekMode: formVal(f, "weekMode") || "all",
-  };
-  const id = formVal(f, "evtId");
-  try {
-    await apiSend(id ? `/api/evt/${id}` : "/api/courseEvt", { method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    await initCourse(false);
-    toast("已保存课程");
-  } catch (err) {
-    toast(err.message);
-  }
-}
-
-async function initCourse(showLoading = true) {
-  try {
-    if (showLoading) setApiStatus("busy", "API 请求中");
-    state.courses = await apiGet("/api/courseEvt");
-    renderCourse();
-    touchRefresh();
-  } catch (err) {
-    toast(err.message);
-    setApiStatus("err", "API 异常");
-  }
-}
-
-function logSearchText(row) {
-  return Object.entries(row || {})
-    .map(([key, value]) => `${key}:${typeof value === "object" ? JSON.stringify(value) : value ?? ""}`)
-    .join(" ")
-    .toLowerCase();
-}
-
-function logTitle(row) {
-  if (state.logTab === "act") return `${row.action || "操作"} · ${row.targetKind || "target"}`;
-  if (state.logTab === "notify") return `${row.title || "提醒"} · ${row.channel || "channel"}`;
-  return `${row.intent || row.channel || "消息"}`;
-}
-
-function logMeta(row) {
-  const time = row.createdAt || row.scheduledAt || row.sentAt || "";
-  const status = row.result || row.stat || row.direction || "";
-  const id = row.targetId || row.evtId || row.externalId || row.msgId || row.notifyId || row.actId || "";
-  return [time, status, id].filter(Boolean).join(" · ");
-}
-
-function renderLogs() {
-  const q = $("logKeyword")?.value.trim().toLowerCase() || "";
-  const stat = $("logStatusFilter")?.value || "";
-  const rows = (state.logs[state.logTab] || [])
-    .slice()
-    .reverse()
-    .filter((r) => (!q || logSearchText(r).includes(q)) && (!stat || r.stat === stat || r.result === stat));
-  $("logList").innerHTML = rows.length
-    ? rows.slice(0, 120).map((r) => `<details class="log-row"><summary><span class="row-title">${esc(logTitle(r))}</span><span class="row-meta">${esc(logMeta(r))}</span></summary><pre class="log-json">${esc(JSON.stringify(r, null, 2))}</pre></details>`).join("")
-    : rowEmpty("暂无日志");
-}
-
-async function initLog() {
-  try {
-    const [act, notify, msg] = await Promise.all([apiGet("/api/log/act"), apiGet("/api/log/notify"), apiGet("/api/log/msg")]);
-    state.logs = { act, notify, msg };
-    renderLogs();
-    touchRefresh();
-  } catch (err) {
-    toast(err.message);
-    setApiStatus("err", "API 异常");
-  }
-}
-
-function initSettings() {
-  const form = $("userSettingsForm");
-  if (!form) return;
-  form.addEventListener("input", updateSettingsPreview);
-  form.addEventListener("change", updateSettingsPreview);
-  form.addEventListener("submit", saveSettings);
-  updateSettingsPreview();
-}
-
-function bindCommon() {
-  document.body.addEventListener("click", async (ev) => {
-    const btn = ev.target.closest("[data-action]");
-    if (!btn) return;
-    if (btn.dataset.action === "toggleIdea") {
-      try {
-        await apiSend(`/api/idea/${btn.dataset.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ handled: btn.dataset.handled === "1" }) });
-        await initInspire();
-      } catch (err) {
-        toast(err.message);
-      }
-    }
-    if (btn.dataset.action === "deleteIdea") {
-      try {
-        await apiSend(`/api/idea/${btn.dataset.id}`, { method: "DELETE" });
-        await initInspire();
-      } catch (err) {
-        toast(err.message);
-      }
-    }
-    if (btn.dataset.action === "editCourse") {
-      const c = state.courses.find((x) => x.evtId === btn.dataset.id);
-      fillCourse(c);
-    }
-  });
-}
-
-function bindPage() {
-  if (page === "add") initAdd();
-  if (page === "settings") initSettings();
-  if (page === "inspire") {
-    $("saveIdeaBtn")?.addEventListener("click", saveIdea);
-    $("ideaFilter")?.addEventListener("change", renderIdeas);
-  }
-  if (page === "course") {
-    $("courseTplForm")?.addEventListener("submit", saveCourse);
-    $("newCourseBtn")?.addEventListener("click", () => fillCourse(null));
-    $("deleteCourseTplBtn")?.addEventListener("click", async () => {
-      const id = formVal($("courseTplForm"), "evtId");
-      if (!id) return toast("请选择课程");
-      try {
-        await apiSend(`/api/evt/${id}`, { method: "DELETE" });
-        fillCourse(null);
-        await initCourse(false);
-        toast("已删除");
-      } catch (err) {
-        toast(err.message);
-      }
-    });
-  }
-  if (page === "log") {
-    document.querySelectorAll("[data-log-tab]").forEach((b) => b.addEventListener("click", () => {
-      state.logTab = b.dataset.logTab;
-      document.querySelectorAll("[data-log-tab]").forEach((x) => x.classList.toggle("active", x === b));
-      renderLogs();
-    }));
-    $("logKeyword")?.addEventListener("input", renderLogs);
-    $("logStatusFilter")?.addEventListener("change", renderLogs);
-  }
-}
-
-async function initPage() {
-  if (page === "inspire") return initInspire();
-  if (page === "course") return initCourse();
-  if (page === "log") return initLog();
-}
+function bindCommon() { document.body.addEventListener("click", async (ev) => { const btn = ev.target.closest("[data-action]"); if (!btn) return; if (btn.dataset.action === "editIdea") { state.editingIdeaId = btn.dataset.id; renderIdeas(); } if (btn.dataset.action === "cancelIdeaEdit") { state.editingIdeaId = null; renderIdeas(); } if (btn.dataset.action === "saveIdeaEdit") await saveIdeaEdit(btn.dataset.id); if (btn.dataset.action === "toggleIdea") { try { await apiSend(`/api/idea/${btn.dataset.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ handled: btn.dataset.handled === "1" }) }); await initInspire(); } catch (err) { toast(err.message); } } if (btn.dataset.action === "deleteIdea") { try { await apiSend(`/api/idea/${btn.dataset.id}`, { method: "DELETE" }); await initInspire(); } catch (err) { toast(err.message); } } if (btn.dataset.action === "editCourse") { const c = state.courses.find((x) => x.evtId === btn.dataset.id); fillCourse(c); } }); }
+function bindPage() { if (page === "add") initAdd(); if (page === "settings") initSettings(); if (page === "inspire") { $("saveIdeaBtn")?.addEventListener("click", saveIdea); $("ideaFilter")?.addEventListener("change", () => { state.editingIdeaId = null; renderIdeas(); }); } if (page === "course") { $("courseTplForm")?.addEventListener("submit", saveCourse); $("newCourseBtn")?.addEventListener("click", () => fillCourse(null)); $("deleteCourseTplBtn")?.addEventListener("click", async () => { const id = formVal($("courseTplForm"), "evtId"); if (!id) return toast("请选择课程"); try { await apiSend(`/api/evt/${id}`, { method: "DELETE" }); fillCourse(null); await initCourse(false); toast("已删除"); } catch (err) { toast(err.message); } }); } if (page === "log") { document.querySelectorAll("[data-log-tab]").forEach((b) => b.addEventListener("click", () => { state.logTab = b.dataset.logTab; document.querySelectorAll("[data-log-tab]").forEach((x) => x.classList.toggle("active", x === b)); renderLogs(); })); $("logKeyword")?.addEventListener("input", renderLogs); $("logStatusFilter")?.addEventListener("change", renderLogs); } }
+async function initPage() { if (page === "inspire") return initInspire(); if (page === "course") return initCourse(); if (page === "log") return initLog(); }
 
 bindCommon();
 bindPage();
