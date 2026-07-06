@@ -26,6 +26,7 @@ from app.new_core.models import (
 
 _DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
 DEFAULT_USER_ID = "default"
+_ALLOWED_MSG_CHANNELS = {"web", "feishu", "llm", "system"}
 
 
 def _parseNow(now: str) -> datetime:
@@ -42,6 +43,18 @@ def _ensure_user(db: Session, userId: str = DEFAULT_USER_ID) -> AppUser:
         db.add(user)
         db.flush()
     return user
+
+
+def _actor_kind(src: str | None, actorKind: str | None) -> str:
+    if actorKind:
+        return actorKind
+    if src == "screen":
+        return "device"
+    if src in {"system", "scheduler"}:
+        return "system"
+    if src == "llm":
+        return "llm"
+    return "user"
 
 
 def _evtDict(base: EvtBase, **extra: Any) -> dict[str, Any]:
@@ -212,7 +225,7 @@ def _recordAct(
     _ensure_user(db, userId)
     row = ActLog(
         userId=userId,
-        actorKind=actorKind or src or "user",
+        actorKind=_actor_kind(src, actorKind),
         actorId=actorId,
         action=action or actType or "update",
         targetKind=targetKind or "evt",
@@ -520,24 +533,11 @@ def listActLog(db: Session) -> list[dict[str, Any]]:
 
 
 def getLatestDevState(db: Session, *, devId: str = "pi") -> dict[str, Any] | None:
-    row = db.scalars(
-        select(DeviceStateLog)
-        .where(DeviceStateLog.deviceId == devId)
-        .order_by(DeviceStateLog.seenAt.desc())
-        .limit(1)
-    ).first()
+    row = db.scalars(select(DeviceStateLog).where(DeviceStateLog.deviceId == devId).order_by(DeviceStateLog.seenAt.desc()).limit(1)).first()
     return _devStateDict(row) if row else None
 
 
-def upsertDevState(
-    db: Session,
-    *,
-    devId: str,
-    state: str,
-    confidence: float | None = None,
-    seenAt: str | None = None,
-    meta: dict | None = None,
-) -> dict[str, Any]:
+def upsertDevState(db: Session, *, devId: str, state: str, confidence: float | None = None, seenAt: str | None = None, meta: dict | None = None) -> dict[str, Any]:
     _ensure_user(db)
     device = db.get(Device, devId)
     if device is None:
@@ -580,23 +580,7 @@ def updateEvt(db: Session, evtId: str, **fields: Any) -> dict[str, Any]:
     elif base.evtType == "course":
         course = db.get(CourseEvt, evtId)
         if course is not None:
-            mapping = {
-                "courseName": "courseName",
-                "teacher": "teacher",
-                "location": "location",
-                "room": "location",
-                "stTime": "stTime",
-                "startTime": "stTime",
-                "endTime": "endTime",
-                "stDate": "stDate",
-                "classDate": "stDate",
-                "endDate": "endDate",
-                "weekDay": "weekDay",
-                "weekday": "weekDay",
-                "startWeek": "startWeek",
-                "endWeek": "endWeek",
-                "weekMode": "weekMode",
-            }
+            mapping = {"courseName": "courseName", "teacher": "teacher", "location": "location", "room": "location", "stTime": "stTime", "startTime": "stTime", "endTime": "endTime", "stDate": "stDate", "classDate": "stDate", "endDate": "endDate", "weekDay": "weekDay", "weekday": "weekDay", "startWeek": "startWeek", "endWeek": "endWeek", "weekMode": "weekMode"}
             for key, attr in mapping.items():
                 if key in fields and fields[key] is not None:
                     setattr(course, attr, fields[key])
@@ -621,55 +605,18 @@ def notifyDedupExists(db: Session, dedupKey: str) -> bool:
     return db.scalars(select(NotifyLog).where(NotifyLog.dedupKey == dedupKey)).first() is not None
 
 
-def writeNotifyLog(
-    db: Session,
-    *,
-    dedupKey: str | None,
-    channel: str,
-    title: str,
-    content: str,
-    stat: str,
-    targetId: str | None = None,
-    failReason: str | None = None,
-) -> dict[str, Any]:
+def writeNotifyLog(db: Session, *, dedupKey: str | None, channel: str, title: str, content: str, stat: str, targetId: str | None = None, evtId: str | None = None, failReason: str | None = None) -> dict[str, Any]:
     _ensure_user(db)
-    row = NotifyLog(
-        userId=DEFAULT_USER_ID,
-        evtId=targetId,
-        channel=channel,
-        title=title,
-        content=content,
-        scheduledAt=nowIso(),
-        sentAt=nowIso(),
-        stat=stat,
-        failReason=failReason,
-        dedupKey=dedupKey,
-    )
+    row = NotifyLog(userId=DEFAULT_USER_ID, evtId=evtId, channel=channel, receiver=targetId, title=title, content=content, scheduledAt=nowIso(), sentAt=nowIso(), stat=stat, failReason=failReason, dedupKey=dedupKey)
     db.add(row)
     db.commit()
     db.refresh(row)
     return _notifyLogDict(row)
 
 
-def createMsgLog(
-    db: Session,
-    *,
-    src: str,
-    externalId: str | None,
-    rawText: str | None,
-    intent: str | None,
-    stat: str,
-) -> dict[str, Any]:
+def createMsgLog(db: Session, *, src: str, externalId: str | None, rawText: str | None, intent: str | None, stat: str) -> dict[str, Any]:
     _ensure_user(db)
-    row = MsgLog(
-        userId=DEFAULT_USER_ID,
-        channel=src,
-        direction="in",
-        externalId=externalId,
-        rawText=rawText,
-        intent=intent,
-        stat=stat,
-    )
+    row = MsgLog(userId=DEFAULT_USER_ID, channel=src if src in _ALLOWED_MSG_CHANNELS else "system", direction="in", externalId=externalId, rawText=rawText, intent=intent, stat=stat)
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -677,7 +624,8 @@ def createMsgLog(
 
 
 def msgLogExists(db: Session, *, src: str, externalId: str) -> bool:
-    return db.scalars(select(MsgLog).where(MsgLog.channel == src, MsgLog.externalId == externalId)).first() is not None
+    channel = src if src in _ALLOWED_MSG_CHANNELS else "system"
+    return db.scalars(select(MsgLog).where(MsgLog.channel == channel, MsgLog.externalId == externalId)).first() is not None
 
 
 def applyReminderAction(db: Session, *, evtId: str, action: str, now: str, src: str) -> dict[str, Any]:
