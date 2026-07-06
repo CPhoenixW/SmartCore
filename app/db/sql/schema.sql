@@ -144,7 +144,7 @@ CREATE TABLE IF NOT EXISTS notifyLog (
     FOREIGN KEY (evtId) REFERENCES evtBase(evtId) ON DELETE SET NULL,
     FOREIGN KEY (sourceDeviceId) REFERENCES device(deviceId) ON DELETE SET NULL,
     CHECK (channel IN ('feishu', 'screen', 'browser', 'system')),
-    CHECK (stat IN ('pending', 'sent', 'failed', 'skipped'))
+    CHECK (stat IN ('pending', 'sent', 'failed', 'skipped', 'fallback'))
 );
 
 CREATE TABLE IF NOT EXISTS msgLog (
