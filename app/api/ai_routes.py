@@ -36,6 +36,8 @@ def _normalize_priority(value: Any, *, tab: str) -> str:
         return "high"
     if text in {"low", "低", "later", "不急", "不重要"}:
         return "low"
+    if text in {"mid", "middle", "medium", "normal", "普通", "中"}:
+        return "mid"
     return "high" if tab == "ddl" else "mid"
 
 
@@ -107,7 +109,12 @@ def parse_text(body: ParseBody) -> dict[str, Any]:
         }
         headers = {"Authorization": "Bearer " + settings.deepseek_api_key, "Content-Type": "application/json"}
         try:
-            resp = httpx.post(settings.deepseek_base_url.rstrip("/") + "/chat/completions", json=payload, headers=headers, timeout=20)
+            resp = httpx.post(
+                settings.deepseek_base_url.rstrip("/") + "/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=6,
+            )
             resp.raise_for_status()
             raw = resp.json()["choices"][0]["message"]["content"]
             data = json.loads(_strip_json_fence(str(raw)))
