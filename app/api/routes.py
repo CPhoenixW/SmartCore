@@ -63,27 +63,9 @@ def create_plan_evt(body: PlanEvtBody, db: Session = Depends(get_db)) -> dict[st
     return ok(crud.createPlanEvt(db, **body.model_dump(), src="api"))
 
 
-class LifeEvtBody(BaseModel):
-    title: str
-    dueAt: str | None = None
-    desc: str | None = None
-    prio: str = "mid"
-
-
-@router.get("/lifeEvt")
-def list_life_evt(db: Session = Depends(get_db)) -> dict[str, Any]:
-    return ok(crud.listLifeEvt(db))
-
-
-@router.post("/lifeEvt")
-def create_life_evt(body: LifeEvtBody, db: Session = Depends(get_db)) -> dict[str, Any]:
-    return ok(crud.createLifeEvt(db, title=body.title, dueAt=body.dueAt, src="api", desc=body.desc, prio=body.prio))
-
-
 class DdlEvtBody(BaseModel):
     title: str
-    endTime: str | None = None
-    ddlAt: str | None = None
+    endTime: str
     hardDdl: bool = False
     desc: str | None = None
     prio: str = "high"
@@ -107,14 +89,11 @@ class CourseEvtBody(BaseModel):
     courseName: str
     teacher: str | None = None
     location: str | None = None
-    room: str | None = None
-    stTime: str | None = None
-    startTime: str | None = None
+    stTime: str
     endTime: str
     stDate: str
     endDate: str
-    weekDay: int | None = None
-    weekday: int | None = None
+    weekDay: int
     startWeek: int | None = None
     endWeek: int | None = None
     weekMode: str = "all"
@@ -133,40 +112,6 @@ def create_course_evt(body: CourseEvtBody, db: Session = Depends(get_db)) -> dic
         return ok(crud.createCourseEvt(db, **body.model_dump(), src="api"))
     except ValueError as exc:
         raise _http_error(exc) from exc
-
-
-@router.get("/courseTpl")
-def list_course_tpl(db: Session = Depends(get_db)) -> dict[str, Any]:
-    return ok(crud.listCourseTpl(db))
-
-
-@router.post("/courseTpl")
-def create_course_tpl(body: CourseEvtBody, db: Session = Depends(get_db)) -> dict[str, Any]:
-    try:
-        return ok(crud.createCourseEvt(db, **body.model_dump(), src="api"))
-    except ValueError as exc:
-        raise _http_error(exc) from exc
-
-
-@router.patch("/courseTpl/{tplId}")
-def patch_course_tpl(tplId: str, body: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
-    try:
-        return ok(crud.updateEvt(db, tplId, **body))
-    except ValueError as exc:
-        raise _http_error(exc) from exc
-
-
-@router.delete("/courseTpl/{tplId}")
-def delete_course_tpl(tplId: str, db: Session = Depends(get_db)) -> dict[str, Any]:
-    try:
-        return ok(crud.cancelEvt(db, tplId))
-    except ValueError as exc:
-        raise _http_error(exc) from exc
-
-
-@router.get("/courseInst")
-def list_course_inst(db: Session = Depends(get_db)) -> dict[str, Any]:
-    return ok(crud.listCourseInst(db))
 
 
 class IdeaBody(BaseModel):
@@ -193,19 +138,7 @@ def create_idea(body: IdeaBody, db: Session = Depends(get_db)) -> dict[str, Any]
 @router.patch("/idea/{ideaId}")
 def patch_idea(ideaId: str, body: IdeaPatchBody, db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
-        from app.new_core.models import Idea
-
-        row = db.get(Idea, ideaId)
-        if row is None:
-            raise ValueError(f"idea not found: {ideaId}")
-        if body.content is not None:
-            row.content = body.content
-        if body.handled is not None:
-            row.handled = body.handled
-        row_dict = crud._ideaDict(row)  # noqa: SLF001
-        crud._recordAct(db, userId=row.userId, src="api", action="update", targetKind="idea", targetId=ideaId)  # noqa: SLF001
-        db.commit()
-        return ok(row_dict)
+        return ok(crud.updateIdea(db, ideaId, content=body.content, handled=body.handled))
     except ValueError as exc:
         raise _http_error(exc) from exc
 
@@ -213,23 +146,9 @@ def patch_idea(ideaId: str, body: IdeaPatchBody, db: Session = Depends(get_db)) 
 @router.delete("/idea/{ideaId}")
 def delete_idea(ideaId: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
-        from app.new_core.models import Idea
-
-        row = db.get(Idea, ideaId)
-        if row is None:
-            raise ValueError(f"idea not found: {ideaId}")
-        data = crud._ideaDict(row)  # noqa: SLF001
-        crud._recordAct(db, userId=row.userId, src="api", action="delete", targetKind="idea", targetId=ideaId)  # noqa: SLF001
-        db.delete(row)
-        db.commit()
-        return ok(data)
+        return ok(crud.deleteIdea(db, ideaId))
     except ValueError as exc:
         raise _http_error(exc) from exc
-
-
-@router.post("/idea/{ideaId}/toEvt")
-def idea_to_evt(ideaId: str) -> dict[str, Any]:
-    raise HTTPException(status_code=410, detail="idea no longer converts to event")
 
 
 @router.get("/devState")
@@ -250,29 +169,6 @@ def list_log_notify(db: Session = Depends(get_db)) -> dict[str, Any]:
 @router.get("/log/msg")
 def list_log_msg(db: Session = Depends(get_db)) -> dict[str, Any]:
     return ok(crud.listMsgLog(db))
-
-
-@router.get("/notifyLog")
-def list_notify_log(db: Session = Depends(get_db)) -> dict[str, Any]:
-    return ok(crud.listNotifyLog(db))
-
-
-@router.get("/msgLog")
-def list_msg_log(db: Session = Depends(get_db)) -> dict[str, Any]:
-    return ok(crud.listMsgLog(db))
-
-
-@router.get("/actLog")
-def list_act_log(db: Session = Depends(get_db)) -> dict[str, Any]:
-    return ok(crud.listActLog(db))
-
-
-@router.post("/undo/{undoToken}")
-def undo_action(undoToken: str, db: Session = Depends(get_db)) -> dict[str, Any]:
-    try:
-        return crud.undoByToken(db, undoToken)
-    except ValueError as exc:
-        raise _http_error(exc) from exc
 
 
 class ReminderActionBody(BaseModel):
