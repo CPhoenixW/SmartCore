@@ -1,0 +1,20 @@
+@import url("https://cdn.jsdelivr.net/npm/misans@4.1.0/lib/Normal/MiSans-Regular.min.css");
+
+body {
+  font-family: "MiSans", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.screen-shell.mode-working .clock-date,
+.screen-shell.mode-away .clock-date,
+.pane-label,
+.today-list.empty {
+  font-family: "MiSans", "MiSansLatin", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.today-primary p {
+  display: none !important;
+}
+
+.today-primary h2 {
+  margin-bottom: 0;
+}
