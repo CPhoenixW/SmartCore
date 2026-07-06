@@ -37,6 +37,8 @@ def create_app() -> FastAPI:
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
+    parse_router = __import__("app.api.ai_routes", fromlist=["router"]).router
+    app.include_router(parse_router)
     app.include_router(apiRouter)
     app.include_router(createDevRouter())
     app.include_router(createAgentRouter())
