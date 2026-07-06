@@ -7,9 +7,9 @@ router = APIRouter(tags=["work"])
 
 _PAGE_META = {
     "overview": ("总览", "待办、DDL、灵感"),
-    "add": ("添加事件", "自然语言预填"),
+    "add": ("添加事件", "创建计划事项或截止事项"),
     "update": ("更新事件", "查看和修改事项"),
-    "inspire": ("灵感", "记录和整理"),
+    "inspire": ("灵感", "记录、筛选和修改灵感"),
     "course": ("课表", "课程事件管理"),
     "log": ("日志", "日志追踪"),
     "settings": ("设置", "用户与偏好"),
@@ -43,6 +43,7 @@ def _shell(active: str, body_html: str) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SmartCore Work - {title}</title>
 <link rel="stylesheet" href="/static/work/work_v2.css">
+<link rel="stylesheet" href="/static/work/work_add_inspire.css">
 </head>
 <body data-page="{active}">
 <div class="work-layout">
@@ -97,6 +98,15 @@ _EVT_EDIT_FORM = """
 </form>
 """
 
+_IDEA_EDIT_FORM = """
+<form id="ideaEditForm" class="edit-form">
+  <input name="ideaId" type="hidden">
+  <label class="field required"><span>内容</span><textarea name="content" rows="8" required placeholder="选择左侧灵感进行修改，或直接输入新灵感..."></textarea></label>
+  <label class="field"><span>状态</span><select name="handled"><option value="open">open</option><option value="handled">handled</option></select></label>
+  <div class="button-row"><button type="submit" class="btn btn-primary" id="saveIdeaFormBtn">保存灵感</button><button type="button" class="btn" id="newIdeaBtn">新建</button><button type="button" class="btn btn-danger" id="deleteIdeaBtn">删除</button></div>
+</form>
+"""
+
 _OVERVIEW_BODY = """
 <section class="summary-grid">
   <article class="summary-card"><span>待办事项</span><strong id="ovTodo">0</strong></article>
@@ -115,12 +125,8 @@ _OVERVIEW_BODY = """
 """
 
 _ADD_BODY = """
-<section class="content-grid two-one">
-  <div class="stack">
-    <article class="card">
-      <header><h2>自然语言录入</h2><button type="button" class="btn btn-primary" id="parseNaturalBtn">解析并预填</button></header>
-      <div class="card-body"><textarea id="naturalText" class="nl-input" rows="3" placeholder="例如：明天晚上八点复习热流体，持续 30 分钟，优先级高"></textarea></div>
-    </article>
+<section class="content-grid two-one add-grid">
+  <div class="stack add-main">
     <article class="card">
       <header><h2>事件表单</h2><div class="tabs"><button class="tab active" data-create-tab="plan">计划事项</button><button class="tab" data-create-tab="ddl">截止事项</button></div></header>
       <div class="card-body">
@@ -129,20 +135,18 @@ _ADD_BODY = """
           <label class="field"><span>描述</span><textarea name="desc" rows="3"></textarea></label>
           <div class="form-row"><label class="field required"><span>开始时间</span><input name="stTime" type="datetime-local" required></label><label class="field"><span>持续时间（分钟）</span><input name="durationMin" type="number" min="1" value="30"></label></div>
           <label class="field"><span>优先级</span><select name="prio"><option value="mid">中</option><option value="high">高</option><option value="low">低</option></select></label>
-          <button class="btn btn-primary btn-block" type="submit">创建计划事项</button>
         </form>
         <form id="ddlForm" class="form-pane" data-endpoint="/api/ddlEvt">
           <label class="field required"><span>标题</span><input name="title" required placeholder="例如：提交课程报告"></label>
           <label class="field"><span>描述</span><textarea name="desc" rows="3"></textarea></label>
           <div class="form-row"><label class="field required"><span>截止时间</span><input name="endTime" type="datetime-local" required></label><label class="field"><span>优先级</span><select name="prio"><option value="high">高</option><option value="mid">中</option><option value="low">低</option></select></label></div>
           <label class="check-line"><input name="hardDdl" type="checkbox"><span>硬性截止</span></label>
-          <button class="btn btn-primary btn-block" type="submit">创建截止事项</button>
         </form>
       </div>
     </article>
   </div>
-  <aside class="stack">
-    <article class="card"><header><h2>创建前预览</h2></header><div class="card-body" id="createPreview"></div></article>
+  <aside class="stack add-side">
+    <article class="card preview-panel"><header><h2>创建前预览</h2></header><div class="card-body" id="createPreview"></div><footer class="card-footer"><button class="btn btn-primary btn-block" type="button" id="createSubmitBtn">创建计划事项</button></footer></article>
     <article class="card"><header><h2>常用模板</h2></header><div class="card-body template-grid"><button class="template" data-template="homework">作业 DDL</button><button class="template" data-template="plan">计划事项</button><button class="template" data-template="exam">考试复习</button><button class="template" data-template="project">项目跟进</button></div></article>
   </aside>
 </section>
@@ -155,18 +159,11 @@ _UPDATE_BODY = f"""
 </section>
 """
 
-_INSPIRE_BODY = """
+_INSPIRE_BODY = f"""
 <section class="content-grid two-one inspire-grid">
-  <article class="card">
-    <header><h2>记录灵感</h2><button type="button" class="btn btn-primary" id="saveIdeaBtn">保存</button></header>
-    <div class="card-body"><textarea id="ideaContent" class="nl-input" rows="5" placeholder="记录想法、任务雏形、临时计划..."></textarea></div>
-  </article>
-  <aside class="card">
-    <header><h2>筛选</h2></header>
-    <div class="card-body"><label class="field"><span>状态</span><select id="ideaFilter"><option value="open">open</option><option value="handled">handled</option><option value="all">全部</option></select></label></div>
-  </aside>
+  <article class="card"><header><h2>灵感列表</h2><select id="ideaFilter"><option value="open">open</option><option value="handled">handled</option><option value="all">全部</option></select></header><div class="card-body list" id="ideaList"></div></article>
+  <aside class="card sticky-card"><header><h2 id="ideaEditorTitle">编辑灵感</h2></header><div class="card-body">{_IDEA_EDIT_FORM}</div></aside>
 </section>
-<section class="card"><header><h2>灵感列表</h2></header><div class="card-body list" id="ideaList"></div></section>
 """
 
 _COURSE_BODY = """
