@@ -6,7 +6,11 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS appUser (
     userId VARCHAR(32) PRIMARY KEY,
     displayName VARCHAR(100) NOT NULL,
-    createdAt VARCHAR(64) NOT NULL
+    language VARCHAR(10) NOT NULL DEFAULT 'zh',
+    avatarUrl VARCHAR(500),
+    createdAt VARCHAR(64) NOT NULL,
+    updatedAt VARCHAR(64) NOT NULL,
+    CHECK (language IN ('zh', 'en'))
 );
 
 CREATE TABLE IF NOT EXISTS evtBase (
@@ -121,7 +125,7 @@ CREATE TABLE IF NOT EXISTS actLog (
     FOREIGN KEY (sourceDeviceId) REFERENCES device(deviceId) ON DELETE SET NULL,
     CHECK (actorKind IN ('user', 'system', 'device', 'llm')),
     CHECK (action IN ('create', 'update', 'delete', 'complete', 'cancel', 'auto_create', 'link', 'notify')),
-    CHECK (targetKind IN ('evt', 'planEvt', 'ddlEvt', 'courseEvt', 'idea', 'device')),
+    CHECK (targetKind IN ('user', 'evt', 'planEvt', 'ddlEvt', 'courseEvt', 'idea', 'device')),
     CHECK (result IN ('ok', 'failed'))
 );
 
