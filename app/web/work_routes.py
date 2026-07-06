@@ -127,6 +127,10 @@ _OVERVIEW_BODY = """
 _ADD_BODY = """
 <section class="content-grid two-one add-grid">
   <div class="stack add-main">
+    <article class="card natural-card">
+      <header><h2>自然语言录入</h2><button type="button" class="btn btn-primary" id="parseNaturalBtn">解析到表单</button></header>
+      <div class="card-body"><textarea id="naturalText" class="nl-input" rows="3" placeholder="例如：明天晚上八点复习热流体，持续 30 分钟，优先级高"></textarea></div>
+    </article>
     <article class="card">
       <header><h2>事件表单</h2><div class="tabs"><button class="tab active" data-create-tab="plan">计划事项</button><button class="tab" data-create-tab="ddl">截止事项</button></div></header>
       <div class="card-body">
