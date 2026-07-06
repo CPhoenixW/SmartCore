@@ -81,7 +81,7 @@ def parse_text(body: ParseBody) -> dict[str, Any]:
   "tab": "plan" 或 "ddl",
   "evtType": "plan" 或 "ddl",
   "title": "去掉时间、我要、提醒我等语气词后的短标题",
-  "desc": "保留必要补充说明，可为空字符串",
+  "desc": "必须生成一句中文描述，不允许为空；plan 描述包含时间段/持续时间和要做的事；ddl 描述包含截止时间和要完成的事",
   "prio": "low" 或 "mid" 或 "high",
   "stTime": "ISO8601，仅 plan 使用，否则 null",
   "endTime": "ISO8601，仅 ddl 使用，否则 null",
@@ -113,7 +113,7 @@ def parse_text(body: ParseBody) -> dict[str, Any]:
                 settings.deepseek_base_url.rstrip("/") + "/chat/completions",
                 json=payload,
                 headers=headers,
-                timeout=6,
+                timeout=12,
             )
             resp.raise_for_status()
             raw = resp.json()["choices"][0]["message"]["content"]
