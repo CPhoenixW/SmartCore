@@ -33,6 +33,7 @@ def _nav_html(active: str) -> str:
 
 def _shell(active: str, body_html: str) -> str:
     title, subtitle = _PAGE_META[active]
+    script_src = "/static/work/work_events.js" if active in {"overview", "update"} else "/static/work/work_v2.js"
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -73,7 +74,7 @@ def _shell(active: str, body_html: str) -> str:
   </section>
 </div>
 <div class="toast" id="toast"></div>
-<script type="module" src="/static/work/work_v2.js"></script>
+<script type="module" src="{script_src}"></script>
 </body>
 </html>"""
 
