@@ -21,10 +21,21 @@ def nowIso() -> str:
     return datetime.now(_DEFAULT_TZ).isoformat()
 
 
+class AppUser(Base):
+    __tablename__ = "appUser"
+
+    userId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    displayName: Mapped[str] = mapped_column(String(100), nullable=False)
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
 class EvtBase(Base):
     __tablename__ = "evtBase"
 
     evtId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     desc: Mapped[str | None] = mapped_column(Text)
     evtType: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -34,14 +45,26 @@ class EvtBase(Base):
     updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
 
 
-class LifeEvt(Base):
-    __tablename__ = "lifeEvt"
+class PlanEvt(Base):
+    __tablename__ = "planEvt"
 
     evtId: Mapped[str] = mapped_column(
         String(32), ForeignKey("evtBase.evtId", ondelete="CASCADE"), primary_key=True
     )
-    dueAt: Mapped[str | None] = mapped_column(String(64))
-    doneAt: Mapped[str | None] = mapped_column(String(64))
+    stTime: Mapped[str] = mapped_column(String(64), nullable=False)
+    durationMin: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    @property
+    def dueAt(self) -> str:
+        return self.stTime
+
+    @dueAt.setter
+    def dueAt(self, value: str) -> None:
+        self.stTime = value
+
+    @property
+    def doneAt(self) -> None:
+        return None
 
 
 class DdlEvt(Base):
@@ -50,43 +73,93 @@ class DdlEvt(Base):
     evtId: Mapped[str] = mapped_column(
         String(32), ForeignKey("evtBase.evtId", ondelete="CASCADE"), primary_key=True
     )
-    ddlAt: Mapped[str | None] = mapped_column(String(64))
+    endTime: Mapped[str] = mapped_column(String(64), nullable=False)
     hardDdl: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    @property
+    def ddlAt(self) -> str:
+        return self.endTime
 
-class CourseTpl(Base):
-    __tablename__ = "courseTpl"
-
-    tplId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    courseName: Mapped[str] = mapped_column(String(200), nullable=False)
-    teacher: Mapped[str | None] = mapped_column(String(100))
-    room: Mapped[str | None] = mapped_column(String(200))
-    weekday: Mapped[int] = mapped_column(Integer, nullable=False)
-    startTime: Mapped[str | None] = mapped_column(String(8))
-    endTime: Mapped[str | None] = mapped_column(String(8))
-    startWeek: Mapped[int | None] = mapped_column(Integer)
-    endWeek: Mapped[int | None] = mapped_column(Integer)
-    weekMode: Mapped[str] = mapped_column(String(10), default="all", nullable=False)
-    semester: Mapped[str | None] = mapped_column(String(50))
+    @ddlAt.setter
+    def ddlAt(self, value: str) -> None:
+        self.endTime = value
 
 
-class CourseInst(Base):
-    __tablename__ = "courseInst"
+class DdlPlan(Base):
+    __tablename__ = "ddlPlan"
+
+    ddlEvtId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("ddlEvt.evtId", ondelete="CASCADE"), primary_key=True
+    )
+    planEvtId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("planEvt.evtId", ondelete="CASCADE"), primary_key=True
+    )
+    planRole: Mapped[str] = mapped_column(String(30), nullable=False)
+    sortOrder: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class CourseEvt(Base):
+    __tablename__ = "courseEvt"
 
     evtId: Mapped[str] = mapped_column(
         String(32), ForeignKey("evtBase.evtId", ondelete="CASCADE"), primary_key=True
     )
-    tplId: Mapped[str] = mapped_column(
-        String(32), ForeignKey("courseTpl.tplId", ondelete="RESTRICT"), nullable=False
-    )
-    classDate: Mapped[str | None] = mapped_column(String(16))
-    attendStat: Mapped[str] = mapped_column(String(20), default="unknown", nullable=False)
+    courseName: Mapped[str] = mapped_column(String(200), nullable=False)
+    teacher: Mapped[str | None] = mapped_column(String(100))
+    location: Mapped[str | None] = mapped_column(String(200))
+    stTime: Mapped[str] = mapped_column(String(8), nullable=False)
+    endTime: Mapped[str] = mapped_column(String(8), nullable=False)
+    stDate: Mapped[str] = mapped_column(String(16), nullable=False)
+    endDate: Mapped[str] = mapped_column(String(16), nullable=False)
+    weekDay: Mapped[int] = mapped_column(Integer, nullable=False)
+    startWeek: Mapped[int | None] = mapped_column(Integer)
+    endWeek: Mapped[int | None] = mapped_column(Integer)
+    weekMode: Mapped[str] = mapped_column(String(10), default="all", nullable=False)
+
+    @property
+    def tplId(self) -> str:
+        return self.evtId
+
+    @property
+    def room(self) -> str | None:
+        return self.location
+
+    @room.setter
+    def room(self, value: str | None) -> None:
+        self.location = value
+
+    @property
+    def weekday(self) -> int:
+        return self.weekDay
+
+    @weekday.setter
+    def weekday(self, value: int) -> None:
+        self.weekDay = value
+
+    @property
+    def startTime(self) -> str:
+        return self.stTime
+
+    @startTime.setter
+    def startTime(self, value: str) -> None:
+        self.stTime = value
+
+    @property
+    def classDate(self) -> str:
+        return self.stDate
+
+    @property
+    def attendStat(self) -> str:
+        return "unknown"
 
 
 class Idea(Base):
     __tablename__ = "idea"
 
     ideaId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
     content: Mapped[str] = mapped_column(Text, nullable=False)
     srcType: Mapped[str] = mapped_column(String(20), default="text", nullable=False)
     mediaPath: Mapped[str | None] = mapped_column(String(500))
@@ -94,66 +167,143 @@ class Idea(Base):
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
 
 
-class IdeaToEvt(Base):
-    __tablename__ = "ideaToEvt"
+class Device(Base):
+    __tablename__ = "device"
 
-    ideaId: Mapped[str] = mapped_column(
-        String(32), ForeignKey("idea.ideaId", ondelete="CASCADE"), primary_key=True
+    deviceId: Mapped[str] = mapped_column(String(50), primary_key=True)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
     )
-    evtId: Mapped[str] = mapped_column(
-        String(32), ForeignKey("evtBase.evtId", ondelete="CASCADE"), nullable=False
+    deviceName: Mapped[str] = mapped_column(String(100), nullable=False)
+    deviceKind: Mapped[str] = mapped_column(String(30), nullable=False)
+    isActive: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    registeredAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class DeviceStateLog(Base):
+    __tablename__ = "deviceStateLog"
+
+    stateLogId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    deviceId: Mapped[str] = mapped_column(
+        String(50), ForeignKey("device.deviceId", ondelete="CASCADE"), nullable=False
     )
-    convertedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
-
-
-class DevState(Base):
-    __tablename__ = "devState"
-
-    stateId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    devId: Mapped[str] = mapped_column(String(50), nullable=False)
     state: Mapped[str] = mapped_column(String(20), nullable=False)
     confidence: Mapped[float | None] = mapped_column(Float)
     seenAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
     meta: Mapped[dict | None] = mapped_column(JSON)
 
+    @property
+    def stateId(self) -> str:
+        return self.stateLogId
 
-class NotifyLog(Base):
-    __tablename__ = "notifyLog"
-
-    notifyId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    dedupKey: Mapped[str | None] = mapped_column(String(200), unique=True)
-    targetKind: Mapped[str] = mapped_column(String(20), nullable=False)
-    targetId: Mapped[str | None] = mapped_column(String(100))
-    title: Mapped[str] = mapped_column(String(300), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    scheduledAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
-    sentAt: Mapped[str | None] = mapped_column(String(64))
-    stat: Mapped[str] = mapped_column(String(20), nullable=False)
-    failReason: Mapped[str | None] = mapped_column(Text)
-
-
-class MsgLog(Base):
-    __tablename__ = "msgLog"
-
-    msgId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    src: Mapped[str] = mapped_column(String(50), nullable=False)
-    externalId: Mapped[str | None] = mapped_column(String(200))
-    rawText: Mapped[str | None] = mapped_column(Text)
-    intent: Mapped[str | None] = mapped_column(String(100))
-    stat: Mapped[str | None] = mapped_column(String(50))
-    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    @property
+    def devId(self) -> str:
+        return self.deviceId
 
 
 class ActLog(Base):
     __tablename__ = "actLog"
 
     actId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    src: Mapped[str] = mapped_column(String(50), nullable=False)
-    actor: Mapped[str | None] = mapped_column(String(100))
-    actType: Mapped[str] = mapped_column(String(20), nullable=False)
-    targetKind: Mapped[str | None] = mapped_column(String(50))
-    targetId: Mapped[str | None] = mapped_column(String(32))
-    beforeData: Mapped[dict | None] = mapped_column(JSON)
-    afterData: Mapped[dict | None] = mapped_column(JSON)
-    undoToken: Mapped[str | None] = mapped_column(String(64), unique=True)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    actorKind: Mapped[str] = mapped_column(String(20), nullable=False)
+    actorId: Mapped[str | None] = mapped_column(String(100))
+    action: Mapped[str] = mapped_column(String(30), nullable=False)
+    targetKind: Mapped[str] = mapped_column(String(30), nullable=False)
+    targetId: Mapped[str] = mapped_column(String(32), nullable=False)
+    sourceDeviceId: Mapped[str | None] = mapped_column(
+        String(50), ForeignKey("device.deviceId", ondelete="SET NULL")
+    )
+    result: Mapped[str] = mapped_column(String(20), default="ok", nullable=False)
+    errorMessage: Mapped[str | None] = mapped_column(Text)
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+    @property
+    def src(self) -> str:
+        return self.actorKind
+
+    @property
+    def actor(self) -> str | None:
+        return self.actorId
+
+    @property
+    def actType(self) -> str:
+        return self.action
+
+    @property
+    def beforeData(self) -> None:
+        return None
+
+    @property
+    def afterData(self) -> None:
+        return None
+
+    @property
+    def undoToken(self) -> None:
+        return None
+
+
+class NotifyLog(Base):
+    __tablename__ = "notifyLog"
+
+    notifyId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    evtId: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("evtBase.evtId", ondelete="SET NULL")
+    )
+    channel: Mapped[str] = mapped_column(String(20), nullable=False)
+    receiver: Mapped[str | None] = mapped_column(String(100))
+    sourceDeviceId: Mapped[str | None] = mapped_column(
+        String(50), ForeignKey("device.deviceId", ondelete="SET NULL")
+    )
+    routeReason: Mapped[str | None] = mapped_column(String(50))
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    scheduledAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    sentAt: Mapped[str | None] = mapped_column(String(64))
+    stat: Mapped[str] = mapped_column(String(20), nullable=False)
+    failReason: Mapped[str | None] = mapped_column(Text)
+    dedupKey: Mapped[str | None] = mapped_column(String(200), unique=True)
+
+    @property
+    def targetKind(self) -> str:
+        return self.channel
+
+    @property
+    def targetId(self) -> str | None:
+        return self.receiver
+
+
+class MsgLog(Base):
+    __tablename__ = "msgLog"
+
+    msgId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    channel: Mapped[str] = mapped_column(String(30), nullable=False)
+    direction: Mapped[str] = mapped_column(String(10), nullable=False)
+    externalId: Mapped[str | None] = mapped_column(String(200))
+    sourceDeviceId: Mapped[str | None] = mapped_column(
+        String(50), ForeignKey("device.deviceId", ondelete="SET NULL")
+    )
+    rawText: Mapped[str | None] = mapped_column(Text)
+    intent: Mapped[str | None] = mapped_column(String(100))
+    stat: Mapped[str | None] = mapped_column(String(50))
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+    @property
+    def src(self) -> str:
+        return self.channel
+
+
+# Temporary compatibility aliases for old service code during the API migration step.
+LifeEvt = PlanEvt
+CourseTpl = CourseEvt
+CourseInst = CourseEvt
+DevState = DeviceStateLog
+IdeaToEvt = DdlPlan
