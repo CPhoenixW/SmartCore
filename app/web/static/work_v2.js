@@ -1,6 +1,14 @@
 const page = document.body.dataset.page;
 const $ = (id) => document.getElementById(id);
-const state = { ideas: [], courses: [], logs: { act: [], notify: [], msg: [] }, logTab: "act", createTab: "plan", user: null, editingIdeaId: null };
+const state = {
+  ideas: [],
+  courses: [],
+  logs: { act: [], notify: [], msg: [] },
+  logTab: "act",
+  createTab: "plan",
+  user: null,
+  selectedIdeaId: null,
+};
 const prioLabels = { high: "高", mid: "中", low: "低" };
 const languageLabels = { zh: "中文", en: "English" };
 
@@ -23,9 +31,6 @@ function toIsoFromLocal(value) { if (!value) return null; const d = new Date(val
 function toLocalInputValue(value) { if (!value) return ""; const d = value instanceof Date ? value : new Date(value); if (Number.isNaN(d.getTime())) return ""; const pad = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; }
 function rowEmpty(text) { return `<div class="empty">${esc(text)}</div>`; }
 function tagClass(value) { if (value === "high") return "red"; if (value === "mid") return "orange"; return "blue"; }
-function normalizePrio(value, fallbackTab = "plan") { const text = String(value || "").trim().toLowerCase(); if (["high", "高", "urgent", "important", "紧急", "重要"].includes(text)) return "high"; if (["low", "低", "later", "不急", "不重要"].includes(text)) return "low"; if (["mid", "middle", "medium", "normal", "普通", "中"].includes(text)) return "mid"; return fallbackTab === "ddl" ? "high" : "mid"; }
-function normalizeTab(parsed) { const raw = String(parsed?.tab || parsed?.evtType || parsed?.type || "plan").trim().toLowerCase(); return ["ddl", "deadline", "截止", "截止事项"].includes(raw) ? "ddl" : "plan"; }
-function normalizeParsed(raw) { const p = raw || {}; const tab = normalizeTab(p); const result = { tab, evtType: tab, title: String(p.title || "").trim(), desc: String(p.desc ?? p.description ?? "").trim(), prio: normalizePrio(p.prio || p.priority, tab), durationMin: Number(p.durationMin || p.duration || 30), hardDdl: Boolean(p.hardDdl) }; if (tab === "ddl") result.endTime = toLocalInputValue(p.endTime || p.deadline || p.at); else result.stTime = toLocalInputValue(p.stTime || p.startTime || p.at); return result; }
 
 function avatarText(name) { const text = String(name || "SC").trim(); return text.slice(0, 2).toUpperCase() || "SC"; }
 function applyAvatar(textId, imgId, user) { const img = $(imgId); const text = $(textId); if (!img || !text) return; text.textContent = avatarText(user?.displayName); if (user?.avatarUrl) { img.src = user.avatarUrl; img.hidden = false; text.hidden = true; } else { img.removeAttribute("src"); img.hidden = true; text.hidden = false; } }
@@ -37,24 +42,87 @@ async function saveSettings(ev) { ev.preventDefault(); const form = ev.currentTa
 function setCreateTab(tab) { state.createTab = tab; document.querySelectorAll("[data-create-tab]").forEach((btn) => btn.classList.toggle("active", btn.dataset.createTab === tab)); $("planForm")?.classList.toggle("active", tab === "plan"); $("ddlForm")?.classList.toggle("active", tab === "ddl"); renderCreatePreview(); }
 function createForm() { return state.createTab === "ddl" ? $("ddlForm") : $("planForm"); }
 function createPayload() { const form = createForm(); if (state.createTab === "ddl") return { title: formVal(form, "title"), desc: formVal(form, "desc") || null, endTime: toIsoFromLocal(formVal(form, "endTime")), hardDdl: form.elements.hardDdl.checked, prio: formVal(form, "prio") || "high" }; return { title: formVal(form, "title"), desc: formVal(form, "desc") || null, stTime: toIsoFromLocal(formVal(form, "stTime")), durationMin: Number(formVal(form, "durationMin") || 30), prio: formVal(form, "prio") || "mid" }; }
-function renderCreatePreview(created = null) { const body = $("createPreview"); if (!body) return; const p = created || createPayload(); const title = p.title || "等待填写标题"; const time = state.createTab === "ddl" ? (formVal(createForm(), "endTime") || "未设置") : (formVal(createForm(), "stTime") || "未设置"); const link = created?.evtId ? `<div class="row-actions"><a class="btn" href="/work/update?evtId=${encodeURIComponent(created.evtId)}">打开编辑页</a></div>` : ""; body.innerHTML = `<div class="preview-card"><div class="preview-title">${esc(title)}</div><div class="tags"><span class="tag ${state.createTab === "ddl" ? "purple" : "blue"}">${state.createTab === "ddl" ? "DDL" : "计划"}</span><span class="tag ${tagClass(p.prio)}">${esc(prioLabels[p.prio] || p.prio)}</span><span class="tag blue">${esc(time)}</span>${state.createTab === "plan" ? `<span class="tag green">${esc(p.durationMin || 30)} 分钟</span>` : ""}</div>${p.desc ? `<p class="preview-desc">${esc(p.desc)}</p>` : ""}${link}</div>`; }
-function applyParsed(parsed) { const p = normalizeParsed(parsed); setCreateTab(p.tab); const form = createForm(); form.elements.title.value = p.title || ""; form.elements.desc.value = p.desc || ""; form.elements.prio.value = normalizePrio(p.prio, p.tab); if (p.tab === "ddl") { form.elements.endTime.value = p.endTime || ""; form.elements.hardDdl.checked = Boolean(p.hardDdl); } else { form.elements.stTime.value = p.stTime || ""; form.elements.durationMin.value = p.durationMin || 30; } renderCreatePreview(); }
-async function parseNatural() { const text = $("naturalText")?.value.trim(); if (!text) return toast("请先输入内容"); try { toast("正在调用大模型解析..."); setApiStatus("busy", "模型解析中"); const resp = await apiSend("/api/llm/parse", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, scene: "create_event" }) }); if (!resp?.parsed) throw new Error("大模型没有返回可用解析结果"); applyParsed(resp.parsed); setApiStatus("ok", "模型解析完成"); toast("已使用大模型结果预填"); } catch (err) { setApiStatus("err", "模型解析失败"); toast(err.message || "大模型解析失败"); } }
-async function submitCreate(ev) { ev.preventDefault(); const form = ev.currentTarget; const body = createPayload(); if (!body.title) return toast("请填写标题"); try { const created = await apiSend(form.dataset.endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); form.reset(); renderCreatePreview(created); toast("创建成功，已自动更新预览"); } catch (err) { toast(err.message); } }
+function createDisplayTime() { const form = createForm(); return state.createTab === "ddl" ? (formVal(form, "endTime") || "未设置") : (formVal(form, "stTime") || "未设置"); }
+function renderCreatePreview() { const body = $("createPreview"); if (!body) return; const p = createPayload(); const title = p.title || "等待填写标题"; const submitBtn = $("createSubmitBtn"); if (submitBtn) submitBtn.textContent = state.createTab === "ddl" ? "创建截止事项" : "创建计划事项"; body.innerHTML = `<div class="preview-card ${p.title ? "" : "empty-preview"}"><div class="preview-title">${esc(title)}</div><div class="tags"><span class="tag ${state.createTab === "ddl" ? "purple" : "blue"}">${state.createTab === "ddl" ? "DDL" : "计划"}</span><span class="tag ${tagClass(p.prio)}">${esc(prioLabels[p.prio] || p.prio)}</span><span class="tag blue">${esc(createDisplayTime())}</span>${state.createTab === "plan" ? `<span class="tag green">${esc(p.durationMin || 30)} 分钟</span>` : ""}</div>${p.desc ? `<p class="preview-desc">${esc(p.desc)}</p>` : ""}</div>`; }
+function clearCreateForms() { $("planForm")?.reset(); $("ddlForm")?.reset(); renderCreatePreview(); }
+async function submitCreate(ev) { ev.preventDefault(); const form = createForm(); const body = createPayload(); if (!body.title) return toast("请填写标题"); if (state.createTab === "ddl" && !body.endTime) return toast("请设置截止时间"); if (state.createTab === "plan" && !body.stTime) return toast("请设置开始时间"); try { await apiSend(form.dataset.endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); clearCreateForms(); toast("创建成功，已清空表单"); } catch (err) { toast(err.message); } }
 function applyTemplate(name) { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(23, 59, 0, 0); if (name === "homework" || name === "exam") { setCreateTab("ddl"); const f = $("ddlForm"); f.elements.title.value = name === "homework" ? "作业 DDL" : "考试复习"; f.elements.desc.value = name === "homework" ? "课程作业截止" : "复习重点章节并完成例题"; f.elements.endTime.value = toLocalInputValue(d); f.elements.prio.value = "high"; f.elements.hardDdl.checked = name === "homework"; } else { setCreateTab("plan"); const f = $("planForm"); f.elements.title.value = name === "project" ? "项目跟进" : "计划事项"; f.elements.desc.value = name === "project" ? "检查阶段任务进展" : ""; f.elements.stTime.value = toLocalInputValue(d); f.elements.durationMin.value = 30; f.elements.prio.value = "mid"; } renderCreatePreview(); }
-function initAdd() { document.querySelectorAll("[data-create-tab]").forEach((b) => b.addEventListener("click", () => setCreateTab(b.dataset.createTab))); document.querySelectorAll("#planForm,#ddlForm").forEach((f) => { f.addEventListener("input", renderCreatePreview); f.addEventListener("change", renderCreatePreview); f.addEventListener("submit", submitCreate); }); document.querySelectorAll(".template").forEach((b) => b.addEventListener("click", () => applyTemplate(b.dataset.template))); $("parseNaturalBtn")?.addEventListener("click", parseNatural); renderCreatePreview(); }
+function initAdd() { document.querySelectorAll("[data-create-tab]").forEach((b) => b.addEventListener("click", () => setCreateTab(b.dataset.createTab))); document.querySelectorAll("#planForm,#ddlForm").forEach((f) => { f.addEventListener("input", renderCreatePreview); f.addEventListener("change", renderCreatePreview); f.addEventListener("submit", submitCreate); }); document.querySelectorAll(".template").forEach((b) => b.addEventListener("click", () => applyTemplate(b.dataset.template))); $("createSubmitBtn")?.addEventListener("click", submitCreate); renderCreatePreview(); }
 
+function ideaStatus(idea) { return idea?.handled ? "handled" : "open"; }
 function ideaRow(idea) {
-  const editing = state.editingIdeaId === idea.ideaId;
-  if (editing) {
-    return `<div class="row-card idea-card editing"><textarea class="nl-input" rows="4" data-idea-edit="${esc(idea.ideaId)}">${esc(idea.content)}</textarea><div class="row-meta">${idea.handled ? "handled" : "open"} · ${esc(idea.createdAt || "")}</div><div class="row-actions"><button class="btn btn-primary" data-action="saveIdeaEdit" data-id="${esc(idea.ideaId)}">保存修改</button><button class="btn" data-action="cancelIdeaEdit">取消</button></div></div>`;
-  }
-  return `<div class="row-card idea-card"><div class="row-title">${esc(idea.content)}</div><div class="row-meta">${idea.handled ? "handled" : "open"} · ${esc(idea.createdAt || "")}</div><div class="row-actions"><button class="btn" data-action="editIdea" data-id="${esc(idea.ideaId)}">编辑</button><button class="btn" data-action="toggleIdea" data-id="${esc(idea.ideaId)}" data-handled="${idea.handled ? "0" : "1"}">${idea.handled ? "标为 open" : "标为 handled"}</button><button class="btn btn-danger" data-action="deleteIdea" data-id="${esc(idea.ideaId)}">删除</button></div></div>`;
+  const status = ideaStatus(idea);
+  const selected = state.selectedIdeaId === idea.ideaId;
+  return `<article class="task-row clickable idea-card ${selected ? "selected" : ""}" data-action="selectIdea" data-id="${esc(idea.ideaId)}" data-idea-id="${esc(idea.ideaId)}" tabindex="0" role="button"><div><div class="task-title">${esc(idea.content || "未命名灵感")}</div><div class="tags"><span class="tag ${status === "handled" ? "green" : "blue"}">${status}</span><span class="tag blue">${esc(idea.createdAt || "")}</span></div></div></article>`;
 }
-function renderIdeas() { const filter = $("ideaFilter")?.value || "open"; const rows = state.ideas.filter((i) => filter === "all" || (filter === "open" ? !i.handled : i.handled)); $("ideaList").innerHTML = rows.length ? rows.slice().reverse().map(ideaRow).join("") : rowEmpty("暂无灵感"); }
-async function initInspire() { try { state.ideas = await apiGet("/api/idea"); renderIdeas(); touchRefresh(); } catch (err) { toast(err.message); setApiStatus("err", "API 异常"); } }
-async function saveIdea() { const content = $("ideaContent").value.trim(); if (!content) return toast("请填写灵感"); try { await apiSend("/api/idea", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, srcType: "text" }) }); $("ideaContent").value = ""; await initInspire(); toast("已保存"); } catch (err) { toast(err.message); } }
-async function saveIdeaEdit(ideaId) { const input = document.querySelector(`[data-idea-edit="${CSS.escape(ideaId)}"]`); const content = input?.value.trim() || ""; if (!content) return toast("灵感内容不能为空"); try { await apiSend(`/api/idea/${ideaId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content }) }); state.editingIdeaId = null; await initInspire(); toast("灵感已更新"); } catch (err) { toast(err.message); } }
+function renderIdeas() {
+  const filter = $("ideaFilter")?.value || "open";
+  const q = $("globalSearch")?.value.trim().toLowerCase() || "";
+  const rows = state.ideas.filter((i) => (filter === "all" || (filter === "open" ? !i.handled : i.handled)) && (!q || String(i.content || "").toLowerCase().includes(q)));
+  $("ideaList").innerHTML = rows.length ? rows.slice().reverse().map(ideaRow).join("") : rowEmpty("暂无灵感");
+}
+function fillIdeaForm(idea = null) {
+  const form = $("ideaEditForm");
+  if (!form) return;
+  state.selectedIdeaId = idea?.ideaId || null;
+  form.reset();
+  form.elements.ideaId.value = idea?.ideaId || "";
+  form.elements.content.value = idea?.content || "";
+  form.elements.handled.value = idea?.handled ? "handled" : "open";
+  const title = $("ideaEditorTitle");
+  if (title) title.textContent = idea ? "编辑灵感" : "新建灵感";
+  const saveBtn = $("saveIdeaFormBtn");
+  if (saveBtn) saveBtn.textContent = idea ? "保存修改" : "保存新灵感";
+  $("deleteIdeaBtn")?.toggleAttribute("disabled", !idea);
+  renderIdeas();
+}
+async function initInspire() {
+  try {
+    state.ideas = await apiGet("/api/idea");
+    const selected = state.ideas.find((idea) => idea.ideaId === state.selectedIdeaId) || null;
+    renderIdeas();
+    if (selected) fillIdeaForm(selected);
+    touchRefresh();
+  } catch (err) {
+    toast(err.message);
+    setApiStatus("err", "API 异常");
+  }
+}
+async function saveIdeaForm(ev) {
+  ev.preventDefault();
+  const form = ev.currentTarget;
+  const ideaId = formVal(form, "ideaId");
+  const content = formVal(form, "content");
+  const handled = formVal(form, "handled") === "handled";
+  if (!content) return toast("灵感内容不能为空");
+  try {
+    let saved;
+    if (ideaId) {
+      saved = await apiSend(`/api/idea/${ideaId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, handled }) });
+    } else {
+      saved = await apiSend("/api/idea", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, srcType: "text" }) });
+      if (handled && saved?.ideaId) saved = await apiSend(`/api/idea/${saved.ideaId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ handled: true }) });
+    }
+    state.selectedIdeaId = saved?.ideaId || ideaId || null;
+    await initInspire();
+    toast(ideaId ? "灵感已更新" : "灵感已保存");
+  } catch (err) {
+    toast(err.message);
+  }
+}
+async function deleteSelectedIdea() {
+  const ideaId = formVal($("ideaEditForm"), "ideaId");
+  if (!ideaId) return toast("请选择灵感");
+  try {
+    await apiSend(`/api/idea/${ideaId}`, { method: "DELETE" });
+    state.selectedIdeaId = null;
+    fillIdeaForm(null);
+    await initInspire();
+    toast("灵感已删除");
+  } catch (err) {
+    toast(err.message);
+  }
+}
 
 function renderCourse() { $("courseTplList").innerHTML = state.courses.length ? state.courses.map((c) => `<div class="row-card"><div class="row-title">${esc(c.courseName || c.title)}</div><div class="row-meta">周${esc(c.weekDay)} · ${esc(c.stTime || "—")} - ${esc(c.endTime || "—")} · ${esc(c.location || "")}</div><div class="row-actions"><button class="btn" data-action="editCourse" data-id="${esc(c.evtId)}">编辑</button></div></div>`).join("") : rowEmpty("暂无课程"); }
 function fillCourse(c = null) { const f = $("courseTplForm"); f.reset(); f.elements.evtId.value = c?.evtId || ""; for (const key of ["courseName", "teacher", "location", "stDate", "endDate", "weekDay", "stTime", "endTime", "startWeek", "endWeek", "weekMode"]) if (c?.[key] != null) f.elements[key].value = c[key]; }
@@ -68,8 +136,49 @@ function renderLogs() { const q = $("logKeyword")?.value.trim().toLowerCase() ||
 async function initLog() { try { const [act, notify, msg] = await Promise.all([apiGet("/api/log/act"), apiGet("/api/log/notify"), apiGet("/api/log/msg")]); state.logs = { act, notify, msg }; renderLogs(); touchRefresh(); } catch (err) { toast(err.message); setApiStatus("err", "API 异常"); } }
 function initSettings() { const form = $("userSettingsForm"); if (!form) return; form.addEventListener("input", updateSettingsPreview); form.addEventListener("change", updateSettingsPreview); form.addEventListener("submit", saveSettings); updateSettingsPreview(); }
 
-function bindCommon() { document.body.addEventListener("click", async (ev) => { const btn = ev.target.closest("[data-action]"); if (!btn) return; if (btn.dataset.action === "editIdea") { state.editingIdeaId = btn.dataset.id; renderIdeas(); } if (btn.dataset.action === "cancelIdeaEdit") { state.editingIdeaId = null; renderIdeas(); } if (btn.dataset.action === "saveIdeaEdit") await saveIdeaEdit(btn.dataset.id); if (btn.dataset.action === "toggleIdea") { try { await apiSend(`/api/idea/${btn.dataset.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ handled: btn.dataset.handled === "1" }) }); await initInspire(); } catch (err) { toast(err.message); } } if (btn.dataset.action === "deleteIdea") { try { await apiSend(`/api/idea/${btn.dataset.id}`, { method: "DELETE" }); await initInspire(); } catch (err) { toast(err.message); } } if (btn.dataset.action === "editCourse") { const c = state.courses.find((x) => x.evtId === btn.dataset.id); fillCourse(c); } }); }
-function bindPage() { if (page === "add") initAdd(); if (page === "settings") initSettings(); if (page === "inspire") { $("saveIdeaBtn")?.addEventListener("click", saveIdea); $("ideaFilter")?.addEventListener("change", () => { state.editingIdeaId = null; renderIdeas(); }); } if (page === "course") { $("courseTplForm")?.addEventListener("submit", saveCourse); $("newCourseBtn")?.addEventListener("click", () => fillCourse(null)); $("deleteCourseTplBtn")?.addEventListener("click", async () => { const id = formVal($("courseTplForm"), "evtId"); if (!id) return toast("请选择课程"); try { await apiSend(`/api/evt/${id}`, { method: "DELETE" }); fillCourse(null); await initCourse(false); toast("已删除"); } catch (err) { toast(err.message); } }); } if (page === "log") { document.querySelectorAll("[data-log-tab]").forEach((b) => b.addEventListener("click", () => { state.logTab = b.dataset.logTab; document.querySelectorAll("[data-log-tab]").forEach((x) => x.classList.toggle("active", x === b)); renderLogs(); })); $("logKeyword")?.addEventListener("input", renderLogs); $("logStatusFilter")?.addEventListener("change", renderLogs); } }
+function bindCommon() {
+  document.body.addEventListener("click", async (ev) => {
+    const btn = ev.target.closest("[data-action]");
+    if (!btn) return;
+    if (btn.dataset.action === "selectIdea") {
+      const idea = state.ideas.find((item) => item.ideaId === btn.dataset.id);
+      if (idea) fillIdeaForm(idea);
+    }
+    if (btn.dataset.action === "editCourse") {
+      const c = state.courses.find((x) => x.evtId === btn.dataset.id);
+      fillCourse(c);
+    }
+  });
+  document.body.addEventListener("keydown", (ev) => {
+    const row = ev.target.closest?.("[data-action='selectIdea']");
+    if (row && (ev.key === "Enter" || ev.key === " ")) {
+      ev.preventDefault();
+      row.click();
+    }
+  });
+}
+function bindPage() {
+  if (page === "add") initAdd();
+  if (page === "settings") initSettings();
+  if (page === "inspire") {
+    $("ideaEditForm")?.addEventListener("submit", saveIdeaForm);
+    $("ideaFilter")?.addEventListener("change", () => { state.selectedIdeaId = null; fillIdeaForm(null); renderIdeas(); });
+    $("newIdeaBtn")?.addEventListener("click", () => fillIdeaForm(null));
+    $("deleteIdeaBtn")?.addEventListener("click", deleteSelectedIdea);
+    $("globalSearch")?.addEventListener("input", renderIdeas);
+    fillIdeaForm(null);
+  }
+  if (page === "course") {
+    $("courseTplForm")?.addEventListener("submit", saveCourse);
+    $("newCourseBtn")?.addEventListener("click", () => fillCourse(null));
+    $("deleteCourseTplBtn")?.addEventListener("click", async () => { const id = formVal($("courseTplForm"), "evtId"); if (!id) return toast("请选择课程"); try { await apiSend(`/api/evt/${id}`, { method: "DELETE" }); fillCourse(null); await initCourse(false); toast("已删除"); } catch (err) { toast(err.message); } });
+  }
+  if (page === "log") {
+    document.querySelectorAll("[data-log-tab]").forEach((b) => b.addEventListener("click", () => { state.logTab = b.dataset.logTab; document.querySelectorAll("[data-log-tab]").forEach((x) => x.classList.toggle("active", x === b)); renderLogs(); }));
+    $("logKeyword")?.addEventListener("input", renderLogs);
+    $("logStatusFilter")?.addEventListener("change", renderLogs);
+  }
+}
 async function initPage() { if (page === "inspire") return initInspire(); if (page === "course") return initCourse(); if (page === "log") return initLog(); }
 
 bindCommon();
