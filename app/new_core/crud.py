@@ -27,6 +27,7 @@ from app.new_core.models import (
 _DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
 DEFAULT_USER_ID = "default"
 _ALLOWED_MSG_CHANNELS = {"web", "feishu", "llm", "system"}
+_ALLOWED_LANGUAGES = {"zh", "en"}
 
 
 def _parseNow(now: str) -> datetime:
@@ -39,10 +40,53 @@ def _parseNow(now: str) -> datetime:
 def _ensure_user(db: Session, userId: str = DEFAULT_USER_ID) -> AppUser:
     user = db.get(AppUser, userId)
     if user is None:
-        user = AppUser(userId=userId, displayName="默认用户")
+        now = nowIso()
+        user = AppUser(userId=userId, displayName="默认用户", language="zh", avatarUrl=None, createdAt=now, updatedAt=now)
         db.add(user)
         db.flush()
     return user
+
+
+def _userDict(user: AppUser) -> dict[str, Any]:
+    return {
+        "userId": user.userId,
+        "displayName": user.displayName,
+        "language": user.language,
+        "avatarUrl": user.avatarUrl,
+        "createdAt": user.createdAt,
+        "updatedAt": user.updatedAt,
+    }
+
+
+def getCurrentUser(db: Session, *, userId: str = DEFAULT_USER_ID) -> dict[str, Any]:
+    return _userDict(_ensure_user(db, userId))
+
+
+def updateCurrentUser(
+    db: Session,
+    *,
+    displayName: str | None = None,
+    language: str | None = None,
+    avatarUrl: str | None = None,
+    userId: str = DEFAULT_USER_ID,
+) -> dict[str, Any]:
+    user = _ensure_user(db, userId)
+    if displayName is not None:
+        finalName = displayName.strip()
+        if not finalName:
+            raise ValueError("displayName is required")
+        user.displayName = finalName
+    if language is not None:
+        if language not in _ALLOWED_LANGUAGES:
+            raise ValueError("language must be zh or en")
+        user.language = language
+    if avatarUrl is not None:
+        user.avatarUrl = avatarUrl.strip() or None
+    user.updatedAt = nowIso()
+    _recordAct(db, userId=user.userId, src="api", action="update", targetKind="user", targetId=user.userId)
+    db.commit()
+    db.refresh(user)
+    return _userDict(user)
 
 
 def _actor_kind(src: str | None, actorKind: str | None) -> str:
