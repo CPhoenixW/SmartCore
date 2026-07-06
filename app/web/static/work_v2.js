@@ -1,7 +1,8 @@
 const page = document.body.dataset.page;
 const $ = (id) => document.getElementById(id);
-const state = { ideas: [], courses: [], logs: { act: [], notify: [], msg: [] }, logTab: "act", createTab: "plan" };
+const state = { ideas: [], courses: [], logs: { act: [], notify: [], msg: [] }, logTab: "act", createTab: "plan", user: null };
 const prioLabels = { high: "高", mid: "中", low: "低" };
+const languageLabels = { zh: "中文", en: "English" };
 
 function esc(value) {
   return String(value ?? "")
@@ -50,6 +51,13 @@ async function apiSend(path, options) {
   }
   setApiStatus("ok", "API 在线");
   touchRefresh();
+  return data.data;
+}
+
+async function apiGetQuiet(path) {
+  const resp = await fetch(path);
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || data.ok === false) throw new Error(data.detail || data.msg || `HTTP ${resp.status}`);
   return data.data;
 }
 
@@ -118,6 +126,84 @@ function normalizeParsed(raw) {
   if (tab === "ddl") result.endTime = toLocalInputValue(p.endTime || p.deadline || p.at);
   else result.stTime = toLocalInputValue(p.stTime || p.startTime || p.at);
   return result;
+}
+
+function avatarText(name) {
+  const text = String(name || "SC").trim();
+  return text.slice(0, 2).toUpperCase() || "SC";
+}
+
+function applyAvatar(containerTextId, containerImgId, user) {
+  const img = $(containerImgId);
+  const text = $(containerTextId);
+  if (!img || !text) return;
+  text.textContent = avatarText(user?.displayName);
+  if (user?.avatarUrl) {
+    img.src = user.avatarUrl;
+    img.hidden = false;
+    text.hidden = true;
+  } else {
+    img.removeAttribute("src");
+    img.hidden = true;
+    text.hidden = false;
+  }
+}
+
+function applyUserUI(user) {
+  state.user = user;
+  applyAvatar("topAvatarText", "topAvatarImg", user);
+  const form = $("userSettingsForm");
+  if (form) {
+    form.elements.displayName.value = user.displayName || "";
+    form.elements.language.value = user.language || "zh";
+    form.elements.avatarUrl.value = user.avatarUrl || "";
+    updateSettingsPreview();
+  }
+}
+
+async function loadCurrentUser() {
+  try {
+    const user = await apiGetQuiet("/api/user/me");
+    applyUserUI(user);
+  } catch {
+    applyUserUI({ displayName: "SC", language: "zh", avatarUrl: null });
+  }
+}
+
+function updateSettingsPreview() {
+  const form = $("userSettingsForm");
+  if (!form) return;
+  const user = {
+    displayName: formVal(form, "displayName") || "默认用户",
+    language: formVal(form, "language") || "zh",
+    avatarUrl: formVal(form, "avatarUrl") || null,
+  };
+  applyAvatar("settingsAvatarText", "settingsAvatarImg", user);
+  const namePreview = $("settingsNamePreview");
+  const langPreview = $("settingsLanguagePreview");
+  if (namePreview) namePreview.textContent = user.displayName;
+  if (langPreview) langPreview.textContent = languageLabels[user.language] || user.language;
+}
+
+async function saveSettings(ev) {
+  ev.preventDefault();
+  const form = ev.currentTarget;
+  const body = {
+    displayName: formVal(form, "displayName"),
+    language: formVal(form, "language") || "zh",
+    avatarUrl: formVal(form, "avatarUrl") || null,
+  };
+  try {
+    const user = await apiSend("/api/user/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    applyUserUI(user);
+    toast("设置已保存");
+  } catch (err) {
+    toast(err.message);
+  }
 }
 
 function setCreateTab(tab) {
@@ -334,11 +420,36 @@ async function initCourse(showLoading = true) {
   }
 }
 
+function logSearchText(row) {
+  return Object.entries(row || {})
+    .map(([key, value]) => `${key}:${typeof value === "object" ? JSON.stringify(value) : value ?? ""}`)
+    .join(" ")
+    .toLowerCase();
+}
+
+function logTitle(row) {
+  if (state.logTab === "act") return `${row.action || "操作"} · ${row.targetKind || "target"}`;
+  if (state.logTab === "notify") return `${row.title || "提醒"} · ${row.channel || "channel"}`;
+  return `${row.intent || row.channel || "消息"}`;
+}
+
+function logMeta(row) {
+  const time = row.createdAt || row.scheduledAt || row.sentAt || "";
+  const status = row.result || row.stat || row.direction || "";
+  const id = row.targetId || row.evtId || row.externalId || row.msgId || row.notifyId || row.actId || "";
+  return [time, status, id].filter(Boolean).join(" · ");
+}
+
 function renderLogs() {
   const q = $("logKeyword")?.value.trim().toLowerCase() || "";
   const stat = $("logStatusFilter")?.value || "";
-  const rows = (state.logs[state.logTab] || []).slice().reverse().filter((r) => (!q || JSON.stringify(r).toLowerCase().includes(q)) && (!stat || r.stat === stat || r.result === stat));
-  $("logList").innerHTML = rows.length ? rows.slice(0, 120).map((r) => `<div class="log-row"><div class="row-title">${esc(r.action || r.title || r.rawText || r.msgId || r.notifyId || r.actId || "日志")}</div><div class="row-meta">${esc(r.createdAt || r.scheduledAt || "")} · ${esc(r.result || r.stat || r.channel || "")}</div><pre class="log-json">${esc(JSON.stringify(r, null, 2))}</pre></div>`).join("") : rowEmpty("暂无日志");
+  const rows = (state.logs[state.logTab] || [])
+    .slice()
+    .reverse()
+    .filter((r) => (!q || logSearchText(r).includes(q)) && (!stat || r.stat === stat || r.result === stat));
+  $("logList").innerHTML = rows.length
+    ? rows.slice(0, 120).map((r) => `<details class="log-row"><summary><span class="row-title">${esc(logTitle(r))}</span><span class="row-meta">${esc(logMeta(r))}</span></summary><pre class="log-json">${esc(JSON.stringify(r, null, 2))}</pre></details>`).join("")
+    : rowEmpty("暂无日志");
 }
 
 async function initLog() {
@@ -353,8 +464,16 @@ async function initLog() {
   }
 }
 
+function initSettings() {
+  const form = $("userSettingsForm");
+  if (!form) return;
+  form.addEventListener("input", updateSettingsPreview);
+  form.addEventListener("change", updateSettingsPreview);
+  form.addEventListener("submit", saveSettings);
+  updateSettingsPreview();
+}
+
 function bindCommon() {
-  $("refreshPageBtn")?.addEventListener("click", () => initPage());
   document.body.addEventListener("click", async (ev) => {
     const btn = ev.target.closest("[data-action]");
     if (!btn) return;
@@ -383,6 +502,7 @@ function bindCommon() {
 
 function bindPage() {
   if (page === "add") initAdd();
+  if (page === "settings") initSettings();
   if (page === "inspire") {
     $("saveIdeaBtn")?.addEventListener("click", saveIdea);
     $("ideaFilter")?.addEventListener("change", renderIdeas);
@@ -422,4 +542,5 @@ async function initPage() {
 
 bindCommon();
 bindPage();
+loadCurrentUser();
 initPage();
