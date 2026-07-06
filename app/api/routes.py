@@ -19,9 +19,28 @@ def ok(data: Any) -> dict[str, Any]:
 
 def _http_error(exc: ValueError) -> HTTPException:
     msg = str(exc)
-    if "required" in msg or "disabled" in msg:
+    if "required" in msg or "disabled" in msg or "must be" in msg:
         return HTTPException(status_code=400, detail=msg)
     return HTTPException(status_code=404, detail=msg)
+
+
+class UserPatchBody(BaseModel):
+    displayName: str | None = None
+    language: str | None = None
+    avatarUrl: str | None = None
+
+
+@router.get("/user/me")
+def get_user_me(db: Session = Depends(get_db)) -> dict[str, Any]:
+    return ok(crud.getCurrentUser(db))
+
+
+@router.patch("/user/me")
+def patch_user_me(body: UserPatchBody, db: Session = Depends(get_db)) -> dict[str, Any]:
+    try:
+        return ok(crud.updateCurrentUser(db, **body.model_dump()))
+    except ValueError as exc:
+        raise _http_error(exc) from exc
 
 
 @router.get("/evt")
