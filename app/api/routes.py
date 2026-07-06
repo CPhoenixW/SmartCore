@@ -183,13 +183,3 @@ def reminder_action(body: ReminderActionBody, db: Session = Depends(get_db)) -> 
         return ok(crud.applyReminderAction(db, evtId=body.evtId, action=body.action, now=body.now or nowIso(), src="screen"))
     except ValueError as exc:
         raise _http_error(exc) from exc
-
-
-class LlmParseBody(BaseModel):
-    text: str
-    scene: str = "create_event"
-
-
-@router.post("/llm/parse")
-def llm_parse_placeholder(body: LlmParseBody) -> dict[str, Any]:
-    return ok({"status": "placeholder", "scene": body.scene, "text": body.text, "parsed": None})
