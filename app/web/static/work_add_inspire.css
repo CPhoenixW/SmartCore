@@ -1,0 +1,120 @@
+.work-content {
+  height: 100vh;
+  min-height: 0;
+  overflow-y: auto;
+}
+.topbar {
+  height: 64px;
+  padding: 0 28px;
+}
+.top-search {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 11px;
+}
+.status-pill {
+  min-height: 30px;
+  padding: 0 11px;
+}
+.top-avatar {
+  width: 36px;
+  height: 36px;
+}
+.sticky-card {
+  position: sticky;
+  top: 84px;
+}
+.card-footer {
+  padding: 0 20px 20px;
+}
+.preview-panel .card-body {
+  padding-bottom: 12px;
+}
+.preview-card.empty-preview {
+  border-style: dashed;
+  background: var(--surface2);
+}
+.btn[disabled],
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+.task-row.clickable {
+  cursor: pointer;
+}
+.task-row.selected,
+.idea-card.selected {
+  border-color: #60a5fa;
+  background: #eff6ff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+body[data-page="add"] .page-main {
+  height: calc(100vh - 64px);
+  min-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-top: 20px;
+  padding-bottom: 20px;
+}
+body[data-page="add"] .page-head {
+  flex: 0 0 auto;
+}
+body[data-page="add"] .add-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-bottom: 0;
+}
+body[data-page="add"] .add-main,
+body[data-page="add"] .add-side {
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  align-content: start;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+body[data-page="add"] .add-side {
+  align-self: stretch;
+}
+body[data-page="add"] .preview-panel {
+  flex: 0 0 auto;
+}
+body[data-page="inspire"] .inspire-grid {
+  align-items: start;
+}
+body[data-page="inspire"] #ideaList {
+  max-height: calc(100vh - 190px);
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-width: thin;
+}
+body[data-page="inspire"] #ideaEditForm textarea[name="content"] {
+  min-height: 220px;
+}
+@media (max-width: 1100px) {
+  .work-content {
+    height: auto;
+    overflow: visible;
+  }
+  .sticky-card {
+    position: static;
+  }
+  body[data-page="add"] .page-main {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+  body[data-page="add"] .add-main,
+  body[data-page="add"] .add-side,
+  body[data-page="inspire"] #ideaList {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+}
+@media (max-width: 720px) {
+  .topbar {
+    height: auto;
+  }
+}
