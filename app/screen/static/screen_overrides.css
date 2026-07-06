@@ -1,1 +1,5 @@
-.info-pane .pane-head { display: none; }
+.info-pane .pane-head { height: 0; overflow: hidden; padding: 0; margin: 0; }
+.today-primary p { height: 0; overflow: hidden; margin: 0; }
+.today-primary h2 { margin-bottom: 0; }
+.screen-shell.mode-working .info-pane { padding-top: 22px; padding-bottom: 22px; }
+.reminder-zone .today-list { padding-top: 0; }
