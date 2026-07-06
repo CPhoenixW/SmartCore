@@ -19,6 +19,7 @@ _SCREEN_HTML = """<!doctype html>
 <title>SmartCore Screen</title>
 <link rel="stylesheet" crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/misans@4.1.0/lib/Latin/MiSansLatin-Medium.min.css">
 <link rel="stylesheet" href="/static/screen/screen.css">
+<link rel="stylesheet" href="/static/screen/screen_overrides.css">
 </head>
 <body data-app="smartcore-screen" data-theme="light">
 <main class="screen-shell">
