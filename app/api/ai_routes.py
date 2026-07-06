@@ -64,12 +64,13 @@ def _normalize_parsed(data: dict[str, Any]) -> dict[str, Any]:
 def parse_text(body: ParseBody) -> dict[str, Any]:
     settings = get_settings()
     parsed = None
-    now = body.now or nowIso()
+    now = nowIso()
     if settings.deepseek_api_key:
         prompt = f"""
 你是 SmartCore 的事件解析器。只返回一个 JSON 对象，不要 Markdown，不要解释。
 
 当前时间：{now}
+时间规则：当前时间是服务器本地时间，时区为 Asia/Shanghai。所有返回时间必须使用带 +08:00 偏移量的 ISO8601，例如 2026-07-06T17:00:00+08:00。
 用户输入：{body.text}
 
 目标事件只有两类：
