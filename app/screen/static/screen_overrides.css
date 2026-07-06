@@ -1,3 +1,8 @@
+body { font-family: "MiSans", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+.screen-shell.mode-working .clock-date,
+.screen-shell.mode-away .clock-date,
+.pane-label,
+.today-list.empty { font-family: "MiSans", "MiSansLatin", "PingFang SC", "Microsoft YaHei", sans-serif; }
 .info-pane .pane-head { height: 0; overflow: hidden; padding: 0; margin: 0; }
 .today-primary p { height: 0; overflow: hidden; margin: 0; }
 .today-primary h2 { margin-bottom: 0; }
