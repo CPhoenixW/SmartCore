@@ -218,21 +218,19 @@ function localParse(text) {
   };
 }
 function normalizeParsed(raw, text) {
-  const local = localParse(text);
   const p = raw || {};
   const tab = normalizeTab(p, text);
-  const llmDesc = String(p.desc ?? p.description ?? "").trim();
   const result = {
     tab,
     evtType: tab,
-    title: p.title || local.title,
-    desc: llmDesc || local.desc || text,
+    title: String(p.title || "").trim(),
+    desc: String(p.desc ?? p.description ?? "").trim(),
     prio: normalizePrio(p.prio || p.priority, tab),
-    durationMin: Number(p.durationMin || p.duration || local.durationMin || 30),
-    hardDdl: Boolean(p.hardDdl ?? local.hardDdl),
+    durationMin: Number(p.durationMin || p.duration || 30),
+    hardDdl: Boolean(p.hardDdl),
   };
-  if (tab === "ddl") result.endTime = toLocalInputValue(p.endTime || p.deadline || p.at) || local.endTime;
-  else result.stTime = toLocalInputValue(p.stTime || p.startTime || p.at) || local.stTime;
+  if (tab === "ddl") result.endTime = toLocalInputValue(p.endTime || p.deadline || p.at);
+  else result.stTime = toLocalInputValue(p.stTime || p.startTime || p.at);
   return result;
 }
 function setCreateTab(tab) {
@@ -287,38 +285,25 @@ function applyParsed(parsed, text) {
   }
   renderCreatePreview();
 }
-function parseNatural() {
+async function parseNatural() {
   const text = $("naturalText")?.value.trim();
   if (!text) return toast("请先输入内容");
-
-  applyParsed(null, text);
-  toast("已本地预填，可直接修改或创建");
-  setApiStatus("busy", "模型优化中");
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 2500);
-  fetch("/api/llm/parse", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, scene: "create_event", now: new Date().toISOString() }),
-    signal: controller.signal,
-  })
-    .then((resp) => resp.ok ? resp.json() : null)
-    .then((body) => {
-      clearTimeout(timer);
-      const parsed = body?.data?.parsed;
-      if (parsed) {
-        applyParsed(parsed, text);
-        setApiStatus("ok", "模型已优化");
-        touchRefresh();
-      } else {
-        setApiStatus("ok", "本地解析");
-      }
-    })
-    .catch(() => {
-      clearTimeout(timer);
-      setApiStatus("ok", "本地解析");
+  try {
+    toast("正在调用大模型解析...");
+    setApiStatus("busy", "模型解析中");
+    const resp = await apiSend("/api/llm/parse", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, scene: "create_event", now: new Date().toISOString() }),
     });
+    if (!resp?.parsed) throw new Error("大模型没有返回可用解析结果");
+    applyParsed(resp.parsed, text);
+    setApiStatus("ok", "模型解析完成");
+    toast("已使用大模型结果预填");
+  } catch (err) {
+    setApiStatus("err", "模型解析失败");
+    toast(err.message || "大模型解析失败");
+  }
 }
 async function submitCreate(ev) {
   ev.preventDefault();
