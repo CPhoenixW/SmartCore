@@ -85,6 +85,11 @@ def _sqlite_columns(conn: object, table: str) -> set[str]:
     return {str(row[1]) for row in rows}
 
 
+def _add_sqlite_column(conn: object, table: str, column: str, ddl: str) -> None:
+    if column not in _sqlite_columns(conn, table):
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+
+
 def _apply_sqlite_migrations(db_path: Path) -> None:
     """Keep existing development SQLite databases compatible with current models.
 
@@ -98,14 +103,32 @@ def _apply_sqlite_migrations(db_path: Path) -> None:
     try:
         tables = {str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if "appUser" in tables:
-            cols = _sqlite_columns(conn, "appUser")
-            if "language" not in cols:
-                conn.execute("ALTER TABLE appUser ADD COLUMN language VARCHAR(10) NOT NULL DEFAULT 'zh'")
-            if "avatarUrl" not in cols:
-                conn.execute("ALTER TABLE appUser ADD COLUMN avatarUrl VARCHAR(500)")
-            if "updatedAt" not in cols:
-                conn.execute("ALTER TABLE appUser ADD COLUMN updatedAt VARCHAR(64)")
-                conn.execute("UPDATE appUser SET updatedAt = COALESCE(createdAt, strftime('%Y-%m-%dT%H:%M:%f+08:00', 'now')) WHERE updatedAt IS NULL")
+            _add_sqlite_column(conn, "appUser", "language", "language VARCHAR(10) NOT NULL DEFAULT 'zh'")
+            _add_sqlite_column(conn, "appUser", "avatarUrl", "avatarUrl VARCHAR(500)")
+            _add_sqlite_column(conn, "appUser", "updatedAt", "updatedAt VARCHAR(64)")
+            conn.execute("UPDATE appUser SET language = COALESCE(language, 'zh')")
+            conn.execute("UPDATE appUser SET updatedAt = COALESCE(updatedAt, createdAt, strftime('%Y-%m-%dT%H:%M:%f+08:00', 'now')) WHERE updatedAt IS NULL")
+        if "evtBase" in tables:
+            _add_sqlite_column(conn, "evtBase", "userId", "userId VARCHAR(32) NOT NULL DEFAULT 'default'")
+            conn.execute("UPDATE evtBase SET userId = COALESCE(userId, 'default')")
+        if "idea" in tables:
+            _add_sqlite_column(conn, "idea", "userId", "userId VARCHAR(32) NOT NULL DEFAULT 'default'")
+            conn.execute("UPDATE idea SET userId = COALESCE(userId, 'default')")
+        if "notifyLog" in tables:
+            _add_sqlite_column(conn, "notifyLog", "userId", "userId VARCHAR(32) NOT NULL DEFAULT 'default'")
+            _add_sqlite_column(conn, "notifyLog", "sourceDeviceId", "sourceDeviceId VARCHAR(50)")
+            _add_sqlite_column(conn, "notifyLog", "receiver", "receiver VARCHAR(100)")
+            _add_sqlite_column(conn, "notifyLog", "routeReason", "routeReason VARCHAR(50)")
+            _add_sqlite_column(conn, "notifyLog", "scheduledAt", "scheduledAt VARCHAR(64)")
+            _add_sqlite_column(conn, "notifyLog", "sentAt", "sentAt VARCHAR(64)")
+            _add_sqlite_column(conn, "notifyLog", "failReason", "failReason TEXT")
+            _add_sqlite_column(conn, "notifyLog", "dedupKey", "dedupKey VARCHAR(200)")
+            conn.execute("UPDATE notifyLog SET userId = COALESCE(userId, 'default')")
+            conn.execute("UPDATE notifyLog SET scheduledAt = COALESCE(scheduledAt, createdAt, sentAt, strftime('%Y-%m-%dT%H:%M:%f+08:00', 'now')) WHERE scheduledAt IS NULL")
+        if "msgLog" in tables:
+            _add_sqlite_column(conn, "msgLog", "userId", "userId VARCHAR(32) NOT NULL DEFAULT 'default'")
+            _add_sqlite_column(conn, "msgLog", "sourceDeviceId", "sourceDeviceId VARCHAR(50)")
+            conn.execute("UPDATE msgLog SET userId = COALESCE(userId, 'default')")
         conn.commit()
     finally:
         conn.close()
