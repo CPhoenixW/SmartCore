@@ -9,9 +9,9 @@
   const stateEl = document.getElementById("currentState");
   const stateCaptionEl = document.getElementById("stateCaption");
   const stateRowEl = document.querySelector(".state-row");
-  const latestReminderListEl = document.getElementById("latestReminderList");
+  const currentListEl = document.getElementById("latestReminderList");
   const todayEvtListEl = document.getElementById("todayEvtList");
-  const expiredReminderListEl = document.getElementById("expiredReminderList");
+  const overdueListEl = document.getElementById("expiredReminderList");
   const wsStatusEl = document.getElementById("wsStatus");
   const wsStatusText = document.getElementById("wsStatusText");
   const lastMsgAt = document.getElementById("lastMsgAt");
@@ -27,32 +27,30 @@
   let audioCtx = null;
   let activeReminder = null;
   let expireTimer = null;
-  const expiredReminders = [];
+  let cachedEvents = [];
 
   function setWsConnected(connected) {
     wsStatusEl.classList.toggle("connected", connected);
     wsStatusText.textContent = connected ? "已连接" : "离线";
   }
 
-  function formatEnglishDate(now) {
-    const weekday = now.toLocaleDateString("en-US", { weekday: "long" });
-    const month = now.toLocaleDateString("en-US", { month: "long" });
-    return `${weekday} ${month} ${now.getDate()} ${now.getFullYear()}`;
+  function formatDate(now) {
+    return now.toLocaleDateString("zh-CN", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   }
 
-  function formatDate(now) {
-    return formatEnglishDate(now);
+  function nowDate() {
+    return new Date(Date.now() + serverOffsetMs);
   }
 
   function tickClock() {
-    const now = new Date(Date.now() + serverOffsetMs);
+    const now = nowDate();
     const h = String(now.getHours()).padStart(2, "0");
     const m = String(now.getMinutes()).padStart(2, "0");
     clockHoursEl.textContent = h;
     clockMinsEl.textContent = m;
     clockSepEl.classList.toggle("blink-off", now.getSeconds() % 2 === 1);
     clockDateEl.textContent = formatDate(now);
-    clockDateEl.lang = "en";
+    renderSchedule(cachedEvents);
   }
 
   const STATE_CAPTIONS = {
@@ -82,108 +80,141 @@
     applyLayoutMode(next);
   }
 
-  function getEvtDateValue(evt) {
-    if (evt.evtType === "ddl") return evt.endTime;
-    if (evt.evtType === "course") return evt.stDate;
-    return evt.stTime;
+  function combineDateTime(dateValue, timeValue) {
+    if (!dateValue) return null;
+    const date = String(dateValue).slice(0, 10);
+    const time = String(timeValue || "00:00").slice(0, 5);
+    const dt = new Date(`${date}T${time}:00`);
+    return Number.isNaN(dt.getTime()) ? null : dt;
   }
 
-  function isToday(dt) {
-    const now = new Date(Date.now() + serverOffsetMs);
-    return dt.getFullYear() === now.getFullYear()
-      && dt.getMonth() === now.getMonth()
-      && dt.getDate() === now.getDate();
+  function eventStart(evt) {
+    if (evt.evtType === "ddl") return evt.endTime ? new Date(evt.endTime) : null;
+    if (evt.evtType === "course") return combineDateTime(evt.stDate, evt.stTime);
+    return evt.stTime ? new Date(evt.stTime) : null;
   }
 
-  function fmtEvtTime(evt) {
-    const raw = getEvtDateValue(evt);
-    if (!raw) return "--:--";
-    const dt = new Date(raw);
-    if (Number.isNaN(dt.getTime())) return String(raw).slice(0, 10);
-    return dt.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  function eventEnd(evt) {
+    if (evt.evtType === "ddl") return evt.endTime ? new Date(evt.endTime) : null;
+    if (evt.evtType === "course") return combineDateTime(evt.stDate, evt.endTime);
+    const start = eventStart(evt);
+    if (!start) return null;
+    return new Date(start.getTime() + Number(evt.durationMin || 0) * 60000);
+  }
+
+  function sameDay(a, b) {
+    return a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  }
+
+  function fmtTime(date) {
+    if (!date || Number.isNaN(date.getTime())) return "--:--";
+    return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
   }
 
   function evtTypeLabel(evt) {
     return { plan: "计划", ddl: "截止", course: "课程" }[evt.evtType] || evt.evtType || "事件";
   }
 
-  function getTodayEvents(events) {
-    return events
-      .filter((evt) => evt.stat === "todo")
-      .filter((evt) => {
-        const raw = getEvtDateValue(evt);
-        if (!raw) return false;
-        const dt = new Date(raw);
-        return !Number.isNaN(dt.getTime()) && isToday(dt);
-      })
-      .sort((a, b) => new Date(getEvtDateValue(a)).getTime() - new Date(getEvtDateValue(b)).getTime());
+  function eventTimeLabel(evt) {
+    const start = eventStart(evt);
+    const end = eventEnd(evt);
+    if (evt.evtType === "ddl") return `截止 ${fmtTime(end)}`;
+    if (start && end) return `${fmtTime(start)}-${fmtTime(end)}`;
+    return fmtTime(start || end);
   }
 
-  function renderLatestReminder() {
-    latestReminderListEl.innerHTML = "";
-    if (!activeReminder) {
-      latestReminderListEl.classList.add("empty");
-      latestReminderListEl.textContent = "No active reminder";
-      return;
-    }
-    latestReminderListEl.classList.remove("empty");
-    const card = document.createElement("article");
-    card.className = "today-primary";
-    card.innerHTML = '<div class="today-time"></div><h2></h2><p></p>';
-    card.querySelector(".today-time").textContent = activeReminder.content || fmtEvtTime(activeReminder);
-    card.querySelector("h2").textContent = activeReminder.title || "未命名提醒";
-    card.querySelector("p").textContent = activeReminder.evtId ? `事件 ${activeReminder.evtId.slice(0, 8)}` : "等待确认";
-    latestReminderListEl.appendChild(card);
+  function isOngoing(evt, now) {
+    if (evt.evtType === "ddl") return false;
+    const start = eventStart(evt);
+    const end = eventEnd(evt);
+    return Boolean(start && end && start <= now && end >= now);
   }
 
-  function renderExpiredReminders() {
-    expiredReminderListEl.innerHTML = "";
-    if (!expiredReminders.length) {
-      expiredReminderListEl.classList.add("empty");
-      expiredReminderListEl.textContent = "No expired reminders";
-      return;
-    }
-    expiredReminderListEl.classList.remove("empty");
-    expiredReminders.forEach((item) => {
-      const row = document.createElement("article");
-      row.className = "expired-reminder";
-      row.innerHTML = "<strong></strong><span></span>";
-      row.querySelector("strong").textContent = item.title || "未命名提醒";
-      row.querySelector("span").textContent = item.content || "";
-      expiredReminderListEl.appendChild(row);
+  function isOverdue(evt, now) {
+    const end = eventEnd(evt);
+    return Boolean(evt.stat === "todo" && end && end < now);
+  }
+
+  function isTodayEvt(evt, now) {
+    const start = eventStart(evt);
+    const end = eventEnd(evt);
+    return Boolean((start && sameDay(start, now)) || (end && sameDay(end, now)));
+  }
+
+  function clearList(el) {
+    el.innerHTML = "";
+    el.classList.remove("empty");
+  }
+
+  function setEmpty(el) {
+    el.innerHTML = "";
+    el.classList.add("empty");
+  }
+
+  function renderCurrent(events) {
+    clearList(currentListEl);
+    if (!events.length) return setEmpty(currentListEl);
+    events.forEach((evt) => {
+      const card = document.createElement("article");
+      card.className = "today-primary";
+      card.innerHTML = '<div class="today-time"></div><h2></h2><p></p>';
+      card.querySelector(".today-time").textContent = eventTimeLabel(evt);
+      card.querySelector("h2").textContent = evt.title || "未命名事件";
+      card.querySelector("p").textContent = evt.desc || `${evtTypeLabel(evt)}进行中`;
+      currentListEl.appendChild(card);
     });
   }
 
-  function renderTodayEvents(events) {
-    const todayEvents = getTodayEvents(events || []);
-    const activeEvtId = activeReminder?.evtId;
-    const filtered = activeEvtId
-      ? todayEvents.filter((evt) => evt.evtId !== activeEvtId)
-      : todayEvents;
-    todayEvtListEl.innerHTML = "";
-    todayEvtListEl.classList.toggle("empty", filtered.length === 0);
-    if (!filtered.length) {
-      todayEvtListEl.textContent = "No events today";
-      return;
-    }
-    filtered.forEach((evt) => {
+  function renderCompactList(el, events) {
+    clearList(el);
+    if (!events.length) return setEmpty(el);
+    events.forEach((evt) => {
       const card = document.createElement("article");
       card.className = "today-compact";
       card.innerHTML = '<span class="today-chip"></span><strong></strong>';
-      card.querySelector(".today-chip").textContent = `${evtTypeLabel(evt)} ${fmtEvtTime(evt)}`;
+      card.querySelector(".today-chip").textContent = `${evtTypeLabel(evt)} ${eventTimeLabel(evt)}`;
       card.querySelector("strong").textContent = evt.title || "未命名事件";
-      todayEvtListEl.appendChild(card);
+      el.appendChild(card);
     });
+  }
+
+  function renderOverdue(events) {
+    clearList(overdueListEl);
+    if (!events.length) return setEmpty(overdueListEl);
+    events.forEach((evt) => {
+      const row = document.createElement("article");
+      row.className = "expired-reminder";
+      row.innerHTML = "<strong></strong><span></span>";
+      row.querySelector("strong").textContent = evt.title || "未命名事件";
+      row.querySelector("span").textContent = `${evtTypeLabel(evt)} · ${eventTimeLabel(evt)}`;
+      overdueListEl.appendChild(row);
+    });
+  }
+
+  function renderSchedule(events) {
+    const now = nowDate();
+    const todo = (events || []).filter((evt) => evt.stat === "todo");
+    const current = todo.filter((evt) => isOngoing(evt, now)).sort((a, b) => eventEnd(a) - eventEnd(b));
+    const overdue = todo.filter((evt) => isOverdue(evt, now)).sort((a, b) => eventEnd(a) - eventEnd(b));
+    const otherToday = todo
+      .filter((evt) => isTodayEvt(evt, now) && !isOngoing(evt, now) && !isOverdue(evt, now))
+      .sort((a, b) => eventStart(a) - eventStart(b));
+    renderCurrent(current);
+    renderCompactList(todayEvtListEl, otherToday);
+    renderOverdue(overdue);
   }
 
   async function loadTodayEvents() {
     try {
       const resp = await fetch("/api/evt");
       const data = await resp.json();
-      renderTodayEvents(data.data || []);
+      cachedEvents = data.data || [];
+      renderSchedule(cachedEvents);
     } catch {
-      todayEvtListEl.textContent = "Events offline";
-      todayEvtListEl.classList.add("empty");
+      cachedEvents = [];
+      setEmpty(currentListEl);
+      setEmpty(todayEvtListEl);
+      setEmpty(overdueListEl);
     }
   }
 
@@ -232,7 +263,6 @@
     reminderPageContentEl.textContent = content || "";
     reminderPageEl.classList.add("show");
     reminderPageEl.setAttribute("aria-hidden", "false");
-    renderLatestReminder();
     loadTodayEvents();
     playReminderSound();
     clearExpireTimer();
@@ -241,11 +271,8 @@
 
   function expireActiveReminder() {
     if (!activeReminder) return;
-    expiredReminders.unshift({ ...activeReminder });
     activeReminder = null;
     hideReminderPage();
-    renderLatestReminder();
-    renderExpiredReminders();
     loadTodayEvents();
   }
 
@@ -253,24 +280,19 @@
     if (!activeReminder?.evtId) {
       hideReminderPage();
       activeReminder = null;
-      renderLatestReminder();
       return;
     }
     try {
       await fetch("/api/reminder/action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          evtId: activeReminder.evtId,
-          action,
-        }),
+        body: JSON.stringify({ evtId: activeReminder.evtId, action }),
       });
     } catch {
       // Keep UI responsive even if the API is temporarily offline.
     }
     activeReminder = null;
     hideReminderPage();
-    renderLatestReminder();
     loadTodayEvents();
   }
 
@@ -312,17 +334,10 @@
   reminderSnoozeEl?.addEventListener("click", () => submitReminderAction("snooze10"));
   document.body.addEventListener("pointerdown", () => getAudioCtx()?.resume?.(), { once: true });
   setInterval(tickClock, 1000);
-  setInterval(loadTodayEvents, 60000);
+  setInterval(loadTodayEvents, 30000);
   tickClock();
   renderState("unknown");
-  renderLatestReminder();
-  renderExpiredReminders();
+  renderSchedule([]);
   loadTodayEvents();
   connectWs();
-  window.handleWsMessage = handleWsMessage;
-  window.expireActiveReminder = expireActiveReminder;
-  window.submitReminderAction = submitReminderAction;
-  window.showReminderPage = showReminderPage;
-  window.renderTodayEvents = renderTodayEvents;
-  window.loadTodayEvents = loadTodayEvents;
 })();
