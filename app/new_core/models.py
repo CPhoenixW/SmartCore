@@ -54,18 +54,6 @@ class PlanEvt(Base):
     stTime: Mapped[str] = mapped_column(String(64), nullable=False)
     durationMin: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    @property
-    def dueAt(self) -> str:
-        return self.stTime
-
-    @dueAt.setter
-    def dueAt(self, value: str) -> None:
-        self.stTime = value
-
-    @property
-    def doneAt(self) -> None:
-        return None
-
 
 class DdlEvt(Base):
     __tablename__ = "ddlEvt"
@@ -75,14 +63,6 @@ class DdlEvt(Base):
     )
     endTime: Mapped[str] = mapped_column(String(64), nullable=False)
     hardDdl: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
-    @property
-    def ddlAt(self) -> str:
-        return self.endTime
-
-    @ddlAt.setter
-    def ddlAt(self, value: str) -> None:
-        self.endTime = value
 
 
 class DdlPlan(Base):
@@ -115,42 +95,6 @@ class CourseEvt(Base):
     startWeek: Mapped[int | None] = mapped_column(Integer)
     endWeek: Mapped[int | None] = mapped_column(Integer)
     weekMode: Mapped[str] = mapped_column(String(10), default="all", nullable=False)
-
-    @property
-    def tplId(self) -> str:
-        return self.evtId
-
-    @property
-    def room(self) -> str | None:
-        return self.location
-
-    @room.setter
-    def room(self, value: str | None) -> None:
-        self.location = value
-
-    @property
-    def weekday(self) -> int:
-        return self.weekDay
-
-    @weekday.setter
-    def weekday(self, value: int) -> None:
-        self.weekDay = value
-
-    @property
-    def startTime(self) -> str:
-        return self.stTime
-
-    @startTime.setter
-    def startTime(self, value: str) -> None:
-        self.stTime = value
-
-    @property
-    def classDate(self) -> str:
-        return self.stDate
-
-    @property
-    def attendStat(self) -> str:
-        return "unknown"
 
 
 class Idea(Base):
@@ -192,14 +136,6 @@ class DeviceStateLog(Base):
     seenAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
     meta: Mapped[dict | None] = mapped_column(JSON)
 
-    @property
-    def stateId(self) -> str:
-        return self.stateLogId
-
-    @property
-    def devId(self) -> str:
-        return self.deviceId
-
 
 class ActLog(Base):
     __tablename__ = "actLog"
@@ -219,30 +155,6 @@ class ActLog(Base):
     result: Mapped[str] = mapped_column(String(20), default="ok", nullable=False)
     errorMessage: Mapped[str | None] = mapped_column(Text)
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
-
-    @property
-    def src(self) -> str:
-        return self.actorKind
-
-    @property
-    def actor(self) -> str | None:
-        return self.actorId
-
-    @property
-    def actType(self) -> str:
-        return self.action
-
-    @property
-    def beforeData(self) -> None:
-        return None
-
-    @property
-    def afterData(self) -> None:
-        return None
-
-    @property
-    def undoToken(self) -> None:
-        return None
 
 
 class NotifyLog(Base):
@@ -269,14 +181,6 @@ class NotifyLog(Base):
     failReason: Mapped[str | None] = mapped_column(Text)
     dedupKey: Mapped[str | None] = mapped_column(String(200), unique=True)
 
-    @property
-    def targetKind(self) -> str:
-        return self.channel
-
-    @property
-    def targetId(self) -> str | None:
-        return self.receiver
-
 
 class MsgLog(Base):
     __tablename__ = "msgLog"
@@ -295,15 +199,3 @@ class MsgLog(Base):
     intent: Mapped[str | None] = mapped_column(String(100))
     stat: Mapped[str | None] = mapped_column(String(50))
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
-
-    @property
-    def src(self) -> str:
-        return self.channel
-
-
-# Temporary compatibility aliases for old service code during the API migration step.
-LifeEvt = PlanEvt
-CourseTpl = CourseEvt
-CourseInst = CourseEvt
-DevState = DeviceStateLog
-IdeaToEvt = DdlPlan
