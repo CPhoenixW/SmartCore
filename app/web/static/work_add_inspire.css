@@ -28,9 +28,10 @@
   white-space: nowrap;
 }
 .card > header select {
-  width: auto;
+  width: 132px !important;
+  flex: 0 0 132px;
   min-width: 116px;
-  max-width: 172px;
+  max-width: 132px;
   min-height: 34px;
   height: 34px;
   padding: 6px 34px 6px 12px;
@@ -95,6 +96,9 @@ body[data-page="add"] .add-side {
 }
 body[data-page="add"] .preview-panel {
   flex: 0 0 auto;
+}
+body[data-page="add"] .natural-card .nl-input {
+  min-height: 86px;
 }
 body[data-page="inspire"] .inspire-grid {
   align-items: start;
