@@ -156,11 +156,17 @@ _UPDATE_BODY = f"""
 """
 
 _INSPIRE_BODY = """
-<section class="card">
-  <header><h2>记录灵感</h2><button type="button" class="btn btn-primary" id="saveIdeaBtn">保存</button></header>
-  <div class="card-body"><textarea id="ideaContent" class="nl-input" rows="5" placeholder="记录想法、任务雏形、临时计划..."></textarea></div>
+<section class="content-grid two-one inspire-grid">
+  <article class="card">
+    <header><h2>记录灵感</h2><button type="button" class="btn btn-primary" id="saveIdeaBtn">保存</button></header>
+    <div class="card-body"><textarea id="ideaContent" class="nl-input" rows="5" placeholder="记录想法、任务雏形、临时计划..."></textarea></div>
+  </article>
+  <aside class="card">
+    <header><h2>筛选</h2></header>
+    <div class="card-body"><label class="field"><span>状态</span><select id="ideaFilter"><option value="open">open</option><option value="handled">handled</option><option value="all">全部</option></select></label></div>
+  </aside>
 </section>
-<section class="card"><header><h2>灵感列表</h2><select id="ideaFilter"><option value="open">open</option><option value="handled">handled</option><option value="all">全部</option></select></header><div class="card-body list" id="ideaList"></div></section>
+<section class="card"><header><h2>灵感列表</h2></header><div class="card-body list" id="ideaList"></div></section>
 """
 
 _COURSE_BODY = """
