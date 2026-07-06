@@ -26,7 +26,10 @@ class AppUser(Base):
 
     userId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
     displayName: Mapped[str] = mapped_column(String(100), nullable=False)
+    language: Mapped[str] = mapped_column(String(10), default="zh", nullable=False)
+    avatarUrl: Mapped[str | None] = mapped_column(String(500))
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
 
 
 class EvtBase(Base):
