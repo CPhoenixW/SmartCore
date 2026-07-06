@@ -44,22 +44,22 @@ _SCREEN_HTML = """<!doctype html>
   <section class="info-pane">
     <div class="reminder-zone latest">
       <div class="pane-head">
-        <span class="pane-label">Latest Reminder</span>
+        <span class="pane-label">当前安排</span>
       </div>
-      <div id="latestReminderList" class="today-list empty">No active reminder</div>
+      <div id="latestReminderList" class="today-list empty"></div>
     </div>
     <div class="reminder-zone day-plan">
       <div class="pane-head">
-        <span class="pane-label">Today</span>
+        <span class="pane-label">今日其他</span>
         <span id="lastMsgAt" class="pane-meta">—</span>
       </div>
-      <div id="todayEvtList" class="today-list empty">No events today</div>
+      <div id="todayEvtList" class="today-list empty"></div>
     </div>
     <div class="reminder-zone expired">
       <div class="pane-head">
-        <span class="pane-label">Expired</span>
+        <span class="pane-label">已逾期</span>
       </div>
-      <div id="expiredReminderList" class="today-list empty">No expired reminders</div>
+      <div id="expiredReminderList" class="today-list empty"></div>
     </div>
   </section>
 </main>
