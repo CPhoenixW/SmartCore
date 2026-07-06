@@ -101,14 +101,30 @@ def createAgentRouter() -> APIRouter:
     def evtCreate(body: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
         evtType = body.get("evtType")
         title = body.get("title", "")
-        if evtType == "life":
-            data = crud.createLifeEvt(db, title=title, dueAt=body.get("dueAt"), src="openclaw")
+        if evtType in {"plan", "life"}:
+            stTime = body.get("stTime") or body.get("dueAt") or body.get("at")
+            if not stTime:
+                return _failed(["stTime required"])
+            data = crud.createPlanEvt(
+                db,
+                title=title,
+                stTime=stTime,
+                durationMin=int(body.get("durationMin") or 30),
+                desc=body.get("desc"),
+                prio=body.get("prio", "mid"),
+                src="openclaw",
+            )
         elif evtType == "ddl":
+            endTime = body.get("endTime") or body.get("ddlAt") or body.get("at")
+            if not endTime:
+                return _failed(["endTime required"])
             data = crud.createDdlEvt(
                 db,
                 title=title,
-                ddlAt=body.get("ddlAt"),
+                endTime=endTime,
                 hardDdl=bool(body.get("hardDdl", False)),
+                desc=body.get("desc"),
+                prio=body.get("prio", "high"),
                 src="openclaw",
             )
         else:
@@ -125,14 +141,18 @@ def createAgentRouter() -> APIRouter:
             "desc",
             "prio",
             "stat",
-            "dueAt",
-            "doneAt",
-            "ddlAt",
+            "stTime",
+            "endTime",
+            "durationMin",
             "hardDdl",
-            "classDate",
-            "attendStat",
+            "dueAt",
+            "ddlAt",
         )
         patch = {key: body[key] for key in update_fields if key in body}
+        if "dueAt" in patch and "stTime" not in patch:
+            patch["stTime"] = patch.pop("dueAt")
+        if "ddlAt" in patch and "endTime" not in patch:
+            patch["endTime"] = patch.pop("ddlAt")
         try:
             data = crud.updateEvt(db, evtId, **patch)
         except ValueError as exc:
@@ -164,15 +184,20 @@ def createAgentRouter() -> APIRouter:
         ideaId = body.get("ideaId")
         if not ideaId:
             return _failed(["ideaId required"])
+        stTime = body.get("stTime") or body.get("dueAt") or body.get("at")
+        if not stTime:
+            return _failed(["stTime required"])
         try:
-            data = crud.ideaToLifeEvt(
+            data = crud.createPlanEvt(
                 db,
-                ideaId=ideaId,
                 title=body.get("title", ""),
-                dueAt=body.get("dueAt"),
+                stTime=stTime,
+                desc=body.get("desc"),
+                prio=body.get("prio", "mid"),
                 src="openclaw",
             )
-        except ValueError as exc:
+            crud.updateIdea(db, ideaId, handled=True)
+        except (TypeError, ValueError) as exc:
             return _failed([str(exc)])
         return {"ok": True, "stat": "done", "data": data}
 
@@ -250,7 +275,8 @@ def createDevRouter() -> APIRouter:
         await screenManager.broadcast(
             {
                 "kind": "devState",
-                "devId": state["devId"],
+                "devId": state["deviceId"],
+                "deviceId": state["deviceId"],
                 "state": state["state"],
                 "confidence": state.get("confidence"),
                 "seenAt": state.get("seenAt"),

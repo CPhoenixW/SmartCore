@@ -95,7 +95,8 @@ async def screenWebsocket(
         await websocket.send_json(
             {
                 "kind": "devState",
-                "devId": latest["devId"],
+                "devId": latest["deviceId"],
+                "deviceId": latest["deviceId"],
                 "state": latest["state"],
                 "confidence": latest["confidence"],
                 "seenAt": latest["seenAt"],

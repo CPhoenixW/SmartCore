@@ -83,7 +83,9 @@
   }
 
   function getEvtDateValue(evt) {
-    return evt.evtType === "life" ? evt.dueAt : evt.evtType === "ddl" ? evt.ddlAt : evt.classDate;
+    if (evt.evtType === "ddl") return evt.endTime;
+    if (evt.evtType === "course") return evt.stDate;
+    return evt.stTime;
   }
 
   function isToday(dt) {
@@ -102,7 +104,7 @@
   }
 
   function evtTypeLabel(evt) {
-    return { life: "事项", ddl: "截止", course: "课程" }[evt.evtType] || evt.evtType || "事件";
+    return { plan: "计划", ddl: "截止", course: "课程" }[evt.evtType] || evt.evtType || "事件";
   }
 
   function getTodayEvents(events) {
@@ -279,7 +281,8 @@
       tickClock();
       loadTodayEvents();
     } else if (data.kind === "devState") {
-      if (data.devId && data.devId !== "pi") return;
+      const deviceId = data.deviceId || data.devId;
+      if (deviceId && deviceId !== "pi") return;
       renderState(data.state);
     } else if (data.kind === "reminder") {
       showReminderPage(data.title, data.content, data.evtId);
