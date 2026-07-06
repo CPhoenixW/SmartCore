@@ -3,59 +3,483 @@ const $ = (id) => document.getElementById(id);
 const state = { ideas: [], courses: [], logs: { act: [], notify: [], msg: [] }, logTab: "act", createTab: "plan" };
 const prioLabels = { high: "高", mid: "中", low: "低" };
 
-function esc(value) { return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;"); }
-function toast(text) { const el = $("toast"); if (!el) return; el.textContent = text; el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 2200); }
-function setApiStatus(kind, text) { const el = $("apiStatus"); if (!el) return; el.className = `status-pill ${kind || ""}`.trim(); el.textContent = text; }
-function touchRefresh() { const el = $("lastRefresh"); if (el) el.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false }); }
-async function apiGet(path) { setApiStatus("busy", "API 请求中"); const resp = await fetch(path); const data = await resp.json().catch(() => ({})); if (!resp.ok || data.ok === false) throw new Error(data.detail || data.msg || `HTTP ${resp.status}`); setApiStatus("ok", "API 在线"); return data.data ?? []; }
-async function apiSend(path, options) { setApiStatus("busy", "API 请求中"); const resp = await fetch(path, options); const data = await resp.json().catch(() => ({})); if (!resp.ok || data.ok === false) { setApiStatus("err", "API 异常"); throw new Error(data.detail || data.msg || `HTTP ${resp.status}`); } setApiStatus("ok", "API 在线"); touchRefresh(); return data.data; }
+function esc(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;");
+}
+function toast(text) {
+  const el = $("toast");
+  if (!el) return;
+  el.textContent = text;
+  el.classList.add("show");
+  setTimeout(() => el.classList.remove("show"), 2200);
+}
+function setApiStatus(kind, text) {
+  const el = $("apiStatus");
+  if (!el) return;
+  el.className = `status-pill ${kind || ""}`.trim();
+  el.textContent = text;
+}
+function touchRefresh() {
+  const el = $("lastRefresh");
+  if (el) el.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
+}
+async function apiGet(path) {
+  setApiStatus("busy", "API 请求中");
+  const resp = await fetch(path);
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || data.ok === false) throw new Error(data.detail || data.msg || `HTTP ${resp.status}`);
+  setApiStatus("ok", "API 在线");
+  return data.data ?? [];
+}
+async function apiSend(path, options) {
+  setApiStatus("busy", "API 请求中");
+  const resp = await fetch(path, options);
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || data.ok === false) {
+    setApiStatus("err", "API 异常");
+    throw new Error(data.detail || data.msg || `HTTP ${resp.status}`);
+  }
+  setApiStatus("ok", "API 在线");
+  touchRefresh();
+  return data.data;
+}
 function formVal(form, name) { return form?.elements[name]?.value?.trim() || ""; }
 function numOrNull(value) { return value === "" || value == null ? null : Number(value); }
-function toIsoFromLocal(value) { if (!value) return null; const d = new Date(value); if (Number.isNaN(d.getTime())) return null; const pad = (n) => String(n).padStart(2, "0"); const off = -d.getTimezoneOffset(); const sign = off >= 0 ? "+" : "-"; const abs = Math.abs(off); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`; }
-function toLocalInputValue(value) { if (!value) return ""; const d = value instanceof Date ? value : new Date(value); if (Number.isNaN(d.getTime())) return ""; const pad = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function toIsoFromLocal(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (n) => String(n).padStart(2, "0");
+  const off = -d.getTimezoneOffset();
+  const sign = off >= 0 ? "+" : "-";
+  const abs = Math.abs(off);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+}
+function toLocalInputValue(value) {
+  if (!value) return "";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function timeLabel(value) {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+}
 function rowEmpty(text) { return `<div class="empty">${esc(text)}</div>`; }
 function tagClass(value) { if (value === "high") return "red"; if (value === "mid") return "orange"; return "blue"; }
-
-function normalizePrio(value, fallbackTab = "plan") { const text = String(value || "").trim().toLowerCase(); if (["high", "高", "urgent", "important", "紧急", "重要"].includes(text)) return "high"; if (["low", "低", "later", "不急", "不重要"].includes(text)) return "low"; if (["mid", "middle", "medium", "normal", "普通", "中"].includes(text)) return "mid"; return fallbackTab === "ddl" ? "high" : "mid"; }
-function normalizeTab(parsed, text) { const raw = String(parsed?.tab || parsed?.evtType || parsed?.type || "").trim().toLowerCase(); if (["ddl", "deadline", "截止", "截止事项"].includes(raw)) return "ddl"; if (["plan", "计划", "计划事项"].includes(raw)) return "plan"; return /ddl|deadline|截止|到期|最晚|之前|前/u.test(text) ? "ddl" : "plan"; }
-function parseChineseNumber(raw) { const map = { 零: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 }; const t = String(raw || "").trim(); if (/^\d+$/.test(t)) return Number(t); if (t === "十") return 10; if (t.startsWith("十")) return 10 + (map[t.slice(1)] || 0); if (t.endsWith("十")) return (map[t[0]] || 1) * 10; if (t.includes("十")) { const [a, b] = t.split("十"); return (map[a] || 1) * 10 + (map[b] || 0); } return map[t] ?? null; }
-function parseMinute(raw) { if (!raw) return 0; if (raw === "半") return 30; return parseChineseNumber(String(raw).replace("分", "")) || 0; }
-function baseDateFromText(text) { const d = new Date(); if (/后天/u.test(text)) d.setDate(d.getDate() + 2); else if (/明天/u.test(text)) d.setDate(d.getDate() + 1); d.setSeconds(0, 0); return d; }
-function makeDate(base, hour, minute = 0) { const d = new Date(base); d.setHours(hour, minute, 0, 0); return d; }
-function resolveHour(hour, daypart, mode, endHour = null) { let h = hour; const part = daypart || ""; if (part.includes("下午") || part.includes("晚上") || part.includes("今晚")) { if (h < 12) h += 12; return h; } if (part.includes("中午")) { if (h < 11) h += 12; return h; } if (part.includes("早上") || part.includes("上午") || part.includes("凌晨")) return h; if (mode === "range" && hour >= 1 && hour <= 7 && endHour !== null && endHour >= 8 && endHour <= 12) return h + 12; return h; }
-function parseTimePoint(text) { const m = text.match(/(上午|中午|下午|晚上|今晚|早上|凌晨)?\s*([零一二两三四五六七八九十\d]{1,3})(?:[:：]([0-5]\d)|\s*(?:点|时)(半|[零一二两三四五六七八九十\d]{1,3}分?)?)?/u); if (!m) return null; const hour = parseChineseNumber(m[2]); if (hour == null) return null; return { daypart: m[1] || "", hour, minute: m[3] ? Number(m[3]) : parseMinute(m[4]) }; }
-function parseTimeRange(text) { const pattern = /(上午|中午|下午|晚上|今晚|早上|凌晨)?\s*([零一二两三四五六七八九十\d]{1,3})(?:[:：]([0-5]\d)|\s*(?:点|时)(半|[零一二两三四五六七八九十\d]{1,3}分?)?)?\s*(?:到|至|~|～|-|—|－)\s*(上午|中午|下午|晚上|今晚|早上|凌晨)?\s*([零一二两三四五六七八九十\d]{1,3})(?:[:：]([0-5]\d)|\s*(?:点|时)(半|[零一二两三四五六七八九十\d]{1,3}分?)?)?/u;
-  const m = text.match(pattern); if (!m) return null; const sh = parseChineseNumber(m[2]); const eh = parseChineseNumber(m[6]); if (sh == null || eh == null) return null; const startPart = m[1] || ""; const endPart = m[5] || startPart; const startHour = resolveHour(sh, startPart, "range", eh); const endHour = resolveHour(eh, endPart, "range", eh); const base = baseDateFromText(text); const start = makeDate(base, startHour, m[3] ? Number(m[3]) : parseMinute(m[4])); let end = makeDate(base, endHour, m[7] ? Number(m[7]) : parseMinute(m[8])); if (end <= start) end = new Date(end.getTime() + 24 * 3600_000); return { start, end, durationMin: Math.max(1, Math.round((end - start) / 60000)) }; }
-function parseDeadlineTime(text) { const before = text.match(/(.{0,8}?[零一二两三四五六七八九十\d]{1,3}(?:[:：][0-5]\d|\s*(?:点|时)(?:半|[零一二两三四五六七八九十\d]{1,3}分?)?)?)\s*(?:前|之前|以前|截止|为止)/u); const latest = text.match(/(?:最晚|截止到|到期|ddl|deadline)\s*(.{0,8}?[零一二两三四五六七八九十\d]{1,3}(?:[:：][0-5]\d|\s*(?:点|时)(?:半|[零一二两三四五六七八九十\d]{1,3}分?)?)?)/iu); const hit = before?.[1] || latest?.[1]; if (!hit) return null; const point = parseTimePoint(hit); if (!point) return null; const hour = resolveHour(point.hour, point.daypart, "single"); return makeDate(baseDateFromText(text), hour, point.minute); }
-function parseSingleStartTime(text) { const point = parseTimePoint(text); if (!point) return null; const hour = resolveHour(point.hour, point.daypart, "single"); return makeDate(baseDateFromText(text), hour, point.minute); }
-function cleanTitle(text) { let title = String(text || ""); title = title.replace(/今天|明天|后天|上午|中午|下午|晚上|今晚|早上|凌晨/gu, ""); title = title.replace(/[零一二两三四五六七八九十\d]{1,3}(?:[:：][0-5]\d|\s*(?:点|时)(?:半|[零一二两三四五六七八九十\d]{1,3}分?)?)?\s*(?:到|至|~|～|-|—|－)\s*[零一二两三四五六七八九十\d]{1,3}(?:[:：][0-5]\d|\s*(?:点|时)(?:半|[零一二两三四五六七八九十\d]{1,3}分?)?)?/gu, ""); title = title.replace(/[零一二两三四五六七八九十\d]{1,3}(?:[:：][0-5]\d|\s*(?:点|时)(?:半|[零一二两三四五六七八九十\d]{1,3}分?)?)?\s*(?:前|之前|以前|截止|为止)?/gu, ""); title = title.replace(/^(帮我|提醒我|创建|添加|新建|安排|我要|我想要|我想)\s*/u, ""); title = title.replace(/^(看|观看|学习|复习)\s*/u, "观看"); title = title.replace(/\s+/g, "").replace(/[，。,.;；：:]+$/u, ""); return title.slice(0, 90) || "未命名事项"; }
-function localParse(text) { const range = parseTimeRange(text); const deadline = parseDeadlineTime(text); const isDdl = Boolean(deadline) || /ddl|deadline|截止|提交|到期|最晚|之前/u.test(text); const prio = /高优先级|优先级高|紧急|重要|必须|一定/iu.test(text) ? "high" : /低优先级|优先级低|不急|不重要/iu.test(text) ? "low" : isDdl ? "high" : "mid"; if (isDdl) { const end = deadline || parseSingleStartTime(text) || baseDateFromText(text); return { tab: "ddl", evtType: "ddl", title: cleanTitle(text), desc: "", prio, endTime: toLocalInputValue(end), durationMin: 30, hardDdl: /硬性|必须|一定|截止|前|之前|最晚/iu.test(text) }; } const start = range?.start || parseSingleStartTime(text) || baseDateFromText(text); const dm = text.match(/(?:持续|时长)\s*(\d+)\s*(分钟|分|小时)/u); const durationMin = dm ? Number(dm[1]) * (dm[2] === "小时" ? 60 : 1) : range?.durationMin || 30; return { tab: "plan", evtType: "plan", title: cleanTitle(text), desc: "", prio, stTime: toLocalInputValue(start), durationMin, hardDdl: false }; }
-function normalizeParsed(raw, text) { const local = localParse(text); const p = raw || {}; const tab = normalizeTab(p, text); const result = { tab, evtType: tab, title: p.title || local.title, desc: p.desc || p.description || local.desc || "", prio: normalizePrio(p.prio || p.priority, tab), durationMin: Number(p.durationMin || p.duration || local.durationMin || 30), hardDdl: Boolean(p.hardDdl ?? local.hardDdl) }; if (tab === "ddl") result.endTime = toLocalInputValue(p.endTime || p.deadline || p.at) || local.endTime; else result.stTime = toLocalInputValue(p.stTime || p.startTime || p.at) || local.stTime; return result; }
-function setCreateTab(tab) { state.createTab = tab; document.querySelectorAll("[data-create-tab]").forEach((btn) => btn.classList.toggle("active", btn.dataset.createTab === tab)); $("planForm")?.classList.toggle("active", tab === "plan"); $("ddlForm")?.classList.toggle("active", tab === "ddl"); renderCreatePreview(); }
+function normalizePrio(value, fallbackTab = "plan") {
+  const text = String(value || "").trim().toLowerCase();
+  if (["high", "高", "urgent", "important", "紧急", "重要"].includes(text)) return "high";
+  if (["low", "低", "later", "不急", "不重要"].includes(text)) return "low";
+  if (["mid", "middle", "medium", "normal", "普通", "中"].includes(text)) return "mid";
+  return fallbackTab === "ddl" ? "high" : "mid";
+}
+function normalizeTab(parsed, text) {
+  const raw = String(parsed?.tab || parsed?.evtType || parsed?.type || "").trim().toLowerCase();
+  if (["ddl", "deadline", "截止", "截止事项"].includes(raw)) return "ddl";
+  if (["plan", "计划", "计划事项"].includes(raw)) return "plan";
+  return /ddl|deadline|截止|到期|最晚|之前|前/u.test(text) ? "ddl" : "plan";
+}
+function parseChineseNumber(raw) {
+  const map = { 零: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+  const t = String(raw || "").trim();
+  if (/^\d+$/.test(t)) return Number(t);
+  if (t === "十") return 10;
+  if (t.startsWith("十")) return 10 + (map[t.slice(1)] || 0);
+  if (t.endsWith("十")) return (map[t[0]] || 1) * 10;
+  if (t.includes("十")) {
+    const [a, b] = t.split("十");
+    return (map[a] || 1) * 10 + (map[b] || 0);
+  }
+  return map[t] ?? null;
+}
+function parseMinute(raw) {
+  if (!raw) return 0;
+  if (raw === "半") return 30;
+  return parseChineseNumber(String(raw).replace("分", "")) || 0;
+}
+function baseDateFromText(text) {
+  const d = new Date();
+  if (/后天/u.test(text)) d.setDate(d.getDate() + 2);
+  else if (/明天/u.test(text)) d.setDate(d.getDate() + 1);
+  d.setSeconds(0, 0);
+  return d;
+}
+function makeDate(base, hour, minute = 0) {
+  const d = new Date(base);
+  d.setHours(hour, minute, 0, 0);
+  return d;
+}
+function resolveHour(hour, daypart, mode, endHour = null) {
+  let h = hour;
+  const part = daypart || "";
+  if (part.includes("下午") || part.includes("晚上") || part.includes("今晚")) return h < 12 ? h + 12 : h;
+  if (part.includes("中午")) return h < 11 ? h + 12 : h;
+  if (part.includes("早上") || part.includes("上午") || part.includes("凌晨")) return h;
+  if (mode === "range" && hour >= 1 && hour <= 7 && endHour !== null && endHour >= 8 && endHour <= 12) return h + 12;
+  return h;
+}
+function parseTimePoint(text) {
+  const m = text.match(/(上午|中午|下午|晚上|今晚|早上|凌晨)?\s*([零一二两三四五六七八九十\d]{1,3})(?:[:：]([0-5]\d)|\s*(?:点|时)(半|[零一二两三四五六七八九十\d]{1,3}分?)?)?/u);
+  if (!m) return null;
+  const hour = parseChineseNumber(m[2]);
+  if (hour == null) return null;
+  return { daypart: m[1] || "", hour, minute: m[3] ? Number(m[3]) : parseMinute(m[4]) };
+}
+function parseTimeRange(text) {
+  const pattern = /(上午|中午|下午|晚上|今晚|早上|凌晨)?\s*([零一二两三四五六七八九十\d]{1,3})(?:[:：]([0-5]\d)|\s*(?:点|时)(半|[零一二两三四五六七八九十\d]{1,3}分?)?)?\s*(?:到|至|~|～|-|—|－)\s*(上午|中午|下午|晚上|今晚|早上|凌晨)?\s*([零一二两三四五六七八九十\d]{1,3})(?:[:：]([0-5]\d)|\s*(?:点|时)(半|[零一二两三四五六七八九十\d]{1,3}分?)?)?/u;
+  const m = text.match(pattern);
+  if (!m) return null;
+  const sh = parseChineseNumber(m[2]);
+  const eh = parseChineseNumber(m[6]);
+  if (sh == null || eh == null) return null;
+  const startPart = m[1] || "";
+  const endPart = m[5] || startPart;
+  const startHour = resolveHour(sh, startPart, "range", eh);
+  const endHour = resolveHour(eh, endPart, "range", eh);
+  const base = baseDateFromText(text);
+  const start = makeDate(base, startHour, m[3] ? Number(m[3]) : parseMinute(m[4]));
+  let end = makeDate(base, endHour, m[7] ? Number(m[7]) : parseMinute(m[8]));
+  if (end <= start) end = new Date(end.getTime() + 24 * 3600_000);
+  return { start, end, durationMin: Math.max(1, Math.round((end - start) / 60000)) };
+}
+function parseDeadlineTime(text) {
+  const before = text.match(/(.{0,8}?[零一二两三四五六七八九十\d]{1,3}(?:[:：][0-5]\d|\s*(?:点|时)(?:半|[零一二两三四五六七八九十\d]{1,3}分?)?)?)\s*(?:前|之前|以前|截止|为止)/u);
+  const latest = text.match(/(?:最晚|截止到|到期|ddl|deadline)\s*(.{0,8}?[零一二两三四五六七八九十\d]{1,3}(?:[:：][0-5]\d|\s*(?:点|时)(?:半|[零一二两三四五六七八九十\d]{1,3}分?)?)?)/iu);
+  const hit = before?.[1] || latest?.[1];
+  if (!hit) return null;
+  const point = parseTimePoint(hit);
+  if (!point) return null;
+  return makeDate(baseDateFromText(text), resolveHour(point.hour, point.daypart, "single"), point.minute);
+}
+function parseSingleStartTime(text) {
+  const point = parseTimePoint(text);
+  if (!point) return null;
+  return makeDate(baseDateFromText(text), resolveHour(point.hour, point.daypart, "single"), point.minute);
+}
+function cleanTitle(text) {
+  let title = String(text || "");
+  title = title.replace(/今天|明天|后天|上午|中午|下午|晚上|今晚|早上|凌晨/gu, "");
+  title = title.replace(/[零一二两三四五六七八九十\d]{1,3}(?:[:：][0-5]\d|\s*(?:点|时)(?:半|[零一二两三四五六七八九十\d]{1,3}分?)?)?\s*(?:到|至|~|～|-|—|－)\s*[零一二两三四五六七八九十\d]{1,3}(?:[:：][0-5]\d|\s*(?:点|时)(?:半|[零一二两三四五六七八九十\d]{1,3}分?)?)?/gu, "");
+  title = title.replace(/[零一二两三四五六七八九十\d]{1,3}(?:[:：][0-5]\d|\s*(?:点|时)(?:半|[零一二两三四五六七八九十\d]{1,3}分?)?)?\s*(?:前|之前|以前|截止|为止)?/gu, "");
+  title = title.replace(/^(帮我|提醒我|创建|添加|新建|安排|我要|我想要|我想)\s*/u, "");
+  title = title.replace(/^(看|观看|学习|复习)\s*/u, "观看");
+  title = title.replace(/\s+/g, "").replace(/[，。,.;；：:]+$/u, "");
+  return title.slice(0, 90) || "未命名事项";
+}
+function localDescription(kind, title, timeInfo) {
+  if (kind === "ddl") return `截止时间：${timeLabel(timeInfo.end)}，${title}`;
+  if (timeInfo.range) return `时间：${timeLabel(timeInfo.range.start)}-${timeLabel(timeInfo.range.end)}，${title}`;
+  return `开始时间：${timeLabel(timeInfo.start)}，${title}`;
+}
+function localParse(text) {
+  const range = parseTimeRange(text);
+  const deadline = parseDeadlineTime(text);
+  const isDdl = Boolean(deadline) || /ddl|deadline|截止|提交|到期|最晚|之前/u.test(text);
+  const title = cleanTitle(text);
+  const prio = /高优先级|优先级高|紧急|重要|必须|一定/iu.test(text)
+    ? "high"
+    : /低优先级|优先级低|不急|不重要/iu.test(text)
+      ? "low"
+      : isDdl
+        ? "high"
+        : "mid";
+  if (isDdl) {
+    const end = deadline || parseSingleStartTime(text) || baseDateFromText(text);
+    return {
+      tab: "ddl",
+      evtType: "ddl",
+      title,
+      desc: localDescription("ddl", title, { end }),
+      prio,
+      endTime: toLocalInputValue(end),
+      durationMin: 30,
+      hardDdl: /硬性|必须|一定|截止|前|之前|最晚/iu.test(text),
+    };
+  }
+  const start = range?.start || parseSingleStartTime(text) || baseDateFromText(text);
+  const dm = text.match(/(?:持续|时长)\s*(\d+)\s*(分钟|分|小时)/u);
+  const durationMin = dm ? Number(dm[1]) * (dm[2] === "小时" ? 60 : 1) : range?.durationMin || 30;
+  return {
+    tab: "plan",
+    evtType: "plan",
+    title,
+    desc: localDescription("plan", title, { start, range }),
+    prio,
+    stTime: toLocalInputValue(start),
+    durationMin,
+    hardDdl: false,
+  };
+}
+function normalizeParsed(raw, text) {
+  const local = localParse(text);
+  const p = raw || {};
+  const tab = normalizeTab(p, text);
+  const llmDesc = String(p.desc ?? p.description ?? "").trim();
+  const result = {
+    tab,
+    evtType: tab,
+    title: p.title || local.title,
+    desc: llmDesc || local.desc || text,
+    prio: normalizePrio(p.prio || p.priority, tab),
+    durationMin: Number(p.durationMin || p.duration || local.durationMin || 30),
+    hardDdl: Boolean(p.hardDdl ?? local.hardDdl),
+  };
+  if (tab === "ddl") result.endTime = toLocalInputValue(p.endTime || p.deadline || p.at) || local.endTime;
+  else result.stTime = toLocalInputValue(p.stTime || p.startTime || p.at) || local.stTime;
+  return result;
+}
+function setCreateTab(tab) {
+  state.createTab = tab;
+  document.querySelectorAll("[data-create-tab]").forEach((btn) => btn.classList.toggle("active", btn.dataset.createTab === tab));
+  $("planForm")?.classList.toggle("active", tab === "plan");
+  $("ddlForm")?.classList.toggle("active", tab === "ddl");
+  renderCreatePreview();
+}
 function createForm() { return state.createTab === "ddl" ? $("ddlForm") : $("planForm"); }
-function createPayload() { const form = createForm(); if (state.createTab === "ddl") return { title: formVal(form, "title"), desc: formVal(form, "desc") || null, endTime: toIsoFromLocal(formVal(form, "endTime")), hardDdl: form.elements.hardDdl.checked, prio: formVal(form, "prio") || "high" }; return { title: formVal(form, "title"), desc: formVal(form, "desc") || null, stTime: toIsoFromLocal(formVal(form, "stTime")), durationMin: Number(formVal(form, "durationMin") || 30), prio: formVal(form, "prio") || "mid" }; }
-function renderCreatePreview() { const body = $("createPreview"); if (!body) return; const p = createPayload(); const title = p.title || "等待填写标题"; const time = state.createTab === "ddl" ? (formVal(createForm(), "endTime") || "未设置") : (formVal(createForm(), "stTime") || "未设置"); body.innerHTML = `<div class="preview-card"><div class="preview-title">${esc(title)}</div><div class="tags"><span class="tag ${state.createTab === "ddl" ? "purple" : "blue"}">${state.createTab === "ddl" ? "DDL" : "计划"}</span><span class="tag ${tagClass(p.prio)}">${esc(prioLabels[p.prio] || p.prio)}</span><span class="tag blue">${esc(time)}</span>${state.createTab === "plan" ? `<span class="tag green">${esc(p.durationMin || 30)} 分钟</span>` : ""}</div>${p.desc ? `<p class="preview-desc">${esc(p.desc)}</p>` : ""}</div>`; }
-function applyParsed(parsed, text) { const p = normalizeParsed(parsed, text); setCreateTab(p.tab); const form = createForm(); form.elements.title.value = p.title || ""; form.elements.desc.value = p.desc || ""; form.elements.prio.value = normalizePrio(p.prio, p.tab); if (p.tab === "ddl") { form.elements.endTime.value = p.endTime || ""; form.elements.hardDdl.checked = Boolean(p.hardDdl); } else { form.elements.stTime.value = p.stTime || ""; form.elements.durationMin.value = p.durationMin || 30; } renderCreatePreview(); }
-async function parseNatural() { const text = $("naturalText")?.value.trim(); if (!text) return toast("请先输入内容"); let parsed = null; try { const resp = await apiSend("/api/llm/parse", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, scene: "create_event", now: new Date().toISOString() }) }); parsed = resp?.parsed; } catch { parsed = null; } applyParsed(parsed, text); toast("已预填，请确认后创建"); }
-async function submitCreate(ev) { ev.preventDefault(); const form = ev.currentTarget; const body = createPayload(); if (!body.title) return toast("请填写标题"); const endpoint = form.dataset.endpoint; try { await apiSend(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); form.reset(); renderCreatePreview(); toast("创建成功"); } catch (err) { toast(err.message); } }
-function applyTemplate(name) { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(23, 59, 0, 0); if (name === "homework" || name === "exam") { setCreateTab("ddl"); const f = $("ddlForm"); f.elements.title.value = name === "homework" ? "作业 DDL" : "考试复习"; f.elements.desc.value = name === "homework" ? "课程作业截止" : "复习重点章节并完成例题"; f.elements.endTime.value = toLocalInputValue(d); f.elements.prio.value = "high"; f.elements.hardDdl.checked = name === "homework"; } else { setCreateTab("plan"); const f = $("planForm"); f.elements.title.value = name === "project" ? "项目跟进" : "计划事项"; f.elements.desc.value = name === "project" ? "检查阶段任务进展" : ""; f.elements.stTime.value = toLocalInputValue(d); f.elements.durationMin.value = 30; f.elements.prio.value = "mid"; } renderCreatePreview(); }
-function initAdd() { document.querySelectorAll("[data-create-tab]").forEach((b) => b.addEventListener("click", () => setCreateTab(b.dataset.createTab))); document.querySelectorAll("#planForm,#ddlForm").forEach((f) => { f.addEventListener("input", renderCreatePreview); f.addEventListener("change", renderCreatePreview); f.addEventListener("submit", submitCreate); }); document.querySelectorAll(".template").forEach((b) => b.addEventListener("click", () => applyTemplate(b.dataset.template))); $("parseNaturalBtn")?.addEventListener("click", parseNatural); renderCreatePreview(); }
+function createPayload() {
+  const form = createForm();
+  if (state.createTab === "ddl") {
+    return {
+      title: formVal(form, "title"),
+      desc: formVal(form, "desc") || null,
+      endTime: toIsoFromLocal(formVal(form, "endTime")),
+      hardDdl: form.elements.hardDdl.checked,
+      prio: formVal(form, "prio") || "high",
+    };
+  }
+  return {
+    title: formVal(form, "title"),
+    desc: formVal(form, "desc") || null,
+    stTime: toIsoFromLocal(formVal(form, "stTime")),
+    durationMin: Number(formVal(form, "durationMin") || 30),
+    prio: formVal(form, "prio") || "mid",
+  };
+}
+function renderCreatePreview(created = null) {
+  const body = $("createPreview");
+  if (!body) return;
+  const p = created || createPayload();
+  const title = p.title || "等待填写标题";
+  const time = state.createTab === "ddl" ? (formVal(createForm(), "endTime") || "未设置") : (formVal(createForm(), "stTime") || "未设置");
+  const link = created?.evtId ? `<div class="row-actions"><a class="btn" href="/work/update?evtId=${encodeURIComponent(created.evtId)}">打开编辑页</a></div>` : "";
+  body.innerHTML = `<div class="preview-card"><div class="preview-title">${esc(title)}</div><div class="tags"><span class="tag ${state.createTab === "ddl" ? "purple" : "blue"}">${state.createTab === "ddl" ? "DDL" : "计划"}</span><span class="tag ${tagClass(p.prio)}">${esc(prioLabels[p.prio] || p.prio)}</span><span class="tag blue">${esc(time)}</span>${state.createTab === "plan" ? `<span class="tag green">${esc(p.durationMin || 30)} 分钟</span>` : ""}</div>${p.desc ? `<p class="preview-desc">${esc(p.desc)}</p>` : ""}${link}</div>`;
+}
+function applyParsed(parsed, text) {
+  const p = normalizeParsed(parsed, text);
+  setCreateTab(p.tab);
+  const form = createForm();
+  form.elements.title.value = p.title || "";
+  form.elements.desc.value = p.desc || "";
+  form.elements.prio.value = normalizePrio(p.prio, p.tab);
+  if (p.tab === "ddl") {
+    form.elements.endTime.value = p.endTime || "";
+    form.elements.hardDdl.checked = Boolean(p.hardDdl);
+  } else {
+    form.elements.stTime.value = p.stTime || "";
+    form.elements.durationMin.value = p.durationMin || 30;
+  }
+  renderCreatePreview();
+}
+function parseNatural() {
+  const text = $("naturalText")?.value.trim();
+  if (!text) return toast("请先输入内容");
 
-function renderIdeas() { const filter = $("ideaFilter")?.value || "open"; const rows = state.ideas.filter((i) => filter === "all" || (filter === "open" ? !i.handled : i.handled)); $("ideaList").innerHTML = rows.length ? rows.slice().reverse().map((i) => `<div class="row-card"><div class="row-title">${esc(i.content)}</div><div class="row-meta">${i.handled ? "handled" : "open"} · ${esc(i.createdAt || "")}</div><div class="row-actions"><button class="btn" data-action="toggleIdea" data-id="${esc(i.ideaId)}" data-handled="${i.handled ? "0" : "1"}">${i.handled ? "标为 open" : "标为 handled"}</button><button class="btn btn-danger" data-action="deleteIdea" data-id="${esc(i.ideaId)}">删除</button></div></div>`).join("") : rowEmpty("暂无灵感"); }
-async function initInspire() { try { state.ideas = await apiGet("/api/idea"); renderIdeas(); touchRefresh(); } catch (err) { toast(err.message); setApiStatus("err", "API 异常"); } }
-async function saveIdea() { const content = $("ideaContent").value.trim(); if (!content) return toast("请填写灵感"); try { await apiSend("/api/idea", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, srcType: "text" }) }); $("ideaContent").value = ""; await initInspire(); toast("已保存"); } catch (err) { toast(err.message); } }
+  applyParsed(null, text);
+  toast("已本地预填，可直接修改或创建");
+  setApiStatus("busy", "模型优化中");
 
-function renderCourse() { $("courseTplList").innerHTML = state.courses.length ? state.courses.map((c) => `<div class="row-card"><div class="row-title">${esc(c.courseName || c.title)}</div><div class="row-meta">周${esc(c.weekDay)} · ${esc(c.stTime || "—")} - ${esc(c.endTime || "—")} · ${esc(c.location || "")}</div><div class="row-actions"><button class="btn" data-action="editCourse" data-id="${esc(c.evtId)}">编辑</button></div></div>`).join("") : rowEmpty("暂无课程"); }
-function fillCourse(c = null) { const f = $("courseTplForm"); f.reset(); f.elements.evtId.value = c?.evtId || ""; for (const key of ["courseName", "teacher", "location", "stDate", "endDate", "weekDay", "stTime", "endTime", "startWeek", "endWeek", "weekMode"]) if (c?.[key] != null) f.elements[key].value = c[key]; }
-async function saveCourse(ev) { ev.preventDefault(); const f = ev.currentTarget; const body = { courseName: formVal(f, "courseName"), title: formVal(f, "courseName"), teacher: formVal(f, "teacher") || null, location: formVal(f, "location") || null, stDate: formVal(f, "stDate"), endDate: formVal(f, "endDate"), weekDay: Number(formVal(f, "weekDay")), stTime: formVal(f, "stTime"), endTime: formVal(f, "endTime"), startWeek: numOrNull(formVal(f, "startWeek")), endWeek: numOrNull(formVal(f, "endWeek")), weekMode: formVal(f, "weekMode") || "all" }; const id = formVal(f, "evtId"); try { await apiSend(id ? `/api/evt/${id}` : "/api/courseEvt", { method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); await initCourse(false); toast("已保存课程"); } catch (err) { toast(err.message); } }
-async function initCourse(showLoading = true) { try { if (showLoading) setApiStatus("busy", "API 请求中"); state.courses = await apiGet("/api/courseEvt"); renderCourse(); touchRefresh(); } catch (err) { toast(err.message); setApiStatus("err", "API 异常"); } }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2500);
+  fetch("/api/llm/parse", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, scene: "create_event", now: new Date().toISOString() }),
+    signal: controller.signal,
+  })
+    .then((resp) => resp.ok ? resp.json() : null)
+    .then((body) => {
+      clearTimeout(timer);
+      const parsed = body?.data?.parsed;
+      if (parsed) {
+        applyParsed(parsed, text);
+        setApiStatus("ok", "模型已优化");
+        touchRefresh();
+      } else {
+        setApiStatus("ok", "本地解析");
+      }
+    })
+    .catch(() => {
+      clearTimeout(timer);
+      setApiStatus("ok", "本地解析");
+    });
+}
+async function submitCreate(ev) {
+  ev.preventDefault();
+  const form = ev.currentTarget;
+  const body = createPayload();
+  if (!body.title) return toast("请填写标题");
+  const endpoint = form.dataset.endpoint;
+  try {
+    const created = await apiSend(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    form.reset();
+    renderCreatePreview(created);
+    toast("创建成功，已自动更新预览");
+  } catch (err) {
+    toast(err.message);
+  }
+}
+function applyTemplate(name) {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(23, 59, 0, 0);
+  if (name === "homework" || name === "exam") {
+    setCreateTab("ddl");
+    const f = $("ddlForm");
+    f.elements.title.value = name === "homework" ? "作业 DDL" : "考试复习";
+    f.elements.desc.value = name === "homework" ? "课程作业截止" : "复习重点章节并完成例题";
+    f.elements.endTime.value = toLocalInputValue(d);
+    f.elements.prio.value = "high";
+    f.elements.hardDdl.checked = name === "homework";
+  } else {
+    setCreateTab("plan");
+    const f = $("planForm");
+    f.elements.title.value = name === "project" ? "项目跟进" : "计划事项";
+    f.elements.desc.value = name === "project" ? "检查阶段任务进展" : "";
+    f.elements.stTime.value = toLocalInputValue(d);
+    f.elements.durationMin.value = 30;
+    f.elements.prio.value = "mid";
+  }
+  renderCreatePreview();
+}
+function initAdd() {
+  document.querySelectorAll("[data-create-tab]").forEach((b) => b.addEventListener("click", () => setCreateTab(b.dataset.createTab)));
+  document.querySelectorAll("#planForm,#ddlForm").forEach((f) => {
+    f.addEventListener("input", renderCreatePreview);
+    f.addEventListener("change", renderCreatePreview);
+    f.addEventListener("submit", submitCreate);
+  });
+  document.querySelectorAll(".template").forEach((b) => b.addEventListener("click", () => applyTemplate(b.dataset.template)));
+  $("parseNaturalBtn")?.addEventListener("click", parseNatural);
+  renderCreatePreview();
+}
 
-function renderLogs() { const q = $("logKeyword")?.value.trim().toLowerCase() || ""; const stat = $("logStatusFilter")?.value || ""; const rows = (state.logs[state.logTab] || []).slice().reverse().filter((r) => (!q || JSON.stringify(r).toLowerCase().includes(q)) && (!stat || r.stat === stat || r.result === stat)); $("logList").innerHTML = rows.length ? rows.slice(0, 120).map((r) => `<div class="log-row"><div class="row-title">${esc(r.action || r.title || r.rawText || r.msgId || r.notifyId || r.actId || "日志")}</div><div class="row-meta">${esc(r.createdAt || r.scheduledAt || "")} · ${esc(r.result || r.stat || r.channel || "")}</div><pre class="log-json">${esc(JSON.stringify(r, null, 2))}</pre></div>`).join("") : rowEmpty("暂无日志"); }
-async function initLog() { try { const [act, notify, msg] = await Promise.all([apiGet("/api/log/act"), apiGet("/api/log/notify"), apiGet("/api/log/msg")]); state.logs = { act, notify, msg }; renderLogs(); touchRefresh(); } catch (err) { toast(err.message); setApiStatus("err", "API 异常"); } }
+function renderIdeas() {
+  const filter = $("ideaFilter")?.value || "open";
+  const rows = state.ideas.filter((i) => filter === "all" || (filter === "open" ? !i.handled : i.handled));
+  $("ideaList").innerHTML = rows.length ? rows.slice().reverse().map((i) => `<div class="row-card"><div class="row-title">${esc(i.content)}</div><div class="row-meta">${i.handled ? "handled" : "open"} · ${esc(i.createdAt || "")}</div><div class="row-actions"><button class="btn" data-action="toggleIdea" data-id="${esc(i.ideaId)}" data-handled="${i.handled ? "0" : "1"}">${i.handled ? "标为 open" : "标为 handled"}</button><button class="btn btn-danger" data-action="deleteIdea" data-id="${esc(i.ideaId)}">删除</button></div></div>`).join("") : rowEmpty("暂无灵感");
+}
+async function initInspire() {
+  try { state.ideas = await apiGet("/api/idea"); renderIdeas(); touchRefresh(); }
+  catch (err) { toast(err.message); setApiStatus("err", "API 异常"); }
+}
+async function saveIdea() {
+  const content = $("ideaContent").value.trim();
+  if (!content) return toast("请填写灵感");
+  try {
+    await apiSend("/api/idea", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, srcType: "text" }) });
+    $("ideaContent").value = "";
+    await initInspire();
+    toast("已保存");
+  } catch (err) { toast(err.message); }
+}
 
-function bindCommon() { $("refreshPageBtn")?.addEventListener("click", () => initPage()); document.body.addEventListener("click", async (ev) => { const btn = ev.target.closest("[data-action]"); if (!btn) return; if (btn.dataset.action === "toggleIdea") { try { await apiSend(`/api/idea/${btn.dataset.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ handled: btn.dataset.handled === "1" }) }); await initInspire(); } catch (err) { toast(err.message); } } if (btn.dataset.action === "deleteIdea") { try { await apiSend(`/api/idea/${btn.dataset.id}`, { method: "DELETE" }); await initInspire(); } catch (err) { toast(err.message); } } if (btn.dataset.action === "editCourse") { const c = state.courses.find((x) => x.evtId === btn.dataset.id); fillCourse(c); } }); }
-function bindPage() { if (page === "add") initAdd(); if (page === "inspire") { $("saveIdeaBtn")?.addEventListener("click", saveIdea); $("ideaFilter")?.addEventListener("change", renderIdeas); } if (page === "course") { $("courseTplForm")?.addEventListener("submit", saveCourse); $("newCourseBtn")?.addEventListener("click", () => fillCourse(null)); $("deleteCourseTplBtn")?.addEventListener("click", async () => { const id = formVal($("courseTplForm"), "evtId"); if (!id) return toast("请选择课程"); try { await apiSend(`/api/evt/${id}`, { method: "DELETE" }); fillCourse(null); await initCourse(false); toast("已删除"); } catch (err) { toast(err.message); } }); } if (page === "log") { document.querySelectorAll("[data-log-tab]").forEach((b) => b.addEventListener("click", () => { state.logTab = b.dataset.logTab; document.querySelectorAll("[data-log-tab]").forEach((x) => x.classList.toggle("active", x === b)); renderLogs(); })); $("logKeyword")?.addEventListener("input", renderLogs); $("logStatusFilter")?.addEventListener("change", renderLogs); } }
-async function initPage() { if (page === "inspire") return initInspire(); if (page === "course") return initCourse(); if (page === "log") return initLog(); }
+function renderCourse() {
+  $("courseTplList").innerHTML = state.courses.length ? state.courses.map((c) => `<div class="row-card"><div class="row-title">${esc(c.courseName || c.title)}</div><div class="row-meta">周${esc(c.weekDay)} · ${esc(c.stTime || "—")} - ${esc(c.endTime || "—")} · ${esc(c.location || "")}</div><div class="row-actions"><button class="btn" data-action="editCourse" data-id="${esc(c.evtId)}">编辑</button></div></div>`).join("") : rowEmpty("暂无课程");
+}
+function fillCourse(c = null) {
+  const f = $("courseTplForm");
+  f.reset();
+  f.elements.evtId.value = c?.evtId || "";
+  for (const key of ["courseName", "teacher", "location", "stDate", "endDate", "weekDay", "stTime", "endTime", "startWeek", "endWeek", "weekMode"]) {
+    if (c?.[key] != null) f.elements[key].value = c[key];
+  }
+}
+async function saveCourse(ev) {
+  ev.preventDefault();
+  const f = ev.currentTarget;
+  const body = {
+    courseName: formVal(f, "courseName"), title: formVal(f, "courseName"), teacher: formVal(f, "teacher") || null,
+    location: formVal(f, "location") || null, stDate: formVal(f, "stDate"), endDate: formVal(f, "endDate"),
+    weekDay: Number(formVal(f, "weekDay")), stTime: formVal(f, "stTime"), endTime: formVal(f, "endTime"),
+    startWeek: numOrNull(formVal(f, "startWeek")), endWeek: numOrNull(formVal(f, "endWeek")), weekMode: formVal(f, "weekMode") || "all",
+  };
+  const id = formVal(f, "evtId");
+  try {
+    await apiSend(id ? `/api/evt/${id}` : "/api/courseEvt", { method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    await initCourse(false);
+    toast("已保存课程");
+  } catch (err) { toast(err.message); }
+}
+async function initCourse(showLoading = true) {
+  try { if (showLoading) setApiStatus("busy", "API 请求中"); state.courses = await apiGet("/api/courseEvt"); renderCourse(); touchRefresh(); }
+  catch (err) { toast(err.message); setApiStatus("err", "API 异常"); }
+}
+
+function renderLogs() {
+  const q = $("logKeyword")?.value.trim().toLowerCase() || "";
+  const stat = $("logStatusFilter")?.value || "";
+  const rows = (state.logs[state.logTab] || []).slice().reverse().filter((r) => (!q || JSON.stringify(r).toLowerCase().includes(q)) && (!stat || r.stat === stat || r.result === stat));
+  $("logList").innerHTML = rows.length ? rows.slice(0, 120).map((r) => `<div class="log-row"><div class="row-title">${esc(r.action || r.title || r.rawText || r.msgId || r.notifyId || r.actId || "日志")}</div><div class="row-meta">${esc(r.createdAt || r.scheduledAt || "")} · ${esc(r.result || r.stat || r.channel || "")}</div><pre class="log-json">${esc(JSON.stringify(r, null, 2))}</pre></div>`).join("") : rowEmpty("暂无日志");
+}
+async function initLog() {
+  try { const [act, notify, msg] = await Promise.all([apiGet("/api/log/act"), apiGet("/api/log/notify"), apiGet("/api/log/msg")]); state.logs = { act, notify, msg }; renderLogs(); touchRefresh(); }
+  catch (err) { toast(err.message); setApiStatus("err", "API 异常"); }
+}
+
+function bindCommon() {
+  $("refreshPageBtn")?.addEventListener("click", () => initPage());
+  document.body.addEventListener("click", async (ev) => {
+    const btn = ev.target.closest("[data-action]");
+    if (!btn) return;
+    if (btn.dataset.action === "toggleIdea") {
+      try { await apiSend(`/api/idea/${btn.dataset.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ handled: btn.dataset.handled === "1" }) }); await initInspire(); }
+      catch (err) { toast(err.message); }
+    }
+    if (btn.dataset.action === "deleteIdea") {
+      try { await apiSend(`/api/idea/${btn.dataset.id}`, { method: "DELETE" }); await initInspire(); }
+      catch (err) { toast(err.message); }
+    }
+    if (btn.dataset.action === "editCourse") {
+      const c = state.courses.find((x) => x.evtId === btn.dataset.id);
+      fillCourse(c);
+    }
+  });
+}
+function bindPage() {
+  if (page === "add") initAdd();
+  if (page === "inspire") { $("saveIdeaBtn")?.addEventListener("click", saveIdea); $("ideaFilter")?.addEventListener("change", renderIdeas); }
+  if (page === "course") {
+    $("courseTplForm")?.addEventListener("submit", saveCourse);
+    $("newCourseBtn")?.addEventListener("click", () => fillCourse(null));
+    $("deleteCourseTplBtn")?.addEventListener("click", async () => {
+      const id = formVal($("courseTplForm"), "evtId");
+      if (!id) return toast("请选择课程");
+      try { await apiSend(`/api/evt/${id}`, { method: "DELETE" }); fillCourse(null); await initCourse(false); toast("已删除"); }
+      catch (err) { toast(err.message); }
+    });
+  }
+  if (page === "log") {
+    document.querySelectorAll("[data-log-tab]").forEach((b) => b.addEventListener("click", () => {
+      state.logTab = b.dataset.logTab;
+      document.querySelectorAll("[data-log-tab]").forEach((x) => x.classList.toggle("active", x === b));
+      renderLogs();
+    }));
+    $("logKeyword")?.addEventListener("input", renderLogs);
+    $("logStatusFilter")?.addEventListener("change", renderLogs);
+  }
+}
+async function initPage() {
+  if (page === "inspire") return initInspire();
+  if (page === "course") return initCourse();
+  if (page === "log") return initLog();
+}
 
 bindCommon();
 bindPage();
