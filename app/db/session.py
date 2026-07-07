@@ -6,7 +6,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import get_settings
-from app.db.schema_paths import schemaSqlPath
+from app.db.schema_paths import devicePhotoSqlPath, schemaSqlPath
 
 
 class Base(DeclarativeBase):
@@ -199,6 +199,7 @@ def init_db() -> None:
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
     if settings.database_url.startswith("sqlite"):
         _execute_sqlite_script(settings.database_path, schemaSqlPath())
+        _execute_sqlite_script(settings.database_path, devicePhotoSqlPath())
         _apply_sqlite_migrations(settings.database_path)
         engine, _ = _ensure_engine()
         Base.metadata.create_all(bind=engine)
