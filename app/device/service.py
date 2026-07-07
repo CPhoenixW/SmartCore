@@ -163,6 +163,7 @@ def next_pending_photo_request(
             expired = True
         if expired:
             row.stat = "expired"
+            row.completedAt = now.isoformat()
             row.errorMessage = "request expired before device upload"
             changed = True
             continue
@@ -196,6 +197,12 @@ def complete_photo_request(
         raise ValueError("photo request does not belong to this device")
     if row.stat != "pending":
         raise ValueError(f"photo request is not pending: {row.stat}")
+    if _parse_iso(row.expiresAt) <= datetime.now(_DEFAULT_TZ):
+        row.stat = "expired"
+        row.completedAt = nowIso()
+        row.errorMessage = "request expired before device upload"
+        db.commit()
+        raise ValueError("photo request expired")
     row.stat = "uploaded"
     row.capturedAt = captured_at
     row.completedAt = nowIso()
