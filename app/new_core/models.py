@@ -140,6 +140,27 @@ class DeviceStateLog(Base):
     meta: Mapped[dict | None] = mapped_column(JSON)
 
 
+class DevicePhotoRequest(Base):
+    __tablename__ = "devicePhotoRequest"
+
+    requestId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    deviceId: Mapped[str] = mapped_column(
+        String(50), ForeignKey("device.deviceId", ondelete="CASCADE"), nullable=False
+    )
+    stat: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text)
+    requestedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    expiresAt: Mapped[str] = mapped_column(String(64), nullable=False)
+    dispatchedAt: Mapped[str | None] = mapped_column(String(64))
+    capturedAt: Mapped[str | None] = mapped_column(String(64))
+    completedAt: Mapped[str | None] = mapped_column(String(64))
+    imagePath: Mapped[str | None] = mapped_column(String(500))
+    mimeType: Mapped[str | None] = mapped_column(String(100))
+    imageSize: Mapped[int | None] = mapped_column(Integer)
+    recognition: Mapped[dict | None] = mapped_column(JSON)
+    errorMessage: Mapped[str | None] = mapped_column(Text)
+
+
 class ActLog(Base):
     __tablename__ = "actLog"
 
