@@ -44,6 +44,34 @@ def test_agent_tools_keep_stable_names_and_aliases() -> None:
     assert tools["sendFeishuCard"]["path"] == "/agent/feedback/send_card"
 
 
+def test_router_exposes_canonical_and_legacy_paths() -> None:
+    paths = {route.path for route in routes.createAgentRouter().routes}
+
+    expected = {
+        "/agent/tools",
+        "/agent/db/query_events",
+        "/agent/evtQuery",
+        "/agent/db/create_event",
+        "/agent/evtCreate",
+        "/agent/db/update_event",
+        "/agent/evtUpdate",
+        "/agent/db/delete_event",
+        "/agent/evtDelete",
+        "/agent/idea/capture",
+        "/agent/ideaCapture",
+        "/agent/idea/to_event",
+        "/agent/ideaToEvt",
+        "/agent/feedback/send_text",
+        "/agent/sendText",
+        "/agent/feedback/send_card",
+        "/agent/sendCard",
+        "/agent/feedback/screen_push",
+        "/agent/screenPush",
+    }
+
+    assert expected.issubset(paths)
+
+
 def test_query_events_exposes_ddl_link_for_linked_plan(monkeypatch: pytest.MonkeyPatch) -> None:
     events = [
         {
