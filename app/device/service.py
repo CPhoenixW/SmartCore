@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -48,6 +49,26 @@ def _state_dict(row: DeviceStateLog) -> dict[str, Any]:
     }
 
 
+def _latest_state_row(db: Session, device_id: str) -> DeviceStateLog | None:
+    return db.scalars(
+        select(DeviceStateLog)
+        .where(DeviceStateLog.deviceId == device_id)
+        .order_by(DeviceStateLog.seenAt.desc())
+        .limit(1)
+    ).first()
+
+
+def _person_signature(persons: list[dict[str, Any]]) -> str:
+    compact = [
+        {
+            "personId": item.get("personId"),
+            "name": item.get("name"),
+        }
+        for item in persons
+    ]
+    return json.dumps(compact, ensure_ascii=False, sort_keys=True)
+
+
 def photo_request_dict(row: DevicePhotoRequest) -> dict[str, Any]:
     return {
         "requestId": row.requestId,
@@ -83,28 +104,53 @@ def record_heartbeat(
     state: str | None = None,
     extra_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    _parse_iso(current_time)
+    reported_at = _parse_iso(current_time)
     _ensure_device(db, device_id)
     resolved_state = state or ("working" if present else "away")
     if resolved_state not in {"working", "away", "offline", "unknown"}:
         raise ValueError("state must be working, away, offline, or unknown")
+
+    server_now = datetime.now(_DEFAULT_TZ)
+    minute_bucket = server_now.strftime("%Y-%m-%dT%H:%M")
+    signature = _person_signature(persons)
     meta = dict(extra_meta or {})
     meta.update(
         {
             "protocolVersion": 2,
-            "reportedAt": current_time,
+            "reportedAt": reported_at.isoformat(),
+            "receivedAt": server_now.isoformat(),
+            "clockSkewSeconds": round((server_now - reported_at).total_seconds(), 3),
             "present": present,
             "persons": persons,
+            "personSignature": signature,
+            "logMinute": minute_bucket,
         }
     )
-    row = DeviceStateLog(
-        deviceId=device_id,
-        state=resolved_state,
-        confidence=state_confidence,
-        seenAt=nowIso(),
-        meta=meta,
+
+    latest = _latest_state_row(db, device_id)
+    latest_meta = latest.meta if latest and isinstance(latest.meta, dict) else {}
+    can_coalesce = bool(
+        latest
+        and latest_meta.get("logMinute") == minute_bucket
+        and latest.state == resolved_state
+        and latest_meta.get("present") == present
+        and latest_meta.get("personSignature") == signature
     )
-    db.add(row)
+    if can_coalesce and latest is not None:
+        latest.confidence = state_confidence
+        latest.seenAt = server_now.isoformat()
+        latest.meta = meta
+        row = latest
+    else:
+        row = DeviceStateLog(
+            deviceId=device_id,
+            state=resolved_state,
+            confidence=state_confidence,
+            seenAt=server_now.isoformat(),
+            meta=meta,
+        )
+        db.add(row)
+
     db.commit()
     db.refresh(row)
     return _state_dict(row)
