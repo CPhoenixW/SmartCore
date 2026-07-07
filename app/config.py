@@ -33,6 +33,10 @@ class Settings(BaseSettings):
 
     agent_api_token: str = ""
     device_api_token: str = ""
+    device_heartbeat_interval_seconds: int = 10
+    device_photo_request_ttl_seconds: int = 300
+    device_photo_max_bytes: int = 10 * 1024 * 1024
+    device_photo_dir: str = str(PROJECT_ROOT / "data" / "device_photos")
     openclaw_events_endpoint: str = ""
     openclaw_events_token: str = ""
 
@@ -52,6 +56,10 @@ class Settings(BaseSettings):
     @property
     def backup_path(self) -> Path:
         return Path(self.backup_dir)
+
+    @property
+    def device_photo_path(self) -> Path:
+        return Path(self.device_photo_dir)
 
 
 @lru_cache
