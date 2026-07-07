@@ -13,6 +13,7 @@
 - [目标架构](./refactor/target-arch.md)
 - [实施计划](./refactor/build-plan.md)
 - [验收计划](./refactor/acceptance.md)
+- [树莓派与服务器通信架构 v2](./10-pi-server-communication-v2.md)
 
 ## 历史文档索引
 
