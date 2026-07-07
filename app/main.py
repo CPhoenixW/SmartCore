@@ -8,6 +8,7 @@ from app.agent.routes import createAgentRouter, createDevRouter
 from app.api.routes import router as apiRouter
 from app.config import get_settings
 from app.db.session import init_db
+from app.device.routes import router as deviceRouter
 from app.feishu.event_handler import create_feishu_router
 from app.scheduler.service import build_scheduler_service
 from app.screen.routes import router as screenRouter
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
     app.include_router(parse_router)
     app.include_router(apiRouter)
     app.include_router(createDevRouter())
+    app.include_router(deviceRouter)
     app.include_router(createAgentRouter())
     app.include_router(create_feishu_router())
     app.include_router(workRouter)
