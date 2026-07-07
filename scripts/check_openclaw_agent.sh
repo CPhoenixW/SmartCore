@@ -50,7 +50,8 @@ assert body.get("ok") is True, body
 data = body.get("data") or {}
 assert isinstance(data.get("events"), list), body
 assert isinstance(data.get("count"), int), body
-print(f"ok: returned {data.get('count')} events")
+count = data.get("count")
+print(f"ok: returned {count} events")
 '
 
 echo "OpenClaw agent contract smoke check passed."
