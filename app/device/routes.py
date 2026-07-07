@@ -168,6 +168,8 @@ async def upload_requested_photo(
         request_row = service.get_photo_request(db, request_id)
         if request_row.deviceId != devId:
             raise ValueError("photo request does not belong to this device")
+        if request_row.stat != "pending":
+            raise ValueError(f"photo request is not pending: {request_row.stat}")
         date_bucket = _date_bucket(capturedAt)
         safe_device_id = _safe_component(devId)
     except ValueError as exc:
@@ -270,6 +272,7 @@ def list_server_photo_requests(
 def download_requested_photo(
     request_id: str,
     db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> FileResponse:
     try:
         row = service.get_photo_request(db, request_id)
@@ -277,7 +280,10 @@ def download_requested_photo(
         raise _bad_request(exc) from exc
     if row.stat != "uploaded" or not row.imagePath:
         raise HTTPException(status_code=409, detail="photo is not available")
-    path = Path(row.imagePath)
+    root = settings.device_photo_path.resolve()
+    path = Path(row.imagePath).resolve()
+    if not path.is_relative_to(root):
+        raise HTTPException(status_code=403, detail="photo path is outside configured storage")
     if not path.is_file():
         raise HTTPException(status_code=404, detail="photo file is missing")
     return FileResponse(path, media_type=row.mimeType or "application/octet-stream", filename=path.name)
