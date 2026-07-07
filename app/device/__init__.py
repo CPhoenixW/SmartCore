@@ -1,3 +1,1 @@
-from app.device.routes import router
-
-__all__ = ["router"]
+"""Raspberry Pi and side-device communication support."""
