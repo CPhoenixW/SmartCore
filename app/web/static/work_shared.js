@@ -99,6 +99,7 @@ const EN = {
   "保存课程": "Save course",
   "删除课程": "Delete course",
   "操作日志": "Activity logs",
+  "操作": "Action",
   "事件操作": "Event actions",
   "提醒": "Notifications",
   "消息": "Messages",
@@ -129,6 +130,7 @@ const EN = {
   "API 异常": "API error",
   "未刷新": "Not refreshed",
   "刷新": "Refresh",
+  "更新于": "Updated at",
   "树莓派当前状态": "Current Raspberry Pi state",
   "识别人物": "Identified people",
   "时钟偏差": "Clock offset",
@@ -162,7 +164,8 @@ const EN = {
   "截止": "Due",
   "已逾期": "Overdue",
   "保存成功": "Saved",
-  "设置已保存": "Settings saved"
+  "设置已保存": "Settings saved",
+  "现在": "Now"
 };
 
 const EN_TO_ZH = Object.fromEntries(Object.entries(EN).map(([zh, en]) => [en, zh]));
@@ -215,46 +218,33 @@ export function formatRecordCount(value) {
 
 function translateDynamic(text) {
   if (currentLanguage === "en") {
-    let match = text.match(/^(\d+(?:\.\d+)?)\s*分钟$/);
-    if (match) return `${match[1]} min`;
-    match = text.match(/^(\d+)\s*条$/);
-    if (match) return `${match[1]} records`;
-    match = text.match(/^更新于\s+(.+)$/);
-    if (match) return `Updated at ${match[1]}`;
-    match = text.match(/^最后回传：(.+)$/);
-    if (match) return `Last report: ${match[1]}`;
-    match = text.match(/^置信度\s+(.+)$/);
-    if (match) return `Confidence ${match[1]}`;
-    match = text.match(/^拍摄于\s+(.+)\s+·\s+(\d+)\s+KB$/);
-    if (match) return `Captured at ${match[1]} · ${match[2]} KB`;
-    match = text.match(/^截止\s+(.+)$/);
-    if (match) return `Due ${match[1]}`;
-    match = text.match(/^今天\s+(.+)$/);
-    if (match) return `Today ${match[1]}`;
-    match = text.match(/^明天\s+(.+)$/);
-    if (match) return `Tomorrow ${match[1]}`;
-    return EN[text] || text;
+    let result = EN[text] || text;
+    result = result.replace(/^(\d+(?:\.\d+)?)\s*分钟$/, "$1 min");
+    result = result.replace(/^(\d+)\s*条$/, "$1 records");
+    result = result.replace(/^更新于\s+(.+)$/, "Updated at $1");
+    result = result.replace(/^最后回传：(.+)$/, "Last report: $1");
+    result = result.replace(/^置信度\s+(.+)$/, "Confidence $1");
+    result = result.replace(/^拍摄于\s+(.+)\s+·\s+(\d+)\s+KB$/, "Captured at $1 · $2 KB");
+    result = result.replace(/^今天\s+/, "Today ");
+    result = result.replace(/^明天\s+/, "Tomorrow ");
+    result = result.replace(/(^|\s)截止\s+/g, "$1Due ");
+    result = result.replace(/\s+·\s+已逾期$/, " · Overdue");
+    result = result.replace(/^(\d+)月(\d+)日\s+/, "$1/$2 ");
+    return result;
   }
 
-  let match = text.match(/^(\d+(?:\.\d+)?)\s*min$/i);
-  if (match) return `${match[1]} 分钟`;
-  match = text.match(/^(\d+)\s*records?$/i);
-  if (match) return `${match[1]} 条`;
-  match = text.match(/^Updated at\s+(.+)$/i);
-  if (match) return `更新于 ${match[1]}`;
-  match = text.match(/^Last report:\s*(.+)$/i);
-  if (match) return `最后回传：${match[1]}`;
-  match = text.match(/^Confidence\s+(.+)$/i);
-  if (match) return `置信度 ${match[1]}`;
-  match = text.match(/^Captured at\s+(.+)\s+·\s+(\d+)\s+KB$/i);
-  if (match) return `拍摄于 ${match[1]} · ${match[2]} KB`;
-  match = text.match(/^Due\s+(.+)$/i);
-  if (match) return `截止 ${match[1]}`;
-  match = text.match(/^Today\s+(.+)$/i);
-  if (match) return `今天 ${match[1]}`;
-  match = text.match(/^Tomorrow\s+(.+)$/i);
-  if (match) return `明天 ${match[1]}`;
-  return EN_TO_ZH[text] || text;
+  let result = EN_TO_ZH[text] || text;
+  result = result.replace(/^(\d+(?:\.\d+)?)\s*min$/i, "$1 分钟");
+  result = result.replace(/^(\d+)\s*records?$/i, "$1 条");
+  result = result.replace(/^Updated at\s+(.+)$/i, "更新于 $1");
+  result = result.replace(/^Last report:\s*(.+)$/i, "最后回传：$1");
+  result = result.replace(/^Confidence\s+(.+)$/i, "置信度 $1");
+  result = result.replace(/^Captured at\s+(.+)\s+·\s+(\d+)\s+KB$/i, "拍摄于 $1 · $2 KB");
+  result = result.replace(/^Today\s+/i, "今天 ");
+  result = result.replace(/^Tomorrow\s+/i, "明天 ");
+  result = result.replace(/(^|\s)Due\s+/gi, "$1截止 ");
+  result = result.replace(/\s+·\s+Overdue$/i, " · 已逾期");
+  return result;
 }
 
 function shouldSkipTranslation(node) {
@@ -272,7 +262,8 @@ function translateTextNode(node) {
   const trailing = original.match(/\s*$/)?.[0] || "";
   const core = original.trim();
   if (!core) return;
-  node.nodeValue = `${leading}${translateDynamic(core)}${trailing}`;
+  const next = `${leading}${translateDynamic(core)}${trailing}`;
+  if (node.nodeValue !== next) node.nodeValue = next;
 }
 
 function translateAttributes(element) {
@@ -286,16 +277,15 @@ function translateAttributes(element) {
     if (!element.hasAttribute(attr)) continue;
     if (!(attr in originals)) originals[attr] = element.getAttribute(attr);
     const original = originals[attr] || "";
+    let next;
     if (attr === "placeholder") {
-      element.setAttribute(
-        attr,
-        currentLanguage === "en"
-          ? (PLACEHOLDERS_EN[original] || EN[original] || original)
-          : (PLACEHOLDERS_ZH[original] || EN_TO_ZH[original] || original),
-      );
+      next = currentLanguage === "en"
+        ? (PLACEHOLDERS_EN[original] || EN[original] || original)
+        : (PLACEHOLDERS_ZH[original] || EN_TO_ZH[original] || original);
     } else {
-      element.setAttribute(attr, translateDynamic(original));
+      next = translateDynamic(original);
     }
+    if (element.getAttribute(attr) !== next) element.setAttribute(attr, next);
   }
 }
 
