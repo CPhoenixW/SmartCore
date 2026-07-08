@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -20,7 +20,8 @@ def ok(data: Any) -> dict[str, Any]:
 
 def _http_error(exc: ValueError) -> HTTPException:
     msg = str(exc)
-    if "required" in msg or "disabled" in msg or "must be" in msg or "unsupported" in msg or "duplicate" in msg:
+    bad_request_terms = ("required", "disabled", "must be", "unsupported", "duplicate")
+    if any(term in msg for term in bad_request_terms):
         return HTTPException(status_code=400, detail=msg)
     return HTTPException(status_code=404, detail=msg)
 
@@ -50,7 +51,11 @@ def list_evt(db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 @router.patch("/evt/{evtId}")
-def patch_evt(evtId: str, body: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+def patch_evt(
+    evtId: str,
+    body: dict[str, Any],
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
     try:
         return ok(crud.updateEvt(db, evtId, **body))
     except ValueError as exc:
@@ -110,7 +115,11 @@ def list_ddl_evt(db: Session = Depends(get_db)) -> dict[str, Any]:
 def create_ddl_evt(body: DdlEvtBody, db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
         payload = body.model_dump()
-        payload["plans"] = [plan.model_dump(exclude_none=True) for plan in body.plans] if body.plans is not None else None
+        payload["plans"] = (
+            [plan.model_dump(exclude_none=True) for plan in body.plans]
+            if body.plans is not None
+            else None
+        )
         return ok(create_ddl_event(db, **payload, src="api"))
     except ValueError as exc:
         raise _http_error(exc) from exc
@@ -164,13 +173,31 @@ def list_idea(db: Session = Depends(get_db)) -> dict[str, Any]:
 
 @router.post("/idea")
 def create_idea(body: IdeaBody, db: Session = Depends(get_db)) -> dict[str, Any]:
-    return ok(crud.createIdea(db, content=body.content, srcType=body.srcType, mediaPath=body.mediaPath))
+    return ok(
+        crud.createIdea(
+            db,
+            content=body.content,
+            srcType=body.srcType,
+            mediaPath=body.mediaPath,
+        )
+    )
 
 
 @router.patch("/idea/{ideaId}")
-def patch_idea(ideaId: str, body: IdeaPatchBody, db: Session = Depends(get_db)) -> dict[str, Any]:
+def patch_idea(
+    ideaId: str,
+    body: IdeaPatchBody,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
     try:
-        return ok(crud.updateIdea(db, ideaId, content=body.content, handled=body.handled))
+        return ok(
+            crud.updateIdea(
+                db,
+                ideaId,
+                content=body.content,
+                handled=body.handled,
+            )
+        )
     except ValueError as exc:
         raise _http_error(exc) from exc
 
@@ -184,8 +211,15 @@ def delete_idea(ideaId: str, db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 @router.get("/devState")
-def list_dev_state(db: Session = Depends(get_db)) -> dict[str, Any]:
-    return ok(crud.listDevState(db))
+def list_dev_state(
+    devId: str | None = None,
+    limit: int = Query(default=240, ge=1, le=2000),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    rows = crud.listDevState(db)
+    if devId:
+        rows = [row for row in rows if row.get("deviceId") == devId]
+    return ok(rows[:limit])
 
 
 @router.get("/log/act")
@@ -210,7 +244,10 @@ class ReminderActionBody(BaseModel):
 
 
 @router.post("/reminder/action")
-def reminder_action(body: ReminderActionBody, db: Session = Depends(get_db)) -> dict[str, Any]:
+def reminder_action(
+    body: ReminderActionBody,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
     try:
         return ok(
             crud.applyReminderAction(
