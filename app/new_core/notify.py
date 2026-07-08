@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.feishu.cards import build_reminder_card
 from app.feishu.client import FeishuAPIError, FeishuClient
 from app.new_core import crud
 from app.new_core.preferences import get_user_preferences
@@ -24,38 +25,13 @@ def _getFeishuClient() -> FeishuClient | None:
 
 
 def buildReminderCard(*, evtId: str, title: str, content: str) -> dict[str, Any]:
-    action_value = {"kind": "smartcoreReminder", "evtId": evtId}
-    return {
-        "schema": "2.0",
-        "header": {
-            "title": {"tag": "plain_text", "content": title or "提醒"},
-        },
-        "body": {
-            "elements": [
-                {
-                    "tag": "div",
-                    "text": {"tag": "plain_text", "content": content or title or "提醒"},
-                },
-                {
-                    "tag": "action",
-                    "actions": [
-                        {
-                            "tag": "button",
-                            "text": {"tag": "plain_text", "content": "已完成"},
-                            "type": "primary",
-                            "value": {**action_value, "action": "reminderDone"},
-                        },
-                        {
-                            "tag": "button",
-                            "text": {"tag": "plain_text", "content": "延时 10 分钟"},
-                            "type": "default",
-                            "value": {**action_value, "action": "reminderSnooze10"},
-                        },
-                    ],
-                },
-            ],
-        },
-    }
+    return build_reminder_card(
+        evt_id=evtId,
+        title=title,
+        content=content,
+        allow_done=True,
+        allow_snooze=True,
+    )
 
 
 def _sendScreen(
