@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from app.agent.feedback_routes import createFeedbackRouter, ensure_feedback_tools
 from app.agent.legacy_time_routes import createLegacyTimeRouter
 from app.agent.routes import createAgentRouter, createDevRouter
 from app.agent.v2_routes import createAgentV2Router
@@ -36,6 +37,7 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     init_db()
     settings = get_settings()
+    ensure_feedback_tools()
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
     @app.get("/healthz")
@@ -48,6 +50,7 @@ def create_app() -> FastAPI:
     app.include_router(apiRouter)
     app.include_router(createDevRouter())
     app.include_router(deviceRouter)
+    app.include_router(createFeedbackRouter())
     app.include_router(createAgentV2Router())
     app.include_router(createLegacyTimeRouter())
     app.include_router(createAgentRouter())
