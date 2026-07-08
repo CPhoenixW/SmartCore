@@ -1,0 +1,104 @@
+.usage-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.usage-summary-grid > div {
+  min-width: 0;
+  padding: 12px 13px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface2);
+}
+
+.usage-summary-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.usage-summary-grid strong {
+  display: block;
+  margin-top: 5px;
+  color: var(--text);
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.usage-chart-wrap {
+  position: relative;
+  min-height: 250px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f7faff 100%);
+  overflow: hidden;
+}
+
+.usage-line-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 250px;
+}
+
+.usage-line-chart[hidden] {
+  display: none;
+}
+
+.usage-grid-line {
+  stroke: #e8eef7;
+  stroke-width: 1;
+}
+
+.usage-axis-label {
+  fill: #94a3b8;
+  font-family: "MiSans", "Segoe UI", system-ui, sans-serif;
+  font-size: 11px;
+}
+
+.usage-line-area {
+  fill: url(#usageAreaGradient);
+}
+
+.usage-line-path {
+  fill: none;
+  stroke: #2563eb;
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.usage-line-point {
+  fill: #ffffff;
+  stroke: #2563eb;
+  stroke-width: 2.5;
+}
+
+.usage-chart-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.usage-chart-empty[hidden] {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .usage-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .usage-chart-wrap,
+  .usage-line-chart {
+    min-height: 220px;
+  }
+}
