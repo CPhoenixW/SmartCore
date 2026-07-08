@@ -13,6 +13,7 @@ _DEVICE_HTML = """<!doctype html>
 <title>SmartCore Work - 设备</title>
 <link rel="stylesheet" href="/static/work/work_v2.css">
 <link rel="stylesheet" href="/static/work/work_add_inspire.css">
+<link rel="stylesheet" href="/static/work/work_device_chart.css">
 </head>
 <body data-page="device">
 <div class="work-layout">
