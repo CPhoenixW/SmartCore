@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -14,10 +14,10 @@ _DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
 
 
 def _parseNow(now: str) -> datetime:
-    parsed = datetime.fromisoformat(now)
+    parsed = datetime.fromisoformat(now.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=_DEFAULT_TZ)
-    return parsed
+    return parsed.astimezone(_DEFAULT_TZ)
 
 
 def _isDue(instant: str | None, now: datetime) -> bool:
@@ -42,20 +42,34 @@ def runReminderTick(
         .where(EvtBase.stat == "todo", EvtBase.evtType == "plan")
     ).all()
     for base, plan in planRows:
-        if not _isDue(plan.stTime, nowDt):
-            continue
-        dedupKey = f"planDue:{base.evtId}:{plan.stTime}"
-        if crud.notifyDedupExists(db, dedupKey):
-            continue
-        routeNotify(
-            db,
-            title=base.title,
-            content=plan.stTime or base.title,
-            screenOnline=screenOnline,
-            dedupKey=dedupKey,
-            evtId=base.evtId,
-        )
-        sent += 1
+        start = _parseNow(plan.stTime)
+        end = start + timedelta(minutes=max(1, int(plan.durationMin or 0)))
+
+        start_key = f"planStart:{base.evtId}:{plan.stTime}"
+        if start <= nowDt < end and not crud.notifyDedupExists(db, start_key):
+            routeNotify(
+                db,
+                title=base.title,
+                content=f"计划已开始：{plan.stTime}",
+                screenOnline=screenOnline,
+                dedupKey=start_key,
+                evtId=base.evtId,
+                phase="start",
+            )
+            sent += 1
+
+        end_key = f"planEnd:{base.evtId}:{end.isoformat()}"
+        if nowDt >= end and not crud.notifyDedupExists(db, end_key):
+            routeNotify(
+                db,
+                title=base.title,
+                content=f"计划时间已结束：{end.isoformat()}",
+                screenOnline=screenOnline,
+                dedupKey=end_key,
+                evtId=base.evtId,
+                phase="end",
+            )
+            sent += 1
 
     ddlRows = db.execute(
         select(EvtBase, DdlEvt)
@@ -75,6 +89,7 @@ def runReminderTick(
             screenOnline=screenOnline,
             dedupKey=dedupKey,
             evtId=base.evtId,
+            phase="end",
         )
         sent += 1
 
