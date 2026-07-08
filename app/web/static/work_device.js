@@ -212,7 +212,7 @@ function showPhoto(item) {
 async function refreshDevice() {
   try {
     setApi("busy", "API 请求中");
-    const logs = await apiGet("/api/devState?devId=pi&limit=1000");
+    const logs = await apiGet("/api/devState?devId=pi&limit=2000");
     state.logs = Array.isArray(logs) ? logs : [];
     renderCurrentState();
     renderLogs();
