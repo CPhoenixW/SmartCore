@@ -97,6 +97,23 @@ class FeishuEventHandler:
                 response=response,
             )
 
+    @staticmethod
+    def _timeContext(now: float | None) -> dict[str, Any]:
+        now_dt = (
+            datetime.fromtimestamp(now, _DEFAULT_TZ)
+            if now is not None
+            else datetime.now(_DEFAULT_TZ)
+        ).replace(microsecond=0)
+        offset = now_dt.strftime("%z")
+        return {
+            "timezone": "Asia/Shanghai",
+            "now": now_dt.isoformat(),
+            "date": now_dt.date().isoformat(),
+            "weekday": now_dt.isoweekday(),
+            "utcOffset": f"{offset[:3]}:{offset[3:]}",
+            "policy": "Resolve relative dates against this context, then call SmartCore with an absolute ISO 8601 date-time including its UTC offset.",
+        }
+
     def _normalizeMessage(
         self,
         payload: dict[str, Any],
@@ -105,11 +122,7 @@ class FeishuEventHandler:
         text: str,
         now: float | None,
     ) -> dict[str, Any]:
-        now_dt = (
-            datetime.fromtimestamp(now, _DEFAULT_TZ)
-            if now is not None
-            else datetime.now(_DEFAULT_TZ)
-        )
+        time_context = self._timeContext(now)
         chat, user = extract_routing_context(payload)
         normalized: dict[str, Any] = {
             "eventType": "message",
@@ -119,10 +132,10 @@ class FeishuEventHandler:
                 "message_id": message_id,
                 "text": text,
             },
-            "request": {
-                "timezone": "Asia/Shanghai",
-                "now": now_dt.isoformat(),
-            },
+            "request": time_context,
+            "time_context": time_context,
+            "timezone": time_context["timezone"],
+            "now": time_context["now"],
             "feishu_payload": payload,
         }
         if chat_id := chat.get("chat_id"):
@@ -139,11 +152,7 @@ class FeishuEventHandler:
         *,
         now: float | None,
     ) -> dict[str, Any]:
-        now_dt = (
-            datetime.fromtimestamp(now, _DEFAULT_TZ)
-            if now is not None
-            else datetime.now(_DEFAULT_TZ)
-        )
+        time_context = self._timeContext(now)
         event_body = payload.get("event") if isinstance(payload.get("event"), dict) else {}
         context = event_body.get("context") if isinstance(event_body.get("context"), dict) else {}
         chat: dict[str, str] = {}
@@ -165,10 +174,10 @@ class FeishuEventHandler:
                 "action": event_body.get("action"),
                 "context": context,
             },
-            "request": {
-                "timezone": "Asia/Shanghai",
-                "now": now_dt.isoformat(),
-            },
+            "request": time_context,
+            "time_context": time_context,
+            "timezone": time_context["timezone"],
+            "now": time_context["now"],
             "feishu_payload": payload,
         }
         if chat_id := chat.get("chat_id"):
