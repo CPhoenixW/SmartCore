@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends
 
@@ -82,6 +84,7 @@ _FEEDBACK_TOOLS: list[dict[str, Any]] = [
                 "items": {"type": "array", "items": {"type": "object"}},
                 "events": {"type": "array", "items": {"type": "object"}},
                 "results": {"type": "array", "items": {"type": "object"}},
+                "data": {"type": "object"},
                 "emptyText": {"type": "string"},
                 "receiveId": {"type": "string"},
                 "chatId": {"type": "string"},
@@ -174,16 +177,17 @@ def _send_card(
         return _failed(["feishu not configured"])
     try:
         normalized = normalize_card(card)
+        receive_id_type = _receive_id_type(body)
         response = client.send_interactive_card(
             receive_id,
             normalized,
-            receive_id_type=_receive_id_type(body),
+            receive_id_type=receive_id_type,
         )
         return _done(
             {
                 "message": response.get("data") or response,
                 "receiveId": receive_id,
-                "receiveIdType": _receive_id_type(body),
+                "receiveIdType": receive_id_type,
                 "msgType": "interactive",
             }
         )
@@ -191,10 +195,51 @@ def _send_card(
         return _failed([str(exc)])
 
 
+def _extract_query_items(body: dict[str, Any]) -> list[dict[str, Any]] | None:
+    value: Any = body.get("items") or body.get("events") or body.get("results")
+    if value is None and isinstance(body.get("data"), dict):
+        data = body["data"]
+        value = data.get("items") or data.get("events") or data.get("results")
+    if value is None:
+        return []
+    if isinstance(value, dict):
+        nested = value.get("items") or value.get("events") or value.get("results")
+        value = nested if isinstance(nested, list) else [value]
+    if not isinstance(value, list):
+        return None
+    return [item for item in value if isinstance(item, dict)]
+
+
 def createFeedbackRouter() -> APIRouter:
     ensure_feedback_tools()
     router = APIRouter(prefix="/agent", tags=["agent-feedback"])
     protected = [Depends(requireAgentToken)]
+
+    @router.get("/tools", dependencies=protected)
+    def list_tools() -> dict[str, Any]:
+        from app.agent.v2_routes import _enhanced_tools
+
+        now = datetime.now(ZoneInfo("Asia/Shanghai")).replace(microsecond=0)
+        tools = _enhanced_tools()
+        return {
+            "ok": True,
+            "stat": "done",
+            "data": {
+                "version": "2026-07-08-feishu-card-v3",
+                "authHeader": "X-SmartCore-Agent-Token",
+                "requestContext": {
+                    "timezone": "Asia/Shanghai",
+                    "now": now.isoformat(),
+                },
+                "feedbackPolicy": {
+                    "default": "Use structured Feishu card tools for user-facing query and operation results.",
+                    "rawCardJson": "Optional; SmartCore normalizes Card JSON 2.0 to the interactive message format.",
+                },
+                "tools": tools,
+            },
+            "errors": [],
+            "tools": tools,
+        }
 
     @router.post("/sendCard", dependencies=protected)
     @router.post("/feedback/send_card", dependencies=protected)
@@ -221,16 +266,13 @@ def createFeedbackRouter() -> APIRouter:
         body: dict[str, Any],
         settings: Settings = Depends(get_settings),
     ) -> dict[str, Any]:
-        items = body.get("items") or body.get("events") or body.get("results") or []
-        if isinstance(items, dict):
-            nested = items.get("items") or items.get("events") or items.get("results")
-            items = nested if isinstance(nested, list) else [items]
-        if not isinstance(items, list):
+        items = _extract_query_items(body)
+        if items is None:
             return _failed(["items/events/results must be an array"])
         card = build_query_result_card(
             title=str(body.get("title") or "查询结果"),
             summary=str(body.get("summary") or body.get("content") or "").strip() or None,
-            items=[item for item in items if isinstance(item, dict)],
+            items=items,
             empty_text=str(body.get("emptyText") or body.get("empty_text") or "没有找到匹配的事项。"),
         )
         return _send_card(body, card, settings)
@@ -241,6 +283,8 @@ def createFeedbackRouter() -> APIRouter:
         settings: Settings = Depends(get_settings),
     ) -> dict[str, Any]:
         event = body.get("event") or body.get("data")
+        if isinstance(event, dict) and isinstance(event.get("event"), dict):
+            event = event["event"]
         if not isinstance(event, dict):
             event = None
         card = build_operation_success_card(
