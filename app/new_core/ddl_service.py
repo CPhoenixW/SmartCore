@@ -82,13 +82,14 @@ def create_ddl_event(
         duration = int(raw.get("durationMin") or 30)
         if duration <= 0:
             raise ValueError("durationMin must be greater than 0")
+        raw_sort_order = raw.get("sortOrder")
         normalized.append(
             {
                 "planRole": role,
                 "stTime": st_time,
                 "durationMin": duration,
                 "title": str(raw.get("title") or _plan_title(title, role)).strip(),
-                "sortOrder": int(raw.get("sortOrder", order)),
+                "sortOrder": order if raw_sort_order is None else int(raw_sort_order),
             }
         )
 
