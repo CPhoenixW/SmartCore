@@ -1,7 +1,15 @@
-import { setUiLanguage } from "./work_shared.js";
+import { setUiLanguage, t } from "./work_shared.js";
 
 const page = document.body.dataset.page;
 const $ = (id) => document.getElementById(id);
+
+function ensureInteractionStyles() {
+  if (document.querySelector('link[href="/static/work/work_interaction_fixes.css"]')) return;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = "/static/work/work_interaction_fixes.css";
+  document.head.appendChild(link);
+}
 
 function esc(value) {
   return String(value ?? "")
@@ -23,7 +31,7 @@ function setApi(kind, text) {
   const el = $("apiStatus");
   if (!el) return;
   el.className = `status-pill ${kind || ""}`.trim();
-  el.textContent = text;
+  el.textContent = t(text);
 }
 
 function avatarText(name) {
@@ -33,7 +41,7 @@ function avatarText(name) {
 
 async function loadTopUser() {
   try {
-    const response = await fetch("/api/user/me");
+    const response = await fetch("/api/user/me", { cache: "no-store" });
     const body = await response.json();
     const user = body.data || {};
     const text = $("topAvatarText");
@@ -57,9 +65,9 @@ function logSearchText(row) {
 }
 
 function logTitle(row, tab) {
-  if (tab === "act") return `${row.action || "操作"} · ${row.targetKind || "target"}`;
-  if (tab === "notify") return `${row.title || "提醒"} · ${row.channel || "channel"}`;
-  return `${row.intent || row.channel || "消息"}`;
+  if (tab === "act") return `${row.action || t("操作日志")} · ${row.targetKind || "target"}`;
+  if (tab === "notify") return `${row.title || t("提醒")} · ${row.channel || "channel"}`;
+  return `${row.intent || row.channel || t("消息")}`;
 }
 
 function logMeta(row) {
@@ -101,7 +109,7 @@ function initFastLogs() {
     const rows = filteredRows();
     list.innerHTML = rows.length
       ? rows.map((row) => `<details class="log-row"><summary><span class="row-title">${esc(logTitle(row, runtime.tab))}</span><span class="row-meta">${esc(logMeta(row))}</span></summary><pre class="log-json">${esc(JSON.stringify(row, null, 2))}</pre></details>`).join("")
-      : `<div class="empty">${runtime.loaded ? "暂无日志" : "正在加载日志..."}</div>`;
+      : `<div class="empty">${runtime.loaded ? t("暂无日志") : t("正在加载日志...")}</div>`;
     observeList();
   }
 
@@ -126,6 +134,7 @@ function initFastLogs() {
   });
   $("logKeyword")?.addEventListener("input", render);
   $("logStatusFilter")?.addEventListener("change", render);
+  window.addEventListener("smartcore:languagechange", render);
 
   render();
   setApi("busy", "API 请求中");
@@ -138,14 +147,14 @@ function initFastLogs() {
       render();
       setApi("ok", "API 在线");
       if ($("lastRefresh")) {
-        $("lastRefresh").textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
+        $("lastRefresh").textContent = `${t("更新于")} ${new Date().toLocaleTimeString(undefined, { hour12: false })}`;
       }
     })
     .catch((error) => {
       runtime.loaded = true;
       observer?.disconnect();
       setApi("err", "API 异常");
-      list.innerHTML = `<div class="empty">${esc(error.message || "日志加载失败")}</div>`;
+      list.innerHTML = `<div class="empty">${esc(error.message || "Log loading failed")}</div>`;
     });
 }
 
@@ -154,12 +163,15 @@ function initCompleteSettingsSave() {
   const form = $("userSettingsForm");
   if (!form) return;
 
-  fetch("/api/user/me")
+  fetch("/api/user/me", { cache: "no-store" })
     .then((response) => response.json())
     .then((body) => {
       const user = body.data || {};
       if (form.elements.reminderChannel) {
         form.elements.reminderChannel.value = user.reminderChannel || "screen";
+      }
+      if (form.elements.language) {
+        form.elements.language.value = user.language || "zh";
       }
     })
     .catch(() => {});
@@ -173,7 +185,7 @@ function initCompleteSettingsSave() {
       avatarUrl: form.elements.avatarUrl.value.trim() || null,
       reminderChannel: form.elements.reminderChannel.value,
     };
-    if (!body.displayName) return toast("用户名称不能为空");
+    if (!body.displayName) return toast(body.language === "en" ? "Display name is required" : "用户名称不能为空");
     try {
       setApi("busy", "API 请求中");
       const response = await fetch("/api/user/me", {
@@ -185,7 +197,7 @@ function initCompleteSettingsSave() {
       if (!response.ok || result.ok === false) throw new Error(result.detail || `HTTP ${response.status}`);
       setUiLanguage(body.language);
       setApi("ok", "API 在线");
-      toast(body.language === "en" ? "Settings saved" : "设置已保存");
+      toast(t("设置已保存"));
       const text = $("topAvatarText");
       const image = $("topAvatarImg");
       if (text) text.textContent = avatarText(body.displayName);
@@ -200,11 +212,12 @@ function initCompleteSettingsSave() {
       }
     } catch (error) {
       setApi("err", "API 异常");
-      toast(error.message || "保存失败");
+      toast(error.message || "Save failed");
     }
   }, true);
 }
 
+ensureInteractionStyles();
 loadTopUser();
 initFastLogs();
 initCompleteSettingsSave();
