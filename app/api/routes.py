@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.new_core import crud
+from app.new_core.ddl_service import create_ddl_event
 from app.new_core.models import nowIso
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -19,7 +20,7 @@ def ok(data: Any) -> dict[str, Any]:
 
 def _http_error(exc: ValueError) -> HTTPException:
     msg = str(exc)
-    if "required" in msg or "disabled" in msg or "must be" in msg:
+    if "required" in msg or "disabled" in msg or "must be" in msg or "unsupported" in msg or "duplicate" in msg:
         return HTTPException(status_code=400, detail=msg)
     return HTTPException(status_code=404, detail=msg)
 
@@ -82,12 +83,22 @@ def create_plan_evt(body: PlanEvtBody, db: Session = Depends(get_db)) -> dict[st
     return ok(crud.createPlanEvt(db, **body.model_dump(), src="api"))
 
 
+class DdlPlanBody(BaseModel):
+    planRole: Literal["one_day_before", "one_hour_before", "manual"]
+    stTime: str
+    durationMin: int = Field(default=30, gt=0)
+    title: str | None = None
+    enabled: bool = True
+    sortOrder: int | None = None
+
+
 class DdlEvtBody(BaseModel):
     title: str
     endTime: str
     hardDdl: bool = False
     desc: str | None = None
     prio: str = "high"
+    plans: list[DdlPlanBody] | None = None
 
 
 @router.get("/ddlEvt")
@@ -98,7 +109,9 @@ def list_ddl_evt(db: Session = Depends(get_db)) -> dict[str, Any]:
 @router.post("/ddlEvt")
 def create_ddl_evt(body: DdlEvtBody, db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
-        return ok(crud.createDdlEvt(db, **body.model_dump(), src="api"))
+        payload = body.model_dump()
+        payload["plans"] = [plan.model_dump(exclude_none=True) for plan in body.plans] if body.plans is not None else None
+        return ok(create_ddl_event(db, **payload, src="api"))
     except ValueError as exc:
         raise _http_error(exc) from exc
 
@@ -199,6 +212,14 @@ class ReminderActionBody(BaseModel):
 @router.post("/reminder/action")
 def reminder_action(body: ReminderActionBody, db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
-        return ok(crud.applyReminderAction(db, evtId=body.evtId, action=body.action, now=body.now or nowIso(), src="screen"))
+        return ok(
+            crud.applyReminderAction(
+                db,
+                evtId=body.evtId,
+                action=body.action,
+                now=body.now or nowIso(),
+                src="screen",
+            )
+        )
     except ValueError as exc:
         raise _http_error(exc) from exc
