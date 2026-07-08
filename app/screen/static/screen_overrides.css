@@ -5,6 +5,21 @@ body { font-family: "MiSans", "Segoe UI", system-ui, -apple-system, BlinkMacSyst
 .today-list.empty { font-family: "MiSans", "MiSansLatin", "PingFang SC", "Microsoft YaHei", sans-serif; }
 .info-pane .pane-head { height: 0; overflow: hidden; padding: 0; margin: 0; }
 .today-primary p { height: 0; overflow: hidden; margin: 0; }
-.today-primary h2 { margin-bottom: 0; }
+.today-primary h2 { margin-bottom: 0; white-space: normal; overflow-wrap: anywhere; line-height: 1.22; }
 .screen-shell.mode-working .info-pane { padding-top: 22px; padding-bottom: 22px; }
 .reminder-zone .today-list { padding-top: 0; }
+.today-compact { align-items: start; }
+.today-compact strong {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+  padding-bottom: 2px;
+}
+.expired-reminder strong,
+.expired-reminder span {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
