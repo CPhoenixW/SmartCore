@@ -4,12 +4,14 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.new_core import crud
 from app.new_core.ddl_service import create_ddl_event
-from app.new_core.models import nowIso
+from app.new_core.models import ActLog, DeviceStateLog, MsgLog, NotifyLog, nowIso
+from app.new_core.preferences import get_user_preferences, update_user_preferences
 
 router = APIRouter(prefix="/api", tags=["api"])
 
@@ -20,27 +22,67 @@ def ok(data: Any) -> dict[str, Any]:
 
 def _http_error(exc: ValueError) -> HTTPException:
     msg = str(exc)
-    bad_request_terms = ("required", "disabled", "must be", "unsupported", "duplicate")
+    bad_request_terms = (
+        "required",
+        "disabled",
+        "must be",
+        "unsupported",
+        "duplicate",
+    )
     if any(term in msg for term in bad_request_terms):
         return HTTPException(status_code=400, detail=msg)
     return HTTPException(status_code=404, detail=msg)
+
+
+def _row_dict(row: Any) -> dict[str, Any]:
+    return {
+        column.name: getattr(row, column.name)
+        for column in row.__table__.columns
+    }
+
+
+def _latest_rows(
+    db: Session,
+    model: Any,
+    order_field: Any,
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    rows = db.scalars(
+        select(model).order_by(order_field.desc()).limit(limit)
+    ).all()
+    return [_row_dict(row) for row in rows]
 
 
 class UserPatchBody(BaseModel):
     displayName: str | None = None
     language: str | None = None
     avatarUrl: str | None = None
+    reminderChannel: Literal["screen", "feishu"] | None = None
 
 
 @router.get("/user/me")
 def get_user_me(db: Session = Depends(get_db)) -> dict[str, Any]:
-    return ok(crud.getCurrentUser(db))
+    user = crud.getCurrentUser(db)
+    user.update(get_user_preferences(db))
+    db.commit()
+    return ok(user)
 
 
 @router.patch("/user/me")
-def patch_user_me(body: UserPatchBody, db: Session = Depends(get_db)) -> dict[str, Any]:
+def patch_user_me(
+    body: UserPatchBody,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
     try:
-        return ok(crud.updateCurrentUser(db, **body.model_dump()))
+        user_fields = body.model_dump(exclude={"reminderChannel"})
+        user = crud.updateCurrentUser(db, **user_fields)
+        preferences = update_user_preferences(
+            db,
+            reminder_channel=body.reminderChannel,
+        )
+        user.update(preferences)
+        return ok(user)
     except ValueError as exc:
         raise _http_error(exc) from exc
 
@@ -213,28 +255,54 @@ def delete_idea(ideaId: str, db: Session = Depends(get_db)) -> dict[str, Any]:
 @router.get("/devState")
 def list_dev_state(
     devId: str | None = None,
-    limit: int = Query(default=240, ge=1, le=2000),
+    limit: int = Query(default=240, ge=1, le=5000),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    rows = crud.listDevState(db)
+    query = select(DeviceStateLog)
     if devId:
-        rows = [row for row in rows if row.get("deviceId") == devId]
-    return ok(rows[:limit])
+        query = query.where(DeviceStateLog.deviceId == devId)
+    rows = db.scalars(
+        query.order_by(DeviceStateLog.seenAt.desc()).limit(limit)
+    ).all()
+    return ok([_row_dict(row) for row in rows])
+
+
+@router.get("/log")
+def list_logs(
+    limit: int = Query(default=120, ge=1, le=500),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return ok(
+        {
+            "act": _latest_rows(db, ActLog, ActLog.createdAt, limit=limit),
+            "notify": _latest_rows(db, NotifyLog, NotifyLog.scheduledAt, limit=limit),
+            "msg": _latest_rows(db, MsgLog, MsgLog.createdAt, limit=limit),
+        }
+    )
 
 
 @router.get("/log/act")
-def list_log_act(db: Session = Depends(get_db)) -> dict[str, Any]:
-    return ok(crud.listActLog(db))
+def list_log_act(
+    limit: int = Query(default=120, ge=1, le=500),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return ok(_latest_rows(db, ActLog, ActLog.createdAt, limit=limit))
 
 
 @router.get("/log/notify")
-def list_log_notify(db: Session = Depends(get_db)) -> dict[str, Any]:
-    return ok(crud.listNotifyLog(db))
+def list_log_notify(
+    limit: int = Query(default=120, ge=1, le=500),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return ok(_latest_rows(db, NotifyLog, NotifyLog.scheduledAt, limit=limit))
 
 
 @router.get("/log/msg")
-def list_log_msg(db: Session = Depends(get_db)) -> dict[str, Any]:
-    return ok(crud.listMsgLog(db))
+def list_log_msg(
+    limit: int = Query(default=120, ge=1, le=500),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return ok(_latest_rows(db, MsgLog, MsgLog.createdAt, limit=limit))
 
 
 class ReminderActionBody(BaseModel):
