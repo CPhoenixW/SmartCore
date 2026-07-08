@@ -107,7 +107,9 @@ function logText(row) {
 
 function renderLogs() {
   const query = $("deviceLogSearch")?.value.trim().toLowerCase() || "";
-  const rows = state.logs.filter((row) => row.deviceId === "pi" && (!query || logText(row).includes(query))).slice(0, 240);
+  const rows = state.logs
+    .filter((row) => row.deviceId === "pi" && (!query || logText(row).includes(query)))
+    .slice(0, 240);
   $("deviceLogCount").textContent = `${rows.length} 条`;
   $("deviceLogList").innerHTML = rows.length
     ? rows.map((row) => {
@@ -119,60 +121,146 @@ function renderLogs() {
     : '<div class="empty">暂无树莓派识别日志</div>';
 }
 
-function percent(numerator, denominator) {
-  if (!denominator) return "—";
-  return `${Math.round((numerator / denominator) * 100)}%`;
+function startOfToday(now = new Date()) {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 }
 
-function renderUsageAnalysis() {
-  const cutoff = Date.now() - 24 * 3600_000;
-  const rows = state.logs.filter((row) => {
-    if (row.deviceId !== "pi" || !row.seenAt) return false;
-    const time = new Date(row.seenAt).getTime();
-    return Number.isFinite(time) && time >= cutoff;
+function splitMinutesIntoHours(hourly, startMs, endMs) {
+  let cursor = startMs;
+  while (cursor < endMs) {
+    const cursorDate = new Date(cursor);
+    const hour = cursorDate.getHours();
+    const nextHour = new Date(
+      cursorDate.getFullYear(),
+      cursorDate.getMonth(),
+      cursorDate.getDate(),
+      hour + 1,
+      0,
+      0,
+      0,
+    ).getTime();
+    const segmentEnd = Math.min(endMs, nextHour);
+    hourly[hour] += (segmentEnd - cursor) / 60000;
+    cursor = segmentEnd;
+  }
+}
+
+function calculateHourlyUsage() {
+  const now = new Date();
+  const todayStart = startOfToday(now).getTime();
+  const valid = state.logs
+    .filter((row) => row.deviceId === "pi" && row.seenAt)
+    .map((row) => ({ row, time: new Date(row.seenAt).getTime() }))
+    .filter((item) => Number.isFinite(item.time) && item.time <= now.getTime())
+    .sort((a, b) => a.time - b.time);
+
+  const previous = valid.filter((item) => item.time < todayStart).pop();
+  const today = valid.filter((item) => item.time >= todayStart);
+  const timeline = previous ? [previous, ...today] : today;
+  const hourly = Array(24).fill(0);
+
+  timeline.forEach((item, index) => {
+    if (item.row.state !== "working") return;
+    const nextTime = timeline[index + 1]?.time ?? now.getTime();
+    const start = Math.max(item.time, todayStart);
+    const rawEnd = Math.min(nextTime, now.getTime());
+    const end = Math.min(rawEnd, start + 120000);
+    if (end > start) splitMinutesIntoHours(hourly, start, end);
   });
 
-  const working = rows.filter((row) => row.state === "working").length;
-  const present = rows.filter((row) => Boolean(row.meta?.present)).length;
-  const confidences = rows.map((row) => Number(row.confidence)).filter(Number.isFinite);
+  const rowsToday = today.map((item) => item.row);
+  const confidences = rowsToday
+    .map((row) => Number(row.confidence))
+    .filter(Number.isFinite);
   const averageConfidence = confidences.length
     ? confidences.reduce((sum, value) => sum + value, 0) / confidences.length
     : null;
 
-  const people = new Map();
-  const hours = new Map();
-  const states = new Map([["working", 0], ["away", 0], ["unknown", 0], ["offline", 0]]);
-  rows.forEach((row) => {
-    const current = states.get(row.state) || 0;
-    states.set(row.state || "unknown", current + 1);
-    const hour = new Date(row.seenAt).getHours();
-    hours.set(hour, (hours.get(hour) || 0) + 1);
-    const persons = Array.isArray(row.meta?.persons) ? row.meta.persons : [];
-    persons.forEach((person) => {
-      const name = person.name || person.personId;
-      if (name) people.set(name, (people.get(name) || 0) + 1);
-    });
-  });
+  return {
+    hourly,
+    rowsToday,
+    averageConfidence,
+    totalMinutes: hourly.reduce((sum, value) => sum + value, 0),
+  };
+}
 
-  const topPerson = [...people.entries()].sort((a, b) => b[1] - a[1])[0];
-  const peakHour = [...hours.entries()].sort((a, b) => b[1] - a[1])[0];
+function smoothPath(points) {
+  if (!points.length) return "";
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  let path = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i += 1) {
+    const previous = points[i - 1];
+    const current = points[i];
+    const midX = (previous.x + current.x) / 2;
+    path += ` C ${midX} ${previous.y}, ${midX} ${current.y}, ${current.x} ${current.y}`;
+  }
+  return path;
+}
 
-  $("usageSamples").textContent = String(rows.length);
-  $("usageWorkingRate").textContent = percent(working, rows.length);
-  $("usagePresentRate").textContent = percent(present, rows.length);
-  $("usageConfidence").textContent = averageConfidence == null ? "—" : `${Math.round(averageConfidence * 100)}%`;
-  $("usageTopPerson").textContent = topPerson ? `${topPerson[0]} · ${topPerson[1]} 次` : "暂无识别";
-  $("usagePeakHour").textContent = peakHour ? `${String(peakHour[0]).padStart(2, "0")}:00–${String((peakHour[0] + 1) % 24).padStart(2, "0")}:00` : "暂无数据";
+function renderHourlyChart(hourly, hasData) {
+  const svg = $("usageHourlyChart");
+  const empty = $("usageChartEmpty");
+  if (!svg || !empty) return;
 
-  const labels = { working: "工作中", away: "离开", unknown: "未知", offline: "离线" };
-  const order = ["working", "away", "unknown", "offline"];
-  $("usageStateBars").innerHTML = rows.length
-    ? order.map((key) => {
-      const count = states.get(key) || 0;
-      const width = Math.round((count / rows.length) * 100);
-      return `<div class="usage-bar-row"><div class="usage-bar-label"><span>${labels[key]}</span><strong>${width}%</strong></div><div class="usage-bar-track"><span class="usage-bar-fill ${key}" style="width:${width}%"></span></div></div>`;
-    }).join("")
-    : '<div class="empty compact-empty">近 24 小时暂无可分析的状态记录</div>';
+  empty.hidden = hasData;
+  svg.hidden = !hasData;
+  if (!hasData) {
+    svg.innerHTML = "";
+    return;
+  }
+
+  const width = 720;
+  const height = 270;
+  const left = 46;
+  const right = 16;
+  const top = 18;
+  const bottom = 38;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+  const x = (hour) => left + (hour / 23) * plotWidth;
+  const y = (minutes) => top + plotHeight - (Math.min(60, Math.max(0, minutes)) / 60) * plotHeight;
+  const points = hourly.map((minutes, hour) => ({ x: x(hour), y: y(minutes), minutes, hour }));
+  const linePath = smoothPath(points);
+  const areaPath = `${linePath} L ${points[points.length - 1].x} ${top + plotHeight} L ${points[0].x} ${top + plotHeight} Z`;
+
+  const yTicks = [0, 15, 30, 45, 60];
+  const grid = yTicks.map((tick) => {
+    const py = y(tick);
+    return `<line x1="${left}" y1="${py}" x2="${width - right}" y2="${py}" class="usage-grid-line"/><text x="${left - 10}" y="${py + 4}" class="usage-axis-label" text-anchor="end">${tick}</text>`;
+  }).join("");
+  const xLabels = Array.from({ length: 8 }, (_, index) => index * 3).map((hour) => `<text x="${x(hour)}" y="${height - 12}" class="usage-axis-label" text-anchor="middle">${String(hour).padStart(2, "0")}</text>`).join("");
+  const dots = points
+    .filter((point) => point.minutes > 0)
+    .map((point) => `<circle cx="${point.x}" cy="${point.y}" r="4" class="usage-line-point"><title>${String(point.hour).padStart(2, "0")}:00 · ${Math.round(point.minutes)} 分钟</title></circle>`)
+    .join("");
+
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="usageAreaGradient" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#2563eb" stop-opacity="0.24"/>
+        <stop offset="100%" stop-color="#2563eb" stop-opacity="0.02"/>
+      </linearGradient>
+    </defs>
+    ${grid}
+    ${xLabels}
+    <path d="${areaPath}" class="usage-line-area"/>
+    <path d="${linePath}" class="usage-line-path"/>
+    ${dots}
+  `;
+}
+
+function renderUsageAnalysis() {
+  const result = calculateHourlyUsage();
+  const peakMinutes = Math.max(...result.hourly);
+  const peakHour = peakMinutes > 0 ? result.hourly.indexOf(peakMinutes) : -1;
+  $("usageTodayMinutes").textContent = `${Math.round(result.totalMinutes)} 分钟`;
+  $("usagePeakHour").textContent = peakHour >= 0
+    ? `${String(peakHour).padStart(2, "0")}:00–${String((peakHour + 1) % 24).padStart(2, "0")}:00`
+    : "—";
+  $("usageConfidence").textContent = result.averageConfidence == null
+    ? "—"
+    : `${Math.round(result.averageConfidence * 100)}%`;
+  renderHourlyChart(result.hourly, result.rowsToday.length > 0);
 }
 
 function setCameraPending(pending) {
@@ -212,7 +300,7 @@ function showPhoto(item) {
 async function refreshDevice() {
   try {
     setApi("busy", "API 请求中");
-    const logs = await apiGet("/api/devState?devId=pi&limit=2000");
+    const logs = await apiGet("/api/devState?devId=pi&limit=3000");
     state.logs = Array.isArray(logs) ? logs : [];
     renderCurrentState();
     renderLogs();
