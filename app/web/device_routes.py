@@ -46,7 +46,7 @@ _DEVICE_HTML = """<!doctype html>
     </header>
     <main class="page-main">
       <section class="page-head">
-        <div><h1>设备</h1><p>查看树莓派状态、识别日志并异步请求当前摄像头画面</p></div>
+        <div><h1>设备</h1><p>查看树莓派状态、识别日志、使用分析并异步请求当前摄像头画面</p></div>
       </section>
       <section class="content-grid two-one device-grid">
         <div class="stack">
@@ -76,13 +76,34 @@ _DEVICE_HTML = """<!doctype html>
           <article class="card camera-card">
             <header><h2>当前摄像头画面</h2><button class="btn btn-primary" id="requestCameraBtn" type="button">请求当前画面</button></header>
             <div class="card-body">
-              <div class="camera-frame" id="cameraFrame"><span>尚未请求画面</span><img id="cameraImage" alt="树莓派摄像头画面" hidden></div>
-              <div class="row-meta" id="cameraRequestMeta">请求会在树莓派下一次心跳时领取</div>
+              <div class="camera-frame camera-frame-empty" id="cameraFrame">
+                <div class="camera-empty" id="cameraEmpty">
+                  <div class="camera-empty-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="img"><path d="M8.5 6.5 10 4.5h4l1.5 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h3.5ZM12 9a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/></svg>
+                  </div>
+                  <strong>等待请求当前画面</strong>
+                  <span>点击右上角按钮，树莓派会在下一次心跳上传一帧图像</span>
+                </div>
+                <img id="cameraImage" alt="树莓派摄像头画面" hidden>
+              </div>
+              <div class="camera-request-status" id="cameraRequestMeta">当前没有进行中的画面请求</div>
             </div>
           </article>
-          <article class="card">
-            <header><h2>照片请求记录</h2></header>
-            <div class="card-body list" id="photoRequestList"></div>
+          <article class="card usage-card">
+            <header><h2>近 24 小时使用分析</h2><span class="top-muted">基于状态日志样本</span></header>
+            <div class="card-body">
+              <div class="usage-metric-grid">
+                <div class="usage-metric"><span>状态记录</span><strong id="usageSamples">0</strong></div>
+                <div class="usage-metric"><span>工作状态占比</span><strong id="usageWorkingRate">—</strong></div>
+                <div class="usage-metric"><span>有人占比</span><strong id="usagePresentRate">—</strong></div>
+                <div class="usage-metric"><span>平均置信度</span><strong id="usageConfidence">—</strong></div>
+              </div>
+              <div class="usage-insights">
+                <div><span>最常识别人</span><strong id="usageTopPerson">—</strong></div>
+                <div><span>状态最活跃时段</span><strong id="usagePeakHour">—</strong></div>
+              </div>
+              <div class="usage-bars" id="usageStateBars"></div>
+            </div>
           </article>
         </aside>
       </section>
