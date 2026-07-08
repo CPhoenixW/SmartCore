@@ -90,19 +90,17 @@ _DEVICE_HTML = """<!doctype html>
             </div>
           </article>
           <article class="card usage-card">
-            <header><h2>近 24 小时使用分析</h2><span class="top-muted">基于状态日志样本</span></header>
+            <header><h2>今日每小时使用时长</h2><span class="top-muted">单位：分钟</span></header>
             <div class="card-body">
-              <div class="usage-metric-grid">
-                <div class="usage-metric"><span>状态记录</span><strong id="usageSamples">0</strong></div>
-                <div class="usage-metric"><span>工作状态占比</span><strong id="usageWorkingRate">—</strong></div>
-                <div class="usage-metric"><span>有人占比</span><strong id="usagePresentRate">—</strong></div>
-                <div class="usage-metric"><span>平均置信度</span><strong id="usageConfidence">—</strong></div>
+              <div class="usage-summary-grid">
+                <div><span>今日使用时长</span><strong id="usageTodayMinutes">0 分钟</strong></div>
+                <div><span>峰值时段</span><strong id="usagePeakHour">—</strong></div>
+                <div><span>平均置信度</span><strong id="usageConfidence">—</strong></div>
               </div>
-              <div class="usage-insights">
-                <div><span>最常识别人</span><strong id="usageTopPerson">—</strong></div>
-                <div><span>状态最活跃时段</span><strong id="usagePeakHour">—</strong></div>
+              <div class="usage-chart-wrap" id="usageChartWrap">
+                <svg id="usageHourlyChart" class="usage-line-chart" viewBox="0 0 720 270" role="img" aria-label="今天每小时树莓派工作状态时长曲线图"></svg>
+                <div class="usage-chart-empty" id="usageChartEmpty" hidden>今天暂无可分析的使用数据</div>
               </div>
-              <div class="usage-bars" id="usageStateBars"></div>
             </div>
           </article>
         </aside>
