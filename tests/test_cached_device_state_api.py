@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -103,6 +104,6 @@ def test_hourly_usage_is_aggregated_server_side() -> None:
         assert data["hourlyMinutes"][start.hour] == 1.0
         assert data["totalMinutes"] == 1.0
         assert data["peakHour"] == start.hour
-        assert data["averageConfidence"] == 0.7
+        assert data["averageConfidence"] == pytest.approx(0.7)
     finally:
         db.close()
