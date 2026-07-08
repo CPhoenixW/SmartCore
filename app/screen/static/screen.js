@@ -20,6 +20,7 @@
   const reminderPageContentEl = document.getElementById("reminderPageContent");
   const reminderDoneEl = document.getElementById("reminderDone");
   const reminderSnoozeEl = document.getElementById("reminderSnooze");
+
   let ws = null;
   let reconnectTimer = null;
   let serverOffsetMs = 0;
@@ -30,12 +31,17 @@
   let cachedEvents = [];
 
   function setWsConnected(connected) {
-    wsStatusEl.classList.toggle("connected", connected);
-    wsStatusText.textContent = connected ? "已连接" : "离线";
+    wsStatusEl?.classList.toggle("connected", connected);
+    if (wsStatusText) wsStatusText.textContent = connected ? "已连接" : "离线";
   }
 
   function formatDate(now) {
-    return now.toLocaleDateString("zh-CN", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+    return now.toLocaleDateString("zh-CN", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
   }
 
   function nowDate() {
@@ -46,10 +52,10 @@
     const now = nowDate();
     const h = String(now.getHours()).padStart(2, "0");
     const m = String(now.getMinutes()).padStart(2, "0");
-    clockHoursEl.textContent = h;
-    clockMinsEl.textContent = m;
-    clockSepEl.classList.toggle("blink-off", now.getSeconds() % 2 === 1);
-    clockDateEl.textContent = formatDate(now);
+    if (clockHoursEl) clockHoursEl.textContent = h;
+    if (clockMinsEl) clockMinsEl.textContent = m;
+    clockSepEl?.classList.toggle("blink-off", now.getSeconds() % 2 === 1);
+    if (clockDateEl) clockDateEl.textContent = formatDate(now);
     renderSchedule(cachedEvents);
   }
 
@@ -65,17 +71,21 @@
     const mode = working ? "working" : "away";
     const changed = currentMode !== mode;
     currentMode = mode;
-    shellEl.dataset.mode = mode;
-    shellEl.classList.toggle("mode-working", working);
-    shellEl.classList.toggle("mode-away", !working);
+    if (shellEl) {
+      shellEl.dataset.mode = mode;
+      shellEl.classList.toggle("mode-working", working);
+      shellEl.classList.toggle("mode-away", !working);
+    }
     if (stateRowEl) stateRowEl.hidden = !working;
     if (changed) tickClock();
   }
 
   function renderState(state) {
     const next = state || "unknown";
-    stateEl.textContent = next;
-    stateEl.className = next;
+    if (stateEl) {
+      stateEl.textContent = next;
+      stateEl.className = next;
+    }
     if (stateCaptionEl) stateCaptionEl.textContent = STATE_CAPTIONS[next] || next;
     applyLayoutMode(next);
   }
@@ -103,12 +113,21 @@
   }
 
   function sameDay(a, b) {
-    return a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    return Boolean(
+      a && b &&
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate()
+    );
   }
 
   function fmtTime(date) {
     if (!date || Number.isNaN(date.getTime())) return "--:--";
-    return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+    return date.toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
   }
 
   function evtTypeLabel(evt) {
@@ -142,11 +161,13 @@
   }
 
   function clearList(el) {
+    if (!el) return;
     el.innerHTML = "";
     el.classList.remove("empty");
   }
 
   function setEmpty(el) {
+    if (!el) return;
     el.innerHTML = "";
     el.classList.add("empty");
   }
@@ -157,11 +178,10 @@
     events.forEach((evt) => {
       const card = document.createElement("article");
       card.className = "today-primary";
-      card.innerHTML = '<div class="today-time"></div><h2></h2><p></p>';
+      card.innerHTML = '<div class="today-time"></div><h2></h2>';
       card.querySelector(".today-time").textContent = eventTimeLabel(evt);
       card.querySelector("h2").textContent = evt.title || "未命名事件";
-      card.querySelector("p").textContent = evt.desc || `${evtTypeLabel(evt)}进行中`;
-      currentListEl.appendChild(card);
+      currentListEl?.appendChild(card);
     });
   }
 
@@ -174,7 +194,7 @@
       card.innerHTML = '<span class="today-chip"></span><strong></strong>';
       card.querySelector(".today-chip").textContent = `${evtTypeLabel(evt)} ${eventTimeLabel(evt)}`;
       card.querySelector("strong").textContent = evt.title || "未命名事件";
-      el.appendChild(card);
+      el?.appendChild(card);
     });
   }
 
@@ -187,15 +207,19 @@
       row.innerHTML = "<strong></strong><span></span>";
       row.querySelector("strong").textContent = evt.title || "未命名事件";
       row.querySelector("span").textContent = `${evtTypeLabel(evt)} · ${eventTimeLabel(evt)}`;
-      overdueListEl.appendChild(row);
+      overdueListEl?.appendChild(row);
     });
   }
 
   function renderSchedule(events) {
     const now = nowDate();
     const todo = (events || []).filter((evt) => evt.stat === "todo");
-    const current = todo.filter((evt) => isOngoing(evt, now)).sort((a, b) => eventEnd(a) - eventEnd(b));
-    const overdue = todo.filter((evt) => isOverdue(evt, now)).sort((a, b) => eventEnd(a) - eventEnd(b));
+    const current = todo
+      .filter((evt) => isOngoing(evt, now))
+      .sort((a, b) => eventEnd(a) - eventEnd(b));
+    const overdue = todo
+      .filter((evt) => isOverdue(evt, now))
+      .sort((a, b) => eventEnd(a) - eventEnd(b));
     const otherToday = todo
       .filter((evt) => isTodayEvt(evt, now) && !isOngoing(evt, now) && !isOverdue(evt, now))
       .sort((a, b) => eventStart(a) - eventStart(b));
@@ -252,17 +276,17 @@
   }
 
   function hideReminderPage() {
-    reminderPageEl.classList.remove("show");
-    reminderPageEl.setAttribute("aria-hidden", "true");
+    reminderPageEl?.classList.remove("show");
+    reminderPageEl?.setAttribute("aria-hidden", "true");
     clearExpireTimer();
   }
 
   function showReminderPage(title, content, evtId) {
     activeReminder = { title, content, evtId: evtId || null };
-    reminderPageTitleEl.textContent = title || "提醒";
-    reminderPageContentEl.textContent = content || "";
-    reminderPageEl.classList.add("show");
-    reminderPageEl.setAttribute("aria-hidden", "false");
+    if (reminderPageTitleEl) reminderPageTitleEl.textContent = title || "提醒";
+    if (reminderPageContentEl) reminderPageContentEl.textContent = content || "";
+    reminderPageEl?.classList.add("show");
+    reminderPageEl?.setAttribute("aria-hidden", "false");
     loadTodayEvents();
     playReminderSound();
     clearExpireTimer();
@@ -297,7 +321,9 @@
   }
 
   function handleWsMessage(data) {
-    lastMsgAt.textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    if (lastMsgAt) {
+      lastMsgAt.textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    }
     if (data.kind === "state" && data.serverNow) {
       serverOffsetMs = new Date(data.serverNow).getTime() - Date.now();
       tickClock();
@@ -306,6 +332,9 @@
       const deviceId = data.deviceId || data.devId;
       if (deviceId && deviceId !== "pi") return;
       renderState(data.state);
+    } else if (data.kind === "reminderSound") {
+      playReminderSound();
+      loadTodayEvents();
     } else if (data.kind === "reminder") {
       showReminderPage(data.title, data.content, data.evtId);
     }
