@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.feishu.client import FeishuAPIError, FeishuClient
 from app.new_core import crud
+from app.new_core.preferences import get_user_preferences
 from app.screen.manager import screenManager
 
 _feishuClient: FeishuClient | None = None
@@ -57,10 +58,27 @@ def buildReminderCard(*, evtId: str, title: str, content: str) -> dict[str, Any]
     }
 
 
-def _sendScreen(title: str, content: str, *, evtId: str | None = None) -> tuple[bool, str | None]:
-    message: dict[str, Any] = {"kind": "reminder", "title": title, "content": content}
-    if evtId:
-        message["evtId"] = evtId
+def _sendScreen(
+    title: str,
+    content: str,
+    *,
+    evtId: str | None = None,
+    phase: str = "end",
+) -> tuple[bool, str | None]:
+    if phase == "start":
+        message: dict[str, Any] = {
+            "kind": "reminderSound",
+            "title": title,
+            "content": content,
+        }
+    else:
+        message = {
+            "kind": "reminder",
+            "title": title,
+            "content": content,
+        }
+        if evtId:
+            message["evtId"] = evtId
     ok = screenManager.broadcastFromThread(message)
     return ok, None if ok else "screen websocket offline"
 
@@ -113,8 +131,9 @@ def _deliverFeishu(
     content: str,
     *,
     evtId: str | None = None,
+    phase: str = "end",
 ) -> tuple[bool, str | None, str | None]:
-    if evtId is not None and _sendFeishu is _baselineSendFeishu:
+    if phase == "end" and evtId is not None and _sendFeishu is _baselineSendFeishu:
         return _sendFeishuReminderCard(evtId=evtId, title=title, content=content)
     return _sendFeishu(title, content)
 
@@ -127,12 +146,13 @@ def sendReminder(
     content: str,
     channel: str,
     dedupKey: str | None = None,
+    phase: str = "end",
 ) -> dict[str, str]:
     if dedupKey and crud.notifyDedupExists(db, dedupKey):
         return {"channel": channel, "stat": "deduped"}
 
     if channel == "screen":
-        ok, fail = _sendScreen(title, content, evtId=evtId)
+        ok, fail = _sendScreen(title, content, evtId=evtId, phase=phase)
         stat = "sent" if ok else "failed"
         crud.writeNotifyLog(
             db,
@@ -141,12 +161,18 @@ def sendReminder(
             title=title,
             content=content,
             stat=stat,
+            evtId=evtId,
             failReason=fail,
         )
         return {"channel": "screen", "stat": stat}
 
     if channel == "feishu":
-        ok, target_id, fail = _sendFeishuReminderCard(evtId=evtId, title=title, content=content)
+        ok, target_id, fail = _deliverFeishu(
+            title,
+            content,
+            evtId=evtId,
+            phase=phase,
+        )
         stat = "sent" if ok else "failed"
         crud.writeNotifyLog(
             db,
@@ -156,6 +182,7 @@ def sendReminder(
             title=title,
             content=content,
             stat=stat,
+            evtId=evtId,
             failReason=fail,
         )
         return {"channel": "feishu", "stat": stat}
@@ -171,52 +198,57 @@ def routeNotify(
     screenOnline: bool,
     dedupKey: str | None = None,
     evtId: str | None = None,
+    phase: str = "end",
 ) -> dict[str, str]:
     if dedupKey and crud.notifyDedupExists(db, dedupKey):
         return {"channel": "skipped", "stat": "deduped"}
 
-    latest = crud.getLatestDevState(db, devId="pi")
-    piState = latest["state"] if latest else "unknown"
+    preference = get_user_preferences(db).get("reminderChannel", "screen")
 
-    if piState == "working" and screenOnline:
-        ok, fail = _sendScreen(title, content, evtId=evtId)
-        if ok:
-            crud.writeNotifyLog(
-                db,
-                dedupKey=dedupKey,
-                channel="screen",
-                title=title,
-                content=content,
-                stat="sent",
-            )
-            return {"channel": "screen", "stat": "sent"}
-        fallback_ok, target_id, fallback_fail = _deliverFeishu(title, content, evtId=evtId)
-        stat = "fallback" if fallback_ok else "failed"
+    if preference == "feishu":
+        ok, target_id, fail = _deliverFeishu(
+            title,
+            content,
+            evtId=evtId,
+            phase=phase,
+        )
+        stat = "sent" if ok else "failed"
         crud.writeNotifyLog(
             db,
-            dedupKey=dedupKey if fallback_ok else None,
+            dedupKey=dedupKey if ok else None,
             channel="feishu",
             targetId=target_id,
             title=title,
             content=content,
             stat=stat,
-            failReason=None if fallback_ok else f"{fail}; {fallback_fail}",
+            evtId=evtId,
+            failReason=fail,
         )
         return {"channel": "feishu", "stat": stat}
 
-    ok, target_id, fail = _deliverFeishu(title, content, evtId=evtId)
-    if piState == "working" and not screenOnline and ok:
-        stat = "fallback"
-    else:
-        stat = "sent" if ok else "failed"
+    if not screenOnline:
+        crud.writeNotifyLog(
+            db,
+            dedupKey=None,
+            channel="screen",
+            title=title,
+            content=content,
+            stat="failed",
+            evtId=evtId,
+            failReason="screen websocket offline",
+        )
+        return {"channel": "screen", "stat": "failed"}
+
+    ok, fail = _sendScreen(title, content, evtId=evtId, phase=phase)
+    stat = "sent" if ok else "failed"
     crud.writeNotifyLog(
         db,
         dedupKey=dedupKey if ok else None,
-        channel="feishu",
-        targetId=target_id,
+        channel="screen",
         title=title,
         content=content,
         stat=stat,
+        evtId=evtId,
         failReason=fail,
     )
-    return {"channel": "feishu", "stat": stat}
+    return {"channel": "screen", "stat": stat}
