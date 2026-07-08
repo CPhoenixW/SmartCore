@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.agent.routes import createAgentRouter, createDevRouter
+from app.agent.v2_routes import createAgentV2Router
 from app.api.routes import router as apiRouter
 from app.config import get_settings
 from app.db.session import init_db
@@ -44,6 +45,7 @@ def create_app() -> FastAPI:
     app.include_router(apiRouter)
     app.include_router(createDevRouter())
     app.include_router(deviceRouter)
+    app.include_router(createAgentV2Router())
     app.include_router(createAgentRouter())
     app.include_router(create_feishu_router())
     app.include_router(workRouter)
