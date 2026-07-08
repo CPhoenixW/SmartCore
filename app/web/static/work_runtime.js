@@ -26,6 +26,29 @@ function setApi(kind, text) {
   el.textContent = text;
 }
 
+function avatarText(name) {
+  const value = String(name || "SC").trim();
+  return value.slice(0, 2).toUpperCase() || "SC";
+}
+
+async function loadTopUser() {
+  try {
+    const response = await fetch("/api/user/me");
+    const body = await response.json();
+    const user = body.data || {};
+    const text = $("topAvatarText");
+    const image = $("topAvatarImg");
+    if (text) text.textContent = avatarText(user.displayName);
+    if (image && user.avatarUrl) {
+      image.src = user.avatarUrl;
+      image.hidden = false;
+      if (text) text.hidden = true;
+    }
+  } catch {
+    // User data is supplementary; do not delay the page.
+  }
+}
+
 function logSearchText(row) {
   return Object.entries(row || {})
     .map(([key, value]) => `${key}:${typeof value === "object" ? JSON.stringify(value) : value ?? ""}`)
@@ -49,38 +72,65 @@ function logMeta(row) {
 
 function initFastLogs() {
   if (page !== "log") return;
-  const runtime = { tab: "act", logs: { act: [], notify: [], msg: [] } };
+  const list = $("logList");
+  if (!list) return;
+  const runtime = {
+    tab: "act",
+    logs: { act: [], notify: [], msg: [] },
+    loaded: false,
+    rendering: false,
+    restoreQueued: false,
+  };
 
-  function render() {
-    const list = $("logList");
-    if (!list) return;
+  function filteredRows() {
     const query = $("logKeyword")?.value.trim().toLowerCase() || "";
     const status = $("logStatusFilter")?.value || "";
-    const rows = (runtime.logs[runtime.tab] || []).filter((row) => {
+    return (runtime.logs[runtime.tab] || []).filter((row) => {
       if (query && !logSearchText(row).includes(query)) return false;
       if (status && row.stat !== status && row.result !== status) return false;
       return true;
     });
+  }
+
+  function render() {
+    runtime.rendering = true;
+    const rows = filteredRows();
     list.innerHTML = rows.length
       ? rows.map((row) => `<details class="log-row"><summary><span class="row-title">${esc(logTitle(row, runtime.tab))}</span><span class="row-meta">${esc(logMeta(row))}</span></summary><pre class="log-json">${esc(JSON.stringify(row, null, 2))}</pre></details>`).join("")
-      : '<div class="empty">暂无日志</div>';
+      : `<div class="empty">${runtime.loaded ? "暂无日志" : "正在加载日志..."}</div>`;
+    runtime.rendering = false;
   }
+
+  const observer = new MutationObserver(() => {
+    if (!runtime.loaded || runtime.rendering || runtime.restoreQueued) return;
+    runtime.restoreQueued = true;
+    queueMicrotask(() => {
+      runtime.restoreQueued = false;
+      if (!runtime.rendering) render();
+    });
+  });
+  observer.observe(list, { childList: true });
 
   document.querySelectorAll("[data-log-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       runtime.tab = button.dataset.logTab;
+      document.querySelectorAll("[data-log-tab]").forEach((item) => {
+        item.classList.toggle("active", item === button);
+      });
       render();
     });
   });
   $("logKeyword")?.addEventListener("input", render);
   $("logStatusFilter")?.addEventListener("change", render);
 
+  render();
   setApi("busy", "API 请求中");
   fetch("/api/log?limit=120")
     .then(async (response) => {
       const body = await response.json();
       if (!response.ok || body.ok === false) throw new Error(body.detail || `HTTP ${response.status}`);
       runtime.logs = body.data || runtime.logs;
+      runtime.loaded = true;
       render();
       setApi("ok", "API 在线");
       if ($("lastRefresh")) {
@@ -88,8 +138,9 @@ function initFastLogs() {
       }
     })
     .catch((error) => {
+      runtime.loaded = true;
       setApi("err", "API 异常");
-      $("logList").innerHTML = `<div class="empty">${esc(error.message || "日志加载失败")}</div>`;
+      list.innerHTML = `<div class="empty">${esc(error.message || "日志加载失败")}</div>`;
     });
 }
 
@@ -130,13 +181,17 @@ function initCompleteSettingsSave() {
       setUiLanguage(body.language);
       setApi("ok", "API 在线");
       toast(body.language === "en" ? "Settings saved" : "设置已保存");
-      const avatarText = $("topAvatarText");
-      const avatarImg = $("topAvatarImg");
-      if (avatarText) avatarText.textContent = body.displayName.slice(0, 2).toUpperCase();
-      if (avatarImg && body.avatarUrl) {
-        avatarImg.src = body.avatarUrl;
-        avatarImg.hidden = false;
-        if (avatarText) avatarText.hidden = true;
+      const text = $("topAvatarText");
+      const image = $("topAvatarImg");
+      if (text) text.textContent = avatarText(body.displayName);
+      if (image && body.avatarUrl) {
+        image.src = body.avatarUrl;
+        image.hidden = false;
+        if (text) text.hidden = true;
+      } else if (image) {
+        image.hidden = true;
+        image.removeAttribute("src");
+        if (text) text.hidden = false;
       }
     } catch (error) {
       setApi("err", "API 异常");
@@ -145,5 +200,6 @@ function initCompleteSettingsSave() {
   }, true);
 }
 
+loadTopUser();
 initFastLogs();
 initCompleteSettingsSave();
