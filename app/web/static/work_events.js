@@ -213,7 +213,7 @@ function renderOverview() {
     const t = eventTime(evt);
     if (!t.date || !t.end) return false;
     const diff = t.end.getTime() - Date.now();
-    return diff >= 0 && diff <= 48 * 3600_000;
+    return diff >= 0 && diff <= 72 * 3600_000;
   });
   const openIdeas = state.ideas.filter((idea) => !idea.handled);
   $("ovTodo").textContent = todos.length;
@@ -221,7 +221,7 @@ function renderOverview() {
   $("ovDeadline").textContent = soon.length;
   $("ovIdeas").textContent = openIdeas.length;
   $("overviewTasks").innerHTML = today.slice(0, 8).map(taskRow).join("") || empty("暂无今日事项");
-  $("overviewTimeline").innerHTML = soon.slice(0, 8).map(taskRow).join("") || empty("48 小时内无 DDL");
+  $("overviewTimeline").innerHTML = soon.slice(0, 8).map(taskRow).join("") || empty("72 小时内无 DDL");
   $("overviewIdeas").innerHTML = openIdeas.slice(-5).reverse().map((idea) => `<div class="row-card"><div class="row-title">${esc(idea.content)}</div><div class="row-meta">${esc(idea.createdAt || "")}</div></div>`).join("") || empty("暂无待整理灵感");
   renderOverviewDevice();
 }
@@ -280,7 +280,7 @@ async function refreshOverview() {
     const [events, ideas, deviceStates] = await Promise.all([
       getData("/api/evt"),
       getData("/api/idea"),
-      getData("/api/devState"),
+      getData("/api/devState?devId=pi&limit=1"),
     ]);
     state.events = events;
     state.ideas = ideas;
