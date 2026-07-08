@@ -3,7 +3,6 @@ import { deviceStateView, formatDateTime } from "./work_shared.js";
 const $ = (id) => document.getElementById(id);
 const state = {
   logs: [],
-  photoRequests: [],
   activeRequestId: null,
   pollTimer: null,
 };
@@ -32,7 +31,9 @@ function setApi(kind, text) {
 }
 
 function markRefresh() {
-  if ($("lastRefresh")) $("lastRefresh").textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
+  if ($("lastRefresh")) {
+    $("lastRefresh").textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
+  }
 }
 
 async function apiGet(path) {
@@ -118,50 +119,104 @@ function renderLogs() {
     : '<div class="empty">暂无树莓派识别日志</div>';
 }
 
-function photoStatusLabel(value) {
-  return {
-    pending: "等待树莓派",
-    uploaded: "已上传",
-    failed: "失败",
-    expired: "已过期",
-    cancelled: "已取消",
-  }[value] || value || "未知";
+function percent(numerator, denominator) {
+  if (!denominator) return "—";
+  return `${Math.round((numerator / denominator) * 100)}%`;
 }
 
-function photoStatusClass(value) {
-  if (value === "uploaded") return "green";
-  if (value === "failed" || value === "expired") return "red";
-  return "orange";
+function renderUsageAnalysis() {
+  const cutoff = Date.now() - 24 * 3600_000;
+  const rows = state.logs.filter((row) => {
+    if (row.deviceId !== "pi" || !row.seenAt) return false;
+    const time = new Date(row.seenAt).getTime();
+    return Number.isFinite(time) && time >= cutoff;
+  });
+
+  const working = rows.filter((row) => row.state === "working").length;
+  const present = rows.filter((row) => Boolean(row.meta?.present)).length;
+  const confidences = rows.map((row) => Number(row.confidence)).filter(Number.isFinite);
+  const averageConfidence = confidences.length
+    ? confidences.reduce((sum, value) => sum + value, 0) / confidences.length
+    : null;
+
+  const people = new Map();
+  const hours = new Map();
+  const states = new Map([["working", 0], ["away", 0], ["unknown", 0], ["offline", 0]]);
+  rows.forEach((row) => {
+    const current = states.get(row.state) || 0;
+    states.set(row.state || "unknown", current + 1);
+    const hour = new Date(row.seenAt).getHours();
+    hours.set(hour, (hours.get(hour) || 0) + 1);
+    const persons = Array.isArray(row.meta?.persons) ? row.meta.persons : [];
+    persons.forEach((person) => {
+      const name = person.name || person.personId;
+      if (name) people.set(name, (people.get(name) || 0) + 1);
+    });
+  });
+
+  const topPerson = [...people.entries()].sort((a, b) => b[1] - a[1])[0];
+  const peakHour = [...hours.entries()].sort((a, b) => b[1] - a[1])[0];
+
+  $("usageSamples").textContent = String(rows.length);
+  $("usageWorkingRate").textContent = percent(working, rows.length);
+  $("usagePresentRate").textContent = percent(present, rows.length);
+  $("usageConfidence").textContent = averageConfidence == null ? "—" : `${Math.round(averageConfidence * 100)}%`;
+  $("usageTopPerson").textContent = topPerson ? `${topPerson[0]} · ${topPerson[1]} 次` : "暂无识别";
+  $("usagePeakHour").textContent = peakHour ? `${String(peakHour[0]).padStart(2, "0")}:00–${String((peakHour[0] + 1) % 24).padStart(2, "0")}:00` : "暂无数据";
+
+  const labels = { working: "工作中", away: "离开", unknown: "未知", offline: "离线" };
+  const order = ["working", "away", "unknown", "offline"];
+  $("usageStateBars").innerHTML = rows.length
+    ? order.map((key) => {
+      const count = states.get(key) || 0;
+      const width = Math.round((count / rows.length) * 100);
+      return `<div class="usage-bar-row"><div class="usage-bar-label"><span>${labels[key]}</span><strong>${width}%</strong></div><div class="usage-bar-track"><span class="usage-bar-fill ${key}" style="width:${width}%"></span></div></div>`;
+    }).join("")
+    : '<div class="empty compact-empty">近 24 小时暂无可分析的状态记录</div>';
 }
 
-function renderPhotoRequests() {
-  $("photoRequestList").innerHTML = state.photoRequests.length
-    ? state.photoRequests.map((item) => `<article class="row-card"><div class="row-title">${esc(item.reason || "请求当前画面")}</div><div class="tags"><span class="tag ${photoStatusClass(item.stat)}">${esc(photoStatusLabel(item.stat))}</span><span class="tag blue">${esc(formatDateTime(item.requestedAt))}</span></div>${item.errorMessage ? `<p class="task-desc">${esc(item.errorMessage)}</p>` : ""}${item.imageAvailable ? `<div class="row-actions"><button class="btn" data-view-photo="${esc(item.requestId)}" data-image-url="${esc(item.imageUrl)}">查看画面</button></div>` : ""}</article>`).join("")
-    : '<div class="empty">暂无照片请求</div>';
+function setCameraPending(pending) {
+  $("requestCameraBtn").disabled = pending;
+  const frame = $("cameraFrame");
+  frame.classList.toggle("camera-frame-pending", pending);
+  if (pending) {
+    $("cameraEmpty").hidden = false;
+    $("cameraEmpty").querySelector("strong").textContent = "正在等待树莓派回传";
+    $("cameraEmpty").querySelector("span").textContent = "请求已创建，通常会在下一次 10 秒心跳后返回";
+  }
+}
+
+function restoreCameraEmpty() {
+  const frame = $("cameraFrame");
+  frame.classList.remove("has-image", "camera-frame-pending");
+  frame.classList.add("camera-frame-empty");
+  $("cameraImage").hidden = true;
+  $("cameraImage").removeAttribute("src");
+  $("cameraEmpty").hidden = false;
+  $("cameraEmpty").querySelector("strong").textContent = "等待请求当前画面";
+  $("cameraEmpty").querySelector("span").textContent = "点击右上角按钮，树莓派会在下一次心跳上传一帧图像";
 }
 
 function showPhoto(item) {
   if (!item?.imageAvailable || !item.imageUrl) return;
+  const frame = $("cameraFrame");
   const image = $("cameraImage");
   image.src = `${item.imageUrl}?t=${Date.now()}`;
   image.hidden = false;
-  $("cameraFrame").classList.add("has-image");
-  $("cameraFrame").querySelector("span")?.setAttribute("hidden", "hidden");
-  $("cameraRequestMeta").textContent = `拍摄于 ${formatDateTime(item.capturedAt)} · ${item.imageSize || 0} bytes`;
+  $("cameraEmpty").hidden = true;
+  frame.classList.remove("camera-frame-empty", "camera-frame-pending");
+  frame.classList.add("has-image");
+  $("cameraRequestMeta").textContent = `拍摄于 ${formatDateTime(item.capturedAt)} · ${Math.max(1, Math.round((item.imageSize || 0) / 1024))} KB`;
 }
 
 async function refreshDevice() {
   try {
     setApi("busy", "API 请求中");
-    const [logs, photos] = await Promise.all([
-      apiGet("/api/devState"),
-      apiGet("/api/device/pi/photoRequests?limit=50"),
-    ]);
+    const logs = await apiGet("/api/devState?devId=pi&limit=1000");
     state.logs = Array.isArray(logs) ? logs : [];
-    state.photoRequests = Array.isArray(photos) ? photos : [];
     renderCurrentState();
     renderLogs();
-    renderPhotoRequests();
+    renderUsageAnalysis();
     setApi("ok", "API 在线");
     markRefresh();
   } catch (err) {
@@ -178,46 +233,60 @@ function stopPolling() {
 async function pollPhotoRequest(requestId) {
   try {
     const item = await apiGet(`/api/device/photoRequest/${encodeURIComponent(requestId)}`);
-    const index = state.photoRequests.findIndex((row) => row.requestId === requestId);
-    if (index >= 0) state.photoRequests[index] = item;
-    else state.photoRequests.unshift(item);
-    renderPhotoRequests();
-    $("cameraRequestMeta").textContent = `${photoStatusLabel(item.stat)} · 请求于 ${formatDateTime(item.requestedAt)}`;
+    $("cameraRequestMeta").textContent = item.stat === "pending"
+      ? `等待树莓派领取 · 请求于 ${formatDateTime(item.requestedAt)}`
+      : `状态：${item.stat}`;
     if (item.stat === "uploaded") {
       showPhoto(item);
+      state.activeRequestId = null;
       stopPolling();
-      $("requestCameraBtn").disabled = false;
+      setCameraPending(false);
       toast("树莓派画面已返回");
-    } else if (["failed", "expired", "cancelled"].includes(item.stat)) {
-      stopPolling();
-      $("requestCameraBtn").disabled = false;
-      toast(item.errorMessage || `照片请求${photoStatusLabel(item.stat)}`);
+      return true;
     }
+    if (["failed", "expired", "cancelled"].includes(item.stat)) {
+      state.activeRequestId = null;
+      stopPolling();
+      setCameraPending(false);
+      restoreCameraEmpty();
+      $("cameraRequestMeta").textContent = item.errorMessage || `请求${item.stat}`;
+      toast(item.errorMessage || `照片请求${item.stat}`);
+      return true;
+    }
+    return false;
   } catch (err) {
+    state.activeRequestId = null;
     stopPolling();
-    $("requestCameraBtn").disabled = false;
+    setCameraPending(false);
+    restoreCameraEmpty();
+    $("cameraRequestMeta").textContent = "画面请求失败";
     toast(err.message);
+    return true;
   }
 }
 
 async function requestCamera() {
+  if (state.activeRequestId) return;
   try {
-    const button = $("requestCameraBtn");
-    button.disabled = true;
+    restoreCameraEmpty();
+    setCameraPending(true);
     const request = await apiSend("/api/device/pi/photoRequest", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reason: "Web 工作台请求当前摄像头画面", ttlSeconds: 300 }),
     });
     state.activeRequestId = request.requestId;
-    state.photoRequests.unshift(request);
-    renderPhotoRequests();
     $("cameraRequestMeta").textContent = "请求已创建，等待树莓派下一次心跳领取";
     stopPolling();
-    await pollPhotoRequest(request.requestId);
-    state.pollTimer = setInterval(() => pollPhotoRequest(request.requestId), 2000);
+    const finished = await pollPhotoRequest(request.requestId);
+    if (!finished && state.activeRequestId === request.requestId) {
+      state.pollTimer = setInterval(() => pollPhotoRequest(request.requestId), 2000);
+    }
   } catch (err) {
-    $("requestCameraBtn").disabled = false;
+    state.activeRequestId = null;
+    setCameraPending(false);
+    restoreCameraEmpty();
+    $("cameraRequestMeta").textContent = "当前没有进行中的画面请求";
     toast(err.message);
   }
 }
@@ -225,13 +294,8 @@ async function requestCamera() {
 $("refreshDeviceBtn")?.addEventListener("click", refreshDevice);
 $("requestCameraBtn")?.addEventListener("click", requestCamera);
 $("deviceLogSearch")?.addEventListener("input", renderLogs);
-document.body.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-view-photo]");
-  if (!button) return;
-  const item = state.photoRequests.find((row) => row.requestId === button.dataset.viewPhoto);
-  if (item) showPhoto(item);
-});
 
 loadTopUser();
+restoreCameraEmpty();
 refreshDevice();
 setInterval(refreshDevice, 10000);
