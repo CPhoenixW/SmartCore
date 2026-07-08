@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from app.agent.legacy_time_routes import createLegacyTimeRouter
 from app.agent.routes import createAgentRouter, createDevRouter
 from app.agent.v2_routes import createAgentV2Router
 from app.api.routes import router as apiRouter
@@ -46,6 +47,7 @@ def create_app() -> FastAPI:
     app.include_router(createDevRouter())
     app.include_router(deviceRouter)
     app.include_router(createAgentV2Router())
+    app.include_router(createLegacyTimeRouter())
     app.include_router(createAgentRouter())
     app.include_router(create_feishu_router())
     app.include_router(workRouter)
