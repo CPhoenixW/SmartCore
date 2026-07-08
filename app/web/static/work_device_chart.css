@@ -30,18 +30,47 @@
 
 .usage-chart-wrap {
   position: relative;
-  min-height: 250px;
+  min-height: 280px;
   border: 1px solid var(--border);
   border-radius: 16px;
   background: linear-gradient(180deg, #fbfdff 0%, #f7faff 100%);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.38) transparent;
+  touch-action: pan-x;
+  cursor: grab;
+  -webkit-overflow-scrolling: touch;
+}
+
+.usage-chart-wrap.dragging {
+  cursor: grabbing;
+  scroll-snap-type: none;
+  user-select: none;
+}
+
+.usage-chart-wrap::-webkit-scrollbar {
+  height: 8px;
+}
+
+.usage-chart-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.usage-chart-wrap::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.35);
 }
 
 .usage-line-chart {
   display: block;
-  width: 100%;
-  height: auto;
-  min-height: 250px;
+  width: 1920px;
+  max-width: none;
+  height: 280px;
+  min-height: 280px;
+  scroll-snap-align: start;
 }
 
 .usage-line-chart[hidden] {
@@ -51,16 +80,26 @@
 .usage-grid-line {
   stroke: #e8eef7;
   stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.usage-hour-guide {
+  stroke: rgba(226, 232, 240, 0.72);
+  stroke-width: 1;
+  stroke-dasharray: 4 7;
 }
 
 .usage-axis-label {
   fill: #94a3b8;
   font-family: "MiSans", "Segoe UI", system-ui, sans-serif;
-  font-size: 11px;
+  font-size: 12px;
+  pointer-events: none;
 }
 
 .usage-line-area {
   fill: url(#usageAreaGradient);
+  opacity: 0;
+  animation: usageAreaIn 680ms ease-out 300ms forwards;
 }
 
 .usage-line-path {
@@ -69,17 +108,48 @@
   stroke-width: 3.5;
   stroke-linecap: round;
   stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 3200;
+  stroke-dashoffset: 3200;
+  animation: usageLineDraw 1.05s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 .usage-line-point {
   fill: #ffffff;
   stroke: #2563eb;
   stroke-width: 2.5;
+  vector-effect: non-scaling-stroke;
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: usagePointIn 280ms ease-out forwards;
+}
+
+.usage-line-point:hover {
+  r: 6;
+  filter: drop-shadow(0 3px 5px rgba(37, 99, 235, 0.22));
+}
+
+.usage-now-marker {
+  stroke: #f59e0b;
+  stroke-width: 2;
+  stroke-dasharray: 6 6;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.76;
+}
+
+.usage-now-label {
+  fill: #d97706;
+  font-family: "MiSans", "Segoe UI", system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .usage-chart-empty {
-  position: absolute;
-  inset: 0;
+  position: sticky;
+  left: 0;
+  width: 100%;
+  min-height: 280px;
   display: grid;
   place-items: center;
   padding: 24px;
@@ -92,13 +162,62 @@
   display: none;
 }
 
+.usage-chart-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  opacity: 0.82;
+}
+
+.usage-chart-hint::before,
+.usage-chart-hint::after {
+  content: "";
+  width: 18px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.45;
+}
+
+@keyframes usageLineDraw {
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes usageAreaIn {
+  to { opacity: 1; }
+}
+
+@keyframes usagePointIn {
+  from { opacity: 0; transform: scale(0.35); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .usage-line-path,
+  .usage-line-area,
+  .usage-line-point {
+    animation: none;
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+}
+
 @media (max-width: 720px) {
   .usage-summary-grid {
     grid-template-columns: 1fr;
   }
 
   .usage-chart-wrap,
+  .usage-chart-empty {
+    min-height: 250px;
+  }
+
   .usage-line-chart {
-    min-height: 220px;
+    width: 1680px;
+    height: 250px;
+    min-height: 250px;
   }
 }
