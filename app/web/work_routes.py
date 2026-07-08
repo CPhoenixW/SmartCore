@@ -22,6 +22,7 @@ _NAV = [
     ("inspire", "/work/inspire", "灵感", "◇"),
     ("course", "/work/course", "课表", "□"),
     ("log", "/work/log", "日志", "≡"),
+    ("device", "/work/device", "设备", "◉"),
     ("settings", "/work/settings", "设置", "⚙"),
 ]
 
@@ -70,10 +71,7 @@ def _shell(active: str, body_html: str) -> str:
     </header>
     <main class="page-main">
       <section class="page-head">
-        <div>
-          <h1>{title}</h1>
-          <p>{subtitle}</p>
-        </div>
+        <div><h1>{title}</h1><p>{subtitle}</p></div>
       </section>
       {body_html}
     </main>
@@ -83,6 +81,7 @@ def _shell(active: str, body_html: str) -> str:
 <script type="module" src="{script_src}"></script>
 </body>
 </html>"""
+
 
 _EVT_EDIT_FORM = """
 <form id="evtEditForm" class="edit-form">
@@ -111,7 +110,7 @@ _OVERVIEW_BODY = """
 <section class="summary-grid">
   <article class="summary-card"><span>待办事项</span><strong id="ovTodo">0</strong></article>
   <article class="summary-card"><span>今日事项</span><strong id="ovToday">0</strong></article>
-  <article class="summary-card"><span>未来 48 小时</span><strong id="ovDeadline">0</strong></article>
+  <article class="summary-card"><span>未来 72 小时</span><strong id="ovDeadline">0</strong></article>
   <article class="summary-card"><span>灵感 Inbox</span><strong id="ovIdeas">0</strong></article>
 </section>
 <section class="content-grid two">
@@ -120,7 +119,7 @@ _OVERVIEW_BODY = """
 </section>
 <section class="content-grid two">
   <article class="card"><header><h2>最近灵感</h2><a class="link" href="/work/inspire">整理</a></header><div class="card-body list" id="overviewIdeas"></div></article>
-  <article class="card"><header><h2>快捷入口</h2></header><div class="card-body template-grid"><a class="template" href="/work/add">添加事件</a><a class="template" href="/work/inspire">记录灵感</a><a class="template" href="/work/course">课表管理</a><a class="template" href="/work/log">查看日志</a></div></article>
+  <article class="card"><header><h2>快捷入口</h2></header><div class="card-body template-grid"><a class="template" href="/work/add">添加事件</a><a class="template" href="/work/inspire">记录灵感</a><a class="template" href="/work/course">课表管理</a><a class="template" href="/work/device">设备状态</a></div></article>
 </section>
 """
 
@@ -183,23 +182,8 @@ _LOG_BODY = """
 
 _SETTINGS_BODY = """
 <section class="content-grid two-one">
-  <article class="card">
-    <header><h2>用户设置</h2><button type="submit" form="userSettingsForm" class="btn btn-primary">保存设置</button></header>
-    <div class="card-body">
-      <form id="userSettingsForm" class="edit-form">
-        <label class="field required"><span>用户名称</span><input name="displayName" required placeholder="默认用户"></label>
-        <label class="field"><span>语言</span><select name="language"><option value="zh">中文</option><option value="en">English</option></select></label>
-        <label class="field"><span>头像 URL</span><input name="avatarUrl" placeholder="https://... 或留空使用文字头像"></label>
-      </form>
-    </div>
-  </article>
-  <aside class="card">
-    <header><h2>头像预览</h2></header>
-    <div class="card-body settings-preview">
-      <div class="settings-avatar"><img id="settingsAvatarImg" alt="" hidden><span id="settingsAvatarText">SC</span></div>
-      <div><div class="row-title" id="settingsNamePreview">默认用户</div><div class="row-meta" id="settingsLanguagePreview">中文</div></div>
-    </div>
-  </aside>
+  <article class="card"><header><h2>用户设置</h2><button type="submit" form="userSettingsForm" class="btn btn-primary">保存设置</button></header><div class="card-body"><form id="userSettingsForm" class="edit-form"><label class="field required"><span>用户名称</span><input name="displayName" required placeholder="默认用户"></label><label class="field"><span>语言</span><select name="language"><option value="zh">中文</option><option value="en">English</option></select></label><label class="field"><span>头像 URL</span><input name="avatarUrl" placeholder="https://... 或留空使用文字头像"></label></form></div></article>
+  <aside class="card"><header><h2>头像预览</h2></header><div class="card-body settings-preview"><div class="settings-avatar"><img id="settingsAvatarImg" alt="" hidden><span id="settingsAvatarText">SC</span></div><div><div class="row-title" id="settingsNamePreview">默认用户</div><div class="row-meta" id="settingsLanguagePreview">中文</div></div></div></aside>
 </section>
 """
 
