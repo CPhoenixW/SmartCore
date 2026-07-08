@@ -78,9 +78,13 @@ function initFastLogs() {
     tab: "act",
     logs: { act: [], notify: [], msg: [] },
     loaded: false,
-    rendering: false,
     restoreQueued: false,
   };
+  let observer = null;
+
+  function observeList() {
+    observer?.observe(list, { childList: true });
+  }
 
   function filteredRows() {
     const query = $("logKeyword")?.value.trim().toLowerCase() || "";
@@ -93,23 +97,23 @@ function initFastLogs() {
   }
 
   function render() {
-    runtime.rendering = true;
+    observer?.disconnect();
     const rows = filteredRows();
     list.innerHTML = rows.length
       ? rows.map((row) => `<details class="log-row"><summary><span class="row-title">${esc(logTitle(row, runtime.tab))}</span><span class="row-meta">${esc(logMeta(row))}</span></summary><pre class="log-json">${esc(JSON.stringify(row, null, 2))}</pre></details>`).join("")
       : `<div class="empty">${runtime.loaded ? "暂无日志" : "正在加载日志..."}</div>`;
-    runtime.rendering = false;
+    observeList();
   }
 
-  const observer = new MutationObserver(() => {
-    if (!runtime.loaded || runtime.rendering || runtime.restoreQueued) return;
+  observer = new MutationObserver(() => {
+    if (!runtime.loaded || runtime.restoreQueued) return;
     runtime.restoreQueued = true;
     queueMicrotask(() => {
       runtime.restoreQueued = false;
-      if (!runtime.rendering) render();
+      render();
     });
   });
-  observer.observe(list, { childList: true });
+  observeList();
 
   document.querySelectorAll("[data-log-tab]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -139,6 +143,7 @@ function initFastLogs() {
     })
     .catch((error) => {
       runtime.loaded = true;
+      observer?.disconnect();
       setApi("err", "API 异常");
       list.innerHTML = `<div class="empty">${esc(error.message || "日志加载失败")}</div>`;
     });
