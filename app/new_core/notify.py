@@ -109,7 +109,7 @@ def _deliverFeishu(
     evtId: str | None = None,
     phase: str = "end",
 ) -> tuple[bool, str | None, str | None]:
-    if phase == "end" and evtId is not None and _sendFeishu is _baselineSendFeishu:
+    if phase in {"end", "notice"} and evtId is not None and _sendFeishu is _baselineSendFeishu:
         return _sendFeishuReminderCard(evtId=evtId, title=title, content=content)
     return _sendFeishu(title, content)
 
