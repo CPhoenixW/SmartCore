@@ -2,7 +2,7 @@ import { getUiLanguage } from "./work_shared.js";
 
 const ZH_EN = {
   "按日期查看和修改计划事项": "View and edit plans by date",
-  "课程模板、上课计划与提醒管理": "Course templates, class plans and reminders",
+  "按学期开始日期和周次生成上课计划": "Generate class plans from semester start and week numbers",
   "上一天": "Previous day",
   "下一天": "Next day",
   "查看日期": "Date",
@@ -21,8 +21,7 @@ const ZH_EN = {
   "课程名称": "Course name",
   "教师": "Teacher",
   "地点": "Room",
-  "开始日期": "Start date",
-  "结束日期": "End date",
+  "学期开始日期": "Semester start",
   "星期": "Weekday",
   "周属性": "Week pattern",
   "上课时间": "Class starts",
@@ -42,7 +41,7 @@ const ZH_EN = {
   "星期五": "Friday",
   "星期六": "Saturday",
   "星期日": "Sunday",
-  "保存后会自动计算全部上课日期，并为每次课生成计划与两个提醒。": "Saving calculates every class date and creates one plan and two reminders for each class.",
+  "以学期开始日期为第 1 周，按照星期和起止周自动计算全部上课时间。": "Treat the semester start as week 1 and calculate class dates from weekday and week range.",
 };
 
 const EN_ZH = Object.fromEntries(Object.entries(ZH_EN).map(([zh, en]) => [en, zh]));
