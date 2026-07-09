@@ -87,6 +87,8 @@ const observer = new MutationObserver((mutations) => {
   }
 });
 
+// The edit form accepts only concrete persisted statuses; "all" belongs to the list filter.
+document.querySelector('#ideaEditForm select[name="handled"] option[value="all"]')?.remove();
 translatePage();
 observer.observe(document.body, { childList: true, subtree: true });
 window.addEventListener("smartcore:languagechange", () => translatePage());
