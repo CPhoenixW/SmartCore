@@ -52,7 +52,6 @@ CREATE TABLE IF NOT EXISTS ddlPlan (
     PRIMARY KEY (ddlEvtId, planEvtId),
     FOREIGN KEY (ddlEvtId) REFERENCES ddlEvt(evtId) ON DELETE CASCADE,
     FOREIGN KEY (planEvtId) REFERENCES planEvt(evtId) ON DELETE CASCADE,
-    UNIQUE (ddlEvtId, planRole),
     UNIQUE (planEvtId),
     CHECK (planRole IN ('one_day_before', 'one_hour_before', 'manual'))
 );
@@ -90,15 +89,14 @@ CREATE TABLE IF NOT EXISTS coursePlan (
 
 CREATE TABLE IF NOT EXISTS remindEvt (
     evtId VARCHAR(32) PRIMARY KEY,
-    planEvtId VARCHAR(32) NOT NULL,
+    planEvtId VARCHAR(32),
     remindKind VARCHAR(30) NOT NULL,
     triggerTime VARCHAR(64) NOT NULL,
-    offsetMin INTEGER NOT NULL DEFAULT 10,
+    offsetMin INTEGER NOT NULL DEFAULT 0,
     firedAt VARCHAR(64),
     FOREIGN KEY (evtId) REFERENCES evtBase(evtId) ON DELETE CASCADE,
     FOREIGN KEY (planEvtId) REFERENCES planEvt(evtId) ON DELETE CASCADE,
     UNIQUE (planEvtId, remindKind),
-    CHECK (remindKind IN ('plan_start_10m', 'plan_end_10m')),
     CHECK (offsetMin >= 0)
 );
 
@@ -205,6 +203,7 @@ CREATE INDEX IF NOT EXISTS idx_coursePlan_course_date ON coursePlan(courseEvtId,
 CREATE INDEX IF NOT EXISTS idx_coursePlan_plan ON coursePlan(planEvtId);
 CREATE INDEX IF NOT EXISTS idx_remindEvt_trigger ON remindEvt(triggerTime);
 CREATE INDEX IF NOT EXISTS idx_remindEvt_plan ON remindEvt(planEvtId);
+CREATE INDEX IF NOT EXISTS idx_ddlPlan_ddl_order ON ddlPlan(ddlEvtId, sortOrder);
 CREATE INDEX IF NOT EXISTS idx_idea_user_created ON idea(userId, createdAt);
 CREATE INDEX IF NOT EXISTS idx_device_user_kind ON device(userId, deviceKind);
 CREATE INDEX IF NOT EXISTS idx_deviceStateLog_device_seen ON deviceStateLog(deviceId, seenAt);
