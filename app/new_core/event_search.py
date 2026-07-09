@@ -63,10 +63,18 @@ def normalize_search_query(query: str, *, now: datetime | None = None) -> str:
         "昨天": current - timedelta(days=1),
     }
     for label, target in relative.items():
-        if label in text:
-            text += " " + target.strftime("%Y-%m-%d")
-    text = text.replace("年", "-").replace("月", "-").replace("日", "")
+        text = text.replace(label, target.strftime("%Y-%m-%d"))
     text = text.replace("/", "-")
+    text = re.sub(
+        r"(20\d{2})年(\d{1,2})月(\d{1,2})日?",
+        lambda m: f"{int(m.group(1)):04d}-{int(m.group(2)):02d}-{int(m.group(3)):02d}",
+        text,
+    )
+    text = re.sub(
+        r"\b(20\d{2})-(\d{1,2})-(\d{1,2})\b",
+        lambda m: f"{int(m.group(1)):04d}-{int(m.group(2)):02d}-{int(m.group(3)):02d}",
+        text,
+    )
     text = re.sub(r"\b(\d{1,2})点半\b", lambda m: f"{int(m.group(1)):02d}:30", text)
     text = re.sub(
         r"\b(\d{1,2})点(?:(\d{1,2})分?)?\b",
@@ -91,6 +99,7 @@ def event_search_text(item: dict[str, Any]) -> str:
         "occurrenceDate",
         "semesterStart",
         "stDate",
+        "computedEndDate",
         "endDate",
         "remindKind",
         "planRole",
@@ -98,7 +107,18 @@ def event_search_text(item: dict[str, Any]) -> str:
         value = item.get(key)
         if value not in (None, ""):
             parts.append(str(value).lower())
-    for key in ("stTime", "endTime", "triggerTime", "createdAt", "updatedAt"):
+    for key in (
+        "stTime",
+        "endTime",
+        "triggerTime",
+        "occurrenceDate",
+        "semesterStart",
+        "stDate",
+        "computedEndDate",
+        "endDate",
+        "createdAt",
+        "updatedAt",
+    ):
         parts.extend(_time_tokens(item.get(key)))
     weekday = item.get("weekDay")
     if weekday is not None:
@@ -117,6 +137,9 @@ def event_search_text(item: dict[str, Any]) -> str:
         parts.append(f"第{item['startWeek']}周")
     if item.get("endWeek") is not None:
         parts.append(f"第{item['endWeek']}周")
+    for plan in item.get("plans") or []:
+        if isinstance(plan, dict):
+            parts.append(event_search_text(plan))
     return " ".join(parts).lower()
 
 
