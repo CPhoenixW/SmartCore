@@ -206,6 +206,7 @@ def _rebuild_ddl_plan_for_multiple_links(conn: object) -> None:
     if "UNIQUE (ddlEvtId, planRole)" not in sql and "UNIQUE(ddlEvtId, planRole)" not in sql:
         return
 
+    conn.execute("DROP TRIGGER IF EXISTS trg_cancel_ddl_linked_plans")
     conn.execute("DROP TABLE IF EXISTS ddlPlan_new")
     conn.execute(
         """
