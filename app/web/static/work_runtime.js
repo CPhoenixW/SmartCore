@@ -1,4 +1,5 @@
 import { setUiLanguage, t } from "./work_shared.js";
+import "./work_relation_i18n.js";
 
 const page = document.body.dataset.page;
 const $ = (id) => document.getElementById(id);
