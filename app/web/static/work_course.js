@@ -85,7 +85,7 @@ async function loadUser() {
       if (text) text.hidden = true;
     }
   } catch {
-    // The course page remains usable without the avatar request.
+    // User data is supplementary.
   }
 }
 
@@ -109,16 +109,74 @@ function courseMeta(course) {
     weekdayLabel(course.weekDay),
     `${course.stTime || "—"}–${course.endTime || "—"}`,
     weekModeLabel(course.weekMode || "all"),
+    ui(`第 ${course.startWeek || 1}-${course.endWeek || 16} 周`, `Weeks ${course.startWeek || 1}-${course.endWeek || 16}`),
   ];
   if (course.location) parts.push(course.location);
   if (course.teacher) parts.push(course.teacher);
   return parts.join(" · ");
 }
 
+function normalizeQuery(value) {
+  let text = String(value || "").trim().toLowerCase();
+  text = text.replace(/\//g, "-");
+  text = text.replace(/(\d{1,2})点半/g, (_, hour) => `${String(Number(hour)).padStart(2, "0")}:30`);
+  text = text.replace(/(\d{1,2})点(?:(\d{1,2})分?)?/g, (_, hour, minute) => `${String(Number(hour)).padStart(2, "0")}:${String(Number(minute || 0)).padStart(2, "0")}`);
+  return text;
+}
+
+function dateTokens(value) {
+  if (!value) return [];
+  const date = new Date(String(value).includes("T") ? value : `${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return [String(value).toLowerCase()];
+  const pad = (part) => String(part).padStart(2, "0");
+  const isoDate = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const day = date.getDay() === 0 ? 7 : date.getDay();
+  return [
+    isoDate,
+    `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())}`,
+    `${date.getMonth() + 1}月${date.getDate()}日`,
+    time,
+    weekdayLabel(day).toLowerCase(),
+    weekdays[day]?.[0]?.toLowerCase() || "",
+    weekdays[day]?.[1]?.toLowerCase() || "",
+  ];
+}
+
+function courseSearchText(course) {
+  const parts = [
+    course.courseName,
+    course.title,
+    course.teacher,
+    course.location,
+    course.desc,
+    course.stTime,
+    course.endTime,
+    course.semesterStart,
+    course.stDate,
+    course.computedEndDate,
+    course.endDate,
+    weekdayLabel(course.weekDay),
+    weekdays[Number(course.weekDay)]?.[0],
+    weekdays[Number(course.weekDay)]?.[1],
+    weekModeLabel(course.weekMode || "all"),
+    `第${course.startWeek || 1}周`,
+    `第${course.endWeek || 16}周`,
+  ];
+  for (const value of [course.semesterStart, course.stDate, course.computedEndDate, course.endDate]) {
+    parts.push(...dateTokens(value));
+  }
+  for (const plan of course.plans || []) {
+    parts.push(plan.title, plan.stTime, plan.occurrenceDate, ...dateTokens(plan.stTime), ...dateTokens(plan.occurrenceDate));
+  }
+  return parts.filter(Boolean).join(" ").toLowerCase();
+}
+
 function renderTimetable() {
   const root = $("courseTimetable");
   if (!root) return;
-  const active = state.courses.filter((course) => course.stat !== "cancelled");
+  const query = normalizeQuery($("globalSearch")?.value);
+  const active = state.courses.filter((course) => course.stat !== "cancelled" && (!query || courseSearchText(course).includes(query)));
   root.innerHTML = Array.from({ length: 7 }, (_, index) => {
     const day = index + 1;
     const rows = active
@@ -130,7 +188,7 @@ function renderTimetable() {
           <strong>${esc(course.courseName || course.title)}</strong>
           <span class="course-time">${esc(course.stTime)}–${esc(course.endTime)}</span>
           <span>${esc([course.location, course.teacher].filter(Boolean).join(" · ") || ui("未填写地点和教师", "No room or teacher"))}</span>
-          <span>${esc(ui(`共 ${course.occurrenceCount || 0} 次课`, `${course.occurrenceCount || 0} classes`))}</span>
+          <span>${esc(ui(`第 ${course.startWeek || 1}-${course.endWeek || 16} 周 · 共 ${course.occurrenceCount || 0} 次`, `Weeks ${course.startWeek || 1}-${course.endWeek || 16} · ${course.occurrenceCount || 0} classes`))}</span>
         </button>`).join("")
       : `<div class="course-empty-day">${esc(ui("无课程", "No course"))}</div>`;
     return `<section class="timetable-day"><header class="timetable-day-head">${esc(weekdayLabel(day))}<span>${rows.length}</span></header><div class="timetable-day-body">${content}</div></section>`;
@@ -140,24 +198,21 @@ function renderTimetable() {
 function renderCourseList() {
   const root = $("courseTplList");
   if (!root) return;
-  const query = $("globalSearch")?.value.trim().toLowerCase() || "";
-  const rows = state.courses.filter((course) => {
-    if (!query) return true;
-    return `${course.courseName} ${course.teacher || ""} ${course.location || ""}`.toLowerCase().includes(query);
-  });
+  const query = normalizeQuery($("globalSearch")?.value);
+  const rows = state.courses.filter((course) => !query || courseSearchText(course).includes(query));
   root.innerHTML = rows.length
     ? rows.map((course) => `
       <article class="row-card clickable ${state.selectedId === course.evtId ? "selected" : ""}" data-course-id="${esc(course.evtId)}" tabindex="0" role="button">
         <div class="row-title">${esc(course.courseName || course.title)}</div>
         <div class="row-meta">${esc(courseMeta(course))}</div>
         <div class="course-row-meta">
-          <span class="tag blue">${esc(course.stDate)} – ${esc(course.endDate)}</span>
+          <span class="tag blue">${esc(ui(`学期开始 ${course.semesterStart || course.stDate || "—"}`, `Semester starts ${course.semesterStart || course.stDate || "—"}`))}</span>
           <span class="tag course-count">${esc(ui(`${course.occurrenceCount || 0} 次课`, `${course.occurrenceCount || 0} classes`))}</span>
           ${course.nextOccurrence?.stTime ? `<span class="tag green">${esc(ui("下次", "Next"))} ${esc(formatDateTime(course.nextOccurrence.stTime))}</span>` : ""}
           ${course.stat === "cancelled" ? `<span class="tag red">${esc(ui("已取消", "Cancelled"))}</span>` : ""}
         </div>
       </article>`).join("")
-    : `<div class="empty">${esc(ui("暂无课程", "No courses"))}</div>`;
+    : `<div class="empty">${esc(ui("暂无匹配课程", "No matching courses"))}</div>`;
 }
 
 function renderAll() {
@@ -171,19 +226,29 @@ function setForm(course = null) {
   form.reset();
   state.selectedId = course?.evtId || null;
   form.elements.evtId.value = course?.evtId || "";
-  for (const key of [
-    "courseName", "teacher", "location", "stDate", "endDate", "weekDay",
-    "stTime", "endTime", "startWeek", "endWeek", "weekMode", "desc",
-  ]) {
-    if (course?.[key] != null) form.elements[key].value = course[key];
-  }
+  const values = {
+    courseName: course?.courseName,
+    teacher: course?.teacher,
+    location: course?.location,
+    semesterStart: course?.semesterStart || course?.stDate,
+    weekDay: course?.weekDay,
+    stTime: course?.stTime,
+    endTime: course?.endTime,
+    startWeek: course?.startWeek,
+    endWeek: course?.endWeek,
+    weekMode: course?.weekMode,
+    desc: course?.desc,
+  };
+  Object.entries(values).forEach(([key, value]) => {
+    if (value != null && form.elements[key]) form.elements[key].value = value;
+  });
   if (!course) {
     form.elements.weekDay.value = "1";
     form.elements.weekMode.value = "all";
+    form.elements.startWeek.value = "1";
+    form.elements.endWeek.value = "16";
   }
-  $("courseEditorTitle").textContent = course
-    ? ui("编辑课程", "Edit course")
-    : ui("新建课程", "New course");
+  $("courseEditorTitle").textContent = course ? ui("编辑课程", "Edit course") : ui("新建课程", "New course");
   $("deleteCourseTplBtn").disabled = !course;
   updateGeneratedSummary();
   renderAll();
@@ -195,43 +260,46 @@ function parseDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function estimateOccurrenceCount() {
+function estimateOccurrences() {
   const form = $("courseTplForm");
-  const start = parseDate(formValue(form, "stDate"));
-  const end = parseDate(formValue(form, "endDate"));
+  const semesterStart = parseDate(formValue(form, "semesterStart"));
   const weekday = Number(formValue(form, "weekDay"));
   const mode = formValue(form, "weekMode") || "all";
-  const startWeek = numberOrNull(formValue(form, "startWeek"));
-  const endWeek = numberOrNull(formValue(form, "endWeek"));
-  if (!start || !end || !weekday || end < start) return 0;
-  const first = new Date(start);
-  const isoDay = first.getDay() === 0 ? 7 : first.getDay();
-  first.setDate(first.getDate() + ((weekday - isoDay + 7) % 7));
-  let count = 0;
-  let weekNo = 1;
-  for (let cursor = new Date(first); cursor <= end; cursor.setDate(cursor.getDate() + 7), weekNo += 1) {
-    if (startWeek && weekNo < startWeek) continue;
-    if (endWeek && weekNo > endWeek) continue;
-    if (mode === "odd" && weekNo % 2 === 0) continue;
-    if (mode === "even" && weekNo % 2 === 1) continue;
-    count += 1;
+  const startWeek = Number(formValue(form, "startWeek") || 1);
+  const endWeek = Number(formValue(form, "endWeek") || 16);
+  if (!semesterStart || !weekday || startWeek < 1 || endWeek < startWeek) return [];
+
+  const anchorMonday = new Date(semesterStart);
+  const isoDay = anchorMonday.getDay() === 0 ? 7 : anchorMonday.getDay();
+  anchorMonday.setDate(anchorMonday.getDate() - (isoDay - 1));
+  const rows = [];
+  for (let week = startWeek; week <= endWeek; week += 1) {
+    if (mode === "odd" && week % 2 === 0) continue;
+    if (mode === "even" && week % 2 === 1) continue;
+    const occurrence = new Date(anchorMonday);
+    occurrence.setDate(anchorMonday.getDate() + (week - 1) * 7 + (weekday - 1));
+    if (occurrence < semesterStart) continue;
+    rows.push(occurrence);
   }
-  return count;
+  return rows;
 }
 
 function updateGeneratedSummary() {
-  const count = estimateOccurrenceCount();
+  const rows = estimateOccurrences();
   const el = $("courseGeneratedSummary");
   if (!el) return;
-  el.textContent = count
-    ? ui(
-      `预计生成 ${count} 个上课计划和 ${count * 2} 个提醒；每次课在开始前 10 分钟和结束前 10 分钟提醒。`,
-      `This will generate ${count} class plans and ${count * 2} reminders, 10 minutes before class starts and ends.`,
-    )
-    : ui(
-      "填写日期、星期和上课时间后，将自动计算全部上课日期。",
-      "Enter the date range, weekday and class time to calculate all occurrences.",
+  if (!rows.length) {
+    el.textContent = ui(
+      "填写学期开始日期、星期和起止周后，将按周次顺序计算全部上课时间。",
+      "Enter the semester start, weekday and week range to calculate all class dates.",
     );
+    return;
+  }
+  const format = (date) => date.toLocaleDateString(getUiLanguage() === "en" ? "en-CA" : "zh-CN");
+  el.textContent = ui(
+    `预计生成 ${rows.length} 个上课计划和 ${rows.length * 2} 个提醒；首节 ${format(rows[0])}，末节 ${format(rows[rows.length - 1])}。`,
+    `This will generate ${rows.length} class plans and ${rows.length * 2} reminders, from ${format(rows[0])} to ${format(rows[rows.length - 1])}.`,
+  );
 }
 
 function payloadFromForm() {
@@ -241,13 +309,12 @@ function payloadFromForm() {
     title: formValue(form, "courseName"),
     teacher: formValue(form, "teacher") || null,
     location: formValue(form, "location") || null,
-    stDate: formValue(form, "stDate"),
-    endDate: formValue(form, "endDate"),
+    semesterStart: formValue(form, "semesterStart"),
     weekDay: Number(formValue(form, "weekDay")),
     stTime: formValue(form, "stTime"),
     endTime: formValue(form, "endTime"),
-    startWeek: numberOrNull(formValue(form, "startWeek")),
-    endWeek: numberOrNull(formValue(form, "endWeek")),
+    startWeek: Number(formValue(form, "startWeek") || 1),
+    endWeek: Number(formValue(form, "endWeek") || 16),
     weekMode: formValue(form, "weekMode") || "all",
     desc: formValue(form, "desc") || null,
   };
@@ -269,8 +336,11 @@ async function saveCourse(event) {
   const form = event.currentTarget;
   const id = formValue(form, "evtId");
   const payload = payloadFromForm();
-  if (!payload.courseName || !payload.stDate || !payload.endDate || !payload.stTime || !payload.endTime) {
-    return toast(ui("请完整填写课程名称、日期和时间", "Complete the course name, dates and times"));
+  if (!payload.courseName || !payload.semesterStart || !payload.stTime || !payload.endTime || !payload.weekDay) {
+    return toast(ui("请完整填写课程名称、学期开始日期、星期和时间", "Complete the course name, semester start, weekday and times"));
+  }
+  if (payload.endWeek < payload.startWeek) {
+    return toast(ui("结束周不能早于起始周", "End week cannot be earlier than start week"));
   }
   try {
     const saved = await api(id ? `/api/evt/${id}` : "/api/courseEvt", {
@@ -307,13 +377,12 @@ function applyParsedCourse(parsed) {
     courseName: parsed.courseName || parsed.title,
     teacher: parsed.teacher,
     location: parsed.location || parsed.room,
-    stDate: parsed.stDate || parsed.startDate,
-    endDate: parsed.endDate || parsed.finishDate,
+    semesterStart: parsed.semesterStart || parsed.stDate || parsed.startDate,
     weekDay: parsed.weekDay,
     stTime: parsed.stTime,
     endTime: parsed.endTime,
-    startWeek: parsed.startWeek,
-    endWeek: parsed.endWeek,
+    startWeek: parsed.startWeek || 1,
+    endWeek: parsed.endWeek || 16,
     weekMode: parsed.weekMode || "all",
     desc: parsed.desc || parsed.description,
   };
@@ -365,7 +434,7 @@ function bind() {
   $("deleteCourseTplBtn")?.addEventListener("click", deleteCourse);
   $("parseCourseBtn")?.addEventListener("click", parseCourse);
   $("syncCoursesBtn")?.addEventListener("click", syncAllCourses);
-  $("globalSearch")?.addEventListener("input", renderCourseList);
+  $("globalSearch")?.addEventListener("input", renderAll);
   document.body.addEventListener("click", (event) => {
     const element = event.target.closest("[data-course-id]");
     if (element) selectFromElement(element);
