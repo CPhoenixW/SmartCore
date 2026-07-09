@@ -11,18 +11,31 @@ from app.agent.v2_routes import createAgentV2Router
 from app.api.device_state_routes import router as deviceStateApiRouter
 from app.api.routes import router as apiRouter
 from app.config import get_settings
-from app.db.session import init_db
+from app.db.session import SessionLocal, init_db
 from app.device.routes import router as deviceRouter
 from app.feishu.event_handler import create_feishu_router
+from app.new_core.event_relations import ensure_all_relations
 from app.scheduler.service import build_scheduler_service
 from app.screen.routes import router as screenRouter
 from app.web.device_routes import router as workDeviceRouter
 from app.web.work_routes import router as workRouter
 
 
+def _sync_event_relations() -> None:
+    db = SessionLocal()
+    try:
+        ensure_all_relations(db)
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    _sync_event_relations()
     settings = get_settings()
     scheduler_service = build_scheduler_service(settings)
     if scheduler_service is not None:
@@ -36,6 +49,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     init_db()
+    _sync_event_relations()
     settings = get_settings()
     ensure_feedback_tools()
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
