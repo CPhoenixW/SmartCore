@@ -3,25 +3,29 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.new_core.event_relations import (
-    cancel_event,
+from app.new_core.course_semester import (
     create_course_event,
-    get_event,
-    list_events,
+    get_course_event,
+    list_course_events,
     sync_course_plans,
-    update_event,
+    update_course_event,
 )
+from app.new_core.event_relations import cancel_event, get_event, list_events, update_event
+from app.new_core.event_search import filter_events_by_text
+from app.new_core.models import EvtBase
 from app.new_core.relation_maintenance import close_past_course_occurrences
 
 router = APIRouter(prefix="/api", tags=["event-view"])
 
 
 def _error(exc: ValueError) -> HTTPException:
-    return HTTPException(status_code=400, detail=str(exc))
+    message = str(exc)
+    status = 404 if "not found" in message else 400
+    return HTTPException(status_code=status, detail=message)
 
 
 @router.get("/evt")
@@ -40,11 +44,31 @@ def list_actionable_events(
             date_value=date,
             evt_types=evtType,
             stats=stat,
-            text=text,
+            text=None,
             include_reminders=includeReminders,
             include_course_templates=includeCourseTemplates,
         )
-        return {"ok": True, "data": rows}
+        return {"ok": True, "data": filter_events_by_text(rows, text)}
+    except ValueError as exc:
+        raise _error(exc) from exc
+
+
+@router.get("/evt/{evtId}")
+def read_actionable_event(
+    evtId: str,
+    includeReminders: bool = False,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        base = db.get(EvtBase, evtId)
+        if base is None:
+            raise ValueError(f"evt not found: {evtId}")
+        data = get_course_event(db, evtId) if base.evtType == "course" else get_event(
+            db,
+            evtId,
+            include_reminders=includeReminders,
+        )
+        return {"ok": True, "data": data}
     except ValueError as exc:
         raise _error(exc) from exc
 
@@ -56,9 +80,16 @@ def update_actionable_event(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
-        result = update_event(db, evtId, src="api", **body)
+        base = db.get(EvtBase, evtId)
+        if base is None:
+            raise ValueError(f"evt not found: {evtId}")
+        result = (
+            update_course_event(db, evtId, src="api", **body)
+            if base.evtType == "course"
+            else update_event(db, evtId, src="api", **body)
+        )
         close_past_course_occurrences(db)
-        return {"ok": True, "data": get_event(db, result["evtId"])}
+        return {"ok": True, "data": result}
     except ValueError as exc:
         db.rollback()
         raise _error(exc) from exc
@@ -80,14 +111,24 @@ class CourseWriteBody(BaseModel):
     location: str | None = None
     stTime: str
     endTime: str
-    stDate: str
-    endDate: str
+    semesterStart: str | None = None
+    stDate: str | None = None
+    endDate: str | None = None
     weekDay: int | str
-    startWeek: int | None = None
-    endWeek: int | None = None
+    startWeek: int = Field(default=1, ge=1)
+    endWeek: int = Field(default=16, ge=1)
     weekMode: Literal["all", "odd", "even"] = "all"
     desc: str | None = None
     prio: str = "mid"
+
+
+@router.get("/courseEvt")
+def list_relation_courses(
+    text: str | None = None,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    rows = list_course_events(db)
+    return {"ok": True, "data": filter_events_by_text(rows, text)}
 
 
 @router.post("/courseEvt")
@@ -96,9 +137,9 @@ def create_relation_course(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
-        result = create_course_event(db, **body.model_dump(), src="api")
+        result = create_course_event(db, **body.model_dump(exclude_none=True), src="api")
         close_past_course_occurrences(db)
-        return {"ok": True, "data": get_event(db, result["evtId"])}
+        return {"ok": True, "data": result}
     except ValueError as exc:
         db.rollback()
         raise _error(exc) from exc
@@ -113,7 +154,7 @@ def resync_relation_course(evtId: str, db: Session = Depends(get_db)) -> dict[st
         return {
             "ok": True,
             "data": {
-                "course": get_event(db, evtId),
+                "course": get_course_event(db, evtId),
                 "plans": plans,
             },
         }
