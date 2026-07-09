@@ -14,6 +14,7 @@ from app.new_core.course_semester import (
     sync_course_plans,
     update_course_event,
 )
+from app.new_core.custom_reminders import replace_extra_reminders, sync_extra_reminders
 from app.new_core.event_relations import cancel_event, get_event, list_events, update_event
 from app.new_core.event_search import filter_events_by_text
 from app.new_core.models import EvtBase
@@ -83,11 +84,18 @@ def update_actionable_event(
         base = db.get(EvtBase, evtId)
         if base is None:
             raise ValueError(f"evt not found: {evtId}")
+        extra_reminders = body.pop("extraReminders", None)
         result = (
             update_course_event(db, evtId, src="api", **body)
             if base.evtType == "course"
             else update_event(db, evtId, src="api", **body)
         )
+        if base.evtType == "plan":
+            if extra_reminders is None:
+                sync_extra_reminders(db, evtId)
+            else:
+                replace_extra_reminders(db, evtId, extra_reminders)
+            result = get_event(db, evtId)
         close_past_course_occurrences(db)
         return {"ok": True, "data": result}
     except ValueError as exc:
