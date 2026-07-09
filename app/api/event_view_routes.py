@@ -12,6 +12,7 @@ from app.new_core.event_relations import (
     create_course_event,
     get_event,
     list_events,
+    sync_course_plans,
     update_event,
 )
 from app.new_core.relation_maintenance import close_past_course_occurrences
@@ -98,6 +99,24 @@ def create_relation_course(
         result = create_course_event(db, **body.model_dump(), src="api")
         close_past_course_occurrences(db)
         return {"ok": True, "data": get_event(db, result["evtId"])}
+    except ValueError as exc:
+        db.rollback()
+        raise _error(exc) from exc
+
+
+@router.post("/courseEvt/{evtId}/sync")
+def resync_relation_course(evtId: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    try:
+        plans = sync_course_plans(db, evtId)
+        db.commit()
+        close_past_course_occurrences(db)
+        return {
+            "ok": True,
+            "data": {
+                "course": get_event(db, evtId),
+                "plans": plans,
+            },
+        }
     except ValueError as exc:
         db.rollback()
         raise _error(exc) from exc
