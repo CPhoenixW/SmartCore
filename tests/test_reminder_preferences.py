@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.db.session import Base
 from app.new_core import crud, scheduler
-from app.new_core.models import AppUser, EvtBase, PlanEvt  # noqa: F401
+from app.new_core.event_relations import create_plan_event
+from app.new_core.models import AppUser, EvtBase, PlanEvt, RemindEvt  # noqa: F401
 from app.new_core.preferences import (
     UserPreference,  # noqa: F401
     get_user_preferences,
@@ -30,17 +31,25 @@ def test_reminder_channel_defaults_to_screen_and_can_use_feishu() -> None:
         db.close()
 
 
-def test_plan_start_and_end_use_different_reminder_phases(monkeypatch) -> None:
+def test_plan_owns_start_and_end_minus_ten_reminders(monkeypatch) -> None:
     db = _session()
     try:
-        event = crud.createPlanEvt(
+        event = create_plan_event(
             db,
             title="Long plan",
             stTime="2026-07-08T10:00:00+08:00",
             durationMin=30,
         )
-        calls: list[dict[str, str]] = []
+        assert [item["remindKind"] for item in event["reminders"]] == [
+            "plan_start_10m",
+            "plan_end_10m",
+        ]
+        assert [item["triggerTime"] for item in event["reminders"]] == [
+            "2026-07-08T09:50:00+08:00",
+            "2026-07-08T10:20:00+08:00",
+        ]
 
+        calls: list[dict[str, str]] = []
         monkeypatch.setattr(
             scheduler,
             "routeNotify",
@@ -50,22 +59,22 @@ def test_plan_start_and_end_use_different_reminder_phases(monkeypatch) -> None:
 
         scheduler.runReminderTick(
             db,
-            now="2026-07-08T10:05:00+08:00",
+            now="2026-07-08T09:50:30+08:00",
             screenOnline=True,
         )
-        assert [call["phase"] for call in calls] == ["start"]
+        assert len(calls) == 1
+        assert calls[0]["phase"] == "notice"
+        assert calls[0]["evtId"] == event["evtId"]
+        assert "开始前 10 分钟" in calls[0]["title"]
 
         calls.clear()
-        monkeypatch.setattr(
-            crud,
-            "notifyDedupExists",
-            lambda db, key: key.startswith(f"planStart:{event['evtId']}"),
-        )
         scheduler.runReminderTick(
             db,
-            now="2026-07-08T10:31:00+08:00",
+            now="2026-07-08T10:20:30+08:00",
             screenOnline=True,
         )
-        assert [call["phase"] for call in calls] == ["end"]
+        assert len(calls) == 1
+        assert calls[0]["phase"] == "notice"
+        assert "结束前 10 分钟" in calls[0]["title"]
     finally:
         db.close()
