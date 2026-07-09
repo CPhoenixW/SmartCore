@@ -32,6 +32,7 @@ def install_relation_compat() -> None:
 
     def create_plan(db: Session, **kwargs: Any) -> dict[str, Any]:
         extra_reminders = kwargs.pop("extraReminders", kwargs.pop("reminders", []))
+        kwargs.pop("commit", None)
         result = create_plan_event(db, **kwargs, commit=False)
         replace_extra_reminders(
             db,
