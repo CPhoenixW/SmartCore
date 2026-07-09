@@ -97,14 +97,60 @@ def _rebuild_table_if_incompatible(conn: object, table: str, required_columns: s
         conn.execute(create_sql)
 
 
-def _apply_sqlite_migrations(db_path: Path) -> None:
-    """Keep existing development SQLite databases compatible with current models.
+def _evt_base_supports_reminders(conn: object) -> bool:
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='evtBase'"
+    ).fetchone()
+    return bool(row and row[0] and "'remind'" in str(row[0]))
 
-    schema.sql uses CREATE TABLE IF NOT EXISTS, so it cannot add columns to an
-    already-created table. These targeted ALTERs prevent 500s after model fields
-    are added while keeping the database contents intact. Log tables are rebuilt
-    if their historical schema is incompatible because they are derived audit data.
-    """
+
+def _rebuild_evt_base_for_reminders(conn: object) -> None:
+    if not _sqlite_columns(conn, "evtBase") or _evt_base_supports_reminders(conn):
+        return
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.execute("DROP TABLE IF EXISTS evtBase_new")
+    conn.execute(
+        """
+        CREATE TABLE evtBase_new (
+            evtId VARCHAR(32) PRIMARY KEY,
+            userId VARCHAR(32) NOT NULL,
+            title VARCHAR(300) NOT NULL,
+            desc TEXT,
+            evtType VARCHAR(20) NOT NULL,
+            prio VARCHAR(10) NOT NULL DEFAULT 'mid',
+            stat VARCHAR(20) NOT NULL DEFAULT 'todo',
+            createdAt VARCHAR(64) NOT NULL,
+            updatedAt VARCHAR(64) NOT NULL,
+            FOREIGN KEY (userId) REFERENCES appUser(userId) ON DELETE CASCADE,
+            CHECK (evtType IN ('plan', 'ddl', 'course', 'remind')),
+            CHECK (prio IN ('low', 'mid', 'high')),
+            CHECK (stat IN ('todo', 'done', 'cancelled'))
+        )
+        """
+    )
+    columns = _sqlite_columns(conn, "evtBase")
+    user_expr = "COALESCE(userId, 'default')" if "userId" in columns else "'default'"
+    updated_expr = "COALESCE(updatedAt, createdAt)" if "updatedAt" in columns else "createdAt"
+    conn.execute(
+        f"""
+        INSERT INTO evtBase_new (
+            evtId, userId, title, desc, evtType, prio, stat, createdAt, updatedAt
+        )
+        SELECT
+            evtId, {user_expr}, title, desc, evtType,
+            COALESCE(prio, 'mid'), COALESCE(stat, 'todo'), createdAt, {updated_expr}
+        FROM evtBase
+        """
+    )
+    conn.execute("DROP TABLE evtBase")
+    conn.execute("ALTER TABLE evtBase_new RENAME TO evtBase")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_evtBase_user_stat_time ON evtBase(userId, stat, updatedAt)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_evtBase_user_type ON evtBase(userId, evtType)")
+    conn.execute("PRAGMA foreign_keys = ON")
+
+
+def _apply_sqlite_migrations(db_path: Path) -> None:
+    """Keep existing development SQLite databases compatible with current models."""
     import sqlite3
 
     conn = sqlite3.connect(db_path)
@@ -119,6 +165,7 @@ def _apply_sqlite_migrations(db_path: Path) -> None:
         if "evtBase" in tables:
             _add_sqlite_column(conn, "evtBase", "userId", "userId VARCHAR(32) NOT NULL DEFAULT 'default'")
             conn.execute("UPDATE evtBase SET userId = COALESCE(userId, 'default')")
+            _rebuild_evt_base_for_reminders(conn)
         if "idea" in tables:
             _add_sqlite_column(conn, "idea", "userId", "userId VARCHAR(32) NOT NULL DEFAULT 'default'")
             conn.execute("UPDATE idea SET userId = COALESCE(userId, 'default')")
@@ -198,6 +245,8 @@ def init_db() -> None:
     settings = get_settings()
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
     if settings.database_url.startswith("sqlite"):
+        if settings.database_path.exists():
+            _apply_sqlite_migrations(settings.database_path)
         _execute_sqlite_script(settings.database_path, schemaSqlPath())
         _execute_sqlite_script(settings.database_path, devicePhotoSqlPath())
         _apply_sqlite_migrations(settings.database_path)
