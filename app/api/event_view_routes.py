@@ -14,11 +14,16 @@ from app.new_core.course_semester import (
     sync_course_plans,
     update_course_event,
 )
-from app.new_core.custom_reminders import replace_extra_reminders, sync_extra_reminders
+from app.new_core.ddl_service import replace_ddl_plans
 from app.new_core.event_relations import cancel_event, get_event, list_events, update_event
 from app.new_core.event_search import filter_events_by_text
 from app.new_core.models import EvtBase
 from app.new_core.relation_maintenance import close_past_course_occurrences
+from app.new_core.reminder_service import (
+    get_reminder_event,
+    list_reminder_events,
+    update_reminder_event,
+)
 
 router = APIRouter(prefix="/api", tags=["event-view"])
 
@@ -40,15 +45,27 @@ def list_actionable_events(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
-        rows = list_events(
-            db,
-            date_value=date,
-            evt_types=evtType,
-            stats=stat,
-            text=None,
-            include_reminders=includeReminders,
-            include_course_templates=includeCourseTemplates,
-        )
+        non_reminder_types = [item for item in (evtType or []) if item != "remind"]
+        rows = []
+        if not evtType or non_reminder_types:
+            rows = list_events(
+                db,
+                date_value=date,
+                evt_types=non_reminder_types or None,
+                stats=stat,
+                text=None,
+                include_reminders=False,
+                include_course_templates=includeCourseTemplates,
+            )
+        if includeReminders and (not evtType or "remind" in evtType):
+            rows.extend(
+                list_reminder_events(
+                    db,
+                    date_value=date,
+                    stats=stat,
+                    text=None,
+                )
+            )
         return {"ok": True, "data": filter_events_by_text(rows, text)}
     except ValueError as exc:
         raise _error(exc) from exc
@@ -57,18 +74,18 @@ def list_actionable_events(
 @router.get("/evt/{evtId}")
 def read_actionable_event(
     evtId: str,
-    includeReminders: bool = False,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
         base = db.get(EvtBase, evtId)
         if base is None:
             raise ValueError(f"evt not found: {evtId}")
-        data = get_course_event(db, evtId) if base.evtType == "course" else get_event(
-            db,
-            evtId,
-            include_reminders=includeReminders,
-        )
+        if base.evtType == "course":
+            data = get_course_event(db, evtId)
+        elif base.evtType == "remind":
+            data = get_reminder_event(db, evtId)
+        else:
+            data = get_event(db, evtId)
         return {"ok": True, "data": data}
     except ValueError as exc:
         raise _error(exc) from exc
@@ -84,18 +101,15 @@ def update_actionable_event(
         base = db.get(EvtBase, evtId)
         if base is None:
             raise ValueError(f"evt not found: {evtId}")
-        extra_reminders = body.pop("extraReminders", None)
-        result = (
-            update_course_event(db, evtId, src="api", **body)
-            if base.evtType == "course"
-            else update_event(db, evtId, src="api", **body)
-        )
-        if base.evtType == "plan":
-            if extra_reminders is None:
-                sync_extra_reminders(db, evtId)
-            else:
-                replace_extra_reminders(db, evtId, extra_reminders)
-            result = get_event(db, evtId)
+        plans = body.pop("plans", None)
+        if base.evtType == "course":
+            result = update_course_event(db, evtId, src="api", **body)
+        elif base.evtType == "remind":
+            result = update_reminder_event(db, evtId, src="api", **body)
+        else:
+            result = update_event(db, evtId, src="api", **body)
+            if base.evtType == "ddl" and plans is not None:
+                result = replace_ddl_plans(db, evtId, plans, src="api")
         close_past_course_occurrences(db)
         return {"ok": True, "data": result}
     except ValueError as exc:
