@@ -10,10 +10,33 @@ from app.agent.routes import _done, _failed, requireAgentToken
 from app.agent.v2_routes import _normalize_update_patch, _resolved_iso
 from app.db.session import get_db
 from app.new_core.course_semester import create_course_event, update_course_event
-from app.new_core.custom_reminders import replace_extra_reminders, sync_extra_reminders
-from app.new_core.ddl_service import create_ddl_event
-from app.new_core.event_relations import create_plan_event, get_event, update_event
+from app.new_core.ddl_service import create_ddl_event, replace_ddl_plans
+from app.new_core.event_relations import create_plan_event, update_event
 from app.new_core.models import EvtBase
+from app.new_core.reminder_service import create_reminder_event, update_reminder_event
+
+
+def _normalized_plans(body: dict[str, Any]) -> list[dict[str, Any]] | None:
+    plans = body.get("plans") or body.get("linkedPlans")
+    if plans is None:
+        return None
+    if not isinstance(plans, list):
+        raise ValueError("plans must be an array")
+    result: list[dict[str, Any]] = []
+    for index, plan in enumerate(plans):
+        if not isinstance(plan, dict):
+            raise ValueError(f"plans[{index}] must be an object")
+        normalized = dict(plan)
+        if normalized.get("sortOrder") is None:
+            normalized["sortOrder"] = index
+        if plan.get("stTime") not in (None, ""):
+            normalized["stTime"] = _resolved_iso(
+                plan["stTime"],
+                body,
+                f"plans[{index}].stTime",
+            )
+        result.append(normalized)
+    return result
 
 
 def createRelationWriteRouter() -> APIRouter:
@@ -25,6 +48,8 @@ def createRelationWriteRouter() -> APIRouter:
             evt_type = str(body.get("evtType") or body.get("type") or "").lower()
             if evt_type == "life":
                 evt_type = "plan"
+            if evt_type in {"reminder", "提醒"}:
+                evt_type = "remind"
             title = str(body.get("title") or body.get("courseName") or "").strip()
             if not title:
                 raise ValueError("title required")
@@ -33,46 +58,37 @@ def createRelationWriteRouter() -> APIRouter:
                 raw_time = body.get("stTime") or body.get("dueAt") or body.get("at")
                 if raw_time in (None, ""):
                     raise ValueError("stTime required")
-                result = create_plan_event(
-                    db,
-                    title=title,
-                    stTime=_resolved_iso(raw_time, body, "stTime"),
-                    durationMin=int(body.get("durationMin") or 30),
-                    desc=body.get("desc") or body.get("description"),
-                    prio=body.get("prio") or body.get("priority") or "mid",
-                    src="openclaw",
-                    commit=False,
+                return _done(
+                    create_plan_event(
+                        db,
+                        title=title,
+                        stTime=_resolved_iso(raw_time, body, "stTime"),
+                        durationMin=int(body.get("durationMin") or 30),
+                        desc=body.get("desc") or body.get("description"),
+                        prio=body.get("prio") or body.get("priority") or "mid",
+                        src="openclaw",
+                    )
                 )
-                replace_extra_reminders(
-                    db,
-                    result["evtId"],
-                    body.get("extraReminders") or body.get("reminders") or [],
-                    commit=False,
+
+            if evt_type == "remind":
+                raw_time = body.get("triggerTime") or body.get("remindAt") or body.get("at")
+                if raw_time in (None, ""):
+                    raise ValueError("triggerTime required")
+                return _done(
+                    create_reminder_event(
+                        db,
+                        title=title,
+                        triggerTime=_resolved_iso(raw_time, body, "triggerTime"),
+                        desc=body.get("desc") or body.get("description"),
+                        prio=body.get("prio") or body.get("priority") or "mid",
+                        src="openclaw",
+                    )
                 )
-                db.commit()
-                return _done(get_event(db, result["evtId"]))
 
             if evt_type == "ddl":
                 raw_time = body.get("endTime") or body.get("ddlAt") or body.get("at")
                 if raw_time in (None, ""):
                     raise ValueError("endTime required")
-                plans = body.get("plans")
-                normalized_plans: list[dict[str, Any]] | None = None
-                if isinstance(plans, list):
-                    normalized_plans = []
-                    for index, plan in enumerate(plans):
-                        if not isinstance(plan, dict):
-                            raise ValueError(f"plans[{index}] must be an object")
-                        normalized = dict(plan)
-                        if normalized.get("sortOrder") is None:
-                            normalized.pop("sortOrder", None)
-                        if plan.get("stTime") not in (None, ""):
-                            normalized["stTime"] = _resolved_iso(
-                                plan["stTime"],
-                                body,
-                                f"plans[{index}].stTime",
-                            )
-                        normalized_plans.append(normalized)
                 return _done(
                     create_ddl_event(
                         db,
@@ -81,7 +97,7 @@ def createRelationWriteRouter() -> APIRouter:
                         hardDdl=bool(body.get("hardDdl", False)),
                         desc=body.get("desc") or body.get("description"),
                         prio=body.get("prio") or body.get("priority") or "high",
-                        plans=normalized_plans,
+                        plans=_normalized_plans(body),
                         src="openclaw",
                     )
                 )
@@ -133,20 +149,24 @@ def createRelationWriteRouter() -> APIRouter:
             patch = _normalize_update_patch(body, evt_type=base.evtType)
             if "semesterStart" in body:
                 patch["semesterStart"] = body["semesterStart"]
-            extra_reminders = body.get("extraReminders", body.get("reminders"))
-            if not patch and extra_reminders is None:
+            if base.evtType == "remind":
+                raw_time = body.get("triggerTime") or body.get("remindAt")
+                if raw_time not in (None, ""):
+                    patch["triggerTime"] = _resolved_iso(raw_time, body, "triggerTime")
+                if not patch:
+                    raise ValueError("no supported update fields")
+                return _done(update_reminder_event(db, str(evt_id), src="openclaw", **patch))
+            if base.evtType == "course":
+                if not patch:
+                    raise ValueError("no supported update fields")
+                return _done(update_course_event(db, str(evt_id), src="openclaw", **patch))
+
+            plans = _normalized_plans(body) if ("plans" in body or "linkedPlans" in body) else None
+            if not patch and plans is None:
                 raise ValueError("no supported update fields")
-            result = (
-                update_course_event(db, str(evt_id), src="openclaw", **patch)
-                if base.evtType == "course"
-                else update_event(db, str(evt_id), src="openclaw", **patch)
-            )
-            if base.evtType == "plan":
-                if extra_reminders is None:
-                    sync_extra_reminders(db, str(evt_id))
-                else:
-                    replace_extra_reminders(db, str(evt_id), extra_reminders)
-                result = get_event(db, str(evt_id))
+            result = update_event(db, str(evt_id), src="openclaw", **patch)
+            if base.evtType == "ddl" and plans is not None:
+                result = replace_ddl_plans(db, str(evt_id), plans, src="openclaw")
             return _done(result)
         except (ValueError, TypeError, IntegrityError) as exc:
             db.rollback()
