@@ -5,15 +5,19 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.new_core import crud
+from app.new_core.course_semester import (
+    create_course_event,
+    list_course_events,
+    update_course_event,
+)
 from app.new_core.event_relations import (
     apply_reminder_action,
     cancel_event,
-    create_course_event,
     create_plan_event,
-    list_course_events,
     list_events,
     update_event,
 )
+from app.new_core.models import EvtBase
 
 _installed = False
 
@@ -32,6 +36,9 @@ def install_relation_compat() -> None:
 
     def update(db: Session, evtId: str, **fields: Any) -> dict[str, Any]:
         src = str(fields.pop("src", "api"))
+        base = db.get(EvtBase, evtId)
+        if base is not None and base.evtType == "course":
+            return update_course_event(db, evtId, src=src, **fields)
         return update_event(db, evtId, src=src, **fields)
 
     def cancel(db: Session, evtId: str, *, src: str = "api") -> dict[str, Any]:
