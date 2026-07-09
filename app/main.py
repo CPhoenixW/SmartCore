@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.agent.feedback_routes import createFeedbackRouter, ensure_feedback_tools
 from app.agent.legacy_time_routes import createLegacyTimeRouter
+from app.agent.relation_query_routes import createRelationQueryRouter
 from app.agent.routes import createAgentRouter, createDevRouter
 from app.agent.v2_routes import createAgentV2Router
 from app.api.device_state_routes import router as deviceStateApiRouter
@@ -72,6 +73,7 @@ def create_app() -> FastAPI:
     app.include_router(createDevRouter())
     app.include_router(deviceRouter)
     app.include_router(createFeedbackRouter())
+    app.include_router(createRelationQueryRouter())
     app.include_router(createAgentV2Router())
     app.include_router(createLegacyTimeRouter())
     app.include_router(createAgentRouter())
