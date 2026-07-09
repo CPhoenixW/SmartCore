@@ -16,6 +16,7 @@ dependencies = [
     "pydantic-settings",
     "apscheduler",
     "httpx",
+    "openai>=1.0",
     "python-multipart",
     "jinja2",
     "cryptography",
