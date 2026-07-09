@@ -16,6 +16,29 @@ from app.new_core.event_search import filter_events_by_text
 
 def _relation_tools() -> list[dict[str, Any]]:
     tools = _enhanced_tools()
+    reminder_schema = {
+        "type": "array",
+        "description": (
+            "Optional additional plan reminders. Every plan already receives start-minus-10 "
+            "and end-minus-10 reminders automatically."
+        ),
+        "items": {
+            "type": "object",
+            "properties": {
+                "anchor": {
+                    "type": "string",
+                    "enum": ["start", "end"],
+                },
+                "offsetMin": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 10080,
+                },
+            },
+            "required": ["anchor", "offsetMin"],
+            "additionalProperties": False,
+        },
+    }
     for tool in tools:
         name = tool.get("name")
         properties = (tool.get("inputSchema") or {}).get("properties") or {}
@@ -53,6 +76,7 @@ def _relation_tools() -> list[dict[str, Any]]:
                 "minimum": 1,
                 "default": 16,
             }
+            properties["extraReminders"] = reminder_schema
             if isinstance(properties.get("stDate"), dict):
                 properties["stDate"]["description"] = "Deprecated course alias for semesterStart."
             if isinstance(properties.get("endDate"), dict):
@@ -72,7 +96,7 @@ def createRelationQueryRouter() -> APIRouter:
             "ok": True,
             "stat": "done",
             "data": {
-                "version": "2026-07-09-semester-course-v5",
+                "version": "2026-07-09-plan-reminders-v6",
                 "authHeader": "X-SmartCore-Agent-Token",
                 "requestContext": {
                     "timezone": "Asia/Shanghai",
@@ -80,7 +104,7 @@ def createRelationQueryRouter() -> APIRouter:
                 },
                 "relationPolicy": {
                     "course": "A course uses semesterStart plus startWeek/endWeek, weekday, and clock time to create plan occurrences.",
-                    "plan": "Every plan automatically owns two reminder events: start minus 10 minutes and end minus 10 minutes.",
+                    "plan": "Every plan automatically owns start-minus-10 and end-minus-10 reminders; extraReminders may add more start/end-relative reminders.",
                     "reminder": "Reminder events are push-only and hidden unless includeReminders is true.",
                     "weekday": "Monday=1 through Sunday=7; Chinese and English weekday names are accepted.",
                     "search": "Event text search also matches dates, weekdays, and times.",
