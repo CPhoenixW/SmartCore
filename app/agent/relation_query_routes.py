@@ -14,34 +14,52 @@ from app.new_core.event_relations import query_events
 from app.new_core.event_search import filter_events_by_text
 
 
+def _append_remind_enum(schema: dict[str, Any] | None) -> None:
+    if not isinstance(schema, dict):
+        return
+    if isinstance(schema.get("enum"), list) and "remind" not in schema["enum"]:
+        schema["enum"].append("remind")
+    for variant in schema.get("oneOf") or []:
+        if not isinstance(variant, dict):
+            continue
+        _append_remind_enum(variant)
+        _append_remind_enum(variant.get("items"))
+
+
 def _relation_tools() -> list[dict[str, Any]]:
     tools = _enhanced_tools()
-    reminder_schema = {
+    ddl_plan_schema = {
         "type": "array",
         "description": (
-            "Optional additional plan reminders. Every plan already receives start-minus-10 "
-            "and end-minus-10 reminders automatically."
+            "DDL-linked plans. Omit on create to generate two 30-minute defaults: "
+            "one day before and one hour before the deadline. Multiple manual plans are allowed."
         ),
         "items": {
             "type": "object",
             "properties": {
-                "anchor": {
+                "planEvtId": {
                     "type": "string",
-                    "enum": ["start", "end"],
+                    "description": "Existing linked plan ID; use it when updating a DDL plan.",
                 },
-                "offsetMin": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 10080,
+                "planRole": {
+                    "type": "string",
+                    "enum": ["one_day_before", "one_hour_before", "manual"],
                 },
+                "title": {"type": "string"},
+                "stTime": {"type": "string", "format": "date-time"},
+                "durationMin": {"type": "integer", "minimum": 1},
+                "sortOrder": {"type": "integer", "minimum": 0},
             },
-            "required": ["anchor", "offsetMin"],
-            "additionalProperties": False,
+            "required": ["stTime", "durationMin"],
+            "additionalProperties": True,
         },
     }
     for tool in tools:
         name = tool.get("name")
         properties = (tool.get("inputSchema") or {}).get("properties") or {}
+        _append_remind_enum(properties.get("evtType"))
+        _append_remind_enum(properties.get("type"))
+
         if name == "evtQuery":
             linked = properties.get("includeLinkedPlans")
             if isinstance(linked, dict):
@@ -50,17 +68,14 @@ def _relation_tools() -> list[dict[str, Any]]:
             text = properties.get("text") or properties.get("keyword")
             if isinstance(text, dict):
                 text["description"] = "Search title, description, date, weekday, or clock time such as 2026-09-01, 星期二, or 08:00."
-            evt_type = properties.get("evtType")
-            if isinstance(evt_type, dict):
-                for variant in evt_type.get("oneOf") or []:
-                    if not isinstance(variant, dict):
-                        continue
-                    if isinstance(variant.get("enum"), list) and "remind" not in variant["enum"]:
-                        variant["enum"].append("remind")
-                    items = variant.get("items")
-                    if isinstance(items, dict) and isinstance(items.get("enum"), list) and "remind" not in items["enum"]:
-                        items["enum"].append("remind")
+
         if name in {"evtCreate", "evtUpdate"}:
+            properties["triggerTime"] = {
+                "type": "string",
+                "format": "date-time",
+                "description": "Required for a standalone remind event.",
+            }
+            properties["plans"] = ddl_plan_schema
             properties["semesterStart"] = {
                 "type": "string",
                 "format": "date",
@@ -76,7 +91,8 @@ def _relation_tools() -> list[dict[str, Any]]:
                 "minimum": 1,
                 "default": 16,
             }
-            properties["extraReminders"] = reminder_schema
+            properties.pop("extraReminders", None)
+            properties.pop("reminders", None)
             if isinstance(properties.get("stDate"), dict):
                 properties["stDate"]["description"] = "Deprecated course alias for semesterStart."
             if isinstance(properties.get("endDate"), dict):
@@ -96,7 +112,7 @@ def createRelationQueryRouter() -> APIRouter:
             "ok": True,
             "stat": "done",
             "data": {
-                "version": "2026-07-09-plan-reminders-v6",
+                "version": "2026-07-09-standalone-reminder-ddl-plans-v7",
                 "authHeader": "X-SmartCore-Agent-Token",
                 "requestContext": {
                     "timezone": "Asia/Shanghai",
@@ -104,8 +120,9 @@ def createRelationQueryRouter() -> APIRouter:
                 },
                 "relationPolicy": {
                     "course": "A course uses semesterStart plus startWeek/endWeek, weekday, and clock time to create plan occurrences.",
-                    "plan": "Every plan automatically owns start-minus-10 and end-minus-10 reminders; extraReminders may add more start/end-relative reminders.",
-                    "reminder": "Reminder events are push-only and hidden unless includeReminders is true.",
+                    "plan": "Every plan automatically owns two hidden push reminders: start minus 10 minutes and end minus 10 minutes.",
+                    "reminder": "A standalone remind event has its own triggerTime and can be created, queried, and updated independently.",
+                    "ddl": "A DDL may own multiple editable linked plans; omitting plans creates one-day-before and one-hour-before 30-minute defaults.",
                     "weekday": "Monday=1 through Sunday=7; Chinese and English weekday names are accepted.",
                     "search": "Event text search also matches dates, weekdays, and times.",
                 },
@@ -123,6 +140,8 @@ def createRelationQueryRouter() -> APIRouter:
             result = query_events(db, normalized)
             items = []
             for item in result.get("items", []):
+                if item.get("evtType") == "remind" and item.get("planEvtId"):
+                    continue
                 if item.get("evtType") == "course":
                     item = dict(item)
                     item.setdefault("semesterStart", item.get("stDate"))
