@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
@@ -17,10 +19,18 @@ from app.new_core.event_relations import (
     list_events,
     update_event,
 )
-from app.new_core.models import EvtBase
+from app.new_core.models import EvtBase, RemindEvt
 from app.new_core.reminder_service import update_reminder_event
 
+_DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
 _installed = False
+
+
+def _parse_now(value: str) -> datetime:
+    parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_DEFAULT_TZ)
+    return parsed.astimezone(_DEFAULT_TZ)
 
 
 def install_relation_compat() -> None:
@@ -72,6 +82,20 @@ def install_relation_compat() -> None:
         now: str,
         src: str,
     ) -> dict[str, Any]:
+        reminder = db.get(RemindEvt, evtId)
+        if reminder is not None and reminder.planEvtId is None:
+            if action == "done":
+                return update_reminder_event(db, evtId, src=src, stat="done")
+            if action == "snooze10":
+                trigger = _parse_now(now) + timedelta(minutes=10)
+                return update_reminder_event(
+                    db,
+                    evtId,
+                    src=src,
+                    triggerTime=trigger.isoformat(),
+                    stat="todo",
+                )
+            raise ValueError(f"unknown reminder action: {action}")
         return apply_reminder_action(
             db,
             evt_id=evtId,
