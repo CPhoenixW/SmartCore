@@ -10,7 +10,7 @@ _PAGE_META = {
     "add": ("添加事件", "创建计划事项或截止事项"),
     "update": ("更新事件", "按日期查看和修改计划事项"),
     "inspire": ("灵感", "记录、筛选和修改灵感"),
-    "course": ("课表", "课程模板、上课计划与提醒管理"),
+    "course": ("课表", "按学期开始日期和周次生成上课计划"),
     "log": ("日志", "日志追踪"),
     "settings": ("设置", "用户与偏好"),
 }
@@ -62,7 +62,7 @@ def _shell(active: str, body_html: str) -> str:
   </aside>
   <section class="work-content">
     <header class="topbar">
-      <label class="top-search"><span>⌕</span><input id="globalSearch" placeholder="搜索事项、DDL、灵感、日志..." autocomplete="off"></label>
+      <label class="top-search"><span>⌕</span><input id="globalSearch" placeholder="搜索标题、日期或时间，如 2026-09-01、08:00、星期二" autocomplete="off"></label>
       <div class="topbar-actions"><span class="status-pill" id="apiStatus">API 待命</span><span class="top-muted" id="lastRefresh">未刷新</span><a class="top-avatar" id="topUserLink" href="/work/settings" aria-label="用户设置"><img id="topAvatarImg" alt="" hidden><span id="topAvatarText">SC</span></a></div>
     </header>
     <main class="page-main"><section class="page-head"><div><h1>{title}</h1><p>{subtitle}</p></div></section>{body_html}</main>
@@ -89,7 +89,7 @@ _EVT_EDIT_FORM = """
 """
 
 _IDEA_EDIT_FORM = """
-<form id="ideaEditForm" class="edit-form"><input name="ideaId" type="hidden"><label class="field required"><span>内容</span><textarea name="content" rows="8" required placeholder="选择左侧灵感进行修改，或直接输入新灵感..."></textarea></label><label class="field"><span>状态</span><select name="handled"><option value="open">open</option><option value="handled">handled</option></select></label><div class="button-row"><button type="submit" class="btn btn-primary" id="saveIdeaFormBtn">保存灵感</button><button type="button" class="btn" id="newIdeaBtn">新建</button><button type="button" class="btn btn-danger" id="deleteIdeaBtn">删除</button></div></form>
+<form id="ideaEditForm" class="edit-form"><input name="ideaId" type="hidden"><label class="field required"><span>内容</span><textarea name="content" rows="8" required placeholder="选择左侧灵感进行修改，或直接输入新灵感..."></textarea></label><label class="field"><span>状态</span><select name="handled"><option value="open">open</option><option value="handled">handled</option><option value="all">全部</option></select></label><div class="button-row"><button type="submit" class="btn btn-primary" id="saveIdeaFormBtn">保存灵感</button><button type="button" class="btn" id="newIdeaBtn">新建</button><button type="button" class="btn btn-danger" id="deleteIdeaBtn">删除</button></div></form>
 """
 
 _OVERVIEW_BODY = """
@@ -117,21 +117,21 @@ _INSPIRE_BODY = f"""<section class="content-grid two-one inspire-grid"><article 
 _COURSE_BODY = """
 <section class="course-layout">
   <div class="stack course-main">
-    <article class="card natural-card"><header><h2>自然语言添加课程</h2><button type="button" class="btn btn-primary" id="parseCourseBtn">解析课程</button></header><div class="card-body"><textarea id="courseNaturalText" class="nl-input" rows="2" placeholder="例如：高等数学，张老师，周二 8:00-9:40，教A101，2026-09-01到2027-01-10，每周上课"></textarea></div></article>
+    <article class="card natural-card"><header><h2>自然语言添加课程</h2><button type="button" class="btn btn-primary" id="parseCourseBtn">解析课程</button></header><div class="card-body"><textarea id="courseNaturalText" class="nl-input" rows="2" placeholder="例如：学期 2026-09-07 开始，高等数学，张老师，周二 8:00-9:40，教 A101，第 1-16 周每周上课"></textarea></div></article>
     <article class="card timetable-card"><header><div><h2>周课表</h2><p class="row-meta">点击课程块可直接编辑课程模板</p></div><div class="timetable-legend"><span><i></i>课程计划</span></div></header><div class="card-body"><div class="course-timetable" id="courseTimetable"></div></div></article>
     <article class="card"><header><h2>课程列表</h2><button class="btn" id="syncCoursesBtn" type="button">重新生成上课计划</button></header><div class="card-body list" id="courseTplList"></div></article>
   </div>
-  <aside class="card sticky-card course-editor"><header><h2 id="courseEditorTitle">编辑课程</h2><button class="btn" id="newCourseBtn" type="button">新建</button></header><div class="card-body">
+  <aside class="card sticky-card course-editor"><header><h2 id="courseEditorTitle">编辑课程</h2><button class="btn" id="newCourseBtn" type="button">新建</button></header><div class="card-body course-editor-scroll">
     <form id="courseTplForm" class="edit-form"><input name="evtId" type="hidden">
       <label class="field required"><span>课程名称</span><input name="courseName" required></label>
       <div class="form-row"><label class="field"><span>教师</span><input name="teacher"></label><label class="field"><span>地点</span><input name="location"></label></div>
-      <div class="form-row"><label class="field required"><span>开始日期</span><input name="stDate" type="date" required></label><label class="field required"><span>结束日期</span><input name="endDate" type="date" required></label></div>
+      <label class="field required"><span>学期开始日期</span><input name="semesterStart" type="date" required></label>
       <div class="form-row"><label class="field required"><span>星期</span><select name="weekDay" required><option value="1">星期一</option><option value="2">星期二</option><option value="3">星期三</option><option value="4">星期四</option><option value="5">星期五</option><option value="6">星期六</option><option value="7">星期日</option></select></label><label class="field"><span>周属性</span><select name="weekMode"><option value="all">每周</option><option value="odd">单周</option><option value="even">双周</option></select></label></div>
+      <div class="form-row"><label class="field required"><span>起始周</span><input name="startWeek" type="number" min="1" value="1" required></label><label class="field required"><span>结束周</span><input name="endWeek" type="number" min="1" value="16" required></label></div>
       <div class="form-row"><label class="field required"><span>上课时间</span><input name="stTime" type="time" required></label><label class="field required"><span>下课时间</span><input name="endTime" type="time" required></label></div>
-      <div class="form-row"><label class="field"><span>起始周</span><input name="startWeek" type="number" min="1"></label><label class="field"><span>结束周</span><input name="endWeek" type="number" min="1"></label></div>
       <label class="field"><span>课程说明</span><textarea name="desc" rows="3"></textarea></label>
-      <div class="course-generated-summary" id="courseGeneratedSummary">保存后会自动计算全部上课日期，并为每次课生成计划与两个提醒。</div>
-      <div class="button-row"><button type="submit" class="btn btn-primary">保存并生成计划</button><button type="button" class="btn btn-danger" id="deleteCourseTplBtn">删除课程</button></div>
+      <div class="course-generated-summary" id="courseGeneratedSummary">以学期开始日期为第 1 周，按照星期和起止周自动计算全部上课时间。</div>
+      <div class="button-row course-editor-actions"><button type="submit" class="btn btn-primary">保存并生成计划</button><button type="button" class="btn btn-danger" id="deleteCourseTplBtn">删除课程</button></div>
     </form>
   </div></aside>
 </section>
