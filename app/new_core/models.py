@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -98,6 +98,41 @@ class CourseEvt(Base):
     startWeek: Mapped[int | None] = mapped_column(Integer)
     endWeek: Mapped[int | None] = mapped_column(Integer)
     weekMode: Mapped[str] = mapped_column(String(10), default="all", nullable=False)
+
+
+class CoursePlan(Base):
+    __tablename__ = "coursePlan"
+    __table_args__ = (
+        UniqueConstraint("courseEvtId", "occurrenceDate", name="uq_course_plan_occurrence"),
+        UniqueConstraint("planEvtId", name="uq_course_plan_plan"),
+    )
+
+    courseEvtId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("courseEvt.evtId", ondelete="CASCADE"), primary_key=True
+    )
+    planEvtId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("planEvt.evtId", ondelete="CASCADE"), primary_key=True
+    )
+    occurrenceDate: Mapped[str] = mapped_column(String(16), nullable=False)
+    sequenceNo: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class RemindEvt(Base):
+    __tablename__ = "remindEvt"
+    __table_args__ = (
+        UniqueConstraint("planEvtId", "remindKind", name="uq_plan_remind_kind"),
+    )
+
+    evtId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("evtBase.evtId", ondelete="CASCADE"), primary_key=True
+    )
+    planEvtId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("planEvt.evtId", ondelete="CASCADE"), nullable=False
+    )
+    remindKind: Mapped[str] = mapped_column(String(30), nullable=False)
+    triggerTime: Mapped[str] = mapped_column(String(64), nullable=False)
+    offsetMin: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
+    firedAt: Mapped[str | None] = mapped_column(String(64))
 
 
 class Idea(Base):
