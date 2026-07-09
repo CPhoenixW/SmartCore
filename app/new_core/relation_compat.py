@@ -47,6 +47,9 @@ def install_relation_compat() -> None:
         return update_event(db, evtId, src=src, **fields)
 
     def cancel(db: Session, evtId: str, *, src: str = "api") -> dict[str, Any]:
+        base = db.get(EvtBase, evtId)
+        if base is not None and base.evtType == "remind":
+            return update_reminder_event(db, evtId, src=src, stat="cancelled")
         return cancel_event(db, evtId, src=src)
 
     def list_all(db: Session, *, userId: str = crud.DEFAULT_USER_ID) -> list[dict[str, Any]]:
