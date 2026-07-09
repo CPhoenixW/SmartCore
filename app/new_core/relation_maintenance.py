@@ -7,11 +7,8 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.new_core.event_relations import (
-    mark_reminder_fired,
-    sync_course_plans,
-    sync_plan_reminders,
-)
+from app.new_core.course_semester import sync_course_plans
+from app.new_core.event_relations import mark_reminder_fired, sync_plan_reminders
 from app.new_core.models import CourseEvt, CoursePlan, EvtBase, PlanEvt, RemindEvt, nowIso
 
 _DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
