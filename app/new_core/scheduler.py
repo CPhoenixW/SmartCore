@@ -7,10 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.new_core import crud
-from app.new_core.event_relations import ensure_all_relations, mark_reminder_fired
+from app.new_core.event_relations import mark_reminder_fired
 from app.new_core.models import DdlEvt, EvtBase, RemindEvt
 from app.new_core.notify import routeNotify
-from app.new_core.relation_maintenance import close_past_course_occurrences
+from app.new_core.relation_maintenance import (
+    close_past_course_occurrences,
+    ensure_missing_relations,
+)
 
 _DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
 _REMINDER_DELIVERY_WINDOW = timedelta(minutes=5)
@@ -39,7 +42,7 @@ def runReminderTick(
     nowDt = _parseNow(now)
     sent = 0
 
-    ensure_all_relations(db)
+    ensure_missing_relations(db)
     close_past_course_occurrences(db, now=nowDt.isoformat())
 
     reminder_rows = db.execute(
