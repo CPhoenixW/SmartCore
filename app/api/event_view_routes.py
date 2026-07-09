@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -15,9 +17,15 @@ from app.new_core.course_semester import (
     update_course_event,
 )
 from app.new_core.ddl_service import replace_ddl_plans
-from app.new_core.event_relations import cancel_event, get_event, list_events, update_event
+from app.new_core.event_relations import (
+    apply_reminder_action,
+    cancel_event,
+    get_event,
+    list_events,
+    update_event,
+)
 from app.new_core.event_search import filter_events_by_text
-from app.new_core.models import EvtBase
+from app.new_core.models import EvtBase, RemindEvt, nowIso
 from app.new_core.relation_maintenance import close_past_course_occurrences
 from app.new_core.reminder_service import (
     get_reminder_event,
@@ -26,12 +34,22 @@ from app.new_core.reminder_service import (
 )
 
 router = APIRouter(prefix="/api", tags=["event-view"])
+_DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
 
 
 def _error(exc: ValueError) -> HTTPException:
     message = str(exc)
     status = 404 if "not found" in message else 400
     return HTTPException(status_code=status, detail=message)
+
+
+def _parse_now(value: str | None) -> datetime:
+    if not value:
+        return datetime.now(_DEFAULT_TZ)
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_DEFAULT_TZ)
+    return parsed.astimezone(_DEFAULT_TZ)
 
 
 @router.get("/evt")
@@ -120,7 +138,56 @@ def update_actionable_event(
 @router.delete("/evt/{evtId}")
 def cancel_actionable_event(evtId: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
+        base = db.get(EvtBase, evtId)
+        if base is None:
+            raise ValueError(f"evt not found: {evtId}")
+        if base.evtType == "remind":
+            return {"ok": True, "data": update_reminder_event(db, evtId, src="api", stat="cancelled")}
         return {"ok": True, "data": cancel_event(db, evtId, src="api")}
+    except ValueError as exc:
+        db.rollback()
+        raise _error(exc) from exc
+
+
+class ReminderActionBody(BaseModel):
+    evtId: str
+    action: str
+    now: str | None = None
+
+
+@router.post("/reminder/action")
+def reminder_action(
+    body: ReminderActionBody,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        remind = db.get(RemindEvt, body.evtId)
+        if remind is not None and remind.planEvtId is None:
+            if body.action == "done":
+                return {"ok": True, "data": update_reminder_event(db, body.evtId, src="screen", stat="done")}
+            if body.action == "snooze10":
+                trigger = _parse_now(body.now) + timedelta(minutes=10)
+                return {
+                    "ok": True,
+                    "data": update_reminder_event(
+                        db,
+                        body.evtId,
+                        src="screen",
+                        triggerTime=trigger.isoformat(),
+                        stat="todo",
+                    ),
+                }
+            raise ValueError(f"unknown reminder action: {body.action}")
+        return {
+            "ok": True,
+            "data": apply_reminder_action(
+                db,
+                evt_id=body.evtId,
+                action=body.action,
+                now=body.now or nowIso(),
+                src="screen",
+            ),
+        }
     except ValueError as exc:
         db.rollback()
         raise _error(exc) from exc
