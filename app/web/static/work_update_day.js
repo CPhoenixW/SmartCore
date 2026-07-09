@@ -1,9 +1,14 @@
-import { ensureDeviceNav, formatDateTime, getUiLanguage, t } from "./work_shared.js";
+import { ensureDeviceNav, getUiLanguage, t } from "./work_shared.js";
 
 const $ = (id) => document.getElementById(id);
-const state = { events: [], selectedId: null, date: "" };
+const state = { events: [], selectedId: null, date: "", searchTimer: null };
 const typeLabels = { plan: ["计划", "Plan"], ddl: ["DDL", "DDL"] };
 const prioLabels = { high: ["高", "High"], mid: ["中", "Medium"], low: ["低", "Low"] };
+const weekdayLabels = {
+  1: ["星期一", "monday"], 2: ["星期二", "tuesday"], 3: ["星期三", "wednesday"],
+  4: ["星期四", "thursday"], 5: ["星期五", "friday"], 6: ["星期六", "saturday"],
+  7: ["星期日", "sunday"],
+};
 
 function ui(zh, en) { return getUiLanguage() === "en" ? en : zh; }
 function esc(value) {
@@ -70,6 +75,34 @@ function eventLabel(event) {
   const end = new Date(date.getTime() + Number(event.durationMin || 0) * 60000);
   return `${start}–${end.toLocaleTimeString(getUiLanguage() === "en" ? "en-US" : "zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
 }
+function normalizeQuery(value) {
+  let text = String(value || "").trim().toLowerCase().replace(/\//g, "-");
+  text = text.replace(/(\d{1,2})点半/g, (_, hour) => `${String(Number(hour)).padStart(2, "0")}:30`);
+  text = text.replace(/(\d{1,2})点(?:(\d{1,2})分?)?/g, (_, hour, minute) => `${String(Number(hour)).padStart(2, "0")}:${String(Number(minute || 0)).padStart(2, "0")}`);
+  return text;
+}
+function extractDateQuery(value) {
+  const text = String(value || "");
+  const match = text.match(/(20\d{2})[年\-/](\d{1,2})[月\-/](\d{1,2})日?/);
+  if (!match) return null;
+  const candidate = `${match[1]}-${String(Number(match[2])).padStart(2, "0")}-${String(Number(match[3])).padStart(2, "0")}`;
+  const parsed = new Date(`${candidate}T12:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : candidate;
+}
+function eventSearchText(event) {
+  const instant = eventInstant(event);
+  const parts = [event.title, event.desc, event.courseName, event.location, event.teacher, event.evtType, event.prio, event.stat, event.stTime, event.endTime, event.occurrenceDate];
+  if (!Number.isNaN(instant.getTime())) {
+    const pad = (part) => String(part).padStart(2, "0");
+    const isoDate = localDateValue(instant);
+    const start = `${pad(instant.getHours())}:${pad(instant.getMinutes())}`;
+    const end = new Date(instant.getTime() + Number(event.durationMin || 0) * 60000);
+    const endTime = `${pad(end.getHours())}:${pad(end.getMinutes())}`;
+    const weekday = instant.getDay() === 0 ? 7 : instant.getDay();
+    parts.push(isoDate, isoDate.replace(/-/g, "/"), `${instant.getMonth() + 1}月${instant.getDate()}日`, start, endTime, `${instant.getHours()}点`, weekdayLabels[weekday]?.[0], weekdayLabels[weekday]?.[1]);
+  }
+  return parts.filter(Boolean).join(" ").toLowerCase();
+}
 function tagClass(value, kind) {
   if (kind === "type" && value === "ddl") return "purple";
   if (kind === "prio" && value === "high") return "red";
@@ -77,11 +110,11 @@ function tagClass(value, kind) {
   return "blue";
 }
 function render() {
-  const query = $("globalSearch")?.value.trim().toLowerCase() || "";
+  const query = normalizeQuery($("globalSearch")?.value);
   const status = $("evtStatusFilter")?.value || "todo";
   const rows = state.events
-    .filter((event) => (status === "all" || event.stat === status))
-    .filter((event) => !query || `${event.title} ${event.desc || ""}`.toLowerCase().includes(query))
+    .filter((event) => status === "all" || event.stat === status)
+    .filter((event) => !query || eventSearchText(event).includes(query))
     .sort((a, b) => eventInstant(a) - eventInstant(b));
   $("evtList").innerHTML = rows.length ? rows.map((event) => {
     const typePair = typeLabels[event.evtType] || [event.evtType, event.evtType];
@@ -110,7 +143,9 @@ function selectEvent(event) {
   render();
 }
 async function load() {
-  state.events = await api(`/api/evt?date=${encodeURIComponent(state.date)}&includeCourseTemplates=false`);
+  const query = normalizeQuery($("globalSearch")?.value);
+  const textParam = query ? `&text=${encodeURIComponent(query)}` : "";
+  state.events = await api(`/api/evt?date=${encodeURIComponent(state.date)}&includeCourseTemplates=false${textParam}`);
   const queryId = new URLSearchParams(location.search).get("evtId");
   const current = state.events.find((event) => event.evtId === (state.selectedId || queryId));
   if (current) selectEvent(current); else render();
@@ -146,12 +181,23 @@ function setDate(value) {
   state.selectedId = null;
   load().catch((error) => toast(error.message));
 }
+function handleSearchInput() {
+  clearTimeout(state.searchTimer);
+  state.searchTimer = setTimeout(() => {
+    const dateQuery = extractDateQuery($("globalSearch")?.value);
+    if (dateQuery && dateQuery !== state.date) {
+      setDate(dateQuery);
+      return;
+    }
+    load().catch((error) => toast(error.message));
+  }, 220);
+}
 function bind() {
   $("evtEditForm")?.addEventListener("submit", save);
   $("markDoneBtn")?.addEventListener("click", () => setStatus("done"));
   $("cancelEvtBtn")?.addEventListener("click", () => setStatus("cancelled"));
   $("evtStatusFilter")?.addEventListener("change", render);
-  $("globalSearch")?.addEventListener("input", render);
+  $("globalSearch")?.addEventListener("input", handleSearchInput);
   $("evtDateFilter")?.addEventListener("change", (event) => setDate(event.target.value));
   $("prevDayBtn")?.addEventListener("click", () => setDate(shiftDate(state.date, -1)));
   $("nextDayBtn")?.addEventListener("click", () => setDate(shiftDate(state.date, 1)));
