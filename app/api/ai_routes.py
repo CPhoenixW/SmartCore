@@ -41,7 +41,59 @@ def _normalize_priority(value: Any, *, tab: str) -> str:
     return "high" if tab == "ddl" else "mid"
 
 
-def _normalize_parsed(data: dict[str, Any]) -> dict[str, Any]:
+def _normalize_weekday(value: Any) -> int | None:
+    aliases = {
+        "monday": 1, "mon": 1, "星期一": 1, "周一": 1,
+        "tuesday": 2, "tue": 2, "星期二": 2, "周二": 2,
+        "wednesday": 3, "wed": 3, "星期三": 3, "周三": 3,
+        "thursday": 4, "thu": 4, "星期四": 4, "周四": 4,
+        "friday": 5, "fri": 5, "星期五": 5, "周五": 5,
+        "saturday": 6, "sat": 6, "星期六": 6, "周六": 6,
+        "sunday": 7, "sun": 7, "星期日": 7, "星期天": 7, "周日": 7,
+    }
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if text in aliases:
+        return aliases[text]
+    try:
+        number = int(text)
+    except ValueError:
+        return None
+    return number if 1 <= number <= 7 else None
+
+
+def _normalize_course(data: dict[str, Any]) -> dict[str, Any]:
+    mode = str(data.get("weekMode") or data.get("week_mode") or "all").lower()
+    if mode in {"每周", "weekly", "all"}:
+        mode = "all"
+    elif mode in {"单周", "odd"}:
+        mode = "odd"
+    elif mode in {"双周", "even"}:
+        mode = "even"
+    else:
+        mode = "all"
+    return {
+        "tab": "course",
+        "evtType": "course",
+        "title": str(data.get("title") or data.get("courseName") or "").strip(),
+        "courseName": str(data.get("courseName") or data.get("title") or "").strip(),
+        "teacher": str(data.get("teacher") or "").strip() or None,
+        "location": str(data.get("location") or data.get("room") or "").strip() or None,
+        "stDate": data.get("stDate") or data.get("startDate"),
+        "endDate": data.get("endDate") or data.get("finishDate"),
+        "weekDay": _normalize_weekday(data.get("weekDay") or data.get("weekday")),
+        "stTime": data.get("stTime") or data.get("startTime"),
+        "endTime": data.get("endTime") or data.get("finishTime"),
+        "startWeek": data.get("startWeek"),
+        "endWeek": data.get("endWeek"),
+        "weekMode": mode,
+        "desc": str(data.get("desc") or data.get("description") or "").strip(),
+        "prio": _normalize_priority(data.get("prio") or data.get("priority"), tab="course"),
+    }
+
+
+def _normalize_event(data: dict[str, Any]) -> dict[str, Any]:
     raw_type = str(data.get("tab") or data.get("evtType") or data.get("type") or "plan").strip().lower()
     tab = "ddl" if raw_type in {"ddl", "deadline", "截止", "截止事项"} else "plan"
     normalized = {
@@ -60,46 +112,58 @@ def _normalize_parsed(data: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _course_prompt(text: str, now: str) -> str:
+    return f"""
+你是 SmartCore 的课程表解析器。只返回严格 JSON，不要 Markdown，不要解释。
+当前时间：{now}，时区 Asia/Shanghai。
+用户输入：{text}
+
+解析一门周期课程，必须输出：
+{{
+  "evtType": "course",
+  "courseName": "课程名称",
+  "title": "课程名称",
+  "teacher": "教师或 null",
+  "location": "教室或 null",
+  "stDate": "YYYY-MM-DD",
+  "endDate": "YYYY-MM-DD",
+  "weekDay": 1到7，星期一为1、星期日为7,
+  "stTime": "HH:MM",
+  "endTime": "HH:MM",
+  "startWeek": 整数或 null,
+  "endWeek": 整数或 null,
+  "weekMode": "all"、"odd"或"even",
+  "desc": "课程说明",
+  "prio": "low"、"mid"或"high"
+}}
+规则：
+- 周一到周日严格对应 1 到 7。
+- “每周”是 all，“单周”是 odd，“双周”是 even。
+- 如果用户给出学期日期范围，直接使用；缺失字段设 null，不要编造日期。
+- 时间只输出 24 小时制 HH:MM。
+""".strip()
+
+
+def _event_prompt(text: str, now: str) -> str:
+    return f"""
+你是 SmartCore 的事件解析器。只返回一个 JSON 对象，不要 Markdown，不要解释。
+当前时间：{now}
+时间规则：时区为 Asia/Shanghai。所有完整日期时间必须使用带 +08:00 偏移量的 ISO8601。
+用户输入：{text}
+目标事件只有 plan 和 ddl。
+必须返回 tab、evtType、title、desc、prio、stTime、endTime、durationMin、hardDdl。
+“X点到Y点”是 plan；“X点前/截止/最晚”是 ddl。相对日期必须结合当前时间转换。
+""".strip()
+
+
 @router.post("/llm/parse")
 def parse_text(body: ParseBody) -> dict[str, Any]:
     settings = get_settings()
     parsed = None
-    now = nowIso()
+    now = body.now or nowIso()
     if settings.deepseek_api_key:
-        prompt = f"""
-你是 SmartCore 的事件解析器。只返回一个 JSON 对象，不要 Markdown，不要解释。
-
-当前时间：{now}
-时间规则：当前时间是服务器本地时间，时区为 Asia/Shanghai。所有返回时间必须使用带 +08:00 偏移量的 ISO8601，例如 2026-07-06T17:00:00+08:00。
-用户输入：{body.text}
-
-目标事件只有两类：
-1. plan：计划事项，有开始时间 stTime 和持续时间 durationMin。
-2. ddl：截止事项，有截止时间 endTime。不要把 ddl 解析成 plan。
-
-必须返回字段：
-{{
-  "tab": "plan" 或 "ddl",
-  "evtType": "plan" 或 "ddl",
-  "title": "去掉时间、我要、提醒我等语气词后的短标题",
-  "desc": "必须生成一句中文描述，不允许为空；plan 描述包含时间段/持续时间和要做的事；ddl 描述包含截止时间和要完成的事",
-  "prio": "low" 或 "mid" 或 "high",
-  "stTime": "ISO8601，仅 plan 使用，否则 null",
-  "endTime": "ISO8601，仅 ddl 使用，否则 null",
-  "durationMin": 整数分钟，仅 plan 使用；未知默认 30,
-  "hardDdl": 布尔值，仅 ddl 使用
-}}
-
-分类规则：
-- “X点到Y点”“从X点到Y点”“X:00-Y:00”是 plan，stTime 为 X，durationMin 为 Y-X 的分钟数。
-- “X点前”“X点之前”“截止到X点”“最晚X点”是 ddl，endTime 为 X。
-- “提交/截止/到期/ddl/deadline”通常是 ddl。
-- “看/学习/复习/开发/写/做/安排/计划”通常是 plan，除非出现“前/之前/截止/最晚”。
-- 没有优先级词时，plan 默认 mid，ddl 默认 high。
-- “紧急/重要/必须/一定”是 high；“不急/低优先级”是 low。
-- 中文相对日期如今天、明天、后天必须结合当前时间转换为 ISO8601。
-- 对于没有上午/下午/晚上修饰的“今天五点到十点”，按 17:00-22:00 理解；对于“今天十点前”，按 10:00 理解。
-""".strip()
+        is_course = body.scene in {"create_course", "course", "course_form"}
+        prompt = _course_prompt(body.text, now) if is_course else _event_prompt(body.text, now)
         payload = {
             "model": settings.llm_model,
             "messages": [
@@ -108,7 +172,10 @@ def parse_text(body: ParseBody) -> dict[str, Any]:
             ],
             "temperature": 0,
         }
-        headers = {"Authorization": "Bearer " + settings.deepseek_api_key, "Content-Type": "application/json"}
+        headers = {
+            "Authorization": "Bearer " + settings.deepseek_api_key,
+            "Content-Type": "application/json",
+        }
         try:
             resp = httpx.post(
                 settings.deepseek_base_url.rstrip("/") + "/chat/completions",
@@ -120,7 +187,16 @@ def parse_text(body: ParseBody) -> dict[str, Any]:
             raw = resp.json()["choices"][0]["message"]["content"]
             data = json.loads(_strip_json_fence(str(raw)))
             if isinstance(data, dict):
-                parsed = _normalize_parsed(data)
+                parsed = _normalize_course(data) if is_course else _normalize_event(data)
         except Exception:
             parsed = None
-    return {"ok": True, "data": {"status": "ok" if parsed else "fallback", "scene": body.scene, "text": body.text, "parsed": parsed, "now": now}}
+    return {
+        "ok": True,
+        "data": {
+            "status": "ok" if parsed else "fallback",
+            "scene": body.scene,
+            "text": body.text,
+            "parsed": parsed,
+            "now": now,
+        },
+    }
