@@ -1,3 +1,4 @@
+import "./work_add_reminders.js";
 import { getUiLanguage } from "./work_shared.js";
 
 const ZH_EN = {
@@ -42,13 +43,47 @@ const ZH_EN = {
   "星期六": "Saturday",
   "星期日": "Sunday",
   "以学期开始日期为第 1 周，按照星期和起止周自动计算全部上课时间。": "Treat the semester start as week 1 and calculate class dates from weekday and week range.",
+  "默认提前一天和提前一小时，可关闭或调整具体时间。": "Defaults to one day and one hour before; each linked plan can be disabled or adjusted.",
+  "模型解析中": "Model parsing",
+  "模型解析完成": "Model parsing complete",
+  "模型解析失败": "Model parsing failed",
+  "请先输入内容": "Enter a description first",
+  "正在解析...": "Parsing...",
+  "没有返回可用解析结果": "The model returned no usable result",
+  "已解析到表单": "Parsed into the form",
+  "解析失败": "Parsing failed",
+  "请填写标题": "Enter a title",
+  "请设置截止时间": "Set the deadline time",
+  "请设置开始时间": "Set the start time",
+  "请设置已启用关联计划的开始时间": "Set a start time for every enabled linked plan",
+  "创建成功，已清空表单": "Created successfully; the form has been cleared",
+  "课程作业截止": "Course assignment deadline",
+  "复习重点章节并完成例题": "Review key chapters and complete example problems",
+  "检查阶段任务进展": "Review progress on the current project stage",
+  "同时创建的计划": "Plans to create",
+  "未启用关联计划": "No linked plans enabled",
+  "等待填写标题": "Enter a title",
+};
+
+const ATTRIBUTE_ZH_EN = {
+  "搜索标题、日期或时间，如 2026-09-01、08:00、星期二": "Search titles, dates or times, such as 2026-09-01, 08:00 or Tuesday",
+  "例如：明天晚上八点复习热流体，持续 30 分钟，优先级高": "Example: Review heat transfer tomorrow at 8 PM for 30 minutes, high priority",
+  "例如：复习热流体": "Example: Review heat transfer",
+  "例如：提交课程报告": "Example: Submit the course report",
+  "工作台导航": "Workspace navigation",
+  "用户设置": "User settings",
 };
 
 const EN_ZH = Object.fromEntries(Object.entries(ZH_EN).map(([zh, en]) => [en, zh]));
+const ATTRIBUTE_EN_ZH = Object.fromEntries(
+  Object.entries(ATTRIBUTE_ZH_EN).map(([zh, en]) => [en, zh]),
+);
 const originals = new WeakMap();
+const attributeOriginals = new WeakMap();
 
 function excluded(node) {
-  return Boolean(node.parentElement?.closest(
+  const parent = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+  return Boolean(parent?.closest?.(
     ".task-title, .task-desc, .row-title, .log-json, [data-no-translate]",
   ));
 }
@@ -68,8 +103,27 @@ function translateNode(node) {
   if (node.nodeValue !== next) node.nodeValue = next;
 }
 
+function translateAttributes(element) {
+  if (!(element instanceof Element) || excluded(element)) return;
+  if (!attributeOriginals.has(element)) {
+    attributeOriginals.set(element, {
+      placeholder: element.getAttribute("placeholder"),
+      title: element.getAttribute("title"),
+      ariaLabel: element.getAttribute("aria-label"),
+    });
+  }
+  const original = attributeOriginals.get(element);
+  const source = getUiLanguage() === "en" ? ATTRIBUTE_ZH_EN : ATTRIBUTE_EN_ZH;
+  for (const [key, attr] of [["placeholder", "placeholder"], ["title", "title"], ["ariaLabel", "aria-label"]]) {
+    const value = original[key];
+    if (value != null) element.setAttribute(attr, source[value] || value);
+  }
+}
+
 function translatePage(root = document.body) {
   if (!root) return;
+  if (root instanceof Element) translateAttributes(root);
+  root.querySelectorAll?.("[placeholder], [title], [aria-label]").forEach(translateAttributes);
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let node = walker.nextNode();
   while (node) {
