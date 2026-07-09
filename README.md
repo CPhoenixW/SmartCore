@@ -89,10 +89,12 @@ Configuration is loaded from the process environment. In Docker Compose, use `de
 | `FEISHU_REPLAY_MAX_AGE_SECONDS` | No | Max event timestamp age (default: `300`) |
 | `SCHEDULER_ENABLED` | No | Enable background reminder scan and dispatch (default: `false`) |
 | `SCHEDULER_INTERVAL_SECONDS` | No | Background scheduler scan interval in seconds (default: `60`) |
-| `LLM_PROVIDER` | Yes (bot) | Set to `deepseek` to enable natural-language parsing |
-| `DEEPSEEK_API_KEY` | Yes (bot) | DeepSeek API key; keep only in server `.env` |
-| `DEEPSEEK_BASE_URL` | For LLM | DeepSeek-compatible API base URL |
-| `LLM_MODEL` | For LLM | Model name, for example `deepseek-chat` |
+| `LLM_PROVIDER` | Yes (NLU) | `tokendance`; identifies the unified natural-language gateway |
+| `LLM_API_KEY` | Yes (NLU) | TokenDance API key; keep only in server `deploy/.env` |
+| `LLM_BASE_URL` | No | Defaults to `https://tokendance.space/gateway/v1` |
+| `LLM_MODEL` | No | Defaults to `deepseek-v4-flash` |
+| `LLM_MAX_RETRIES` | No | SDK retry count, default `2`; HTTP request timeout is disabled |
+| `DEEPSEEK_API_KEY` | Compatibility | Accepted only as a fallback key when `LLM_API_KEY` is empty |
 | `DASHBOARD_BASE_URL` | For cards | Tailscale dashboard base URL used by Feishu card modify links |
 | `SEMESTER_START` | No | Semester start date (`YYYY-MM-DD`) for week calculations |
 | `BACKUP_DIR` | No | Local backup directory (default: `backups/` or `/app/backups` in Docker) |
@@ -105,6 +107,22 @@ Configuration is loaded from the process environment. In Docker Compose, use `de
 For local development without Docker, export variables in your shell or place a `.env` file in the project root. Pydantic Settings reads standard environment variable names (uppercase, as listed above).
 
 **Never commit** `.env`, `passwd.txt`, SSH keys, or real Feishu credentials.
+
+## Natural-language routing
+
+All model requests owned by SmartCore use the centralized client in `app/llm/gateway.py`:
+
+```text
+Web event/course natural-language input
+  -> POST /api/llm/parse
+  -> OpenAI-compatible client
+  -> https://tokendance.space/gateway/v1
+  -> deepseek-v4-flash
+```
+
+The gateway client has no HTTP request time limit. Parsing errors and gateway errors are returned explicitly instead of being silently converted into an empty result.
+
+Feishu events are still forwarded to the separately deployed OpenClaw service when `OPENCLAW_EVENTS_ENDPOINT` is configured. OpenClaw owns its own model runtime, so that external deployment must also be configured to use the same TokenDance base URL and model if Feishu understanding must follow the same route.
 
 ## Feishu bot setup
 
@@ -121,20 +139,6 @@ For local development without Docker, export variables in your shell or place a 
 6. Subscribe to the `im.message.receive_v1` event (or the events your deployment needs).
 7. Set `FEISHU_DEFAULT_CHAT_ID` to the chat where proactive reminders should be sent. You can find chat IDs via Feishu API or admin tools.
 8. Deploy and verify: Feishu sends a URL verification challenge; the app must respond successfully before events flow.
-
-### Supported interaction
-
-All user text is parsed by DeepSeek into Action protocol JSON. Examples:
-
-| Example input | Action |
-|---------|--------|
-| `今天有什么安排` / `今早有啥事` | Query today's plan |
-| `明天有什么安排` | Query tomorrow's plan |
-| `还有什么没做` / `本周 DDL` | Query open items |
-| `今晚八点提醒我做程设作业` | Create schedule (confirmation card) |
-| `添加作业 高数 2026-06-10 20:00` | Create deadline (confirmation card) |
-
-Write/update/delete operations return Feishu confirmation cards. Invalid input or missing LLM config returns the help message.
 
 ## Backup and restore
 
