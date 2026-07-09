@@ -9,6 +9,11 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.new_core import crud
+from app.new_core.custom_reminders import (
+    list_extra_reminder_specs,
+    replace_extra_reminders,
+    sync_extra_reminders,
+)
 from app.new_core.ddl_service import create_ddl_event
 from app.new_core.event_relations import (
     cancel_event,
@@ -22,7 +27,7 @@ from app.new_core.event_relations import (
     sync_course_plans,
     update_event,
 )
-from app.new_core.models import ActLog, DeviceStateLog, MsgLog, NotifyLog, nowIso
+from app.new_core.models import ActLog, DeviceStateLog, EvtBase, MsgLog, NotifyLog, nowIso
 from app.new_core.preferences import get_user_preferences, update_user_preferences
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -149,7 +154,16 @@ def patch_evt(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
-        return ok(update_event(db, evtId, src="api", **body))
+        base = db.get(EvtBase, evtId)
+        extra_reminders = body.pop("extraReminders", None)
+        result = update_event(db, evtId, src="api", **body)
+        if base is not None and base.evtType == "plan":
+            if extra_reminders is None:
+                sync_extra_reminders(db, evtId)
+            else:
+                replace_extra_reminders(db, evtId, extra_reminders)
+            result = get_event(db, evtId)
+        return ok(result)
     except ValueError as exc:
         db.rollback()
         raise _http_error(exc) from exc
@@ -164,12 +178,18 @@ def delete_evt(evtId: str, db: Session = Depends(get_db)) -> dict[str, Any]:
         raise _http_error(exc) from exc
 
 
+class ReminderSpecBody(BaseModel):
+    anchor: Literal["start", "end"] = "start"
+    offsetMin: int = Field(default=10, ge=0, le=7 * 24 * 60)
+
+
 class PlanEvtBody(BaseModel):
     title: str
     stTime: str
     durationMin: int = Field(default=30, gt=0)
     desc: str | None = None
     prio: str = "mid"
+    extraReminders: list[ReminderSpecBody] = Field(default_factory=list)
 
 
 @router.get("/planEvt")
@@ -190,7 +210,55 @@ def list_plan_evt(
 @router.post("/planEvt")
 def create_plan_evt(body: PlanEvtBody, db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
-        return ok(create_plan_event(db, **body.model_dump(), src="api"))
+        payload = body.model_dump(exclude={"extraReminders"})
+        result = create_plan_event(db, **payload, src="api", commit=False)
+        replace_extra_reminders(
+            db,
+            result["evtId"],
+            [item.model_dump() for item in body.extraReminders],
+            commit=False,
+        )
+        db.commit()
+        return ok(get_event(db, result["evtId"]))
+    except ValueError as exc:
+        db.rollback()
+        raise _http_error(exc) from exc
+
+
+class ReminderWriteBody(BaseModel):
+    planEvtId: str
+    anchor: Literal["start", "end"] = "start"
+    offsetMin: int = Field(default=10, ge=0, le=7 * 24 * 60)
+
+
+@router.post("/remindEvt")
+def create_remind_evt(
+    body: ReminderWriteBody,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        specs = list_extra_reminder_specs(db, body.planEvtId)
+        specs.append({"anchor": body.anchor, "offsetMin": body.offsetMin})
+        replace_extra_reminders(db, body.planEvtId, specs)
+        return ok(get_event(db, body.planEvtId))
+    except ValueError as exc:
+        db.rollback()
+        raise _http_error(exc) from exc
+
+
+@router.put("/planEvt/{evtId}/reminders")
+def replace_plan_reminders(
+    evtId: str,
+    body: list[ReminderSpecBody],
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        replace_extra_reminders(
+            db,
+            evtId,
+            [item.model_dump() for item in body],
+        )
+        return ok(get_event(db, evtId))
     except ValueError as exc:
         db.rollback()
         raise _http_error(exc) from exc
@@ -360,75 +428,51 @@ def list_dev_state(
     limit: int = Query(default=240, ge=1, le=5000),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    query = select(DeviceStateLog)
+    query = select(DeviceStateLog).order_by(DeviceStateLog.seenAt.desc()).limit(limit)
     if devId:
         query = query.where(DeviceStateLog.deviceId == devId)
-    rows = db.scalars(
-        query.order_by(DeviceStateLog.seenAt.desc()).limit(limit)
-    ).all()
+    rows = db.scalars(query).all()
     return ok([_row_dict(row) for row in rows])
 
 
-@router.get("/log")
-def list_logs(
-    limit: int = Query(default=120, ge=1, le=500),
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    return ok(
-        {
-            "act": _latest_rows(db, ActLog, ActLog.createdAt, limit=limit),
-            "notify": _latest_rows(db, NotifyLog, NotifyLog.scheduledAt, limit=limit),
-            "msg": _latest_rows(db, MsgLog, MsgLog.createdAt, limit=limit),
-        }
-    )
-
-
-@router.get("/log/act")
-def list_log_act(
-    limit: int = Query(default=120, ge=1, le=500),
+@router.get("/actLog")
+def list_act_log(
+    limit: int = Query(default=100, ge=1, le=1000),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     return ok(_latest_rows(db, ActLog, ActLog.createdAt, limit=limit))
 
 
-@router.get("/log/notify")
-def list_log_notify(
-    limit: int = Query(default=120, ge=1, le=500),
+@router.get("/notifyLog")
+def list_notify_log(
+    limit: int = Query(default=100, ge=1, le=1000),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    return ok(_latest_rows(db, NotifyLog, NotifyLog.scheduledAt, limit=limit))
+    return ok(_latest_rows(db, NotifyLog, NotifyLog.createdAt, limit=limit))
 
 
-@router.get("/log/msg")
-def list_log_msg(
-    limit: int = Query(default=120, ge=1, le=500),
+@router.get("/msgLog")
+def list_msg_log(
+    limit: int = Query(default=100, ge=1, le=1000),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     return ok(_latest_rows(db, MsgLog, MsgLog.createdAt, limit=limit))
 
 
-class ReminderActionBody(BaseModel):
-    evtId: str
-    action: str
-    now: str | None = None
-
-
-@router.post("/reminder/action")
-def reminder_action(
-    body: ReminderActionBody,
+@router.get("/log")
+def list_all_logs(
+    limit: int = Query(default=120, ge=1, le=1000),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    from app.new_core.event_relations import apply_reminder_action
+    return ok(
+        {
+            "act": _latest_rows(db, ActLog, ActLog.createdAt, limit=limit),
+            "notify": _latest_rows(db, NotifyLog, NotifyLog.createdAt, limit=limit),
+            "msg": _latest_rows(db, MsgLog, MsgLog.createdAt, limit=limit),
+        }
+    )
 
-    try:
-        return ok(
-            apply_reminder_action(
-                db,
-                evt_id=body.evtId,
-                action=body.action,
-                now=body.now or nowIso(),
-                src="screen",
-            )
-        )
-    except ValueError as exc:
-        raise _http_error(exc) from exc
+
+@router.get("/time")
+def get_time() -> dict[str, Any]:
+    return ok({"now": nowIso(), "timezone": "Asia/Shanghai"})
