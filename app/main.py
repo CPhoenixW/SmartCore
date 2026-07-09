@@ -15,6 +15,7 @@ from app.db.session import SessionLocal, init_db
 from app.device.routes import router as deviceRouter
 from app.feishu.event_handler import create_feishu_router
 from app.new_core.event_relations import ensure_all_relations
+from app.new_core.relation_compat import install_relation_compat
 from app.scheduler.service import build_scheduler_service
 from app.screen.routes import router as screenRouter
 from app.web.device_routes import router as workDeviceRouter
@@ -35,6 +36,7 @@ def _sync_event_relations() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    install_relation_compat()
     _sync_event_relations()
     settings = get_settings()
     scheduler_service = build_scheduler_service(settings)
@@ -49,6 +51,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     init_db()
+    install_relation_compat()
     _sync_event_relations()
     settings = get_settings()
     ensure_feedback_tools()
