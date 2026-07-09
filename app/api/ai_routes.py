@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.config import get_settings
 from app.llm import LLMConfigurationError, LLMGatewayError, complete_chat
+from app.new_core.custom_reminders import normalize_extra_reminders
 from app.new_core.models import nowIso
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -177,6 +178,7 @@ def _normalize_event(data: dict[str, Any]) -> dict[str, Any]:
         data.get("tab") or data.get("evtType") or data.get("type") or "plan"
     ).strip().lower()
     tab = "ddl" if raw_type in {"ddl", "deadline", "截止", "截止事项"} else "plan"
+    raw_reminders = data.get("extraReminders") or data.get("reminders") or []
     normalized = {
         "tab": tab,
         "evtType": tab,
@@ -185,9 +187,11 @@ def _normalize_event(data: dict[str, Any]) -> dict[str, Any]:
         "prio": _normalize_priority(data.get("prio") or data.get("priority"), tab=tab),
         "durationMin": max(1, _safe_int(data.get("durationMin") or data.get("duration"), 30)),
         "hardDdl": bool(data.get("hardDdl", False)),
+        "extraReminders": normalize_extra_reminders(raw_reminders if isinstance(raw_reminders, list) else []),
     }
     if tab == "ddl":
         normalized["endTime"] = data.get("endTime") or data.get("deadline") or data.get("at")
+        normalized["extraReminders"] = []
     else:
         normalized["stTime"] = data.get("stTime") or data.get("startTime") or data.get("at")
     return normalized
@@ -234,8 +238,16 @@ def _event_prompt(text: str, now: str) -> str:
 时间规则：时区为 Asia/Shanghai。所有完整日期时间必须使用带 +08:00 偏移量的 ISO8601。
 用户输入：{text}
 目标事件只有 plan 和 ddl。
-必须返回 tab、evtType、title、desc、prio、stTime、endTime、durationMin、hardDdl。
+必须返回 tab、evtType、title、desc、prio、stTime、endTime、durationMin、hardDdl、extraReminders。
 “X点到Y点”是 plan；“X点前/截止/最晚”是 ddl。相对日期必须结合当前时间转换。
+每个 plan 已固定生成两个提醒：开始前 10 分钟、结束前 10 分钟。不要把这两个固定提醒写进 extraReminders。
+只有用户明确要求额外提醒时，才输出 extraReminders，例如：
+[
+  {{"anchor": "start", "offsetMin": 30}},
+  {{"anchor": "end", "offsetMin": 5}}
+]
+anchor 只能是 start 或 end；offsetMin 是提前分钟数。用户没有要求额外提醒时输出空数组。
+ddl 的 extraReminders 必须为空数组。
 """.strip()
 
 
