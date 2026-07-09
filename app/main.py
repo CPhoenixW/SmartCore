@@ -9,6 +9,7 @@ from app.agent.legacy_time_routes import createLegacyTimeRouter
 from app.agent.routes import createAgentRouter, createDevRouter
 from app.agent.v2_routes import createAgentV2Router
 from app.api.device_state_routes import router as deviceStateApiRouter
+from app.api.event_view_routes import router as eventViewApiRouter
 from app.api.routes import router as apiRouter
 from app.config import get_settings
 from app.db.session import SessionLocal, init_db
@@ -64,6 +65,7 @@ def create_app() -> FastAPI:
     parse_router = __import__("app.api.ai_routes", fromlist=["router"]).router
     app.include_router(parse_router)
     app.include_router(deviceStateApiRouter)
+    app.include_router(eventViewApiRouter)
     app.include_router(apiRouter)
     app.include_router(createDevRouter())
     app.include_router(deviceRouter)
