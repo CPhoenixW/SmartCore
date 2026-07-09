@@ -7,9 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.new_core import crud
-from app.new_core.custom_reminders import localized_reminder_message
 from app.new_core.event_relations import mark_reminder_fired
-from app.new_core.models import DdlEvt, EvtBase, RemindEvt
+from app.new_core.models import AppUser, DdlEvt, EvtBase, PlanEvt, RemindEvt
 from app.new_core.notify import routeNotify
 from app.new_core.relation_maintenance import (
     close_past_course_occurrences,
@@ -32,6 +31,33 @@ def _isDue(instant: str | None, now: datetime) -> bool:
         return False
     due = _parseNow(instant)
     return due <= now
+
+
+def _plan_reminder_copy(
+    db: Session,
+    reminder: RemindEvt,
+    plan_base: EvtBase,
+) -> tuple[str, str]:
+    plan = db.get(PlanEvt, reminder.planEvtId)
+    if plan is None:
+        return plan_base.title, plan_base.desc or plan_base.title
+    user = db.get(AppUser, plan_base.userId)
+    english = bool(user and user.language == "en")
+    start = _parseNow(plan.stTime)
+    end = start + timedelta(minutes=max(1, int(plan.durationMin)))
+    ending = reminder.remindKind == "plan_end_10m"
+    target = end if ending else start
+    if english:
+        phase = "ends" if ending else "starts"
+        return (
+            f"{plan_base.title} · 10 min before it {phase}",
+            f"The plan {phase} in 10 minutes: {target.isoformat()}",
+        )
+    phase = "结束" if ending else "开始"
+    return (
+        f"{plan_base.title} · {phase}前 10 分钟",
+        f"计划将在 10 分钟后{phase}：{target.isoformat()}",
+    )
 
 
 def runReminderTick(
@@ -60,12 +86,20 @@ def runReminderTick(
         trigger = _parseNow(reminder.triggerTime)
         if trigger > nowDt:
             continue
-        plan_base = db.get(EvtBase, reminder.planEvtId)
-        if plan_base is None or plan_base.stat != "todo":
-            reminder_base.stat = "cancelled"
-            reminder_base.updatedAt = nowDt.isoformat()
-            db.commit()
-            continue
+
+        target_evt_id = reminder_base.evtId
+        title = reminder_base.title
+        content = reminder_base.desc or reminder_base.title
+        if reminder.planEvtId is not None:
+            plan_base = db.get(EvtBase, reminder.planEvtId)
+            if plan_base is None or plan_base.stat != "todo":
+                reminder_base.stat = "cancelled"
+                reminder_base.updatedAt = nowDt.isoformat()
+                db.commit()
+                continue
+            target_evt_id = reminder.planEvtId
+            title, content = _plan_reminder_copy(db, reminder, plan_base)
+
         if nowDt - trigger > _REMINDER_DELIVERY_WINDOW:
             mark_reminder_fired(db, reminder_base.evtId, fired_at=nowDt.isoformat())
             db.commit()
@@ -75,14 +109,13 @@ def runReminderTick(
             mark_reminder_fired(db, reminder_base.evtId, fired_at=nowDt.isoformat())
             db.commit()
             continue
-        title, content = localized_reminder_message(db, reminder, plan_base)
         result = routeNotify(
             db,
             title=title,
             content=content,
             screenOnline=screenOnline,
             dedupKey=dedup_key,
-            evtId=reminder.planEvtId,
+            evtId=target_evt_id,
             phase="notice",
         )
         if result.get("stat") in {"sent", "deduped"}:
