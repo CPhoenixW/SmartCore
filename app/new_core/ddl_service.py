@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
 from app.new_core import crud
+from app.new_core.event_relations import get_event, sync_plan_reminders
 from app.new_core.models import ActLog, DdlEvt, DdlPlan, EvtBase, PlanEvt, newId, nowIso
 
 _DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
@@ -17,7 +18,7 @@ def _parse_datetime(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=_DEFAULT_TZ)
-    return parsed
+    return parsed.astimezone(_DEFAULT_TZ).replace(microsecond=0)
 
 
 def _default_plans(end_time: str) -> list[dict[str, Any]]:
@@ -60,10 +61,10 @@ def create_ddl_event(
     title = title.strip()
     if not title:
         raise ValueError("title required")
-    _parse_datetime(endTime)
+    normalized_end = _parse_datetime(endTime).isoformat()
     crud.getCurrentUser(db, userId=userId)
 
-    plan_specs = _default_plans(endTime) if plans is None else plans
+    plan_specs = _default_plans(normalized_end) if plans is None else plans
     normalized: list[dict[str, Any]] = []
     seen_roles: set[str] = set()
     for order, raw in enumerate(plan_specs):
@@ -78,7 +79,7 @@ def create_ddl_event(
         st_time = str(raw.get("stTime") or "").strip()
         if not st_time:
             raise ValueError(f"stTime required for {role}")
-        _parse_datetime(st_time)
+        normalized_start = _parse_datetime(st_time).isoformat()
         duration = int(raw.get("durationMin") or 30)
         if duration <= 0:
             raise ValueError("durationMin must be greater than 0")
@@ -86,7 +87,7 @@ def create_ddl_event(
         normalized.append(
             {
                 "planRole": role,
-                "stTime": st_time,
+                "stTime": normalized_start,
                 "durationMin": duration,
                 "title": str(raw.get("title") or _plan_title(title, role)).strip(),
                 "sortOrder": order if raw_sort_order is None else int(raw_sort_order),
@@ -107,7 +108,7 @@ def create_ddl_event(
         updatedAt=now,
     )
     db.add(base)
-    db.add(DdlEvt(evtId=ddl_id, endTime=endTime, hardDdl=hardDdl))
+    db.add(DdlEvt(evtId=ddl_id, endTime=normalized_end, hardDdl=hardDdl))
     db.add(
         ActLog(
             userId=userId,
@@ -141,6 +142,7 @@ def create_ddl_event(
                 durationMin=spec["durationMin"],
             )
         )
+        db.flush()
         db.add(
             DdlPlan(
                 ddlEvtId=ddl_id,
@@ -149,6 +151,7 @@ def create_ddl_event(
                 sortOrder=spec["sortOrder"],
             )
         )
+        sync_plan_reminders(db, plan_id)
         db.add(
             ActLog(
                 userId=userId,
@@ -167,4 +170,4 @@ def create_ddl_event(
         db.rollback()
         raise
 
-    return next(item for item in crud.listDdlEvt(db) if item["evtId"] == ddl_id)
+    return get_event(db, ddl_id)
