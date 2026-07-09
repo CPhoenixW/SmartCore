@@ -65,6 +65,10 @@ def _relation_tools() -> list[dict[str, Any]]:
             if isinstance(linked, dict):
                 linked["default"] = True
                 linked["description"] = "Include DDL-linked and course-generated plan occurrences. Defaults to true."
+            reminders = properties.get("includeReminders")
+            if isinstance(reminders, dict):
+                reminders["default"] = True
+                reminders["description"] = "Include standalone reminders. Automatic plan reminders remain hidden."
             text = properties.get("text") or properties.get("keyword")
             if isinstance(text, dict):
                 text["description"] = "Search title, description, date, weekday, or clock time such as 2026-09-01, 星期二, or 08:00."
@@ -112,7 +116,7 @@ def createRelationQueryRouter() -> APIRouter:
             "ok": True,
             "stat": "done",
             "data": {
-                "version": "2026-07-09-standalone-reminder-ddl-plans-v7",
+                "version": "2026-07-09-standalone-reminder-ddl-plans-v8",
                 "authHeader": "X-SmartCore-Agent-Token",
                 "requestContext": {
                     "timezone": "Asia/Shanghai",
@@ -136,6 +140,7 @@ def createRelationQueryRouter() -> APIRouter:
         try:
             normalized = _normalize_query_body(body or {})
             normalized.setdefault("includeLinkedPlans", True)
+            normalized.setdefault("includeReminders", True)
             search_text = normalized.pop("text", None) or normalized.pop("keyword", None)
             result = query_events(db, normalized)
             items = []
