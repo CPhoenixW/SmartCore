@@ -22,14 +22,34 @@ def _parse(value: str) -> datetime:
     return parsed.astimezone(_DEFAULT_TZ)
 
 
+def _remove_nondefault_plan_reminders(db: Session) -> int:
+    rows = db.scalars(
+        select(RemindEvt).where(
+            RemindEvt.planEvtId.is_not(None),
+            RemindEvt.remindKind.not_in(_REQUIRED_REMINDER_KINDS),
+        )
+    ).all()
+    removed = 0
+    for reminder in rows:
+        base = db.get(EvtBase, reminder.evtId)
+        db.delete(reminder)
+        if base is not None:
+            db.delete(base)
+        removed += 1
+    if removed:
+        db.flush()
+    return removed
+
+
 def ensure_missing_relations(db: Session) -> dict[str, int]:
-    """Backfill legacy rows without rewriting already-customized occurrences."""
+    """Backfill required relations and remove obsolete plan reminder variants."""
     reminders = 0
     course_plans = 0
+    removed_reminders = _remove_nondefault_plan_reminders(db)
 
     reminder_kinds: dict[str, set[str]] = defaultdict(set)
     for plan_id, kind in db.execute(
-        select(RemindEvt.planEvtId, RemindEvt.remindKind)
+        select(RemindEvt.planEvtId, RemindEvt.remindKind).where(RemindEvt.planEvtId.is_not(None))
     ).all():
         reminder_kinds[str(plan_id)].add(str(kind))
 
@@ -52,7 +72,11 @@ def ensure_missing_relations(db: Session) -> dict[str, int]:
             course_plans += len(sync_course_plans(db, course_id))
 
     db.commit()
-    return {"reminders": reminders, "coursePlans": course_plans}
+    return {
+        "reminders": reminders,
+        "removedPlanReminders": removed_reminders,
+        "coursePlans": course_plans,
+    }
 
 
 def close_past_course_occurrences(db: Session, *, now: str | None = None) -> int:
