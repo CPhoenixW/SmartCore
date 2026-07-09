@@ -1,0 +1,104 @@
+.plan-reminder-editor {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.plan-reminder-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.plan-reminder-heading strong {
+  display: block;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.plan-reminder-heading p {
+  max-width: 540px;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.plan-default-reminders {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.plan-default-reminder {
+  padding: 11px 12px;
+  border: 1px solid #cfe0ff;
+  border-radius: 13px;
+  background: #f2f7ff;
+}
+
+.plan-default-reminder span,
+.plan-default-reminder strong {
+  display: block;
+}
+
+.plan-default-reminder span {
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.plan-default-reminder strong {
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.plan-extra-reminder-list {
+  display: grid;
+  gap: 10px;
+}
+
+.plan-reminder-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(130px, .8fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface2);
+}
+
+.plan-reminder-row .field {
+  margin: 0;
+}
+
+.plan-reminder-remove {
+  min-height: 42px;
+}
+
+.plan-reminder-preview {
+  margin-top: 14px;
+}
+
+@media (max-width: 760px) {
+  .plan-reminder-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .plan-default-reminders,
+  .plan-reminder-row {
+    grid-template-columns: 1fr;
+  }
+
+  .plan-reminder-remove {
+    width: 100%;
+  }
+}
