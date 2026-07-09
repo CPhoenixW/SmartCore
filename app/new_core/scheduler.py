@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -10,8 +10,10 @@ from app.new_core import crud
 from app.new_core.event_relations import ensure_all_relations, mark_reminder_fired
 from app.new_core.models import DdlEvt, EvtBase, RemindEvt
 from app.new_core.notify import routeNotify
+from app.new_core.relation_maintenance import close_past_course_occurrences
 
 _DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
+_REMINDER_DELIVERY_WINDOW = timedelta(minutes=5)
 
 
 def _parseNow(now: str) -> datetime:
@@ -37,8 +39,8 @@ def runReminderTick(
     nowDt = _parseNow(now)
     sent = 0
 
-    # This also backfills relations for plans/courses created by older versions.
     ensure_all_relations(db)
+    close_past_course_occurrences(db, now=nowDt.isoformat())
 
     reminder_rows = db.execute(
         select(EvtBase, RemindEvt)
@@ -51,12 +53,17 @@ def runReminderTick(
         .order_by(RemindEvt.triggerTime.asc())
     ).all()
     for reminder_base, reminder in reminder_rows:
-        if not _isDue(reminder.triggerTime, nowDt):
+        trigger = _parseNow(reminder.triggerTime)
+        if trigger > nowDt:
             continue
         plan_base = db.get(EvtBase, reminder.planEvtId)
         if plan_base is None or plan_base.stat != "todo":
             reminder_base.stat = "cancelled"
             reminder_base.updatedAt = nowDt.isoformat()
+            db.commit()
+            continue
+        if nowDt - trigger > _REMINDER_DELIVERY_WINDOW:
+            mark_reminder_fired(db, reminder_base.evtId, fired_at=nowDt.isoformat())
             db.commit()
             continue
         dedup_key = f"remindEvt:{reminder_base.evtId}:{reminder.triggerTime}"
