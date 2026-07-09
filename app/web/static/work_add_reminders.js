@@ -151,10 +151,7 @@ function ensureDdlMultipleEditor() {
     "beforeend",
     `<button class="btn" id="addDdlPlanBtn" type="button" data-no-translate>${esc(ui("添加关联计划", "Add linked plan"))}</button>`,
   );
-  editor.insertAdjacentHTML(
-    "beforeend",
-    `<div class="ddl-manual-plan-list" id="ddlManualPlanList"></div>`,
-  );
+  editor.insertAdjacentHTML("beforeend", `<div class="ddl-manual-plan-list" id="ddlManualPlanList"></div>`);
   $("addDdlPlanBtn")?.addEventListener("click", () => addManualPlan());
   $("ddlForm")?.addEventListener("input", schedulePreview);
   $("ddlForm")?.addEventListener("change", schedulePreview);
@@ -185,13 +182,14 @@ function staticDdlPlans() {
 }
 
 function manualDdlPlans() {
+  const offset = staticDdlPlans().length;
   return Array.from(document.querySelectorAll("[data-ddl-manual-plan]")).map((row, index) => ({
     planEvtId: row.querySelector('[name="planEvtId"]')?.value || undefined,
     planRole: "manual",
     title: row.querySelector('[name="title"]')?.value.trim() || undefined,
     stTime: toIso(row.querySelector('[name="stTime"]')?.value || ""),
     durationMin: Number(row.querySelector('[name="durationMin"]')?.value || 30),
-    sortOrder: staticDdlPlans().length + index,
+    sortOrder: offset + index,
   }));
 }
 
@@ -227,16 +225,16 @@ function setDdlPlans(plans) {
 
 function reminderPreview() {
   const payload = reminderPayload();
-  return `<div class="preview-card ${payload.title ? "" : "empty-preview"}" data-no-translate>
+  return `<div class="preview-card ${payload.title ? "" : "empty-preview"}" data-standalone-reminder-preview data-no-translate>
     <div class="preview-title">${esc(payload.title || ui("等待填写标题", "Enter a title"))}</div>
     <div class="tags"><span class="tag orange">${esc(ui("提醒", "Reminder"))}</span><span class="tag blue">${esc(displayTime(payload.triggerTime))}</span></div>
     ${payload.desc ? `<p class="preview-desc">${esc(payload.desc)}</p>` : ""}
   </div>`;
 }
 
-function ddlPlansPreview() {
+function ddlPlansPreview(signature) {
   const plans = collectDdlPlans();
-  return `<section class="preview-children ddl-all-plan-preview" data-no-translate>
+  return `<section class="preview-children ddl-all-plan-preview" data-preview-signature="${esc(signature)}" data-no-translate>
     <div class="preview-children-title">${esc(ui("同时创建的计划", "Plans to create"))}</div>
     ${plans.length ? plans.map((plan, index) => `<div class="preview-child"><div><strong>${esc(plan.title || ui(`关联计划 ${index + 1}`, `Linked plan ${index + 1}`))}</strong><span>${esc(displayTime(plan.stTime))}</span></div><span class="tag green">${esc(ui(`${plan.durationMin} 分钟`, `${plan.durationMin} min`))}</span></div>`).join("") : `<div class="empty compact-empty">${esc(ui("未启用关联计划", "No linked plans enabled"))}</div>`}
   </section>`;
@@ -247,24 +245,26 @@ function renderPreview() {
   const root = $("createPreview");
   if (!root) return;
   if (reminderActive) {
+    const payload = reminderPayload();
+    const signature = JSON.stringify({ language: getUiLanguage(), payload });
+    if (root.dataset.relationPreviewSignature === signature && root.querySelector("[data-standalone-reminder-preview]")) return;
+    root.dataset.relationPreviewSignature = signature;
     root.innerHTML = reminderPreview();
     return;
   }
+  delete root.dataset.relationPreviewSignature;
   if (!$("ddlForm")?.classList.contains("active")) return;
+  const signature = JSON.stringify({ language: getUiLanguage(), plans: collectDdlPlans() });
+  const current = root.querySelector(".ddl-all-plan-preview");
+  if (current?.dataset.previewSignature === signature) return;
   root.querySelectorAll(".preview-children").forEach((element) => element.remove());
-  root.insertAdjacentHTML("beforeend", ddlPlansPreview());
+  root.insertAdjacentHTML("beforeend", ddlPlansPreview(signature));
 }
 
 function schedulePreview() {
   if (previewQueued) return;
   previewQueued = true;
   queueMicrotask(renderPreview);
-}
-
-function installPreviewObserver() {
-  const root = $("createPreview");
-  if (!root) return;
-  new MutationObserver(() => schedulePreview()).observe(root, { childList: true, subtree: false });
 }
 
 function applyParsed(parsed) {
@@ -279,9 +279,7 @@ function applyParsed(parsed) {
     schedulePreview();
     return;
   }
-  if (type === "ddl" && Array.isArray(parsed.plans)) {
-    setDdlPlans(parsed.plans);
-  }
+  if (type === "ddl" && Array.isArray(parsed.plans)) setDdlPlans(parsed.plans);
 }
 
 function installFetchBridge() {
@@ -309,7 +307,7 @@ function installFetchBridge() {
     }
     if (method === "POST" && url.includes("/api/ddlEvt") && response.ok) {
       setTimeout(() => {
-        $("ddlManualPlanList").innerHTML = "";
+        if ($("ddlManualPlanList")) $("ddlManualPlanList").innerHTML = "";
         manualCounter = 0;
         schedulePreview();
       }, 0);
@@ -329,7 +327,9 @@ function translateDynamicUi() {
     form.querySelector('[data-remind-label="prio"]').textContent = ui("优先级", "Priority");
     form.elements.title.placeholder = ui("例如：带学生证", "Example: Bring student ID");
     const labels = [["mid", "中", "Medium"], ["high", "高", "High"], ["low", "低", "Low"]];
-    labels.forEach(([value, zh, en]) => { form.elements.prio.querySelector(`option[value="${value}"]`).textContent = ui(zh, en); });
+    labels.forEach(([value, zh, en]) => {
+      form.elements.prio.querySelector(`option[value="${value}"]`).textContent = ui(zh, en);
+    });
   }
   if ($("addDdlPlanBtn")) $("addDdlPlanBtn").textContent = ui("添加关联计划", "Add linked plan");
   if (reminderActive && $("createSubmitBtn")) $("createSubmitBtn").textContent = ui("创建提醒事项", "Create reminder");
@@ -367,7 +367,6 @@ if (page === "add") {
   ensureReminderForm();
   ensureDdlMultipleEditor();
   installFetchBridge();
-  installPreviewObserver();
   bind();
   translateDynamicUi();
   schedulePreview();
