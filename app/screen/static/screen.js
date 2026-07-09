@@ -90,23 +90,11 @@
     applyLayoutMode(next);
   }
 
-  function combineDateTime(dateValue, timeValue) {
-    if (!dateValue) return null;
-    const date = String(dateValue).slice(0, 10);
-    const time = String(timeValue || "00:00").slice(0, 5);
-    const dt = new Date(`${date}T${time}:00`);
-    return Number.isNaN(dt.getTime()) ? null : dt;
-  }
-
   function eventStart(evt) {
-    if (evt.evtType === "ddl") return evt.endTime ? new Date(evt.endTime) : null;
-    if (evt.evtType === "course") return combineDateTime(evt.stDate, evt.stTime);
-    return evt.stTime ? new Date(evt.stTime) : null;
+    return evt?.evtType === "plan" && evt.stTime ? new Date(evt.stTime) : null;
   }
 
   function eventEnd(evt) {
-    if (evt.evtType === "ddl") return evt.endTime ? new Date(evt.endTime) : null;
-    if (evt.evtType === "course") return combineDateTime(evt.stDate, evt.endTime);
     const start = eventStart(evt);
     if (!start) return null;
     return new Date(start.getTime() + Number(evt.durationMin || 0) * 60000);
@@ -130,20 +118,14 @@
     });
   }
 
-  function evtTypeLabel(evt) {
-    return { plan: "计划", ddl: "截止", course: "课程" }[evt.evtType] || evt.evtType || "事件";
-  }
-
   function eventTimeLabel(evt) {
     const start = eventStart(evt);
     const end = eventEnd(evt);
-    if (evt.evtType === "ddl") return `截止 ${fmtTime(end)}`;
     if (start && end) return `${fmtTime(start)}-${fmtTime(end)}`;
-    return fmtTime(start || end);
+    return fmtTime(start);
   }
 
   function isOngoing(evt, now) {
-    if (evt.evtType === "ddl") return false;
     const start = eventStart(evt);
     const end = eventEnd(evt);
     return Boolean(start && end && start <= now && end >= now);
@@ -180,7 +162,7 @@
       card.className = "today-primary";
       card.innerHTML = '<div class="today-time"></div><h2></h2>';
       card.querySelector(".today-time").textContent = eventTimeLabel(evt);
-      card.querySelector("h2").textContent = evt.title || "未命名事件";
+      card.querySelector("h2").textContent = evt.title || "未命名计划";
       currentListEl?.appendChild(card);
     });
   }
@@ -192,8 +174,8 @@
       const card = document.createElement("article");
       card.className = "today-compact";
       card.innerHTML = '<span class="today-chip"></span><strong></strong>';
-      card.querySelector(".today-chip").textContent = `${evtTypeLabel(evt)} ${eventTimeLabel(evt)}`;
-      card.querySelector("strong").textContent = evt.title || "未命名事件";
+      card.querySelector(".today-chip").textContent = `计划 ${eventTimeLabel(evt)}`;
+      card.querySelector("strong").textContent = evt.title || "未命名计划";
       el?.appendChild(card);
     });
   }
@@ -205,21 +187,17 @@
       const row = document.createElement("article");
       row.className = "expired-reminder";
       row.innerHTML = "<strong></strong><span></span>";
-      row.querySelector("strong").textContent = evt.title || "未命名事件";
-      row.querySelector("span").textContent = `${evtTypeLabel(evt)} · ${eventTimeLabel(evt)}`;
+      row.querySelector("strong").textContent = evt.title || "未命名计划";
+      row.querySelector("span").textContent = `计划 · ${eventTimeLabel(evt)}`;
       overdueListEl?.appendChild(row);
     });
   }
 
   function renderSchedule(events) {
     const now = nowDate();
-    const todo = (events || []).filter((evt) => evt.stat === "todo");
-    const current = todo
-      .filter((evt) => isOngoing(evt, now))
-      .sort((a, b) => eventEnd(a) - eventEnd(b));
-    const overdue = todo
-      .filter((evt) => isOverdue(evt, now))
-      .sort((a, b) => eventEnd(a) - eventEnd(b));
+    const todo = (events || []).filter((evt) => evt.evtType === "plan" && evt.stat === "todo");
+    const current = todo.filter((evt) => isOngoing(evt, now)).sort((a, b) => eventEnd(a) - eventEnd(b));
+    const overdue = todo.filter((evt) => isOverdue(evt, now)).sort((a, b) => eventEnd(a) - eventEnd(b));
     const otherToday = todo
       .filter((evt) => isTodayEvt(evt, now) && !isOngoing(evt, now) && !isOverdue(evt, now))
       .sort((a, b) => eventStart(a) - eventStart(b));
@@ -230,9 +208,9 @@
 
   async function loadTodayEvents() {
     try {
-      const resp = await fetch("/api/evt");
+      const resp = await fetch("/api/planEvt");
       const data = await resp.json();
-      cachedEvents = data.data || [];
+      cachedEvents = (data.data || []).filter((evt) => evt.evtType === "plan");
       renderSchedule(cachedEvents);
     } catch {
       cachedEvents = [];
@@ -321,9 +299,7 @@
   }
 
   function handleWsMessage(data) {
-    if (lastMsgAt) {
-      lastMsgAt.textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-    }
+    if (lastMsgAt) lastMsgAt.textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false });
     if (data.kind === "state" && data.serverNow) {
       serverOffsetMs = new Date(data.serverNow).getTime() - Date.now();
       tickClock();
