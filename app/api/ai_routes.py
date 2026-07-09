@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
-import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.config import get_settings
+from app.llm import LLMConfigurationError, LLMGatewayError, complete_chat
 from app.new_core.models import nowIso
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -30,6 +31,47 @@ def _strip_json_fence(raw: str) -> str:
     return text.strip()
 
 
+def _extract_json_object(raw: str) -> dict[str, Any]:
+    text = _strip_json_fence(raw)
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        parsed = None
+    if isinstance(parsed, dict):
+        return parsed
+
+    start = text.find("{")
+    if start < 0:
+        raise ValueError("模型返回内容中没有 JSON 对象")
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                candidate = text[start : index + 1]
+                parsed = json.loads(candidate)
+                if not isinstance(parsed, dict):
+                    raise ValueError("模型返回的 JSON 不是对象")
+                return parsed
+    raise ValueError("模型返回的 JSON 对象不完整")
+
+
 def _normalize_priority(value: Any, *, tab: str) -> str:
     text = str(value or "").strip().lower()
     if text in {"high", "高", "urgent", "important", "紧急", "重要"}:
@@ -43,24 +85,57 @@ def _normalize_priority(value: Any, *, tab: str) -> str:
 
 def _normalize_weekday(value: Any) -> int | None:
     aliases = {
-        "monday": 1, "mon": 1, "星期一": 1, "周一": 1,
-        "tuesday": 2, "tue": 2, "星期二": 2, "周二": 2,
-        "wednesday": 3, "wed": 3, "星期三": 3, "周三": 3,
-        "thursday": 4, "thu": 4, "星期四": 4, "周四": 4,
-        "friday": 5, "fri": 5, "星期五": 5, "周五": 5,
-        "saturday": 6, "sat": 6, "星期六": 6, "周六": 6,
-        "sunday": 7, "sun": 7, "星期日": 7, "星期天": 7, "周日": 7,
+        "monday": 1,
+        "mon": 1,
+        "星期一": 1,
+        "周一": 1,
+        "tuesday": 2,
+        "tue": 2,
+        "星期二": 2,
+        "周二": 2,
+        "wednesday": 3,
+        "wed": 3,
+        "星期三": 3,
+        "周三": 3,
+        "thursday": 4,
+        "thu": 4,
+        "星期四": 4,
+        "周四": 4,
+        "friday": 5,
+        "fri": 5,
+        "星期五": 5,
+        "周五": 5,
+        "saturday": 6,
+        "sat": 6,
+        "星期六": 6,
+        "周六": 6,
+        "sunday": 7,
+        "sun": 7,
+        "星期日": 7,
+        "星期天": 7,
+        "周日": 7,
     }
     if value is None:
         return None
     text = str(value).strip().lower()
     if text in aliases:
         return aliases[text]
-    try:
-        number = int(text)
-    except ValueError:
+    match = re.search(r"\d+", text)
+    if not match:
         return None
+    number = int(match.group())
     return number if 1 <= number <= 7 else None
+
+
+def _safe_int(value: Any, default: int) -> int:
+    if value in (None, ""):
+        return default
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, (int, float)):
+        return int(value)
+    match = re.search(r"-?\d+", str(value))
+    return int(match.group()) if match else default
 
 
 def _normalize_course(data: dict[str, Any]) -> dict[str, Any]:
@@ -80,20 +155,27 @@ def _normalize_course(data: dict[str, Any]) -> dict[str, Any]:
         "courseName": str(data.get("courseName") or data.get("title") or "").strip(),
         "teacher": str(data.get("teacher") or "").strip() or None,
         "location": str(data.get("location") or data.get("room") or "").strip() or None,
-        "semesterStart": data.get("semesterStart") or data.get("stDate") or data.get("startDate"),
+        "semesterStart": data.get("semesterStart")
+        or data.get("stDate")
+        or data.get("startDate"),
         "weekDay": _normalize_weekday(data.get("weekDay") or data.get("weekday")),
         "stTime": data.get("stTime") or data.get("startTime"),
         "endTime": data.get("endTime") or data.get("finishTime"),
-        "startWeek": int(data.get("startWeek") or 1),
-        "endWeek": int(data.get("endWeek") or 16),
+        "startWeek": max(1, _safe_int(data.get("startWeek"), 1)),
+        "endWeek": max(1, _safe_int(data.get("endWeek"), 16)),
         "weekMode": mode,
         "desc": str(data.get("desc") or data.get("description") or "").strip(),
-        "prio": _normalize_priority(data.get("prio") or data.get("priority"), tab="course"),
+        "prio": _normalize_priority(
+            data.get("prio") or data.get("priority"),
+            tab="course",
+        ),
     }
 
 
 def _normalize_event(data: dict[str, Any]) -> dict[str, Any]:
-    raw_type = str(data.get("tab") or data.get("evtType") or data.get("type") or "plan").strip().lower()
+    raw_type = str(
+        data.get("tab") or data.get("evtType") or data.get("type") or "plan"
+    ).strip().lower()
     tab = "ddl" if raw_type in {"ddl", "deadline", "截止", "截止事项"} else "plan"
     normalized = {
         "tab": tab,
@@ -101,7 +183,7 @@ def _normalize_event(data: dict[str, Any]) -> dict[str, Any]:
         "title": str(data.get("title") or "").strip(),
         "desc": str(data.get("desc") or data.get("description") or "").strip(),
         "prio": _normalize_priority(data.get("prio") or data.get("priority"), tab=tab),
-        "durationMin": int(data.get("durationMin") or data.get("duration") or 30),
+        "durationMin": max(1, _safe_int(data.get("durationMin") or data.get("duration"), 30)),
         "hardDdl": bool(data.get("hardDdl", False)),
     }
     if tab == "ddl":
@@ -160,44 +242,40 @@ def _event_prompt(text: str, now: str) -> str:
 @router.post("/llm/parse")
 def parse_text(body: ParseBody) -> dict[str, Any]:
     settings = get_settings()
-    parsed = None
     now = body.now or nowIso()
-    if settings.deepseek_api_key:
-        is_course = body.scene in {"create_course", "course", "course_form"}
-        prompt = _course_prompt(body.text, now) if is_course else _event_prompt(body.text, now)
-        payload = {
-            "model": settings.llm_model,
-            "messages": [
+    is_course = body.scene in {"create_course", "course", "course_form"}
+    prompt = _course_prompt(body.text, now) if is_course else _event_prompt(body.text, now)
+
+    try:
+        raw = complete_chat(
+            [
                 {"role": "system", "content": "你只输出严格 JSON。"},
                 {"role": "user", "content": prompt},
             ],
-            "temperature": 0,
-        }
-        headers = {
-            "Authorization": "Bearer " + settings.deepseek_api_key,
-            "Content-Type": "application/json",
-        }
-        try:
-            resp = httpx.post(
-                settings.deepseek_base_url.rstrip("/") + "/chat/completions",
-                json=payload,
-                headers=headers,
-                timeout=12,
-            )
-            resp.raise_for_status()
-            raw = resp.json()["choices"][0]["message"]["content"]
-            data = json.loads(_strip_json_fence(str(raw)))
-            if isinstance(data, dict):
-                parsed = _normalize_course(data) if is_course else _normalize_event(data)
-        except Exception:
-            parsed = None
+            temperature=0,
+            settings=settings,
+        )
+        data = _extract_json_object(raw)
+        parsed = _normalize_course(data) if is_course else _normalize_event(data)
+    except LLMConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except LLMGatewayError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"模型返回内容无法解析：{exc}",
+        ) from exc
+
     return {
         "ok": True,
         "data": {
-            "status": "ok" if parsed else "fallback",
+            "status": "ok",
             "scene": body.scene,
             "text": body.text,
             "parsed": parsed,
             "now": now,
+            "provider": settings.llm_provider,
+            "model": settings.llm_model,
         },
     }
