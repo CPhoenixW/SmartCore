@@ -19,6 +19,26 @@ SmartCore keeps ownership of data, reminders, Feishu card templates, audit logs,
 operation confirmation, and deployment. OpenClaw owns natural-language
 understanding, task decomposition, and multi-step orchestration.
 
+## Natural-language model route
+
+All model calls implemented inside SmartCore use the centralized client in
+`app/llm/gateway.py` and the following OpenAI-compatible route:
+
+```text
+base_url = https://tokendance.space/gateway/v1
+model    = deepseek-v4-flash
+```
+
+The TokenDance key is loaded from `LLM_API_KEY` in SmartCore configuration and
+is never included in Feishu events, logs, cards, or OpenClaw tool responses.
+SmartCore disables the HTTP request timeout for these gateway calls.
+
+OpenClaw is a separately deployed runtime and does not execute inside the
+SmartCore process. Its own model provider must therefore also be configured with
+the same TokenDance base URL and model. SmartCore cannot safely transmit its
+LLM API key inside a forwarded event. The OpenClaw deployment must receive the
+key through its own secret/environment configuration.
+
 ## Runtime Modes
 
 - With `OPENCLAW_EVENTS_ENDPOINT` configured, SmartCore forwards accepted Feishu
@@ -108,6 +128,5 @@ OpenClaw must not be required for the minute-by-minute due-reminder scan.
 
 OpenClaw must never access the SQLite database file, Docker volumes, or backup
 directories directly. It must only call SmartCore APIs with an agent token.
-
 SmartCore should log all OpenClaw-originated tool calls with actor, source event,
 request body, result status, and operation id when applicable.
