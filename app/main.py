@@ -17,6 +17,7 @@ from app.device.routes import router as deviceRouter
 from app.feishu.event_handler import create_feishu_router
 from app.new_core.event_relations import ensure_all_relations
 from app.new_core.relation_compat import install_relation_compat
+from app.new_core.relation_maintenance import close_past_course_occurrences
 from app.scheduler.service import build_scheduler_service
 from app.screen.routes import router as screenRouter
 from app.web.device_routes import router as workDeviceRouter
@@ -27,6 +28,7 @@ def _sync_event_relations() -> None:
     db = SessionLocal()
     try:
         ensure_all_relations(db)
+        close_past_course_occurrences(db)
     except Exception:
         db.rollback()
         raise
