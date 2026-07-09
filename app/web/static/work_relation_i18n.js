@@ -1,3 +1,4 @@
+import "./work_add_reminder_styles.js";
 import "./work_add_reminders.js";
 import { getUiLanguage } from "./work_shared.js";
 
