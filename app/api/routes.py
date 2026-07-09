@@ -10,6 +10,18 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.new_core import crud
 from app.new_core.ddl_service import create_ddl_event
+from app.new_core.event_relations import (
+    cancel_event,
+    create_course_event,
+    create_plan_event,
+    ensure_all_relations,
+    get_event,
+    list_course_events,
+    list_events,
+    list_reminder_events,
+    sync_course_plans,
+    update_event,
+)
 from app.new_core.models import ActLog, DeviceStateLog, MsgLog, NotifyLog, nowIso
 from app.new_core.preferences import get_user_preferences, update_user_preferences
 
@@ -28,6 +40,10 @@ def _http_error(exc: ValueError) -> HTTPException:
         "must be",
         "unsupported",
         "duplicate",
+        "invalid",
+        "earlier",
+        "later",
+        "managed automatically",
     )
     if any(term in msg for term in bad_request_terms):
         return HTTPException(status_code=400, detail=msg)
@@ -88,8 +104,42 @@ def patch_user_me(
 
 
 @router.get("/evt")
-def list_evt(db: Session = Depends(get_db)) -> dict[str, Any]:
-    return ok(crud.listEvt(db))
+def list_evt(
+    date: str | None = None,
+    evtType: list[str] | None = Query(default=None),
+    stat: list[str] | None = Query(default=None),
+    text: str | None = None,
+    includeReminders: bool = False,
+    includeCourseTemplates: bool | None = None,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    include_templates = date is None if includeCourseTemplates is None else includeCourseTemplates
+    try:
+        return ok(
+            list_events(
+                db,
+                date_value=date,
+                evt_types=evtType,
+                stats=stat,
+                text=text,
+                include_reminders=includeReminders,
+                include_course_templates=include_templates,
+            )
+        )
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get("/evt/{evtId}")
+def read_evt(
+    evtId: str,
+    includeReminders: bool = False,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        return ok(get_event(db, evtId, include_reminders=includeReminders))
+    except ValueError as exc:
+        raise _http_error(exc) from exc
 
 
 @router.patch("/evt/{evtId}")
@@ -99,35 +149,51 @@ def patch_evt(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
-        return ok(crud.updateEvt(db, evtId, **body))
+        return ok(update_event(db, evtId, src="api", **body))
     except ValueError as exc:
+        db.rollback()
         raise _http_error(exc) from exc
 
 
 @router.delete("/evt/{evtId}")
 def delete_evt(evtId: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
-        return ok(crud.cancelEvt(db, evtId))
+        return ok(cancel_event(db, evtId, src="api"))
     except ValueError as exc:
+        db.rollback()
         raise _http_error(exc) from exc
 
 
 class PlanEvtBody(BaseModel):
     title: str
     stTime: str
-    durationMin: int = 30
+    durationMin: int = Field(default=30, gt=0)
     desc: str | None = None
     prio: str = "mid"
 
 
 @router.get("/planEvt")
-def list_plan_evt(db: Session = Depends(get_db)) -> dict[str, Any]:
-    return ok(crud.listPlanEvt(db))
+def list_plan_evt(
+    date: str | None = None,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return ok(
+        list_events(
+            db,
+            date_value=date,
+            evt_types=["plan"],
+            include_course_templates=False,
+        )
+    )
 
 
 @router.post("/planEvt")
 def create_plan_evt(body: PlanEvtBody, db: Session = Depends(get_db)) -> dict[str, Any]:
-    return ok(crud.createPlanEvt(db, **body.model_dump(), src="api"))
+    try:
+        return ok(create_plan_event(db, **body.model_dump(), src="api"))
+    except ValueError as exc:
+        db.rollback()
+        raise _http_error(exc) from exc
 
 
 class DdlPlanBody(BaseModel):
@@ -150,7 +216,7 @@ class DdlEvtBody(BaseModel):
 
 @router.get("/ddlEvt")
 def list_ddl_evt(db: Session = Depends(get_db)) -> dict[str, Any]:
-    return ok(crud.listDdlEvt(db))
+    return ok(list_events(db, evt_types=["ddl"], include_course_templates=False))
 
 
 @router.post("/ddlEvt")
@@ -164,6 +230,7 @@ def create_ddl_evt(body: DdlEvtBody, db: Session = Depends(get_db)) -> dict[str,
         )
         return ok(create_ddl_event(db, **payload, src="api"))
     except ValueError as exc:
+        db.rollback()
         raise _http_error(exc) from exc
 
 
@@ -176,24 +243,59 @@ class CourseEvtBody(BaseModel):
     endTime: str
     stDate: str
     endDate: str
-    weekDay: int
+    weekDay: int | str
     startWeek: int | None = None
     endWeek: int | None = None
-    weekMode: str = "all"
+    weekMode: Literal["all", "odd", "even"] = "all"
     desc: str | None = None
     prio: str = "mid"
 
 
 @router.get("/courseEvt")
 def list_course_evt(db: Session = Depends(get_db)) -> dict[str, Any]:
-    return ok(crud.listCourseEvt(db))
+    return ok(list_course_events(db))
 
 
 @router.post("/courseEvt")
 def create_course_evt(body: CourseEvtBody, db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
-        return ok(crud.createCourseEvt(db, **body.model_dump(), src="api"))
+        return ok(create_course_event(db, **body.model_dump(), src="api"))
     except ValueError as exc:
+        db.rollback()
+        raise _http_error(exc) from exc
+
+
+@router.post("/courseEvt/{evtId}/sync")
+def sync_course_occurrences(evtId: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    try:
+        plans = sync_course_plans(db, evtId)
+        db.commit()
+        return ok({"course": get_event(db, evtId), "plans": plans})
+    except ValueError as exc:
+        db.rollback()
+        raise _http_error(exc) from exc
+
+
+@router.get("/remindEvt")
+def list_remind_evt(
+    planEvtId: str | None = None,
+    stat: str | None = None,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    rows = list_reminder_events(db)
+    if planEvtId:
+        rows = [row for row in rows if row.get("planEvtId") == planEvtId]
+    if stat:
+        rows = [row for row in rows if row.get("stat") == stat]
+    return ok(rows)
+
+
+@router.post("/evt/relations/sync")
+def sync_all_event_relations(db: Session = Depends(get_db)) -> dict[str, Any]:
+    try:
+        return ok(ensure_all_relations(db))
+    except ValueError as exc:
+        db.rollback()
         raise _http_error(exc) from exc
 
 
@@ -316,11 +418,13 @@ def reminder_action(
     body: ReminderActionBody,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    from app.new_core.event_relations import apply_reminder_action
+
     try:
         return ok(
-            crud.applyReminderAction(
+            apply_reminder_action(
                 db,
-                evtId=body.evtId,
+                evt_id=body.evtId,
                 action=body.action,
                 now=body.now or nowIso(),
                 src="screen",
