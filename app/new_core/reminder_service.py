@@ -12,6 +12,8 @@ from app.new_core.models import ActLog, EvtBase, RemindEvt, newId, nowIso
 
 _DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
 _DEFAULT_USER_ID = "default"
+_ALLOWED_STATS = {"todo", "done", "cancelled"}
+_ALLOWED_PRIORITIES = {"low", "mid", "high"}
 
 
 def _parse_datetime(value: str) -> datetime:
@@ -47,6 +49,20 @@ def _ensure_standalone(remind: RemindEvt | None, evt_id: str) -> RemindEvt:
     return remind
 
 
+def _priority(value: Any) -> str:
+    priority = str(value or "mid").strip().lower()
+    if priority not in _ALLOWED_PRIORITIES:
+        raise ValueError("prio must be low, mid, or high")
+    return priority
+
+
+def _status(value: Any) -> str:
+    status = str(value or "todo").strip().lower()
+    if status not in _ALLOWED_STATS:
+        raise ValueError("stat must be todo, done, or cancelled")
+    return status
+
+
 def create_reminder_event(
     db: Session,
     *,
@@ -70,7 +86,7 @@ def create_reminder_event(
         title=clean_title,
         desc=desc,
         evtType="remind",
-        prio=prio,
+        prio=_priority(prio),
         stat="todo",
         createdAt=now,
         updatedAt=now,
@@ -119,16 +135,30 @@ def update_reminder_event(
     remind = _ensure_standalone(db.get(RemindEvt, evt_id), evt_id)
     if base is None:
         raise ValueError(f"reminder not found: {evt_id}")
-    for key in ("title", "desc", "prio", "stat"):
-        if key in fields and fields[key] is not None:
-            setattr(base, key, fields[key])
+
+    if "title" in fields and fields["title"] is not None:
+        clean_title = str(fields["title"]).strip()
+        if not clean_title:
+            raise ValueError("title required")
+        base.title = clean_title
+    if "desc" in fields:
+        base.desc = fields["desc"] or None
+    if "prio" in fields and fields["prio"] is not None:
+        base.prio = _priority(fields["prio"])
+    if "stat" in fields and fields["stat"] is not None:
+        next_status = _status(fields["stat"])
+        base.stat = next_status
+        if next_status == "todo":
+            remind.firedAt = None
+
     if "triggerTime" in fields and fields["triggerTime"] is not None:
         normalized = _parse_datetime(str(fields["triggerTime"])).isoformat()
         if remind.triggerTime != normalized:
             remind.triggerTime = normalized
             remind.firedAt = None
-            if base.stat == "done":
+            if "stat" not in fields and base.stat == "done":
                 base.stat = "todo"
+
     base.updatedAt = nowIso()
     db.add(
         ActLog(
