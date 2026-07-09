@@ -9,12 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.new_core import crud
-from app.new_core.custom_reminders import (
-    list_extra_reminder_specs,
-    replace_extra_reminders,
-    sync_extra_reminders,
-)
-from app.new_core.ddl_service import create_ddl_event
+from app.new_core.ddl_service import create_ddl_event, replace_ddl_plans
 from app.new_core.event_relations import (
     cancel_event,
     create_course_event,
@@ -23,12 +18,17 @@ from app.new_core.event_relations import (
     get_event,
     list_course_events,
     list_events,
-    list_reminder_events,
     sync_course_plans,
     update_event,
 )
 from app.new_core.models import ActLog, DeviceStateLog, EvtBase, MsgLog, NotifyLog, nowIso
 from app.new_core.preferences import get_user_preferences, update_user_preferences
+from app.new_core.reminder_service import (
+    create_reminder_event,
+    get_reminder_event,
+    list_reminder_events,
+    update_reminder_event,
+)
 
 router = APIRouter(prefix="/api", tags=["api"])
 
@@ -48,7 +48,7 @@ def _http_error(exc: ValueError) -> HTTPException:
         "invalid",
         "earlier",
         "later",
-        "managed automatically",
+        "cannot be edited",
     )
     if any(term in msg for term in bad_request_terms):
         return HTTPException(status_code=400, detail=msg)
@@ -120,17 +120,25 @@ def list_evt(
 ) -> dict[str, Any]:
     include_templates = date is None if includeCourseTemplates is None else includeCourseTemplates
     try:
-        return ok(
-            list_events(
-                db,
-                date_value=date,
-                evt_types=evtType,
-                stats=stat,
-                text=text,
-                include_reminders=includeReminders,
-                include_course_templates=include_templates,
-            )
+        rows = list_events(
+            db,
+            date_value=date,
+            evt_types=evtType,
+            stats=stat,
+            text=text,
+            include_reminders=False,
+            include_course_templates=include_templates,
         )
+        if includeReminders and (not evtType or "remind" in evtType):
+            rows.extend(
+                list_reminder_events(
+                    db,
+                    date_value=date,
+                    stats=stat,
+                    text=text,
+                )
+            )
+        return ok(rows)
     except ValueError as exc:
         raise _http_error(exc) from exc
 
@@ -138,11 +146,13 @@ def list_evt(
 @router.get("/evt/{evtId}")
 def read_evt(
     evtId: str,
-    includeReminders: bool = False,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
-        return ok(get_event(db, evtId, include_reminders=includeReminders))
+        base = db.get(EvtBase, evtId)
+        if base is None:
+            raise ValueError(f"evt not found: {evtId}")
+        return ok(get_reminder_event(db, evtId) if base.evtType == "remind" else get_event(db, evtId))
     except ValueError as exc:
         raise _http_error(exc) from exc
 
@@ -155,14 +165,14 @@ def patch_evt(
 ) -> dict[str, Any]:
     try:
         base = db.get(EvtBase, evtId)
-        extra_reminders = body.pop("extraReminders", None)
+        if base is None:
+            raise ValueError(f"evt not found: {evtId}")
+        if base.evtType == "remind":
+            return ok(update_reminder_event(db, evtId, src="api", **body))
+        plans = body.pop("plans", None)
         result = update_event(db, evtId, src="api", **body)
-        if base is not None and base.evtType == "plan":
-            if extra_reminders is None:
-                sync_extra_reminders(db, evtId)
-            else:
-                replace_extra_reminders(db, evtId, extra_reminders)
-            result = get_event(db, evtId)
+        if base.evtType == "ddl" and plans is not None:
+            result = replace_ddl_plans(db, evtId, plans, src="api")
         return ok(result)
     except ValueError as exc:
         db.rollback()
@@ -178,18 +188,12 @@ def delete_evt(evtId: str, db: Session = Depends(get_db)) -> dict[str, Any]:
         raise _http_error(exc) from exc
 
 
-class ReminderSpecBody(BaseModel):
-    anchor: Literal["start", "end"] = "start"
-    offsetMin: int = Field(default=10, ge=0, le=7 * 24 * 60)
-
-
 class PlanEvtBody(BaseModel):
     title: str
     stTime: str
     durationMin: int = Field(default=30, gt=0)
     desc: str | None = None
     prio: str = "mid"
-    extraReminders: list[ReminderSpecBody] = Field(default_factory=list)
 
 
 @router.get("/planEvt")
@@ -210,65 +214,45 @@ def list_plan_evt(
 @router.post("/planEvt")
 def create_plan_evt(body: PlanEvtBody, db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
-        payload = body.model_dump(exclude={"extraReminders"})
-        result = create_plan_event(db, **payload, src="api", commit=False)
-        replace_extra_reminders(
-            db,
-            result["evtId"],
-            [item.model_dump() for item in body.extraReminders],
-            commit=False,
-        )
-        db.commit()
-        return ok(get_event(db, result["evtId"]))
+        return ok(create_plan_event(db, **body.model_dump(), src="api"))
     except ValueError as exc:
         db.rollback()
         raise _http_error(exc) from exc
 
 
-class ReminderWriteBody(BaseModel):
-    planEvtId: str
-    anchor: Literal["start", "end"] = "start"
-    offsetMin: int = Field(default=10, ge=0, le=7 * 24 * 60)
+class RemindEvtBody(BaseModel):
+    title: str
+    triggerTime: str
+    desc: str | None = None
+    prio: str = "mid"
+
+
+@router.get("/remindEvt")
+def list_remind_evt(
+    date: str | None = None,
+    stat: list[str] | None = Query(default=None),
+    text: str | None = None,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return ok(list_reminder_events(db, date_value=date, stats=stat, text=text))
 
 
 @router.post("/remindEvt")
-def create_remind_evt(
-    body: ReminderWriteBody,
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
+def create_remind_evt(body: RemindEvtBody, db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
-        specs = list_extra_reminder_specs(db, body.planEvtId)
-        specs.append({"anchor": body.anchor, "offsetMin": body.offsetMin})
-        replace_extra_reminders(db, body.planEvtId, specs)
-        return ok(get_event(db, body.planEvtId))
-    except ValueError as exc:
-        db.rollback()
-        raise _http_error(exc) from exc
-
-
-@router.put("/planEvt/{evtId}/reminders")
-def replace_plan_reminders(
-    evtId: str,
-    body: list[ReminderSpecBody],
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    try:
-        replace_extra_reminders(
-            db,
-            evtId,
-            [item.model_dump() for item in body],
-        )
-        return ok(get_event(db, evtId))
+        return ok(create_reminder_event(db, **body.model_dump(), src="api"))
     except ValueError as exc:
         db.rollback()
         raise _http_error(exc) from exc
 
 
 class DdlPlanBody(BaseModel):
-    planRole: Literal["one_day_before", "one_hour_before", "manual"]
+    planEvtId: str | None = None
+    planRole: Literal["one_day_before", "one_hour_before", "manual"] = "manual"
     stTime: str
     durationMin: int = Field(default=30, gt=0)
     title: str | None = None
+    desc: str | None = None
     enabled: bool = True
     sortOrder: int | None = None
 
@@ -342,20 +326,6 @@ def sync_course_occurrences(evtId: str, db: Session = Depends(get_db)) -> dict[s
     except ValueError as exc:
         db.rollback()
         raise _http_error(exc) from exc
-
-
-@router.get("/remindEvt")
-def list_remind_evt(
-    planEvtId: str | None = None,
-    stat: str | None = None,
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    rows = list_reminder_events(db)
-    if planEvtId:
-        rows = [row for row in rows if row.get("planEvtId") == planEvtId]
-    if stat:
-        rows = [row for row in rows if row.get("stat") == stat]
-    return ok(rows)
 
 
 @router.post("/evt/relations/sync")
@@ -489,17 +459,15 @@ def reminder_action(
     from app.new_core.event_relations import apply_reminder_action
 
     try:
-        result = apply_reminder_action(
-            db,
-            evt_id=body.evtId,
-            action=body.action,
-            now=body.now or nowIso(),
-            src="screen",
+        return ok(
+            apply_reminder_action(
+                db,
+                evt_id=body.evtId,
+                action=body.action,
+                now=body.now or nowIso(),
+                src="screen",
+            )
         )
-        if body.action == "snooze10" and result.get("evtId"):
-            sync_extra_reminders(db, str(result["evtId"]))
-            result = get_event(db, str(result["evtId"]))
-        return ok(result)
     except ValueError as exc:
         db.rollback()
         raise _http_error(exc) from exc
