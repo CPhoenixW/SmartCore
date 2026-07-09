@@ -3,11 +3,15 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.new_core.event_relations import mark_reminder_fired, sync_plan_reminders
-from app.new_core.models import CoursePlan, EvtBase, PlanEvt, RemindEvt, nowIso
+from app.new_core.event_relations import (
+    mark_reminder_fired,
+    sync_course_plans,
+    sync_plan_reminders,
+)
+from app.new_core.models import CourseEvt, CoursePlan, EvtBase, PlanEvt, RemindEvt, nowIso
 
 _DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
 
@@ -17,6 +21,32 @@ def _parse(value: str) -> datetime:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=_DEFAULT_TZ)
     return parsed.astimezone(_DEFAULT_TZ)
+
+
+def ensure_missing_relations(db: Session) -> dict[str, int]:
+    """Backfill legacy rows without rewriting already-customized occurrences."""
+    reminders = 0
+    course_plans = 0
+
+    plan_ids = db.scalars(select(PlanEvt.evtId)).all()
+    for plan_id in plan_ids:
+        count = db.scalar(
+            select(func.count(RemindEvt.evtId)).where(RemindEvt.planEvtId == plan_id)
+        ) or 0
+        if int(count) < 2:
+            sync_plan_reminders(db, plan_id)
+            reminders += 2 - int(count)
+
+    course_ids = db.scalars(select(CourseEvt.evtId)).all()
+    for course_id in course_ids:
+        count = db.scalar(
+            select(func.count(CoursePlan.planEvtId)).where(CoursePlan.courseEvtId == course_id)
+        ) or 0
+        if int(count) == 0:
+            course_plans += len(sync_course_plans(db, course_id))
+
+    db.commit()
+    return {"reminders": reminders, "coursePlans": course_plans}
 
 
 def close_past_course_occurrences(db: Session, *, now: str | None = None) -> int:
