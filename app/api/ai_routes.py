@@ -80,13 +80,12 @@ def _normalize_course(data: dict[str, Any]) -> dict[str, Any]:
         "courseName": str(data.get("courseName") or data.get("title") or "").strip(),
         "teacher": str(data.get("teacher") or "").strip() or None,
         "location": str(data.get("location") or data.get("room") or "").strip() or None,
-        "stDate": data.get("stDate") or data.get("startDate"),
-        "endDate": data.get("endDate") or data.get("finishDate"),
+        "semesterStart": data.get("semesterStart") or data.get("stDate") or data.get("startDate"),
         "weekDay": _normalize_weekday(data.get("weekDay") or data.get("weekday")),
         "stTime": data.get("stTime") or data.get("startTime"),
         "endTime": data.get("endTime") or data.get("finishTime"),
-        "startWeek": data.get("startWeek"),
-        "endWeek": data.get("endWeek"),
+        "startWeek": int(data.get("startWeek") or 1),
+        "endWeek": int(data.get("endWeek") or 16),
         "weekMode": mode,
         "desc": str(data.get("desc") or data.get("description") or "").strip(),
         "prio": _normalize_priority(data.get("prio") or data.get("priority"), tab="course"),
@@ -118,28 +117,30 @@ def _course_prompt(text: str, now: str) -> str:
 当前时间：{now}，时区 Asia/Shanghai。
 用户输入：{text}
 
-解析一门周期课程，必须输出：
+课程只使用一个学期开始日期，并按照周次、星期和上课时间计算所有实际日期。
+必须输出：
 {{
   "evtType": "course",
   "courseName": "课程名称",
   "title": "课程名称",
   "teacher": "教师或 null",
   "location": "教室或 null",
-  "stDate": "YYYY-MM-DD",
-  "endDate": "YYYY-MM-DD",
+  "semesterStart": "YYYY-MM-DD 或 null",
   "weekDay": 1到7，星期一为1、星期日为7,
   "stTime": "HH:MM",
   "endTime": "HH:MM",
-  "startWeek": 整数或 null,
-  "endWeek": 整数或 null,
+  "startWeek": 整数，默认1,
+  "endWeek": 整数，默认16,
   "weekMode": "all"、"odd"或"even",
   "desc": "课程说明",
   "prio": "low"、"mid"或"high"
 }}
 规则：
+- 不输出课程结束日期；由 semesterStart、startWeek、endWeek 和 weekDay 自动计算。
 - 周一到周日严格对应 1 到 7。
 - “每周”是 all，“单周”是 odd，“双周”是 even。
-- 如果用户给出学期日期范围，直接使用；缺失字段设 null，不要编造日期。
+- 用户未提供起止周时，startWeek=1、endWeek=16。
+- 缺少学期开始日期时 semesterStart=null，不要编造。
 - 时间只输出 24 小时制 HH:MM。
 """.strip()
 
