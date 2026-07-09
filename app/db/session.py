@@ -85,6 +85,18 @@ def _sqlite_columns(conn: object, table: str) -> set[str]:
     return {str(row[1]) for row in rows}
 
 
+def _sqlite_table_info(conn: object, table: str) -> list[tuple]:
+    return list(conn.execute(f"PRAGMA table_info({table})").fetchall())
+
+
+def _sqlite_table_sql(conn: object, table: str) -> str:
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    ).fetchone()
+    return str(row[0] or "") if row else ""
+
+
 def _add_sqlite_column(conn: object, table: str, column: str, ddl: str) -> None:
     if column not in _sqlite_columns(conn, table):
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
@@ -98,16 +110,12 @@ def _rebuild_table_if_incompatible(conn: object, table: str, required_columns: s
 
 
 def _evt_base_supports_reminders(conn: object) -> bool:
-    row = conn.execute(
-        "SELECT sql FROM sqlite_master WHERE type='table' AND name='evtBase'"
-    ).fetchone()
-    return bool(row and row[0] and "'remind'" in str(row[0]))
+    return "'remind'" in _sqlite_table_sql(conn, "evtBase")
 
 
 def _rebuild_evt_base_for_reminders(conn: object) -> None:
     if not _sqlite_columns(conn, "evtBase") or _evt_base_supports_reminders(conn):
         return
-    conn.execute("PRAGMA foreign_keys = OFF")
     conn.execute("DROP TABLE IF EXISTS evtBase_new")
     conn.execute(
         """
@@ -146,7 +154,84 @@ def _rebuild_evt_base_for_reminders(conn: object) -> None:
     conn.execute("ALTER TABLE evtBase_new RENAME TO evtBase")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_evtBase_user_stat_time ON evtBase(userId, stat, updatedAt)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_evtBase_user_type ON evtBase(userId, evtType)")
-    conn.execute("PRAGMA foreign_keys = ON")
+
+
+def _rebuild_remind_evt_for_standalone(conn: object) -> None:
+    if not _sqlite_columns(conn, "remindEvt"):
+        return
+    info = {str(row[1]): row for row in _sqlite_table_info(conn, "remindEvt")}
+    sql = _sqlite_table_sql(conn, "remindEvt")
+    plan_not_null = bool(info.get("planEvtId") and int(info["planEvtId"][3]) == 1)
+    constrained_kinds = "remindKind IN" in sql
+    if not plan_not_null and not constrained_kinds:
+        return
+
+    conn.execute("DROP TABLE IF EXISTS remindEvt_new")
+    conn.execute(
+        """
+        CREATE TABLE remindEvt_new (
+            evtId VARCHAR(32) PRIMARY KEY,
+            planEvtId VARCHAR(32),
+            remindKind VARCHAR(30) NOT NULL,
+            triggerTime VARCHAR(64) NOT NULL,
+            offsetMin INTEGER NOT NULL DEFAULT 0,
+            firedAt VARCHAR(64),
+            FOREIGN KEY (evtId) REFERENCES evtBase(evtId) ON DELETE CASCADE,
+            FOREIGN KEY (planEvtId) REFERENCES planEvt(evtId) ON DELETE CASCADE,
+            UNIQUE (planEvtId, remindKind),
+            CHECK (offsetMin >= 0)
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO remindEvt_new (
+            evtId, planEvtId, remindKind, triggerTime, offsetMin, firedAt
+        )
+        SELECT
+            evtId, planEvtId, remindKind, triggerTime, COALESCE(offsetMin, 0), firedAt
+        FROM remindEvt
+        """
+    )
+    conn.execute("DROP TABLE remindEvt")
+    conn.execute("ALTER TABLE remindEvt_new RENAME TO remindEvt")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_remindEvt_trigger ON remindEvt(triggerTime)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_remindEvt_plan ON remindEvt(planEvtId)")
+
+
+def _rebuild_ddl_plan_for_multiple_links(conn: object) -> None:
+    if not _sqlite_columns(conn, "ddlPlan"):
+        return
+    sql = _sqlite_table_sql(conn, "ddlPlan")
+    if "UNIQUE (ddlEvtId, planRole)" not in sql and "UNIQUE(ddlEvtId, planRole)" not in sql:
+        return
+
+    conn.execute("DROP TABLE IF EXISTS ddlPlan_new")
+    conn.execute(
+        """
+        CREATE TABLE ddlPlan_new (
+            ddlEvtId VARCHAR(32) NOT NULL,
+            planEvtId VARCHAR(32) NOT NULL,
+            planRole VARCHAR(30) NOT NULL,
+            sortOrder INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (ddlEvtId, planEvtId),
+            FOREIGN KEY (ddlEvtId) REFERENCES ddlEvt(evtId) ON DELETE CASCADE,
+            FOREIGN KEY (planEvtId) REFERENCES planEvt(evtId) ON DELETE CASCADE,
+            UNIQUE (planEvtId),
+            CHECK (planRole IN ('one_day_before', 'one_hour_before', 'manual'))
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO ddlPlan_new (ddlEvtId, planEvtId, planRole, sortOrder)
+        SELECT ddlEvtId, planEvtId, planRole, COALESCE(sortOrder, 0)
+        FROM ddlPlan
+        """
+    )
+    conn.execute("DROP TABLE ddlPlan")
+    conn.execute("ALTER TABLE ddlPlan_new RENAME TO ddlPlan")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ddlPlan_ddl_order ON ddlPlan(ddlEvtId, sortOrder)")
 
 
 def _apply_sqlite_migrations(db_path: Path) -> None:
@@ -155,6 +240,7 @@ def _apply_sqlite_migrations(db_path: Path) -> None:
 
     conn = sqlite3.connect(db_path)
     try:
+        conn.execute("PRAGMA foreign_keys = OFF")
         tables = {str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if "appUser" in tables:
             _add_sqlite_column(conn, "appUser", "language", "language VARCHAR(10) NOT NULL DEFAULT 'zh'")
@@ -166,6 +252,10 @@ def _apply_sqlite_migrations(db_path: Path) -> None:
             _add_sqlite_column(conn, "evtBase", "userId", "userId VARCHAR(32) NOT NULL DEFAULT 'default'")
             conn.execute("UPDATE evtBase SET userId = COALESCE(userId, 'default')")
             _rebuild_evt_base_for_reminders(conn)
+        if "remindEvt" in tables:
+            _rebuild_remind_evt_for_standalone(conn)
+        if "ddlPlan" in tables:
+            _rebuild_ddl_plan_for_multiple_links(conn)
         if "idea" in tables:
             _add_sqlite_column(conn, "idea", "userId", "userId VARCHAR(32) NOT NULL DEFAULT 'default'")
             conn.execute("UPDATE idea SET userId = COALESCE(userId, 'default')")
@@ -235,6 +325,7 @@ def _apply_sqlite_migrations(db_path: Path) -> None:
                 """,
             )
         conn.commit()
+        conn.execute("PRAGMA foreign_keys = ON")
     finally:
         conn.close()
 
