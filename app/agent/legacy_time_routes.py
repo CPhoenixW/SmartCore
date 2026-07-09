@@ -6,15 +6,17 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.agent.routes import _done, _failed, _query_events, requireAgentToken
-from app.agent.v2_routes import (
-    _normalize_query_body,
-    _normalize_update_patch,
-    _resolved_iso,
-)
+from app.agent.routes import _done, _failed, requireAgentToken
+from app.agent.v2_routes import _normalize_query_body, _normalize_update_patch, _resolved_iso
 from app.db.session import get_db
-from app.new_core import crud
 from app.new_core.ddl_service import create_ddl_event
+from app.new_core.event_relations import (
+    create_course_event,
+    create_plan_event,
+    query_events,
+    update_event,
+)
+from app.new_core.models import EvtBase
 
 
 def createLegacyTimeRouter() -> APIRouter:
@@ -29,7 +31,7 @@ def createLegacyTimeRouter() -> APIRouter:
         db: Session = Depends(get_db),
     ) -> dict[str, Any]:
         try:
-            return _done(_query_events(db, _normalize_query_body(body or {})))
+            return _done(query_events(db, _normalize_query_body(body or {})))
         except (ValueError, TypeError) as exc:
             return _failed([str(exc)])
 
@@ -42,7 +44,7 @@ def createLegacyTimeRouter() -> APIRouter:
             evt_type = str(body.get("evtType") or body.get("type") or "").lower()
             if evt_type == "life":
                 evt_type = "plan"
-            title = str(body.get("title") or "").strip()
+            title = str(body.get("title") or body.get("courseName") or "").strip()
             if not title:
                 raise ValueError("title required")
 
@@ -51,7 +53,7 @@ def createLegacyTimeRouter() -> APIRouter:
                 if raw_time in (None, ""):
                     raise ValueError("stTime required")
                 return _done(
-                    crud.createPlanEvt(
+                    create_plan_event(
                         db,
                         title=title,
                         stTime=_resolved_iso(raw_time, body, "stTime"),
@@ -77,11 +79,7 @@ def createLegacyTimeRouter() -> APIRouter:
                         if normalized.get("sortOrder") is None:
                             normalized.pop("sortOrder", None)
                         if plan.get("stTime") not in (None, ""):
-                            normalized["stTime"] = _resolved_iso(
-                                plan["stTime"],
-                                body,
-                                f"plans[{index}].stTime",
-                            )
+                            normalized["stTime"] = _resolved_iso(plan["stTime"], body, f"plans[{index}].stTime")
                         normalized_plans.append(normalized)
                 return _done(
                     create_ddl_event(
@@ -102,7 +100,7 @@ def createLegacyTimeRouter() -> APIRouter:
                 if missing:
                     raise ValueError(f"required fields missing: {', '.join(missing)}")
                 return _done(
-                    crud.createCourseEvt(
+                    create_course_event(
                         db,
                         title=title,
                         courseName=str(body["courseName"]),
@@ -112,7 +110,7 @@ def createLegacyTimeRouter() -> APIRouter:
                         endTime=str(body["endTime"]),
                         stDate=str(body["stDate"]),
                         endDate=str(body["endDate"]),
-                        weekDay=int(body["weekDay"]),
+                        weekDay=body["weekDay"],
                         startWeek=int(body["startWeek"]) if body.get("startWeek") is not None else None,
                         endWeek=int(body["endWeek"]) if body.get("endWeek") is not None else None,
                         weekMode=str(body.get("weekMode") or "all"),
@@ -135,10 +133,13 @@ def createLegacyTimeRouter() -> APIRouter:
         if not evt_id:
             return _failed(["evtId required"])
         try:
-            patch = _normalize_update_patch(body)
+            base = db.get(EvtBase, str(evt_id))
+            if base is None:
+                raise ValueError(f"evt not found: {evt_id}")
+            patch = _normalize_update_patch(body, evt_type=base.evtType)
             if not patch:
                 raise ValueError("no supported update fields")
-            return _done(crud.updateEvt(db, str(evt_id), **patch))
+            return _done(update_event(db, str(evt_id), src="openclaw", **patch))
         except (ValueError, TypeError, IntegrityError) as exc:
             db.rollback()
             return _failed([str(exc)])
