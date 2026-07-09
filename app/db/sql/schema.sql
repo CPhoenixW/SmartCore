@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS evtBase (
     createdAt VARCHAR(64) NOT NULL,
     updatedAt VARCHAR(64) NOT NULL,
     FOREIGN KEY (userId) REFERENCES appUser(userId) ON DELETE CASCADE,
-    CHECK (evtType IN ('plan', 'ddl', 'course')),
+    CHECK (evtType IN ('plan', 'ddl', 'course', 'remind')),
     CHECK (prio IN ('low', 'mid', 'high')),
     CHECK (stat IN ('todo', 'done', 'cancelled'))
 );
@@ -75,6 +75,33 @@ CREATE TABLE IF NOT EXISTS courseEvt (
     CHECK (weekMode IN ('all', 'odd', 'even'))
 );
 
+CREATE TABLE IF NOT EXISTS coursePlan (
+    courseEvtId VARCHAR(32) NOT NULL,
+    planEvtId VARCHAR(32) NOT NULL,
+    occurrenceDate VARCHAR(16) NOT NULL,
+    sequenceNo INTEGER NOT NULL,
+    PRIMARY KEY (courseEvtId, planEvtId),
+    FOREIGN KEY (courseEvtId) REFERENCES courseEvt(evtId) ON DELETE CASCADE,
+    FOREIGN KEY (planEvtId) REFERENCES planEvt(evtId) ON DELETE CASCADE,
+    UNIQUE (courseEvtId, occurrenceDate),
+    UNIQUE (planEvtId),
+    CHECK (sequenceNo > 0)
+);
+
+CREATE TABLE IF NOT EXISTS remindEvt (
+    evtId VARCHAR(32) PRIMARY KEY,
+    planEvtId VARCHAR(32) NOT NULL,
+    remindKind VARCHAR(30) NOT NULL,
+    triggerTime VARCHAR(64) NOT NULL,
+    offsetMin INTEGER NOT NULL DEFAULT 10,
+    firedAt VARCHAR(64),
+    FOREIGN KEY (evtId) REFERENCES evtBase(evtId) ON DELETE CASCADE,
+    FOREIGN KEY (planEvtId) REFERENCES planEvt(evtId) ON DELETE CASCADE,
+    UNIQUE (planEvtId, remindKind),
+    CHECK (remindKind IN ('plan_start_10m', 'plan_end_10m')),
+    CHECK (offsetMin >= 0)
+);
+
 CREATE TABLE IF NOT EXISTS idea (
     ideaId VARCHAR(32) PRIMARY KEY,
     userId VARCHAR(32) NOT NULL,
@@ -94,7 +121,7 @@ CREATE TABLE IF NOT EXISTS device (
     isActive INTEGER NOT NULL DEFAULT 1,
     registeredAt VARCHAR(64) NOT NULL,
     FOREIGN KEY (userId) REFERENCES appUser(userId) ON DELETE CASCADE,
-    CHECK (deviceKind IN ('screen', 'browser', 'mobile', 'bot', 'server'))
+    CHECK (deviceKind IN ('screen', 'browser', 'mobile', 'bot', 'server', 'pi'))
 );
 
 CREATE TABLE IF NOT EXISTS deviceStateLog (
@@ -125,7 +152,7 @@ CREATE TABLE IF NOT EXISTS actLog (
     FOREIGN KEY (sourceDeviceId) REFERENCES device(deviceId) ON DELETE SET NULL,
     CHECK (actorKind IN ('user', 'system', 'device', 'llm')),
     CHECK (action IN ('create', 'update', 'delete', 'complete', 'cancel', 'auto_create', 'link', 'notify')),
-    CHECK (targetKind IN ('user', 'evt', 'planEvt', 'ddlEvt', 'courseEvt', 'idea', 'device')),
+    CHECK (targetKind IN ('user', 'evt', 'planEvt', 'ddlEvt', 'courseEvt', 'remindEvt', 'coursePlan', 'idea', 'device')),
     CHECK (result IN ('ok', 'failed'))
 );
 
@@ -174,6 +201,10 @@ CREATE INDEX IF NOT EXISTS idx_evtBase_user_type ON evtBase(userId, evtType);
 CREATE INDEX IF NOT EXISTS idx_planEvt_stTime ON planEvt(stTime);
 CREATE INDEX IF NOT EXISTS idx_ddlEvt_endTime ON ddlEvt(endTime);
 CREATE INDEX IF NOT EXISTS idx_courseEvt_weekDay ON courseEvt(weekDay);
+CREATE INDEX IF NOT EXISTS idx_coursePlan_course_date ON coursePlan(courseEvtId, occurrenceDate);
+CREATE INDEX IF NOT EXISTS idx_coursePlan_plan ON coursePlan(planEvtId);
+CREATE INDEX IF NOT EXISTS idx_remindEvt_trigger ON remindEvt(triggerTime);
+CREATE INDEX IF NOT EXISTS idx_remindEvt_plan ON remindEvt(planEvtId);
 CREATE INDEX IF NOT EXISTS idx_idea_user_created ON idea(userId, createdAt);
 CREATE INDEX IF NOT EXISTS idx_device_user_kind ON device(userId, deviceKind);
 CREATE INDEX IF NOT EXISTS idx_deviceStateLog_device_seen ON deviceStateLog(deviceId, seenAt);
