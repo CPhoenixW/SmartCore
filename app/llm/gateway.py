@@ -57,13 +57,16 @@ def complete_chat(
         active_settings.llm_base_url,
         active_settings.llm_max_retries,
     )
+    request: dict[str, Any] = {
+        "model": active_settings.llm_model,
+        "messages": messages,
+        "temperature": temperature,
+    }
+    if extra_body is not None:
+        request["extra_body"] = extra_body
+
     try:
-        response = client.chat.completions.create(
-            model=active_settings.llm_model,
-            messages=messages,
-            temperature=temperature,
-            extra_body=extra_body,
-        )
+        response = client.chat.completions.create(**request)
     except openai.APIStatusError as exc:
         request_id = f"，request_id={exc.request_id}" if exc.request_id else ""
         raise LLMGatewayError(
