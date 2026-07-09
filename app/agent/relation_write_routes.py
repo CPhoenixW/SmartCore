@@ -10,8 +10,9 @@ from app.agent.routes import _done, _failed, requireAgentToken
 from app.agent.v2_routes import _normalize_update_patch, _resolved_iso
 from app.db.session import get_db
 from app.new_core.course_semester import create_course_event, update_course_event
+from app.new_core.custom_reminders import replace_extra_reminders, sync_extra_reminders
 from app.new_core.ddl_service import create_ddl_event
-from app.new_core.event_relations import create_plan_event, update_event
+from app.new_core.event_relations import create_plan_event, get_event, update_event
 from app.new_core.models import EvtBase
 
 
@@ -32,17 +33,24 @@ def createRelationWriteRouter() -> APIRouter:
                 raw_time = body.get("stTime") or body.get("dueAt") or body.get("at")
                 if raw_time in (None, ""):
                     raise ValueError("stTime required")
-                return _done(
-                    create_plan_event(
-                        db,
-                        title=title,
-                        stTime=_resolved_iso(raw_time, body, "stTime"),
-                        durationMin=int(body.get("durationMin") or 30),
-                        desc=body.get("desc") or body.get("description"),
-                        prio=body.get("prio") or body.get("priority") or "mid",
-                        src="openclaw",
-                    )
+                result = create_plan_event(
+                    db,
+                    title=title,
+                    stTime=_resolved_iso(raw_time, body, "stTime"),
+                    durationMin=int(body.get("durationMin") or 30),
+                    desc=body.get("desc") or body.get("description"),
+                    prio=body.get("prio") or body.get("priority") or "mid",
+                    src="openclaw",
+                    commit=False,
                 )
+                replace_extra_reminders(
+                    db,
+                    result["evtId"],
+                    body.get("extraReminders") or body.get("reminders") or [],
+                    commit=False,
+                )
+                db.commit()
+                return _done(get_event(db, result["evtId"]))
 
             if evt_type == "ddl":
                 raw_time = body.get("endTime") or body.get("ddlAt") or body.get("at")
@@ -125,13 +133,20 @@ def createRelationWriteRouter() -> APIRouter:
             patch = _normalize_update_patch(body, evt_type=base.evtType)
             if "semesterStart" in body:
                 patch["semesterStart"] = body["semesterStart"]
-            if not patch:
+            extra_reminders = body.get("extraReminders", body.get("reminders"))
+            if not patch and extra_reminders is None:
                 raise ValueError("no supported update fields")
             result = (
                 update_course_event(db, str(evt_id), src="openclaw", **patch)
                 if base.evtType == "course"
                 else update_event(db, str(evt_id), src="openclaw", **patch)
             )
+            if base.evtType == "plan":
+                if extra_reminders is None:
+                    sync_extra_reminders(db, str(evt_id))
+                else:
+                    replace_extra_reminders(db, str(evt_id), extra_reminders)
+                result = get_event(db, str(evt_id))
             return _done(result)
         except (ValueError, TypeError, IntegrityError) as exc:
             db.rollback()
