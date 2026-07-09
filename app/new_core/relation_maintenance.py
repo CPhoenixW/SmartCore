@@ -14,6 +14,7 @@ from app.new_core.event_relations import (
 from app.new_core.models import CourseEvt, CoursePlan, EvtBase, PlanEvt, RemindEvt, nowIso
 
 _DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
+_REQUIRED_REMINDER_KINDS = {"plan_start_10m", "plan_end_10m"}
 
 
 def _parse(value: str) -> datetime:
@@ -30,12 +31,15 @@ def ensure_missing_relations(db: Session) -> dict[str, int]:
 
     plan_ids = db.scalars(select(PlanEvt.evtId)).all()
     for plan_id in plan_ids:
-        count = db.scalar(
-            select(func.count(RemindEvt.evtId)).where(RemindEvt.planEvtId == plan_id)
-        ) or 0
-        if int(count) < 2:
+        existing_kinds = set(
+            db.scalars(
+                select(RemindEvt.remindKind).where(RemindEvt.planEvtId == plan_id)
+            ).all()
+        )
+        missing = _REQUIRED_REMINDER_KINDS - existing_kinds
+        if missing:
             sync_plan_reminders(db, plan_id)
-            reminders += 2 - int(count)
+            reminders += len(missing)
 
     course_ids = db.scalars(select(CourseEvt.evtId)).all()
     for course_id in course_ids:
