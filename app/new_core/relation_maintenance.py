@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -29,24 +30,28 @@ def ensure_missing_relations(db: Session) -> dict[str, int]:
     reminders = 0
     course_plans = 0
 
-    plan_ids = db.scalars(select(PlanEvt.evtId)).all()
+    reminder_kinds: dict[str, set[str]] = defaultdict(set)
+    for plan_id, kind in db.execute(
+        select(RemindEvt.planEvtId, RemindEvt.remindKind)
+    ).all():
+        reminder_kinds[str(plan_id)].add(str(kind))
+
+    plan_ids = [str(value) for value in db.scalars(select(PlanEvt.evtId)).all()]
     for plan_id in plan_ids:
-        existing_kinds = set(
-            db.scalars(
-                select(RemindEvt.remindKind).where(RemindEvt.planEvtId == plan_id)
-            ).all()
-        )
-        missing = _REQUIRED_REMINDER_KINDS - existing_kinds
+        missing = _REQUIRED_REMINDER_KINDS - reminder_kinds.get(plan_id, set())
         if missing:
             sync_plan_reminders(db, plan_id)
             reminders += len(missing)
 
-    course_ids = db.scalars(select(CourseEvt.evtId)).all()
-    for course_id in course_ids:
-        count = db.scalar(
-            select(func.count(CoursePlan.planEvtId)).where(CoursePlan.courseEvtId == course_id)
-        ) or 0
-        if int(count) == 0:
+    occurrence_counts = {
+        str(course_id): int(count)
+        for course_id, count in db.execute(
+            select(CoursePlan.courseEvtId, func.count(CoursePlan.planEvtId))
+            .group_by(CoursePlan.courseEvtId)
+        ).all()
+    }
+    for course_id in [str(value) for value in db.scalars(select(CourseEvt.evtId)).all()]:
+        if occurrence_counts.get(course_id, 0) == 0:
             course_plans += len(sync_course_plans(db, course_id))
 
     db.commit()
