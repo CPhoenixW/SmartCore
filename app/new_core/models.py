@@ -126,8 +126,8 @@ class RemindEvt(Base):
     evtId: Mapped[str] = mapped_column(
         String(32), ForeignKey("evtBase.evtId", ondelete="CASCADE"), primary_key=True
     )
-    planEvtId: Mapped[str] = mapped_column(
-        String(32), ForeignKey("planEvt.evtId", ondelete="CASCADE"), nullable=False
+    planEvtId: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("planEvt.evtId", ondelete="CASCADE"), nullable=True
     )
     remindKind: Mapped[str] = mapped_column(String(30), nullable=False)
     triggerTime: Mapped[str] = mapped_column(String(64), nullable=False)
