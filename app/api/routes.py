@@ -428,51 +428,78 @@ def list_dev_state(
     limit: int = Query(default=240, ge=1, le=5000),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    query = select(DeviceStateLog).order_by(DeviceStateLog.seenAt.desc()).limit(limit)
+    query = select(DeviceStateLog)
     if devId:
         query = query.where(DeviceStateLog.deviceId == devId)
-    rows = db.scalars(query).all()
+    rows = db.scalars(
+        query.order_by(DeviceStateLog.seenAt.desc()).limit(limit)
+    ).all()
     return ok([_row_dict(row) for row in rows])
 
 
-@router.get("/actLog")
-def list_act_log(
-    limit: int = Query(default=100, ge=1, le=1000),
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    return ok(_latest_rows(db, ActLog, ActLog.createdAt, limit=limit))
-
-
-@router.get("/notifyLog")
-def list_notify_log(
-    limit: int = Query(default=100, ge=1, le=1000),
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    return ok(_latest_rows(db, NotifyLog, NotifyLog.createdAt, limit=limit))
-
-
-@router.get("/msgLog")
-def list_msg_log(
-    limit: int = Query(default=100, ge=1, le=1000),
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    return ok(_latest_rows(db, MsgLog, MsgLog.createdAt, limit=limit))
-
-
 @router.get("/log")
-def list_all_logs(
-    limit: int = Query(default=120, ge=1, le=1000),
+def list_logs(
+    limit: int = Query(default=120, ge=1, le=500),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     return ok(
         {
             "act": _latest_rows(db, ActLog, ActLog.createdAt, limit=limit),
-            "notify": _latest_rows(db, NotifyLog, NotifyLog.createdAt, limit=limit),
+            "notify": _latest_rows(db, NotifyLog, NotifyLog.scheduledAt, limit=limit),
             "msg": _latest_rows(db, MsgLog, MsgLog.createdAt, limit=limit),
         }
     )
 
 
-@router.get("/time")
-def get_time() -> dict[str, Any]:
-    return ok({"now": nowIso(), "timezone": "Asia/Shanghai"})
+@router.get("/log/act")
+def list_log_act(
+    limit: int = Query(default=120, ge=1, le=500),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return ok(_latest_rows(db, ActLog, ActLog.createdAt, limit=limit))
+
+
+@router.get("/log/notify")
+def list_log_notify(
+    limit: int = Query(default=120, ge=1, le=500),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return ok(_latest_rows(db, NotifyLog, NotifyLog.scheduledAt, limit=limit))
+
+
+@router.get("/log/msg")
+def list_log_msg(
+    limit: int = Query(default=120, ge=1, le=500),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return ok(_latest_rows(db, MsgLog, MsgLog.createdAt, limit=limit))
+
+
+class ReminderActionBody(BaseModel):
+    evtId: str
+    action: str
+    now: str | None = None
+
+
+@router.post("/reminder/action")
+def reminder_action(
+    body: ReminderActionBody,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.new_core.event_relations import apply_reminder_action
+
+    try:
+        result = apply_reminder_action(
+            db,
+            evt_id=body.evtId,
+            action=body.action,
+            now=body.now or nowIso(),
+            src="screen",
+        )
+        if body.action == "snooze10" and result.get("evtId"):
+            sync_extra_reminders(db, str(result["evtId"]))
+            result = get_event(db, str(result["evtId"]))
+        return ok(result)
+    except ValueError as exc:
+        db.rollback()
+        raise _http_error(exc) from exc
