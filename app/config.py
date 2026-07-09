@@ -22,10 +22,17 @@ class Settings(BaseSettings):
     feishu_replay_max_age_seconds: int = 300
     semester_start: date | None = None
 
-    llm_provider: str = ""
+    # All SmartCore-owned natural-language requests use this OpenAI-compatible gateway.
+    llm_provider: str = "tokendance"
+    llm_api_key: str = ""
+    llm_base_url: str = "https://tokendance.space/gateway/v1"
+    llm_model: str = "deepseek-v4-flash"
+    llm_max_retries: int = 2
+
+    # Compatibility key for existing deployments. The base URL and model above remain authoritative.
     deepseek_api_key: str = ""
-    deepseek_base_url: str = "https://api.deepseek.com"
-    llm_model: str = "deepseek-chat"
+    deepseek_base_url: str = ""
+
     dashboard_base_url: str = ""
 
     scheduler_enabled: bool = False
