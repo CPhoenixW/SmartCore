@@ -6,8 +6,39 @@
 }
 
 .course-main { min-width: 0; }
-.course-editor { max-height: calc(100vh - 112px); }
-.course-editor .card-body { overflow-y: auto; }
+
+.course-editor {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 104px);
+  max-height: calc(100vh - 104px);
+  min-height: 420px;
+  overflow: hidden;
+}
+
+.course-editor > header {
+  flex: 0 0 auto;
+}
+
+.course-editor .card-body,
+.course-editor .course-editor-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding-bottom: 0;
+}
+
+.course-editor-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  margin: 4px -2px 0;
+  padding: 14px 2px 20px;
+  border-top: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .82), #fff 24%);
+}
 
 .timetable-card .card-body {
   padding: 12px;
@@ -133,7 +164,24 @@
 
 @media (max-width: 1180px) {
   .course-layout { grid-template-columns: 1fr; }
-  .course-editor { max-height: none; position: static; }
+  .course-editor {
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    position: static;
+    overflow: visible;
+  }
+  .course-editor .card-body,
+  .course-editor .course-editor-scroll {
+    overflow: visible;
+  }
+  .course-editor-actions {
+    position: static;
+    margin: 0;
+    padding: 0;
+    border-top: 0;
+    background: transparent;
+  }
 }
 
 @media (max-width: 720px) {
