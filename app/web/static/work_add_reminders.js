@@ -2,10 +2,9 @@ import { getUiLanguage } from "./work_shared.js";
 
 const $ = (id) => document.getElementById(id);
 const page = document.body.dataset.page;
-const DEFAULT_REMINDERS = [
-  { anchor: "start", offsetMin: 10, automatic: true },
-  { anchor: "end", offsetMin: 10, automatic: true },
-];
+let reminderActive = false;
+let previewQueued = false;
+let manualCounter = 0;
 
 function ui(zh, en) {
   return getUiLanguage() === "en" ? en : zh;
@@ -19,261 +18,357 @@ function esc(value) {
     .replace(/\"/g, "&quot;");
 }
 
-function planForm() {
-  return $("planForm");
+function toIso(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const pad = (part) => String(part).padStart(2, "0");
+  const offset = -date.getTimezoneOffset();
+  const sign = offset >= 0 ? "+" : "-";
+  const absolute = Math.abs(offset);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:00${sign}${pad(Math.floor(absolute / 60))}:${pad(absolute % 60)}`;
 }
 
-function normalizeSpec(raw = {}) {
-  const anchor = String(raw.anchor || "start").toLowerCase() === "end" ? "end" : "start";
-  const offset = Math.max(0, Math.min(10080, Number.parseInt(raw.offsetMin, 10) || 0));
-  return { anchor, offsetMin: offset };
+function toLocal(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (part) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-function extraReminderRows() {
-  return Array.from(document.querySelectorAll("#planExtraReminderList [data-extra-reminder]"));
+function displayTime(value) {
+  if (!value) return ui("未设置", "Not set");
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(getUiLanguage() === "en" ? "en-US" : "zh-CN", { hour12: false });
 }
 
-function collectExtraReminders() {
-  const seen = new Set();
-  return extraReminderRows().flatMap((row) => {
-    const spec = normalizeSpec({
-      anchor: row.querySelector('[name="reminderAnchor"]')?.value,
-      offsetMin: row.querySelector('[name="reminderOffset"]')?.value,
-    });
-    const key = `${spec.anchor}:${spec.offsetMin}`;
-    if (key === "start:10" || key === "end:10" || seen.has(key)) return [];
-    seen.add(key);
-    return [spec];
-  });
+function toast(text) {
+  const element = $("toast");
+  if (!element) return;
+  element.textContent = text;
+  element.classList.add("show");
+  setTimeout(() => element.classList.remove("show"), 2200);
 }
 
-function relativeLabel(spec) {
-  const phase = spec.anchor === "start"
-    ? ui("计划开始", "plan start")
-    : ui("计划结束", "plan end");
-  if (spec.offsetMin === 0) {
-    return ui(`${phase}时`, `At ${phase}`);
-  }
-  return ui(`${phase}前 ${spec.offsetMin} 分钟`, `${spec.offsetMin} min before ${phase}`);
+function setApi(kind, text) {
+  const element = $("apiStatus");
+  if (!element) return;
+  element.className = `status-pill ${kind || ""}`.trim();
+  element.textContent = text;
 }
 
-function reminderKindLabel(spec) {
-  if (spec.automatic) return ui("自动提醒", "Automatic");
-  return ui("额外提醒", "Additional");
-}
-
-function triggerTime(spec) {
-  const form = planForm();
-  const startValue = form?.elements.stTime?.value;
-  if (!startValue) return null;
-  const start = new Date(startValue);
-  if (Number.isNaN(start.getTime())) return null;
-  const duration = Math.max(1, Number(form.elements.durationMin?.value || 30));
-  const anchor = spec.anchor === "end"
-    ? new Date(start.getTime() + duration * 60000)
-    : start;
-  return new Date(anchor.getTime() - spec.offsetMin * 60000);
-}
-
-function formatTrigger(spec) {
-  const trigger = triggerTime(spec);
-  if (!trigger) return relativeLabel(spec);
-  return trigger.toLocaleString(getUiLanguage() === "en" ? "en-US" : "zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
-
-function rowHtml(spec = { anchor: "start", offsetMin: 30 }) {
-  const normalized = normalizeSpec(spec);
-  return `
-    <article class="plan-reminder-row" data-extra-reminder data-no-translate>
-      <label class="field">
-        <span data-reminder-label="anchor">${esc(ui("相对节点", "Relative to"))}</span>
-        <select name="reminderAnchor">
-          <option value="start" ${normalized.anchor === "start" ? "selected" : ""}>${esc(ui("计划开始", "Plan start"))}</option>
-          <option value="end" ${normalized.anchor === "end" ? "selected" : ""}>${esc(ui("计划结束", "Plan end"))}</option>
-        </select>
-      </label>
-      <label class="field">
-        <span data-reminder-label="offset">${esc(ui("提前分钟数", "Minutes before"))}</span>
-        <input name="reminderOffset" type="number" min="0" max="10080" value="${normalized.offsetMin}">
-      </label>
-      <button class="btn btn-danger plan-reminder-remove" type="button" data-remove-reminder>${esc(ui("移除", "Remove"))}</button>
-    </article>`;
-}
-
-function ensureEditor() {
-  const form = planForm();
-  if (!form || $("planReminderEditor")) return;
-  form.insertAdjacentHTML("beforeend", `
-    <section class="plan-reminder-editor" id="planReminderEditor" data-no-translate>
-      <div class="plan-reminder-heading">
-        <div>
-          <strong id="planReminderTitle">${esc(ui("提醒设置", "Reminder settings"))}</strong>
-          <p id="planReminderHelp">${esc(ui(
-            "每个计划固定生成开始前 10 分钟和结束前 10 分钟提醒，可继续添加额外提醒。",
-            "Every plan automatically gets reminders 10 minutes before it starts and ends. Additional reminders can be added.",
-          ))}</p>
-        </div>
-        <button class="btn" id="addPlanReminderBtn" type="button">${esc(ui("添加提醒", "Add reminder"))}</button>
-      </div>
-      <div class="plan-default-reminders" id="planDefaultReminders">
-        <div class="plan-default-reminder"><span>${esc(ui("自动提醒", "Automatic"))}</span><strong>${esc(relativeLabel(DEFAULT_REMINDERS[0]))}</strong></div>
-        <div class="plan-default-reminder"><span>${esc(ui("自动提醒", "Automatic"))}</span><strong>${esc(relativeLabel(DEFAULT_REMINDERS[1]))}</strong></div>
-      </div>
-      <div class="plan-extra-reminder-list" id="planExtraReminderList"></div>
-    </section>
-  `);
-  $("addPlanReminderBtn")?.addEventListener("click", () => addReminderRow());
-  form.addEventListener("input", renderReminderPreview);
-  form.addEventListener("change", renderReminderPreview);
-  form.addEventListener("reset", () => setTimeout(() => setExtraReminders([]), 0));
-}
-
-function addReminderRow(spec = { anchor: "start", offsetMin: 30 }) {
-  ensureEditor();
-  $("planExtraReminderList")?.insertAdjacentHTML("beforeend", rowHtml(spec));
-  renderReminderPreview();
-}
-
-function setExtraReminders(specs) {
-  ensureEditor();
-  const list = $("planExtraReminderList");
-  if (!list) return;
-  list.innerHTML = "";
-  (Array.isArray(specs) ? specs : []).forEach((spec) => addReminderRow(spec));
-  renderReminderPreview();
-}
-
-function renderEditorLanguage() {
-  if (!$("planReminderEditor")) return;
-  $("planReminderTitle").textContent = ui("提醒设置", "Reminder settings");
-  $("planReminderHelp").textContent = ui(
-    "每个计划固定生成开始前 10 分钟和结束前 10 分钟提醒，可继续添加额外提醒。",
-    "Every plan automatically gets reminders 10 minutes before it starts and ends. Additional reminders can be added.",
+function ensureReminderForm() {
+  const tabs = document.querySelector(".tabs");
+  const ddlForm = $("ddlForm");
+  if (!tabs || !ddlForm || $("remindForm")) return;
+  const ddlTab = tabs.querySelector('[data-create-tab="ddl"]');
+  ddlTab?.insertAdjacentHTML(
+    "beforebegin",
+    `<button class="tab" type="button" data-create-tab="remind" data-no-translate>${esc(ui("提醒事项", "Reminder"))}</button>`,
   );
-  $("addPlanReminderBtn").textContent = ui("添加提醒", "Add reminder");
-  const defaults = $("planDefaultReminders")?.children || [];
-  Array.from(defaults).forEach((item, index) => {
-    item.querySelector("span").textContent = ui("自动提醒", "Automatic");
-    item.querySelector("strong").textContent = relativeLabel(DEFAULT_REMINDERS[index]);
+  ddlForm.insertAdjacentHTML(
+    "beforebegin",
+    `<form id="remindForm" class="form-pane" data-endpoint="/api/remindEvt" data-no-translate>
+      <label class="field required"><span data-remind-label="title">${esc(ui("标题", "Title"))}</span><input name="title" required placeholder="${esc(ui("例如：带学生证", "Example: Bring student ID"))}"></label>
+      <label class="field"><span data-remind-label="desc">${esc(ui("描述", "Description"))}</span><textarea name="desc" rows="3"></textarea></label>
+      <label class="field required"><span data-remind-label="time">${esc(ui("提醒时间", "Reminder time"))}</span><input name="triggerTime" type="datetime-local" required></label>
+      <label class="field"><span data-remind-label="prio">${esc(ui("优先级", "Priority"))}</span><select name="prio"><option value="mid">${esc(ui("中", "Medium"))}</option><option value="high">${esc(ui("高", "High"))}</option><option value="low">${esc(ui("低", "Low"))}</option></select></label>
+    </form>`,
+  );
+  $("remindForm")?.addEventListener("input", schedulePreview);
+  $("remindForm")?.addEventListener("change", schedulePreview);
+}
+
+function activateReminder() {
+  reminderActive = true;
+  document.querySelectorAll("[data-create-tab]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.createTab === "remind");
   });
-  extraReminderRows().forEach((row) => {
-    row.querySelector('[data-reminder-label="anchor"]').textContent = ui("相对节点", "Relative to");
-    row.querySelector('[data-reminder-label="offset"]').textContent = ui("提前分钟数", "Minutes before");
-    const select = row.querySelector('[name="reminderAnchor"]');
-    if (select) {
-      select.options[0].textContent = ui("计划开始", "Plan start");
-      select.options[1].textContent = ui("计划结束", "Plan end");
+  $("planForm")?.classList.remove("active");
+  $("ddlForm")?.classList.remove("active");
+  $("remindForm")?.classList.add("active");
+  const submit = $("createSubmitBtn");
+  if (submit) submit.textContent = ui("创建提醒事项", "Create reminder");
+  schedulePreview();
+}
+
+function leaveReminder() {
+  reminderActive = false;
+  $("remindForm")?.classList.remove("active");
+  schedulePreview();
+}
+
+function reminderPayload() {
+  const form = $("remindForm");
+  return {
+    title: form?.elements.title?.value.trim() || "",
+    desc: form?.elements.desc?.value.trim() || null,
+    triggerTime: toIso(form?.elements.triggerTime?.value || ""),
+    prio: form?.elements.prio?.value || "mid",
+  };
+}
+
+async function submitReminder() {
+  const payload = reminderPayload();
+  if (!payload.title) return toast(ui("请填写标题", "Enter a title"));
+  if (!payload.triggerTime) return toast(ui("请设置提醒时间", "Set the reminder time"));
+  try {
+    setApi("busy", ui("API 请求中", "API loading"));
+    const response = await fetch("/api/remindEvt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body.ok === false) throw new Error(body.detail || `HTTP ${response.status}`);
+    $("remindForm")?.reset();
+    setApi("ok", ui("API 在线", "API online"));
+    toast(ui("提醒事项已创建", "Reminder created"));
+    schedulePreview();
+  } catch (error) {
+    setApi("err", ui("API 异常", "API error"));
+    toast(error.message || ui("创建失败", "Create failed"));
+  }
+}
+
+function manualRowHtml(plan = {}) {
+  manualCounter += 1;
+  return `<article class="ddl-manual-plan-row" data-ddl-manual-plan data-no-translate>
+    <input name="planEvtId" type="hidden" value="${esc(plan.planEvtId || plan.evtId || "")}">
+    <label class="field"><span>${esc(ui("计划标题", "Plan title"))}</span><input name="title" value="${esc(plan.title || "")}" placeholder="${esc(ui(`关联计划 ${manualCounter}`, `Linked plan ${manualCounter}`))}"></label>
+    <label class="field required"><span>${esc(ui("开始时间", "Start time"))}</span><input name="stTime" type="datetime-local" required value="${esc(toLocal(plan.stTime))}"></label>
+    <label class="field"><span>${esc(ui("持续时间（分钟）", "Duration (minutes)"))}</span><input name="durationMin" type="number" min="1" value="${esc(plan.durationMin || 30)}"></label>
+    <button class="btn btn-danger ddl-manual-remove" type="button" data-remove-ddl-plan>${esc(ui("移除", "Remove"))}</button>
+  </article>`;
+}
+
+function ensureDdlMultipleEditor() {
+  const editor = document.querySelector("#ddlForm .ddl-plan-editor");
+  if (!editor || $("ddlManualPlanList")) return;
+  editor.querySelector(".ddl-plan-heading")?.insertAdjacentHTML(
+    "beforeend",
+    `<button class="btn" id="addDdlPlanBtn" type="button" data-no-translate>${esc(ui("添加关联计划", "Add linked plan"))}</button>`,
+  );
+  editor.insertAdjacentHTML(
+    "beforeend",
+    `<div class="ddl-manual-plan-list" id="ddlManualPlanList"></div>`,
+  );
+  $("addDdlPlanBtn")?.addEventListener("click", () => addManualPlan());
+  $("ddlForm")?.addEventListener("input", schedulePreview);
+  $("ddlForm")?.addEventListener("change", schedulePreview);
+}
+
+function addManualPlan(plan = {}) {
+  ensureDdlMultipleEditor();
+  $("ddlManualPlanList")?.insertAdjacentHTML("beforeend", manualRowHtml(plan));
+  schedulePreview();
+}
+
+function staticDdlPlans() {
+  const form = $("ddlForm");
+  if (!form) return [];
+  const configs = [
+    { role: "one_day_before", enabled: "oneDayEnabled", time: "oneDayTime", duration: "oneDayDuration", order: 0 },
+    { role: "one_hour_before", enabled: "oneHourEnabled", time: "oneHourTime", duration: "oneHourDuration", order: 1 },
+  ];
+  return configs.flatMap((config) => {
+    if (!form.elements[config.enabled]?.checked) return [];
+    return [{
+      planRole: config.role,
+      stTime: toIso(form.elements[config.time]?.value || ""),
+      durationMin: Number(form.elements[config.duration]?.value || 30),
+      sortOrder: config.order,
+    }];
+  });
+}
+
+function manualDdlPlans() {
+  return Array.from(document.querySelectorAll("[data-ddl-manual-plan]")).map((row, index) => ({
+    planEvtId: row.querySelector('[name="planEvtId"]')?.value || undefined,
+    planRole: "manual",
+    title: row.querySelector('[name="title"]')?.value.trim() || undefined,
+    stTime: toIso(row.querySelector('[name="stTime"]')?.value || ""),
+    durationMin: Number(row.querySelector('[name="durationMin"]')?.value || 30),
+    sortOrder: staticDdlPlans().length + index,
+  }));
+}
+
+function collectDdlPlans() {
+  return [...staticDdlPlans(), ...manualDdlPlans()];
+}
+
+function setDdlPlans(plans) {
+  ensureDdlMultipleEditor();
+  const form = $("ddlForm");
+  const list = $("ddlManualPlanList");
+  if (!form || !list || !Array.isArray(plans)) return;
+  list.innerHTML = "";
+  manualCounter = 0;
+  const used = new Set();
+  const assignStatic = (role, enabledName, timeName, durationName) => {
+    const index = plans.findIndex((plan, planIndex) => !used.has(planIndex) && plan.planRole === role);
+    const enabled = index >= 0;
+    form.elements[enabledName].checked = enabled;
+    if (enabled) {
+      used.add(index);
+      form.elements[timeName].value = toLocal(plans[index].stTime);
+      form.elements[durationName].value = plans[index].durationMin || 30;
     }
-    row.querySelector("[data-remove-reminder]").textContent = ui("移除", "Remove");
+  };
+  assignStatic("one_day_before", "oneDayEnabled", "oneDayTime", "oneDayDuration");
+  assignStatic("one_hour_before", "oneHourEnabled", "oneHourTime", "oneHourDuration");
+  plans.forEach((plan, index) => {
+    if (!used.has(index)) addManualPlan(plan);
   });
+  schedulePreview();
 }
 
-function reminderPreviewHtml() {
-  const reminders = [...DEFAULT_REMINDERS, ...collectExtraReminders()];
-  return `
-    <section class="preview-children plan-reminder-preview" id="planReminderPreview" data-no-translate>
-      <div class="preview-children-title">${esc(ui("将生成的提醒", "Reminders to create"))}</div>
-      ${reminders.map((spec) => `
-        <div class="preview-child">
-          <div>
-            <strong>${esc(relativeLabel(spec))}</strong>
-            <span>${esc(formatTrigger(spec))}</span>
-          </div>
-          <span class="tag ${spec.automatic ? "blue" : "green"}">${esc(reminderKindLabel(spec))}</span>
-        </div>`).join("")}
-    </section>`;
+function reminderPreview() {
+  const payload = reminderPayload();
+  return `<div class="preview-card ${payload.title ? "" : "empty-preview"}" data-no-translate>
+    <div class="preview-title">${esc(payload.title || ui("等待填写标题", "Enter a title"))}</div>
+    <div class="tags"><span class="tag orange">${esc(ui("提醒", "Reminder"))}</span><span class="tag blue">${esc(displayTime(payload.triggerTime))}</span></div>
+    ${payload.desc ? `<p class="preview-desc">${esc(payload.desc)}</p>` : ""}
+  </div>`;
 }
 
-function renderReminderPreview() {
-  if (page !== "add") return;
+function ddlPlansPreview() {
+  const plans = collectDdlPlans();
+  return `<section class="preview-children ddl-all-plan-preview" data-no-translate>
+    <div class="preview-children-title">${esc(ui("同时创建的计划", "Plans to create"))}</div>
+    ${plans.length ? plans.map((plan, index) => `<div class="preview-child"><div><strong>${esc(plan.title || ui(`关联计划 ${index + 1}`, `Linked plan ${index + 1}`))}</strong><span>${esc(displayTime(plan.stTime))}</span></div><span class="tag green">${esc(ui(`${plan.durationMin} 分钟`, `${plan.durationMin} min`))}</span></div>`).join("") : `<div class="empty compact-empty">${esc(ui("未启用关联计划", "No linked plans enabled"))}</div>`}
+  </section>`;
+}
+
+function renderPreview() {
+  previewQueued = false;
   const root = $("createPreview");
-  if (!root || !planForm()?.classList.contains("active")) return;
-  const current = $("planReminderPreview");
-  const signature = JSON.stringify({
-    language: getUiLanguage(),
-    start: planForm().elements.stTime?.value || "",
-    duration: planForm().elements.durationMin?.value || "",
-    reminders: collectExtraReminders(),
-  });
-  if (current?.dataset.signature === signature) return;
-  current?.remove();
-  root.insertAdjacentHTML("beforeend", reminderPreviewHtml());
-  $("planReminderPreview").dataset.signature = signature;
+  if (!root) return;
+  if (reminderActive) {
+    root.innerHTML = reminderPreview();
+    return;
+  }
+  if (!$("ddlForm")?.classList.contains("active")) return;
+  root.querySelectorAll(".preview-children").forEach((element) => element.remove());
+  root.insertAdjacentHTML("beforeend", ddlPlansPreview());
+}
+
+function schedulePreview() {
+  if (previewQueued) return;
+  previewQueued = true;
+  queueMicrotask(renderPreview);
 }
 
 function installPreviewObserver() {
   const root = $("createPreview");
   if (!root) return;
-  const observer = new MutationObserver(() => {
-    if (planForm()?.classList.contains("active")) renderReminderPreview();
-  });
-  observer.observe(root, { childList: true });
+  new MutationObserver(() => schedulePreview()).observe(root, { childList: true, subtree: false });
+}
+
+function applyParsed(parsed) {
+  const type = String(parsed?.evtType || parsed?.tab || "").toLowerCase();
+  if (type === "remind" || type === "reminder") {
+    activateReminder();
+    const form = $("remindForm");
+    form.elements.title.value = parsed.title || "";
+    form.elements.desc.value = parsed.desc || parsed.description || "";
+    form.elements.triggerTime.value = toLocal(parsed.triggerTime || parsed.remindAt || parsed.at);
+    form.elements.prio.value = parsed.prio || "mid";
+    schedulePreview();
+    return;
+  }
+  if (type === "ddl" && Array.isArray(parsed.plans)) {
+    setDdlPlans(parsed.plans);
+  }
 }
 
 function installFetchBridge() {
-  if (window.__smartcoreReminderFetchInstalled) return;
-  window.__smartcoreReminderFetchInstalled = true;
+  if (window.__smartcoreEventRelationBridgeInstalled) return;
+  window.__smartcoreEventRelationBridgeInstalled = true;
   const nativeFetch = window.fetch.bind(window);
   window.fetch = async (input, init = undefined) => {
     const url = typeof input === "string" ? input : input?.url || "";
     const method = String(init?.method || (typeof input !== "string" ? input?.method : "GET") || "GET").toUpperCase();
     let nextInit = init;
-
-    if (method === "POST" && url.includes("/api/planEvt") && typeof init?.body === "string") {
+    if (method === "POST" && url.includes("/api/ddlEvt") && typeof init?.body === "string") {
       try {
         const payload = JSON.parse(init.body);
-        payload.extraReminders = collectExtraReminders();
+        payload.plans = collectDdlPlans();
         nextInit = { ...init, body: JSON.stringify(payload) };
       } catch {
-        // Preserve the original request so the API can return its normal validation error.
+        // Preserve original request and normal API validation.
       }
     }
-
     const response = await nativeFetch(input, nextInit);
     if (method === "POST" && url.includes("/api/llm/parse")) {
       response.clone().json().then((body) => {
-        const parsed = body?.data?.parsed;
-        const eventType = String(parsed?.evtType || parsed?.tab || "").toLowerCase();
-        if (eventType === "plan") {
-          setTimeout(() => setExtraReminders(parsed.extraReminders || parsed.reminders || []), 0);
-        }
+        setTimeout(() => applyParsed(body?.data?.parsed || {}), 0);
       }).catch(() => {});
     }
-    if (method === "POST" && url.includes("/api/planEvt") && response.ok) {
-      setTimeout(() => setExtraReminders([]), 0);
+    if (method === "POST" && url.includes("/api/ddlEvt") && response.ok) {
+      setTimeout(() => {
+        $("ddlManualPlanList").innerHTML = "";
+        manualCounter = 0;
+        schedulePreview();
+      }, 0);
     }
     return response;
   };
 }
 
-function bindDelegation() {
+function translateDynamicUi() {
+  const remindTab = document.querySelector('[data-create-tab="remind"]');
+  if (remindTab) remindTab.textContent = ui("提醒事项", "Reminder");
+  const form = $("remindForm");
+  if (form) {
+    form.querySelector('[data-remind-label="title"]').textContent = ui("标题", "Title");
+    form.querySelector('[data-remind-label="desc"]').textContent = ui("描述", "Description");
+    form.querySelector('[data-remind-label="time"]').textContent = ui("提醒时间", "Reminder time");
+    form.querySelector('[data-remind-label="prio"]').textContent = ui("优先级", "Priority");
+    form.elements.title.placeholder = ui("例如：带学生证", "Example: Bring student ID");
+    const labels = [["mid", "中", "Medium"], ["high", "高", "High"], ["low", "低", "Low"]];
+    labels.forEach(([value, zh, en]) => { form.elements.prio.querySelector(`option[value="${value}"]`).textContent = ui(zh, en); });
+  }
+  if ($("addDdlPlanBtn")) $("addDdlPlanBtn").textContent = ui("添加关联计划", "Add linked plan");
+  if (reminderActive && $("createSubmitBtn")) $("createSubmitBtn").textContent = ui("创建提醒事项", "Create reminder");
+  schedulePreview();
+}
+
+function bind() {
+  document.querySelector('[data-create-tab="remind"]')?.addEventListener("click", activateReminder);
+  document.querySelectorAll('[data-create-tab="plan"], [data-create-tab="ddl"]').forEach((button) => {
+    button.addEventListener("click", () => {
+      leaveReminder();
+      setTimeout(schedulePreview, 0);
+    });
+  });
+  $("createSubmitBtn")?.addEventListener("click", (event) => {
+    if (!reminderActive) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    submitReminder();
+  }, true);
+  $("remindForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submitReminder();
+  });
   document.body.addEventListener("click", (event) => {
-    const remove = event.target.closest?.("[data-remove-reminder]");
+    const remove = event.target.closest?.("[data-remove-ddl-plan]");
     if (!remove) return;
-    remove.closest("[data-extra-reminder]")?.remove();
-    renderReminderPreview();
+    remove.closest("[data-ddl-manual-plan]")?.remove();
+    schedulePreview();
   });
-  document.querySelectorAll("[data-create-tab]").forEach((button) => {
-    button.addEventListener("click", () => setTimeout(renderReminderPreview, 0));
-  });
+  window.addEventListener("smartcore:languagechange", translateDynamicUi);
 }
 
 if (page === "add") {
-  ensureEditor();
+  ensureReminderForm();
+  ensureDdlMultipleEditor();
   installFetchBridge();
   installPreviewObserver();
-  bindDelegation();
-  renderEditorLanguage();
-  renderReminderPreview();
-  window.addEventListener("smartcore:languagechange", () => {
-    renderEditorLanguage();
-    renderReminderPreview();
-  });
+  bind();
+  translateDynamicUi();
+  schedulePreview();
 }
