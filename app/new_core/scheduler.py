@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.new_core import crud
+from app.new_core.custom_reminders import localized_reminder_message
 from app.new_core.event_relations import mark_reminder_fired
 from app.new_core.models import DdlEvt, EvtBase, RemindEvt
 from app.new_core.notify import routeNotify
@@ -74,10 +75,11 @@ def runReminderTick(
             mark_reminder_fired(db, reminder_base.evtId, fired_at=nowDt.isoformat())
             db.commit()
             continue
+        title, content = localized_reminder_message(db, reminder, plan_base)
         result = routeNotify(
             db,
-            title=reminder_base.title,
-            content=reminder_base.desc or plan_base.title,
+            title=title,
+            content=content,
             screenOnline=screenOnline,
             dedupKey=dedup_key,
             evtId=reminder.planEvtId,
