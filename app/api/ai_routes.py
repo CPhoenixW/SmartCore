@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from app.config import get_settings
 from app.llm import LLMConfigurationError, LLMGatewayError, complete_chat
-from app.new_core.custom_reminders import normalize_extra_reminders
+from app.new_core.ddl_service import default_ddl_plans
 from app.new_core.models import nowIso
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -129,9 +129,7 @@ def _normalize_weekday(value: Any) -> int | None:
 
 
 def _safe_int(value: Any, default: int) -> int:
-    if value in (None, ""):
-        return default
-    if isinstance(value, bool):
+    if value in (None, "") or isinstance(value, bool):
         return default
     if isinstance(value, (int, float)):
         return int(value)
@@ -156,9 +154,7 @@ def _normalize_course(data: dict[str, Any]) -> dict[str, Any]:
         "courseName": str(data.get("courseName") or data.get("title") or "").strip(),
         "teacher": str(data.get("teacher") or "").strip() or None,
         "location": str(data.get("location") or data.get("room") or "").strip() or None,
-        "semesterStart": data.get("semesterStart")
-        or data.get("stDate")
-        or data.get("startDate"),
+        "semesterStart": data.get("semesterStart") or data.get("stDate") or data.get("startDate"),
         "weekDay": _normalize_weekday(data.get("weekDay") or data.get("weekday")),
         "stTime": data.get("stTime") or data.get("startTime"),
         "endTime": data.get("endTime") or data.get("finishTime"),
@@ -166,34 +162,74 @@ def _normalize_course(data: dict[str, Any]) -> dict[str, Any]:
         "endWeek": max(1, _safe_int(data.get("endWeek"), 16)),
         "weekMode": mode,
         "desc": str(data.get("desc") or data.get("description") or "").strip(),
-        "prio": _normalize_priority(
-            data.get("prio") or data.get("priority"),
-            tab="course",
-        ),
+        "prio": _normalize_priority(data.get("prio") or data.get("priority"), tab="course"),
     }
 
 
+def _event_type(data: dict[str, Any]) -> str:
+    raw = str(data.get("tab") or data.get("evtType") or data.get("type") or "plan").strip().lower()
+    if raw in {"ddl", "deadline", "截止", "截止事项"}:
+        return "ddl"
+    if raw in {"remind", "reminder", "提醒", "提醒事项"}:
+        return "remind"
+    return "plan"
+
+
+def _normalize_ddl_plans(data: dict[str, Any], end_time: Any) -> list[dict[str, Any]]:
+    raw_plans = data.get("plans") or data.get("linkedPlans")
+    if not isinstance(raw_plans, list) or not raw_plans:
+        if not end_time:
+            return []
+        return default_ddl_plans(str(end_time))
+    result: list[dict[str, Any]] = []
+    for index, raw in enumerate(raw_plans):
+        if not isinstance(raw, dict):
+            continue
+        role = str(raw.get("planRole") or raw.get("role") or "manual")
+        if role not in {"one_day_before", "one_hour_before", "manual"}:
+            role = "manual"
+        st_time = raw.get("stTime") or raw.get("startTime") or raw.get("at")
+        if not st_time:
+            continue
+        result.append(
+            {
+                "planRole": role,
+                "title": str(raw.get("title") or "").strip() or None,
+                "stTime": st_time,
+                "durationMin": max(1, _safe_int(raw.get("durationMin") or raw.get("duration"), 30)),
+                "sortOrder": index,
+            }
+        )
+    return result
+
+
 def _normalize_event(data: dict[str, Any]) -> dict[str, Any]:
-    raw_type = str(
-        data.get("tab") or data.get("evtType") or data.get("type") or "plan"
-    ).strip().lower()
-    tab = "ddl" if raw_type in {"ddl", "deadline", "截止", "截止事项"} else "plan"
-    raw_reminders = data.get("extraReminders") or data.get("reminders") or []
+    tab = _event_type(data)
     normalized = {
         "tab": tab,
         "evtType": tab,
         "title": str(data.get("title") or "").strip(),
         "desc": str(data.get("desc") or data.get("description") or "").strip(),
         "prio": _normalize_priority(data.get("prio") or data.get("priority"), tab=tab),
-        "durationMin": max(1, _safe_int(data.get("durationMin") or data.get("duration"), 30)),
-        "hardDdl": bool(data.get("hardDdl", False)),
-        "extraReminders": normalize_extra_reminders(raw_reminders if isinstance(raw_reminders, list) else []),
     }
     if tab == "ddl":
-        normalized["endTime"] = data.get("endTime") or data.get("deadline") or data.get("at")
-        normalized["extraReminders"] = []
+        end_time = data.get("endTime") or data.get("deadline") or data.get("at")
+        normalized.update(
+            {
+                "endTime": end_time,
+                "hardDdl": bool(data.get("hardDdl", False)),
+                "plans": _normalize_ddl_plans(data, end_time),
+            }
+        )
+    elif tab == "remind":
+        normalized["triggerTime"] = data.get("triggerTime") or data.get("remindAt") or data.get("at")
     else:
-        normalized["stTime"] = data.get("stTime") or data.get("startTime") or data.get("at")
+        normalized.update(
+            {
+                "stTime": data.get("stTime") or data.get("startTime") or data.get("at"),
+                "durationMin": max(1, _safe_int(data.get("durationMin") or data.get("duration"), 30)),
+            }
+        )
     return normalized
 
 
@@ -234,20 +270,30 @@ def _course_prompt(text: str, now: str) -> str:
 def _event_prompt(text: str, now: str) -> str:
     return f"""
 你是 SmartCore 的事件解析器。只返回一个 JSON 对象，不要 Markdown，不要解释。
-当前时间：{now}
-时间规则：时区为 Asia/Shanghai。所有完整日期时间必须使用带 +08:00 偏移量的 ISO8601。
+当前时间：{now}，时区 Asia/Shanghai。
 用户输入：{text}
-目标事件只有 plan 和 ddl。
-必须返回 tab、evtType、title、desc、prio、stTime、endTime、durationMin、hardDdl、extraReminders。
-“X点到Y点”是 plan；“X点前/截止/最晚”是 ddl。相对日期必须结合当前时间转换。
-每个 plan 已固定生成两个提醒：开始前 10 分钟、结束前 10 分钟。不要把这两个固定提醒写进 extraReminders。
-只有用户明确要求额外提醒时，才输出 extraReminders，例如：
-[
-  {{"anchor": "start", "offsetMin": 30}},
-  {{"anchor": "end", "offsetMin": 5}}
-]
-anchor 只能是 start 或 end；offsetMin 是提前分钟数。用户没有要求额外提醒时输出空数组。
-ddl 的 extraReminders 必须为空数组。
+
+事件类型只有：
+- plan：有开始时间和持续时长的计划；系统会自动生成开始前10分钟、结束前10分钟两个提醒，不输出提醒记录。
+- remind：单独提醒，只在 triggerTime 触发，不属于任何 plan。
+- ddl：截止事项，可以关联多个 plan。
+
+所有完整日期时间必须使用带 +08:00 偏移量的 ISO8601。
+必须根据类型输出：
+1. plan：evtType、title、desc、prio、stTime、durationMin。
+2. remind：evtType、title、desc、prio、triggerTime。
+3. ddl：evtType、title、desc、prio、endTime、hardDdl、plans。
+
+DDL 的 plans 是数组，每项格式：
+{{
+  "planRole": "one_day_before"、"one_hour_before"或"manual",
+  "title": "计划标题或 null",
+  "stTime": "ISO8601",
+  "durationMin": 分钟数
+}}
+如果用户没有特别说明 DDL 安排，默认生成两个计划：截止前一天安排30分钟、截止前一小时安排30分钟。
+如果用户明确提出更多安排，可以输出多个 manual 计划。
+“提醒我……”且没有持续时长，通常解析为 remind；“从X点做Y分钟”解析为 plan；“截止、最晚、提交”解析为 ddl。
 """.strip()
 
 
@@ -274,10 +320,7 @@ def parse_text(body: ParseBody) -> dict[str, Any]:
     except LLMGatewayError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except (ValueError, json.JSONDecodeError) as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"模型返回内容无法解析：{exc}",
-        ) from exc
+        raise HTTPException(status_code=502, detail=f"模型返回内容无法解析：{exc}") from exc
 
     return {
         "ok": True,
