@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.db.session import Base
 from app.new_core.ddl_service import create_ddl_event, replace_ddl_plans
 from app.new_core.event_relations import create_plan_event, get_event
-from app.new_core.models import RemindEvt
+from app.new_core.models import ActLog, RemindEvt
 from app.new_core.reminder_service import (
     create_reminder_event,
     list_reminder_events,
@@ -53,6 +53,15 @@ def test_standalone_reminder_can_be_created_listed_and_updated() -> None:
         assert created["triggerTime"].startswith("2026-09-15T07:30:00")
         assert [item["evtId"] for item in list_reminder_events(db)] == [created["evtId"]]
 
+        create_log = db.scalar(
+            select(ActLog).where(
+                ActLog.targetId == created["evtId"],
+                ActLog.action == "create",
+            )
+        )
+        assert create_log is not None
+        assert create_log.targetKind == "evt"
+
         updated = update_reminder_event(
             db,
             created["evtId"],
@@ -61,6 +70,15 @@ def test_standalone_reminder_can_be_created_listed_and_updated() -> None:
         )
         assert updated["title"] == "Bring student ID"
         assert updated["triggerTime"].startswith("2026-09-15T07:45:00")
+
+        update_log = db.scalar(
+            select(ActLog).where(
+                ActLog.targetId == created["evtId"],
+                ActLog.action == "update",
+            )
+        )
+        assert update_log is not None
+        assert update_log.targetKind == "evt"
     finally:
         db.close()
 
