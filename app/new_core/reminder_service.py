@@ -63,6 +63,29 @@ def _status(value: Any) -> str:
     return status
 
 
+def _write_action_log(
+    db: Session,
+    *,
+    user_id: str,
+    evt_id: str,
+    action: str,
+    src: str,
+) -> None:
+    # Use the generic `evt` target kind so existing databases whose actLog
+    # CHECK constraint predates standalone reminders can still persist writes.
+    db.add(
+        ActLog(
+            userId=user_id,
+            actorKind="llm" if src in {"openclaw", "llm"} else "user",
+            actorId=src,
+            action=action,
+            targetKind="evt",
+            targetId=evt_id,
+            result="ok",
+        )
+    )
+
+
 def create_reminder_event(
     db: Session,
     *,
@@ -101,18 +124,18 @@ def create_reminder_event(
     )
     db.add(base)
     db.add(remind)
-    db.add(
-        ActLog(
-            userId=userId,
-            actorKind="llm" if src in {"openclaw", "llm"} else "user",
-            actorId=src,
-            action="create",
-            targetKind="remindEvt",
-            targetId=evt_id,
-            result="ok",
-        )
+    _write_action_log(
+        db,
+        user_id=userId,
+        evt_id=evt_id,
+        action="create",
+        src=src,
     )
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return _event_dict(base, remind)
 
 
@@ -160,18 +183,18 @@ def update_reminder_event(
                 base.stat = "todo"
 
     base.updatedAt = nowIso()
-    db.add(
-        ActLog(
-            userId=base.userId,
-            actorKind="llm" if src in {"openclaw", "llm"} else "user",
-            actorId=src,
-            action="update",
-            targetKind="remindEvt",
-            targetId=evt_id,
-            result="ok",
-        )
+    _write_action_log(
+        db,
+        user_id=base.userId,
+        evt_id=evt_id,
+        action="update",
+        src=src,
     )
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return _event_dict(base, remind)
 
 
