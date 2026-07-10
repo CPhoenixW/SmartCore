@@ -40,8 +40,12 @@ async function decorateUpdateRows() {
     list.querySelectorAll("[data-event-id]").forEach((row) => {
       const event = events.get(row.dataset.eventId);
       if (!event) return;
-      row.classList.remove("status-todo", "status-done", "status-cancelled");
-      row.classList.add(`status-${event.stat || "todo"}`);
+      const rowStatus = event.stat || "todo";
+      const desiredRowClass = `status-${rowStatus}`;
+      if (!row.classList.contains(desiredRowClass)) {
+        row.classList.remove("status-todo", "status-done", "status-cancelled");
+        row.classList.add(desiredRowClass);
+      }
       const tags = row.querySelector(".tags");
       if (!tags) return;
       let badge = tags.querySelector("[data-event-status]");
@@ -50,8 +54,10 @@ async function decorateUpdateRows() {
         badge.dataset.eventStatus = "";
         tags.appendChild(badge);
       }
-      badge.className = `tag ${statusClass(event.stat)}`;
-      badge.textContent = statusLabel(event.stat);
+      const desiredBadgeClass = `tag ${statusClass(rowStatus)}`;
+      const desiredLabel = statusLabel(rowStatus);
+      if (badge.className !== desiredBadgeClass) badge.className = desiredBadgeClass;
+      if (badge.textContent !== desiredLabel) badge.textContent = desiredLabel;
     });
   } catch {
     // The primary Update Event request remains authoritative; decoration is optional.
