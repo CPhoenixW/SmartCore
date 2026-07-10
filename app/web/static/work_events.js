@@ -1,10 +1,16 @@
-import { deviceStateView, ensureDeviceNav, formatDateTime } from "./work_shared.js";
+import {
+  deviceStateView,
+  ensureDeviceNav,
+  formatDateTime,
+  getUiLanguage,
+} from "./work_shared.js";
 
-const page = document.body.dataset.page;
 const $ = (id) => document.getElementById(id);
-const state = { events: [], ideas: [], deviceStates: [], selectedEvt: null };
-const typeLabels = { plan: "计划", ddl: "DDL", course: "课程" };
-const prioLabels = { high: "高", mid: "中", low: "低" };
+const state = { events: [], ideas: [], deviceStates: [] };
+
+function ui(zh, en) {
+  return getUiLanguage() === "en" ? en : zh;
+}
 
 function esc(value) {
   return String(value ?? "")
@@ -15,157 +21,148 @@ function esc(value) {
 }
 
 function toast(text) {
-  const el = $("toast");
-  if (!el) return;
-  el.textContent = text;
-  el.classList.add("show");
-  setTimeout(() => el.classList.remove("show"), 2200);
+  const element = $("toast");
+  if (!element) return;
+  element.textContent = text;
+  element.classList.add("show");
+  setTimeout(() => element.classList.remove("show"), 2200);
 }
 
 function setApi(kind, text) {
-  const el = $("apiStatus");
-  if (!el) return;
-  el.className = `status-pill ${kind || ""}`.trim();
-  el.textContent = text;
+  const element = $("apiStatus");
+  if (!element) return;
+  element.className = `status-pill ${kind || ""}`.trim();
+  element.textContent = text;
 }
 
 function markRefresh() {
-  const el = $("lastRefresh");
-  if (el) el.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
+  const element = $("lastRefresh");
+  if (!element) return;
+  element.textContent = ui(
+    `更新于 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`,
+    `Updated at ${new Date().toLocaleTimeString("en-US", { hour12: false })}`,
+  );
 }
 
 async function getData(url) {
-  const resp = await fetch(url);
-  const body = await resp.json().catch(() => ({}));
-  if (!resp.ok || body.ok === false) throw new Error(body.detail || body.msg || `HTTP ${resp.status}`);
+  const response = await fetch(url, { cache: "no-store" });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body.ok === false) {
+    throw new Error(body.detail || body.msg || `HTTP ${response.status}`);
+  }
   return body.data || [];
 }
 
-async function sendData(url, options) {
-  setApi("busy", "API 请求中");
-  const resp = await fetch(url, options);
-  const body = await resp.json().catch(() => ({}));
-  if (!resp.ok || body.ok === false) {
-    setApi("err", "API 异常");
-    throw new Error(body.detail || body.msg || `HTTP ${resp.status}`);
+function eventStartDate(event) {
+  if (event.evtType === "ddl") return event.endTime ? new Date(event.endTime) : null;
+  if (event.evtType === "remind") return event.triggerTime ? new Date(event.triggerTime) : null;
+  return event.stTime ? new Date(event.stTime) : null;
+}
+
+function eventEndDate(event) {
+  const start = eventStartDate(event);
+  if (!start || Number.isNaN(start.getTime())) return null;
+  if (event.evtType === "plan") {
+    return new Date(start.getTime() + Math.max(1, Number(event.durationMin || 1)) * 60000);
   }
-  setApi("ok", "API 在线");
-  markRefresh();
-  return body.data;
+  return start;
 }
 
-function val(form, name) {
-  return form?.elements[name]?.value?.trim() || "";
+function sameDay(left, right) {
+  return left.getFullYear() === right.getFullYear()
+    && left.getMonth() === right.getMonth()
+    && left.getDate() === right.getDate();
 }
 
-function toLocalInput(value, type = "datetime") {
-  if (!value) return "";
-  if (type === "date") return String(value).slice(0, 10);
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  const p = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+function localDateValue(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-function toIso(value) {
-  if (!value) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  const p = (n) => String(n).padStart(2, "0");
-  const off = -d.getTimezoneOffset();
-  const sign = off >= 0 ? "+" : "-";
-  const abs = Math.abs(off);
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:00${sign}${p(Math.floor(abs / 60))}:${p(abs % 60)}`;
-}
-
-function avatarText(name) {
-  const text = String(name || "SC").trim();
-  return text.slice(0, 2).toUpperCase() || "SC";
-}
-
-function applyTopAvatar(user) {
-  const img = $("topAvatarImg");
-  const text = $("topAvatarText");
-  if (!img || !text) return;
-  text.textContent = avatarText(user?.displayName);
-  if (user?.avatarUrl) {
-    img.src = user.avatarUrl;
-    img.hidden = false;
-    text.hidden = true;
-  } else {
-    img.removeAttribute("src");
-    img.hidden = true;
-    text.hidden = false;
-  }
-}
-
-async function loadTopUser() {
-  try {
-    const resp = await fetch("/api/user/me");
-    const body = await resp.json();
-    applyTopAvatar(body.data);
-  } catch {
-    applyTopAvatar({ displayName: "SC" });
-  }
-}
-
-function combineDateTime(dateValue, timeValue) {
-  if (!dateValue) return null;
-  const date = String(dateValue).slice(0, 10);
-  const time = String(timeValue || "00:00").slice(0, 5);
-  const dt = new Date(`${date}T${time}:00`);
-  return Number.isNaN(dt.getTime()) ? null : dt;
-}
-
-function eventStartDate(evt) {
-  if (evt.evtType === "ddl") return evt.endTime ? new Date(evt.endTime) : null;
-  if (evt.evtType === "course") return combineDateTime(evt.stDate, evt.stTime);
-  return evt.stTime ? new Date(evt.stTime) : null;
-}
-
-function eventEndDate(evt) {
-  if (evt.evtType === "ddl") return evt.endTime ? new Date(evt.endTime) : null;
-  if (evt.evtType === "course") return combineDateTime(evt.stDate, evt.endTime);
-  const start = eventStartDate(evt);
-  if (!start) return null;
-  return new Date(start.getTime() + Number(evt.durationMin || 0) * 60000);
-}
-
-function eventTime(evt) {
-  const start = eventStartDate(evt);
+function eventView(event) {
+  const start = eventStartDate(event);
   if (!start || Number.isNaN(start.getTime())) {
-    return { date: null, end: null, label: "未设置", overdue: false, today: false };
+    return { start: null, end: null, label: ui("未设置", "Not set"), today: false, overdue: false };
   }
-  const end = eventEndDate(evt);
+  const end = eventEndDate(event);
   const now = new Date();
-  const tomorrow = new Date();
+  const tomorrow = new Date(now);
   tomorrow.setDate(now.getDate() + 1);
-  const same = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-  const day = same(start, now) ? "今天" : same(start, tomorrow) ? "明天" : `${start.getMonth() + 1}月${start.getDate()}日`;
-  const startTime = start.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
-  const endTime = end && !Number.isNaN(end.getTime()) ? end.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
-  const time = evt.evtType === "ddl" ? `截止 ${startTime}` : endTime ? `${startTime}-${endTime}` : startTime;
-  const overdue = evt.stat === "todo" && end && !Number.isNaN(end.getTime()) && end.getTime() < Date.now();
-  return { date: start, end, label: `${day} ${time}${overdue ? " · 已逾期" : ""}`, overdue, today: same(start, now) || Boolean(end && same(end, now)) };
+  const day = sameDay(start, now)
+    ? ui("今天", "Today")
+    : sameDay(start, tomorrow)
+      ? ui("明天", "Tomorrow")
+      : start.toLocaleDateString(getUiLanguage() === "en" ? "en-US" : "zh-CN", {
+          month: "short",
+          day: "numeric",
+        });
+  const startTime = start.toLocaleTimeString(getUiLanguage() === "en" ? "en-US" : "zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const endTime = end?.toLocaleTimeString(getUiLanguage() === "en" ? "en-US" : "zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  let timeLabel = startTime;
+  if (event.evtType === "ddl") timeLabel = ui(`截止 ${startTime}`, `Due ${startTime}`);
+  if (event.evtType === "remind") timeLabel = ui(`提醒 ${startTime}`, `Reminder ${startTime}`);
+  if (event.evtType === "plan" && endTime) timeLabel = `${startTime}–${endTime}`;
+  const overdue = event.stat === "todo" && end && end.getTime() < now.getTime();
+  return {
+    start,
+    end,
+    today: sameDay(start, now) || Boolean(end && sameDay(end, now)),
+    overdue,
+    label: `${day} ${timeLabel}${overdue ? ui(" · 已逾期", " · Overdue") : ""}`,
+  };
 }
 
-function sortEvents(rows) {
-  return rows.slice().sort((a, b) => {
-    const ta = eventTime(a);
-    const tb = eventTime(b);
-    if (ta.overdue !== tb.overdue) return ta.overdue ? -1 : 1;
-    if (!ta.date && !tb.date) return 0;
-    if (!ta.date) return 1;
-    if (!tb.date) return -1;
-    return ta.date - tb.date;
+function statusRank(status) {
+  if (status === "todo") return 0;
+  if (status === "done") return 1;
+  return 2;
+}
+
+function sortEvents(events) {
+  return events.slice().sort((left, right) => {
+    const leftView = eventView(left);
+    const rightView = eventView(right);
+    if (leftView.overdue !== rightView.overdue) return leftView.overdue ? -1 : 1;
+    if (leftView.start && rightView.start && leftView.start.getTime() !== rightView.start.getTime()) {
+      return leftView.start.getTime() - rightView.start.getTime();
+    }
+    return statusRank(left.stat) - statusRank(right.stat);
   });
+}
+
+function typeLabel(type) {
+  if (type === "ddl") return "DDL";
+  if (type === "remind") return ui("提醒", "Reminder");
+  return ui("计划", "Plan");
+}
+
+function priorityLabel(priority) {
+  if (priority === "high") return ui("高", "High");
+  if (priority === "low") return ui("低", "Low");
+  return ui("中", "Medium");
+}
+
+function statusLabel(status) {
+  if (status === "done") return ui("完成", "Done");
+  if (status === "cancelled") return ui("已取消", "Cancelled");
+  return ui("待办", "To do");
 }
 
 function tagClass(value, kind) {
   if (kind === "type" && value === "ddl") return "purple";
-  if (kind === "type" && value === "course") return "green";
-  if (kind === "prio" && value === "high") return "red";
-  if (kind === "prio" && value === "mid") return "orange";
+  if (kind === "type" && value === "remind") return "orange";
+  if (kind === "priority" && value === "high") return "red";
+  if (kind === "priority" && value === "mid") return "orange";
+  if (kind === "status" && value === "done") return "green";
+  if (kind === "status" && value === "cancelled") return "gray";
   return "blue";
 }
 
@@ -173,18 +170,29 @@ function empty(text) {
   return `<div class="empty">${esc(text)}</div>`;
 }
 
-function taskRow(evt) {
-  const t = eventTime(evt);
-  return `<article class="task-row clickable" data-action="selectEvt" data-id="${esc(evt.evtId)}" data-evt-id="${esc(evt.evtId)}" tabindex="0" role="button"><div><div class="task-title">${esc(evt.title)}</div><div class="tags"><span class="tag ${tagClass(evt.evtType, "type")}">${esc(typeLabels[evt.evtType] || evt.evtType)}</span><span class="tag ${tagClass(evt.prio, "prio")}">${esc(prioLabels[evt.prio] || evt.prio || "中")}</span><span class="tag ${t.overdue ? "red" : "blue"}">${esc(t.label)}</span></div>${evt.desc ? `<p class="task-desc">${esc(evt.desc)}</p>` : ""}</div></article>`;
+function taskRow(event) {
+  const view = eventView(event);
+  return `<article class="task-row clickable status-${esc(event.stat || "todo")}" data-event-id="${esc(event.evtId)}" tabindex="0" role="button">
+    <div>
+      <div class="task-title">${esc(event.title)}</div>
+      <div class="tags">
+        <span class="tag ${tagClass(event.evtType, "type")}">${esc(typeLabel(event.evtType))}</span>
+        <span class="tag ${tagClass(event.prio, "priority")}">${esc(priorityLabel(event.prio))}</span>
+        <span class="tag ${tagClass(event.stat, "status")}">${esc(statusLabel(event.stat))}</span>
+        <span class="tag ${view.overdue ? "red" : "blue"}">${esc(view.label)}</span>
+      </div>
+      ${event.desc ? `<p class="task-desc">${esc(event.desc)}</p>` : ""}
+    </div>
+  </article>`;
 }
 
 function ensureOverviewDeviceCard() {
-  if (page !== "overview" || $("overviewPiState")) return;
+  if ($("overviewPiState")) return;
   const summary = document.querySelector(".summary-grid");
   if (!summary) return;
   const section = document.createElement("section");
   section.className = "card overview-device-card";
-  section.innerHTML = `<header><h2>树莓派状态</h2><a class="link" href="/work/device">设备详情</a></header><div class="card-body"><div class="device-status-main"><span class="device-state-dot" id="overviewPiDot"></span><div><div class="device-state-title" id="overviewPiState">等待状态</div><div class="row-meta" id="overviewPiSeen">—</div></div></div><div class="device-kv-grid"><div><span>人物</span><strong id="overviewPiPersons">—</strong></div><div><span>状态置信度</span><strong id="overviewPiConfidence">—</strong></div><div><span>是否有人</span><strong id="overviewPiPresent">—</strong></div></div></div>`;
+  section.innerHTML = `<header><h2>${esc(ui("树莓派状态", "Raspberry Pi status"))}</h2><a class="link" href="/work/device">${esc(ui("设备详情", "Device details"))}</a></header><div class="card-body"><div class="device-status-main"><span class="device-state-dot" id="overviewPiDot"></span><div><div class="device-state-title" id="overviewPiState">${esc(ui("等待状态", "Waiting"))}</div><div class="row-meta" id="overviewPiSeen">—</div></div></div><div class="device-kv-grid"><div><span>${esc(ui("人物", "People"))}</span><strong id="overviewPiPersons">—</strong></div><div><span>${esc(ui("状态置信度", "Confidence"))}</span><strong id="overviewPiConfidence">—</strong></div><div><span>${esc(ui("是否有人", "Presence"))}</span><strong id="overviewPiPresent">—</strong></div></div></div>`;
   summary.insertAdjacentElement("afterend", section);
 }
 
@@ -195,90 +203,54 @@ function renderOverviewDevice() {
   const dot = $("overviewPiDot");
   if (dot) dot.className = `device-state-dot ${view.state}`;
   if ($("overviewPiState")) $("overviewPiState").textContent = view.label;
-  if ($("overviewPiSeen")) $("overviewPiSeen").textContent = view.seenAt ? `最后回传：${formatDateTime(view.seenAt)}` : "尚未收到树莓派回传";
+  if ($("overviewPiSeen")) {
+    $("overviewPiSeen").textContent = view.seenAt
+      ? ui(`最后回传：${formatDateTime(view.seenAt)}`, `Last report: ${formatDateTime(view.seenAt)}`)
+      : ui("尚未收到树莓派回传", "No Raspberry Pi report yet");
+  }
   const names = view.persons.map((person) => person.name || person.personId).filter(Boolean);
-  if ($("overviewPiPersons")) $("overviewPiPersons").textContent = names.length ? names.join("、") : "未识别";
+  if ($("overviewPiPersons")) $("overviewPiPersons").textContent = names.length ? names.join("、") : ui("未识别", "None identified");
   if ($("overviewPiConfidence")) $("overviewPiConfidence").textContent = view.confidence == null ? "—" : `${Math.round(Number(view.confidence) * 100)}%`;
-  if ($("overviewPiPresent")) $("overviewPiPresent").textContent = view.present && !view.stale ? "有人" : "无人";
+  if ($("overviewPiPresent")) $("overviewPiPresent").textContent = view.present && !view.stale ? ui("有人", "Present") : ui("无人", "Away");
+}
+
+function filteredEvents() {
+  const query = String($("globalSearch")?.value || "").trim().toLowerCase();
+  return state.events.filter((event) => {
+    if (!["plan", "ddl", "remind"].includes(event.evtType)) return false;
+    if (!query) return true;
+    return `${event.title || ""} ${event.desc || ""} ${event.stTime || ""} ${event.endTime || ""} ${event.triggerTime || ""}`.toLowerCase().includes(query);
+  });
 }
 
 function renderOverview() {
-  const todos = sortEvents(state.events.filter((evt) => evt.stat === "todo"));
-  const today = todos.filter((evt) => {
-    const t = eventTime(evt);
-    return t.today || t.overdue || !t.date;
-  });
-  const soon = todos.filter((evt) => {
-    if (evt.evtType !== "ddl") return false;
-    const t = eventTime(evt);
-    if (!t.date || !t.end) return false;
-    const diff = t.end.getTime() - Date.now();
-    return diff >= 0 && diff <= 72 * 3600_000;
+  const events = sortEvents(filteredEvents());
+  const todos = events.filter((event) => event.stat === "todo");
+  const today = events.filter((event) => eventView(event).today);
+  const soon = todos.filter((event) => {
+    if (event.evtType !== "ddl") return false;
+    const view = eventView(event);
+    if (!view.end) return false;
+    const difference = view.end.getTime() - Date.now();
+    return difference >= 0 && difference <= 72 * 3600_000;
   });
   const openIdeas = state.ideas.filter((idea) => !idea.handled);
+
   $("ovTodo").textContent = todos.length;
   $("ovToday").textContent = today.length;
   $("ovDeadline").textContent = soon.length;
   $("ovIdeas").textContent = openIdeas.length;
-  $("overviewTasks").innerHTML = today.slice(0, 8).map(taskRow).join("") || empty("暂无今日事项");
-  $("overviewTimeline").innerHTML = soon.slice(0, 8).map(taskRow).join("") || empty("72 小时内无 DDL");
-  $("overviewIdeas").innerHTML = openIdeas.slice(-5).reverse().map((idea) => `<div class="row-card"><div class="row-title">${esc(idea.content)}</div><div class="row-meta">${esc(idea.createdAt || "")}</div></div>`).join("") || empty("暂无待整理灵感");
+  $("overviewTasks").innerHTML = today.map(taskRow).join("") || empty(ui("暂无今日事项", "No events today"));
+  $("overviewTimeline").innerHTML = soon.slice(0, 8).map(taskRow).join("") || empty(ui("72 小时内无 DDL", "No DDL in the next 72 hours"));
+  $("overviewIdeas").innerHTML = openIdeas.slice(-5).reverse().map((idea) => `<div class="row-card"><div class="row-title">${esc(idea.content)}</div><div class="row-meta">${esc(idea.createdAt || "")}</div></div>`).join("") || empty(ui("暂无待整理灵感", "No unprocessed ideas"));
   renderOverviewDevice();
-}
-
-function renderUpdate() {
-  const q = $("globalSearch")?.value.trim().toLowerCase() || "";
-  const stat = $("evtStatusFilter")?.value || "todo";
-  const rows = sortEvents(state.events).filter((evt) => (stat === "all" || evt.stat === stat) && (!q || `${evt.title} ${evt.desc || ""}`.toLowerCase().includes(q)));
-  $("evtList").innerHTML = rows.length ? rows.map(taskRow).join("") : empty("暂无匹配事件");
-}
-
-function selectEvent(evt) {
-  state.selectedEvt = evt;
-  const form = $("evtEditForm");
-  if (!form) return;
-  form.elements.evtId.value = evt.evtId;
-  form.elements.evtType.value = evt.evtType;
-  form.elements.title.value = evt.title || "";
-  form.elements.desc.value = evt.desc || "";
-  form.elements.stat.value = evt.stat || "todo";
-  form.elements.prio.value = evt.prio || "mid";
-  const isDdl = evt.evtType === "ddl";
-  const isCourse = evt.evtType === "course";
-  const field = isDdl ? "endTime" : isCourse ? "stDate" : "stTime";
-  form.dataset.timeField = field;
-  form.elements.evtTime.type = isCourse ? "date" : "datetime-local";
-  form.elements.evtTime.value = toLocalInput(evt[field], isCourse ? "date" : "datetime");
-  $("durationField")?.classList.toggle("hidden", evt.evtType !== "plan");
-  form.elements.durationMin.value = evt.durationMin || 30;
-  $("hardDdlField")?.classList.toggle("hidden", !isDdl);
-  form.elements.hardDdl.checked = Boolean(evt.hardDdl);
-  document.querySelectorAll(".task-row.selected").forEach((row) => row.classList.remove("selected"));
-  document.querySelectorAll(`[data-evt-id="${CSS.escape(evt.evtId)}"]`).forEach((row) => row.classList.add("selected"));
-}
-
-async function refreshEvents() {
-  try {
-    setApi("busy", "API 请求中");
-    state.events = await getData("/api/evt");
-    if (page === "overview") renderOverview();
-    if (page === "update") renderUpdate();
-    const selectId = new URLSearchParams(location.search).get("evtId");
-    const latest = state.events.find((evt) => evt.evtId === (state.selectedEvt?.evtId || selectId));
-    if (latest && page === "update") selectEvent(latest);
-    setApi("ok", "API 在线");
-    markRefresh();
-  } catch (err) {
-    setApi("err", "API 异常");
-    toast(err.message);
-  }
 }
 
 async function refreshOverview() {
   try {
-    setApi("busy", "API 请求中");
+    setApi("busy", ui("API 请求中", "API loading"));
     const [events, ideas, deviceStates] = await Promise.all([
-      getData("/api/evt"),
+      getData("/api/evt?includeReminders=true&includeCourseTemplates=false"),
       getData("/api/idea"),
       getData("/api/devState?devId=pi&limit=1"),
     ]);
@@ -286,81 +258,41 @@ async function refreshOverview() {
     state.ideas = ideas;
     state.deviceStates = deviceStates;
     renderOverview();
-    setApi("ok", "API 在线");
+    setApi("ok", ui("API 在线", "API online"));
     markRefresh();
-  } catch (err) {
-    setApi("err", "API 异常");
-    toast(err.message);
+  } catch (error) {
+    setApi("err", ui("API 异常", "API error"));
+    toast(error.message);
     renderOverview();
   }
 }
 
-async function saveEvent(ev) {
-  ev.preventDefault();
-  const form = ev.currentTarget;
-  const evtId = val(form, "evtId");
-  if (!evtId) return toast("请选择事件");
-  const body = { title: val(form, "title"), desc: val(form, "desc") || null, stat: val(form, "stat"), prio: val(form, "prio") };
-  const type = val(form, "evtType");
-  const field = form.dataset.timeField;
-  if (field) body[field] = field === "stDate" ? val(form, "evtTime") || null : toIso(val(form, "evtTime"));
-  if (type === "plan") body.durationMin = Number(val(form, "durationMin") || 30);
-  if (type === "ddl") body.hardDdl = form.elements.hardDdl.checked;
-  try {
-    await sendData(`/api/evt/${evtId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    toast("已保存");
-    await refreshEvents();
-  } catch (err) {
-    toast(err.message);
-  }
+function openEvent(eventId) {
+  const event = state.events.find((item) => item.evtId === eventId);
+  const start = event ? eventStartDate(event) : null;
+  const dateParam = start && !Number.isNaN(start.getTime())
+    ? `date=${encodeURIComponent(localDateValue(start))}&`
+    : "";
+  location.href = `/work/update?${dateParam}evtId=${encodeURIComponent(eventId)}`;
 }
 
-async function setEventStat(stat) {
-  const evtId = val($("evtEditForm"), "evtId");
-  if (!evtId) return toast("请选择事件");
-  try {
-    if (stat === "cancelled") await sendData(`/api/evt/${evtId}`, { method: "DELETE" });
-    else await sendData(`/api/evt/${evtId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stat }) });
-    toast(stat === "done" ? "已完成" : "已取消");
-    await refreshEvents();
-  } catch (err) {
-    toast(err.message);
-  }
-}
+document.body.addEventListener("click", (event) => {
+  const row = event.target.closest?.("[data-event-id]");
+  if (row) openEvent(row.dataset.eventId);
+});
 
-function bindEvents() {
-  $("evtEditForm")?.addEventListener("submit", saveEvent);
-  $("markDoneBtn")?.addEventListener("click", () => setEventStat("done"));
-  $("cancelEvtBtn")?.addEventListener("click", () => setEventStat("cancelled"));
-  $("evtStatusFilter")?.addEventListener("change", renderUpdate);
-  $("globalSearch")?.addEventListener("input", () => {
-    if (page === "update") renderUpdate();
-  });
-  document.body.addEventListener("click", (ev) => {
-    const row = ev.target.closest("[data-action='selectEvt']");
-    if (!row) return;
-    if (page === "overview") {
-      location.href = `/work/update?evtId=${encodeURIComponent(row.dataset.id)}`;
-      return;
-    }
-    const evt = state.events.find((item) => item.evtId === row.dataset.id);
-    if (evt) selectEvent(evt);
-  });
-  document.body.addEventListener("keydown", (ev) => {
-    const row = ev.target.closest?.("[data-action='selectEvt']");
-    if (row && (ev.key === "Enter" || ev.key === " ")) {
-      ev.preventDefault();
-      row.click();
-    }
-  });
-}
+document.body.addEventListener("keydown", (event) => {
+  const row = event.target.closest?.("[data-event-id]");
+  if (row && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    openEvent(row.dataset.eventId);
+  }
+});
+
+$("globalSearch")?.addEventListener("input", renderOverview);
+window.addEventListener("smartcore:languagechange", renderOverview);
 
 ensureDeviceNav(false);
-bindEvents();
-loadTopUser();
-if (page === "overview") {
-  ensureOverviewDeviceCard();
-  refreshOverview();
-  setInterval(refreshOverview, 10000);
-}
-if (page === "update") refreshEvents();
+ensureOverviewDeviceCard();
+refreshOverview();
+setInterval(refreshOverview, 10000);
