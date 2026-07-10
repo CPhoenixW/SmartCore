@@ -82,6 +82,35 @@
   background: var(--surface2);
 }
 
+.task-row.status-done {
+  background: #f8fafc;
+  border-color: #bbf7d0;
+}
+
+.task-row.status-done .task-title {
+  color: #475569;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.task-row.status-cancelled {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  opacity: .78;
+}
+
+.task-row.status-cancelled .task-title {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.tag.gray {
+  color: #64748b;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
 @media (max-width: 1180px) {
   .update-ddl-plan-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
