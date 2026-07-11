@@ -38,6 +38,13 @@ jobs:
           name: typecheck-report
           path: frontend/typecheck-report.txt
       - run: npm run test
-      - run: npm run build
+      - name: Build
+        run: npm run build 2>&1 | tee build-report.txt
+      - name: Upload build report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-report
+          path: frontend/build-report.txt
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
