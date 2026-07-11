@@ -36,7 +36,13 @@ where = ["."]
 include = ["app*"]
 
 [tool.setuptools.package-data]
-"app" = ["db/sql/*.sql", "web/static/*", "screen/static/*"]
+"app" = [
+    "db/sql/*.sql",
+    "web/static/*",
+    "web/dist/*",
+    "web/dist/assets/*",
+    "screen/static/*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

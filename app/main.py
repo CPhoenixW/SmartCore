@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.agent.feedback_routes import createFeedbackRouter, ensure_feedback_tools
@@ -94,6 +95,20 @@ def create_app() -> FastAPI:
         StaticFiles(directory=screen_static_dir),
         name="screen_static",
     )
+
+    frontend_dist = Path(__file__).resolve().parent / "web" / "dist"
+    frontend_assets = frontend_dist / "assets"
+    if frontend_dist.is_dir() and frontend_assets.is_dir():
+        app.mount(
+            "/work-v2/assets",
+            StaticFiles(directory=frontend_assets),
+            name="work_v2_assets",
+        )
+
+        @app.get("/work-v2", include_in_schema=False)
+        @app.get("/work-v2/{path:path}", include_in_schema=False)
+        def serve_work_v2(path: str = "") -> FileResponse:
+            return FileResponse(frontend_dist / "index.html")
 
     return app
 

@@ -1,0 +1,34 @@
+{
+  "app": {
+    "name": "SmartCore",
+    "subtitle": "Student Assistant",
+    "legacy": "Legacy workspace",
+    "apiReady": "API connected",
+    "apiOffline": "API unavailable"
+  },
+  "nav": {
+    "overview": "Overview",
+    "add": "Add Event",
+    "update": "Update Event",
+    "course": "Course",
+    "device": "Device",
+    "ideas": "Ideas",
+    "logs": "Logs",
+    "settings": "Settings"
+  },
+  "overview": {
+    "title": "Vue workspace migration entry",
+    "description": "The new and legacy frontends run in parallel. Vue 3, TypeScript, routing, i18n, and the shared API client are now wired in.",
+    "architecture": "Migration status",
+    "foundation": "Foundation",
+    "foundationValue": "Complete",
+    "legacyValue": "Existing /work retained",
+    "deployment": "Production deployment",
+    "deploymentValue": "Built assets served by FastAPI"
+  },
+  "migration": {
+    "title": "Page migration in progress",
+    "description": "The complete feature remains available in the legacy workspace. The Vue implementation will be migrated page by page according to business risk.",
+    "openLegacy": "Open legacy page"
+  }
+}

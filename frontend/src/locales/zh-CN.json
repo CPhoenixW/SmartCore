@@ -1,0 +1,34 @@
+{
+  "app": {
+    "name": "SmartCore",
+    "subtitle": "学生智能助手",
+    "legacy": "旧版工作台",
+    "apiReady": "API 已连接",
+    "apiOffline": "API 不可用"
+  },
+  "nav": {
+    "overview": "总览",
+    "add": "添加事件",
+    "update": "更新事件",
+    "course": "课表",
+    "device": "设备",
+    "ideas": "灵感",
+    "logs": "日志",
+    "settings": "设置"
+  },
+  "overview": {
+    "title": "Vue 工作台迁移入口",
+    "description": "新旧前端并行运行。此入口已完成 Vue 3、TypeScript、路由、国际化和统一 API Client 的基础接入。",
+    "architecture": "当前迁移状态",
+    "foundation": "工程骨架",
+    "foundationValue": "已完成",
+    "legacyValue": "继续保留 /work",
+    "deployment": "生产部署",
+    "deploymentValue": "构建后由 FastAPI 静态托管"
+  },
+  "migration": {
+    "title": "页面迁移中",
+    "description": "该页面仍由旧工作台提供完整功能。Vue 版本将在后续阶段按业务风险逐页迁移。",
+    "openLegacy": "打开旧版页面"
+  }
+}
