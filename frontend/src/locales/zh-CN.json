@@ -1,34 +1,20 @@
 {
-  "app": {
-    "name": "SmartCore",
-    "subtitle": "学生智能助手",
-    "legacy": "旧版工作台",
-    "apiReady": "API 已连接",
-    "apiOffline": "API 不可用"
+  "app": { "name": "SmartCore", "subtitle": "学生智能助手", "apiReady": "API 已连接", "apiError": "API 异常" },
+  "nav": { "overview": "总览", "add": "添加事件", "update": "更新事件", "course": "课表", "device": "设备", "ideas": "灵感", "logs": "日志", "settings": "设置" },
+  "common": { "loading": "正在加载…", "empty": "暂无数据", "save": "保存", "create": "创建", "cancel": "取消", "delete": "删除", "refresh": "刷新", "edit": "编辑", "all": "全部", "search": "搜索标题、日期或时间", "today": "今天", "previous": "上一天", "next": "下一天", "retry": "重试" },
+  "event": {
+    "type": { "plan": "计划", "remind": "提醒", "ddl": "截止事项", "course": "课程" },
+    "status": { "todo": "待办", "done": "完成", "cancelled": "已取消" },
+    "priority": { "low": "低", "mid": "中", "high": "高" },
+    "form": { "title": "标题", "description": "描述", "startTime": "开始时间", "triggerTime": "提醒时间", "deadline": "截止时间", "duration": "持续时间（分钟）", "priority": "优先级", "status": "状态", "hardDdl": "硬性截止", "plans": "关联计划" },
+    "created": "事件已创建", "updated": "事件已更新", "cancelled": "事件已取消"
   },
-  "nav": {
-    "overview": "总览",
-    "add": "添加事件",
-    "update": "更新事件",
-    "course": "课表",
-    "device": "设备",
-    "ideas": "灵感",
-    "logs": "日志",
-    "settings": "设置"
-  },
-  "overview": {
-    "title": "Vue 工作台迁移入口",
-    "description": "新旧前端并行运行。此入口已完成 Vue 3、TypeScript、路由、国际化和统一 API Client 的基础接入。",
-    "architecture": "当前迁移状态",
-    "foundation": "工程骨架",
-    "foundationValue": "已完成",
-    "legacyValue": "继续保留 /work",
-    "deployment": "生产部署",
-    "deploymentValue": "构建后由 FastAPI 静态托管"
-  },
-  "migration": {
-    "title": "页面迁移中",
-    "description": "该页面仍由旧工作台提供完整功能。Vue 版本将在后续阶段按业务风险逐页迁移。",
-    "openLegacy": "打开旧版页面"
-  }
+  "overview": { "title": "总览", "subtitle": "查看今天的事项、截止时间与设备状态", "todo": "待办事项", "today": "今日事项", "deadline": "未来 72 小时", "ideas": "灵感 Inbox", "upcoming": "即将截止", "device": "树莓派状态" },
+  "add": { "title": "添加事件", "subtitle": "创建计划、独立提醒或截止事项", "natural": "自然语言录入", "parse": "解析到表单", "placeholder": "例如：明天晚上八点复习热流体，持续 30 分钟", "parsed": "解析结果已填入表单" },
+  "update": { "title": "更新事件", "subtitle": "按日期、状态和关键词查看并修改事件", "events": "当天事件", "editor": "事件编辑器", "select": "选择一个事件进行编辑" },
+  "course": { "title": "课表", "subtitle": "维护课程模板并生成学期计划", "name": "课程名称", "teacher": "教师", "location": "地点", "semesterStart": "学期开始日期", "weekday": "星期", "startWeek": "起始周", "endWeek": "结束周", "weekMode": "周属性", "startTime": "上课时间", "endTime": "下课时间", "sync": "重新生成计划", "created": "课程已创建", "updated": "课程已更新" },
+  "device": { "title": "设备", "subtitle": "查看树莓派状态、识别日志和使用分析", "latest": "当前状态", "recent": "识别日志", "usage": "今日每小时使用时长", "photo": "当前摄像头画面", "requestPhoto": "请求当前画面", "total": "今日使用时长", "peak": "峰值时段", "confidence": "平均置信度" },
+  "ideas": { "title": "灵感", "subtitle": "记录、筛选和整理灵感", "new": "新灵感", "content": "灵感内容", "open": "未处理", "handled": "已处理", "saved": "灵感已保存" },
+  "logs": { "title": "日志", "subtitle": "查看事件、提醒和消息日志", "act": "事件操作", "notify": "提醒", "msg": "消息" },
+  "settings": { "title": "设置", "subtitle": "管理用户、语言和提醒偏好", "displayName": "用户名称", "language": "语言", "reminderChannel": "提醒方式", "avatar": "头像 URL", "saved": "设置已保存" }
 }

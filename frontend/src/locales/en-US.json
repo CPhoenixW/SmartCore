@@ -1,34 +1,20 @@
 {
-  "app": {
-    "name": "SmartCore",
-    "subtitle": "Student Assistant",
-    "legacy": "Legacy workspace",
-    "apiReady": "API connected",
-    "apiOffline": "API unavailable"
+  "app": { "name": "SmartCore", "subtitle": "Student assistant", "apiReady": "API connected", "apiError": "API unavailable" },
+  "nav": { "overview": "Overview", "add": "Add event", "update": "Update event", "course": "Course", "device": "Device", "ideas": "Ideas", "logs": "Logs", "settings": "Settings" },
+  "common": { "loading": "Loading…", "empty": "No data", "save": "Save", "create": "Create", "cancel": "Cancel", "delete": "Delete", "refresh": "Refresh", "edit": "Edit", "all": "All", "search": "Search title, date or time", "today": "Today", "previous": "Previous", "next": "Next", "retry": "Retry" },
+  "event": {
+    "type": { "plan": "Plan", "remind": "Reminder", "ddl": "Deadline", "course": "Course" },
+    "status": { "todo": "To do", "done": "Done", "cancelled": "Cancelled" },
+    "priority": { "low": "Low", "mid": "Medium", "high": "High" },
+    "form": { "title": "Title", "description": "Description", "startTime": "Start time", "triggerTime": "Reminder time", "deadline": "Deadline", "duration": "Duration (minutes)", "priority": "Priority", "status": "Status", "hardDdl": "Hard deadline", "plans": "Linked plans" },
+    "created": "Event created", "updated": "Event updated", "cancelled": "Event cancelled"
   },
-  "nav": {
-    "overview": "Overview",
-    "add": "Add Event",
-    "update": "Update Event",
-    "course": "Course",
-    "device": "Device",
-    "ideas": "Ideas",
-    "logs": "Logs",
-    "settings": "Settings"
-  },
-  "overview": {
-    "title": "Vue workspace migration entry",
-    "description": "The new and legacy frontends run in parallel. Vue 3, TypeScript, routing, i18n, and the shared API client are now wired in.",
-    "architecture": "Migration status",
-    "foundation": "Foundation",
-    "foundationValue": "Complete",
-    "legacyValue": "Existing /work retained",
-    "deployment": "Production deployment",
-    "deploymentValue": "Built assets served by FastAPI"
-  },
-  "migration": {
-    "title": "Page migration in progress",
-    "description": "The complete feature remains available in the legacy workspace. The Vue implementation will be migrated page by page according to business risk.",
-    "openLegacy": "Open legacy page"
-  }
+  "overview": { "title": "Overview", "subtitle": "Today's events, deadlines and device state", "todo": "To do", "today": "Today", "deadline": "Next 72 hours", "ideas": "Idea inbox", "upcoming": "Upcoming deadlines", "device": "Raspberry Pi state" },
+  "add": { "title": "Add event", "subtitle": "Create a plan, standalone reminder or deadline", "natural": "Natural-language input", "parse": "Parse into form", "placeholder": "For example: Review thermofluids tomorrow at 8 PM for 30 minutes", "parsed": "Parsed data loaded into the form" },
+  "update": { "title": "Update event", "subtitle": "Find and edit events by date, status and keyword", "events": "Events", "editor": "Event editor", "select": "Select an event to edit" },
+  "course": { "title": "Course", "subtitle": "Maintain course templates and generate semester plans", "name": "Course name", "teacher": "Teacher", "location": "Location", "semesterStart": "Semester start", "weekday": "Weekday", "startWeek": "Start week", "endWeek": "End week", "weekMode": "Week mode", "startTime": "Start time", "endTime": "End time", "sync": "Regenerate plans", "created": "Course created", "updated": "Course updated" },
+  "device": { "title": "Device", "subtitle": "Raspberry Pi status, recognition logs and usage", "latest": "Current state", "recent": "Recognition logs", "usage": "Hourly usage today", "photo": "Current camera image", "requestPhoto": "Request image", "total": "Usage today", "peak": "Peak hour", "confidence": "Average confidence" },
+  "ideas": { "title": "Ideas", "subtitle": "Capture, filter and organize ideas", "new": "New idea", "content": "Idea content", "open": "Open", "handled": "Handled", "saved": "Idea saved" },
+  "logs": { "title": "Logs", "subtitle": "Event, reminder and message logs", "act": "Actions", "notify": "Notifications", "msg": "Messages" },
+  "settings": { "title": "Settings", "subtitle": "User, language and reminder preferences", "displayName": "Display name", "language": "Language", "reminderChannel": "Reminder channel", "avatar": "Avatar URL", "saved": "Settings saved" }
 }
