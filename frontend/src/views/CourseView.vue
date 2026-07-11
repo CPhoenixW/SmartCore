@@ -50,7 +50,13 @@ const filteredCourses = computed(() => {
     return normalizeSearch([course.courseName, course.title, course.teacher, course.location, course.desc, course.semesterStart, course.stDate, course.endDate, course.stTime, course.endTime, course.weekDay, course.weekMode].filter(Boolean).join(" ")).includes(query);
   });
 });
-const byDay = computed(() => Array.from({ length: 7 }, (_, index) => filteredCourses.value.filter((course) => course.stat !== "cancelled" && Number(course.weekDay) === index + 1).sort((a, b) => String(a.stTime).localeCompare(String(b.stTime))));
+const byDay = computed(() =>
+  Array.from({ length: 7 }, (_, index) =>
+    filteredCourses.value
+      .filter((course) => course.stat !== "cancelled" && Number(course.weekDay) === index + 1)
+      .sort((a, b) => String(a.stTime).localeCompare(String(b.stTime))),
+  ),
+);
 const estimatedCount = computed(() => {
   if (!form.semesterStart || form.endWeek < form.startWeek) return 0;
   let count = 0;
