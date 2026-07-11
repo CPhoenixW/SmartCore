@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.agent.feedback_routes import createFeedbackRouter, ensure_feedback_tools
@@ -25,8 +25,7 @@ from app.new_core.relation_maintenance import (
 )
 from app.scheduler.service import build_scheduler_service
 from app.screen.routes import router as screenRouter
-from app.web.device_routes import router as workDeviceRouter
-from app.web.work_routes import router as workRouter
+from app.web.legacy_routes import router as legacyWorkRouter
 
 
 def _sync_event_relations() -> None:
@@ -57,6 +56,32 @@ async def lifespan(app: FastAPI):
             scheduler_service.shutdown()
 
 
+def _register_work_frontend(app: FastAPI) -> None:
+    frontend_dist = Path(__file__).resolve().parent / "web" / "dist"
+    frontend_assets = frontend_dist / "assets"
+
+    if frontend_dist.is_dir() and frontend_assets.is_dir():
+        app.mount("/work/assets", StaticFiles(directory=frontend_assets), name="work_assets")
+
+        @app.get("/work", include_in_schema=False)
+        @app.get("/work/{path:path}", include_in_schema=False)
+        def serve_work(path: str = "") -> FileResponse:
+            return FileResponse(frontend_dist / "index.html")
+    else:
+
+        @app.get("/work", include_in_schema=False)
+        @app.get("/work/{path:path}", include_in_schema=False)
+        def serve_work_fallback(path: str = "") -> RedirectResponse:
+            suffix = f"/{path}" if path else ""
+            return RedirectResponse(f"/work-legacy{suffix}", status_code=307)
+
+    @app.get("/work-v2", include_in_schema=False)
+    @app.get("/work-v2/{path:path}", include_in_schema=False)
+    def redirect_work_v2(path: str = "") -> RedirectResponse:
+        suffix = f"/{path}" if path else ""
+        return RedirectResponse(f"/work{suffix}", status_code=308)
+
+
 def create_app() -> FastAPI:
     init_db()
     install_relation_compat()
@@ -83,33 +108,15 @@ def create_app() -> FastAPI:
     app.include_router(createLegacyTimeRouter())
     app.include_router(createAgentRouter())
     app.include_router(create_feishu_router())
-    app.include_router(workRouter)
-    app.include_router(workDeviceRouter)
+    app.include_router(legacyWorkRouter)
     app.include_router(screenRouter)
 
     static_dir = Path(__file__).resolve().parent / "web" / "static"
     app.mount("/static/work", StaticFiles(directory=static_dir), name="work_static")
     screen_static_dir = Path(__file__).resolve().parent / "screen" / "static"
-    app.mount(
-        "/static/screen",
-        StaticFiles(directory=screen_static_dir),
-        name="screen_static",
-    )
+    app.mount("/static/screen", StaticFiles(directory=screen_static_dir), name="screen_static")
 
-    frontend_dist = Path(__file__).resolve().parent / "web" / "dist"
-    frontend_assets = frontend_dist / "assets"
-    if frontend_dist.is_dir() and frontend_assets.is_dir():
-        app.mount(
-            "/work-v2/assets",
-            StaticFiles(directory=frontend_assets),
-            name="work_v2_assets",
-        )
-
-        @app.get("/work-v2", include_in_schema=False)
-        @app.get("/work-v2/{path:path}", include_in_schema=False)
-        def serve_work_v2(path: str = "") -> FileResponse:
-            return FileResponse(frontend_dist / "index.html")
-
+    _register_work_frontend(app)
     return app
 
 

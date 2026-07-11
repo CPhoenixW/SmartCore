@@ -1,7 +1,2 @@
-<script setup lang="ts">
-import WorkLayout from "./layouts/WorkLayout.vue";
-</script>
-
-<template>
-  <WorkLayout />
-</template>
+<script setup lang="ts">import ToastHost from "@/components/base/ToastHost.vue";</script>
+<template><RouterView /><ToastHost /></template>

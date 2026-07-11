@@ -1,27 +1,13 @@
-# SmartCore Frontend
+# SmartCore Vue workbench
 
-This directory contains the incremental Vue 3 SPA migration for the SmartCore work panel.
-
-## Development
-
-Run FastAPI on port 8000, then start Vite:
+The production SPA is built into `app/web/dist` by the multi-stage Docker build and served by FastAPI at `/work`.
 
 ```bash
-cd frontend
 npm install
-npm run dev
-```
-
-Vite proxies `/api` and `/agent` requests to `http://127.0.0.1:8000`.
-
-## Validation
-
-```bash
 npm run type-check
 npm run test
 npm run build
+npm run test:e2e
 ```
 
-## Production
-
-The Docker multi-stage build compiles this project and copies `dist/` into `app/web/dist`. FastAPI serves the SPA at `/work-v2`, while the existing `/work` panel remains available during migration.
+The legacy workbench remains temporarily available at `/work-legacy` for rollback during the migration release window.

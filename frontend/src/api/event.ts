@@ -1,23 +1,36 @@
-import { apiRequest } from "./client";
-import type { SmartCoreEvent } from "@/types/event";
-
-export interface EventQuery {
-  date?: string;
-  stat?: "todo" | "done" | "cancelled" | "all";
-  includeReminders?: boolean;
-}
-
-function toQueryString(query: EventQuery): string {
-  const params = new URLSearchParams();
-  Object.entries(query).forEach(([key, value]) => {
-    if (value !== undefined) params.set(key, String(value));
-  });
-  return params.toString();
-}
+import { apiRequest, buildQuery } from "./client";
+import type {
+  CreateDdlPayload,
+  CreatePlanPayload,
+  CreateReminderPayload,
+  EventQuery,
+  SmartCoreEvent,
+  UpdateEventPayload,
+} from "@/types/event";
 
 export const eventApi = {
   list(query: EventQuery = {}) {
-    const queryString = toQueryString(query);
-    return apiRequest<SmartCoreEvent[]>(`/api/evt${queryString ? `?${queryString}` : ""}`);
+    return apiRequest<SmartCoreEvent[]>(`/api/evt${buildQuery(query)}`);
+  },
+  read(id: string) {
+    return apiRequest<SmartCoreEvent>(`/api/evt/${encodeURIComponent(id)}`);
+  },
+  createPlan(payload: CreatePlanPayload) {
+    return apiRequest<SmartCoreEvent>("/api/planEvt", { method: "POST", body: JSON.stringify(payload) });
+  },
+  createReminder(payload: CreateReminderPayload) {
+    return apiRequest<SmartCoreEvent>("/api/remindEvt", { method: "POST", body: JSON.stringify(payload) });
+  },
+  createDdl(payload: CreateDdlPayload) {
+    return apiRequest<SmartCoreEvent>("/api/ddlEvt", { method: "POST", body: JSON.stringify(payload) });
+  },
+  update(id: string, payload: UpdateEventPayload | Record<string, unknown>) {
+    return apiRequest<SmartCoreEvent>(`/api/evt/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  },
+  cancel(id: string) {
+    return apiRequest<SmartCoreEvent>(`/api/evt/${encodeURIComponent(id)}`, { method: "DELETE" });
   },
 };

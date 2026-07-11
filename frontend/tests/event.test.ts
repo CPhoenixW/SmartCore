@@ -1,22 +1,22 @@
 import { describe, expect, it } from "vitest";
+import { defaultDdlPlans, getEventPrimaryTime } from "@/utils/date";
+import { sortEvents } from "@/utils/event";
+import type { SmartCoreEvent } from "@/types/event";
 
-import { getEventPrimaryTime, type SmartCoreEvent } from "@/types/event";
-
-const base = {
-  evtId: "evt-1",
-  title: "Example",
-  stat: "todo" as const,
-  prio: "mid" as const,
-  createdAt: "2026-07-11T10:00:00+08:00",
-  updatedAt: "2026-07-11T10:00:00+08:00",
-};
-
-describe("getEventPrimaryTime", () => {
-  it.each<SmartCoreEvent>([
-    { ...base, evtType: "plan", stTime: "2026-07-12T10:00:00+08:00", durationMin: 30 },
-    { ...base, evtType: "remind", triggerTime: "2026-07-12T11:00:00+08:00", standalone: true },
-    { ...base, evtType: "ddl", endTime: "2026-07-12T12:00:00+08:00", hardDdl: true, plans: [] },
-  ])("returns the primary time for $evtType", (event) => {
-    expect(getEventPrimaryTime(event)).toMatch(/^2026-07-12T/);
+describe("event utilities", () => {
+  it("returns the discriminated primary time", () => {
+    expect(getEventPrimaryTime({ evtId: "1", title: "x", evtType: "remind", stat: "todo", prio: "mid", triggerTime: "2026-01-01T00:00:00Z" })).toBe("2026-01-01T00:00:00Z");
+  });
+  it("creates one-day and one-hour DDL plans", () => {
+    const plans = defaultDdlPlans("2026-07-12T12:00:00Z");
+    expect(plans.map((plan) => plan.planRole)).toEqual(["one_day_before", "one_hour_before"]);
+    expect(new Date(plans[0]!.stTime).getTime()).toBe(new Date("2026-07-11T12:00:00Z").getTime());
+  });
+  it("keeps completed events and sorts todo first", () => {
+    const events: SmartCoreEvent[] = [
+      { evtId: "2", title: "done", evtType: "plan", stat: "done", prio: "mid", stTime: "2026-01-01T09:00:00Z", durationMin: 30 },
+      { evtId: "1", title: "todo", evtType: "plan", stat: "todo", prio: "mid", stTime: "2026-01-01T10:00:00Z", durationMin: 30 },
+    ];
+    expect(sortEvents(events).map((item) => item.evtId)).toEqual(["1", "2"]);
   });
 });

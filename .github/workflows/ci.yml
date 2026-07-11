@@ -19,9 +19,21 @@ jobs:
       - name: Python syntax
         run: python -m compileall -q app tests
       - name: Ruff
-        run: ruff check app tests
+        run: ruff check app tests --output-format=json | tee ruff-report.json
+      - name: Upload Ruff report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruff-report
+          path: ruff-report.json
       - name: Pytest
-        run: pytest -q
+        run: pytest -q 2>&1 | tee pytest-report.txt
+      - name: Upload Pytest report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report
+          path: pytest-report.txt
       - name: JavaScript syntax
         run: |
           find app/web/static app/screen/static -name '*.js' -print0 | xargs -0 -n1 node --check
