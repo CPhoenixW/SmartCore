@@ -7,4 +7,6 @@ import { router } from "./router";
 import "./styles/reset.css";
 import "./styles/tokens.css";
 import "./styles/global.css";
+import "./styles/regressions.css";
+
 createApp(App).use(createPinia()).use(i18n).use(VueQueryPlugin).use(router).mount("#app");
