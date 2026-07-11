@@ -13,24 +13,41 @@ export interface BaseEvent {
   updatedAt?: string;
 }
 
+export interface ReminderSummary {
+  evtId: string;
+  triggerTime: string;
+  remindKind?: string | null;
+  stat?: EventStatus;
+  firedAt?: string | null;
+}
+
 export interface PlanEvent extends BaseEvent {
   evtType: "plan";
   stTime: string;
-  endTime?: string;
   durationMin: number;
+  reminders?: ReminderSummary[];
   generatedBy?: "course" | "ddl" | null;
-  parentEvtId?: string | null;
+  courseEvtId?: string | null;
+  ddlEvtId?: string | null;
+  occurrenceDate?: string | null;
+  sequenceNo?: number | null;
+  courseName?: string | null;
+  planRole?: DdlPlan["planRole"];
+  sortOrder?: number | null;
 }
 
 export interface ReminderEvent extends BaseEvent {
   evtType: "remind";
   triggerTime: string;
-  standalone?: boolean;
   planEvtId?: string | null;
+  remindKind?: string | null;
+  offsetMin?: number | null;
+  firedAt?: string | null;
 }
 
 export interface DdlPlan {
   planEvtId?: string;
+  evtId?: string;
   planRole: "one_day_before" | "one_hour_before" | "manual";
   title?: string | null;
   desc?: string | null;
@@ -53,6 +70,7 @@ export interface CourseEvent extends BaseEvent {
   teacher?: string | null;
   location?: string | null;
   semesterStart?: string;
+  computedEndDate?: string;
   stDate?: string;
   endDate?: string;
   weekDay: number;
@@ -61,6 +79,8 @@ export interface CourseEvent extends BaseEvent {
   weekMode: "all" | "odd" | "even";
   stTime: string;
   endTime: string;
+  occurrenceCount?: number;
+  nextOccurrence?: PlanEvent | null;
   plans?: PlanEvent[];
 }
 
@@ -99,6 +119,4 @@ export interface CreateDdlPayload {
   plans: DdlPlan[];
 }
 
-export type UpdateEventPayload = Partial<
-  Omit<SmartCoreEvent, "evtId" | "evtType" | "createdAt" | "updatedAt">
-> & { plans?: DdlPlan[] };
+export type UpdateEventPayload = Record<string, unknown>;
