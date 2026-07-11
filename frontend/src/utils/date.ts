@@ -74,9 +74,16 @@ export function addDays(date: string, days: number): string {
 }
 
 export function normalizeSearch(value: string): string {
-  let text = String(value || "").trim().toLowerCase().replaceAll("/", "-");
-  text = text.replace(/(\d{1,2})点半/g, (_, hour: string) => `${pad(Number(hour))}:30`);
-  text = text.replace(/(\d{1,2})点(?:(\d{1,2})分?)?/g, (_, hour: string, minute?: string) => `${pad(Number(hour))}:${pad(Number(minute || 0))}`);
+  let text = String(value || "").trim().toLowerCase().replace(/\//g, "-");
+  text = text.replace(
+    /(\d{1,2})点半/g,
+    (_match: string, hour: string) => `${pad(Number(hour))}:30`,
+  );
+  text = text.replace(
+    /(\d{1,2})点(?:(\d{1,2})分?)?/g,
+    (_match: string, hour: string, minute?: string) =>
+      `${pad(Number(hour))}:${pad(Number(minute || 0))}`,
+  );
   return text;
 }
 
