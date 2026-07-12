@@ -50,6 +50,7 @@ def _ensure_user(db: Session, userId: str = DEFAULT_USER_ID) -> AppUser:
 def _userDict(user: AppUser) -> dict[str, Any]:
     return {
         "userId": user.userId,
+        "role": user.role,
         "displayName": user.displayName,
         "language": user.language,
         "avatarUrl": user.avatarUrl,

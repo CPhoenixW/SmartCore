@@ -295,7 +295,10 @@
     "saved": "设置已保存",
     "session": "登录会话",
     "sessionHint": "退出后需要重新登录才能继续访问此工作台。",
-    "logout": "退出登录"
+    "logout": "退出登录",
+    "adminTitle": "管理员：切换工作账户",
+    "currentUser": "当前账户",
+    "switchUser": "切换到此账户"
   },
   "pair": {
     "title": "已注册设备",
