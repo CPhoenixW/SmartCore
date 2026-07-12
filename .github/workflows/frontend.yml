@@ -6,14 +6,12 @@ on:
     paths:
       - "frontend/**"
       - "app/main.py"
-      - "app/web/legacy_routes.py"
       - "deploy/Dockerfile"
       - ".github/workflows/frontend.yml"
   pull_request:
     paths:
       - "frontend/**"
       - "app/main.py"
-      - "app/web/legacy_routes.py"
       - "deploy/Dockerfile"
       - ".github/workflows/frontend.yml"
 

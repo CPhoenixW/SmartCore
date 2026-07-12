@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.agent.feedback_routes import createFeedbackRouter, ensure_feedback_tools
@@ -26,7 +26,6 @@ from app.new_core.relation_maintenance import (
 )
 from app.scheduler.service import build_scheduler_service
 from app.screen.routes import router as screenRouter
-from app.web.legacy_routes import router as legacyWorkRouter
 
 
 def _sync_event_relations() -> None:
@@ -72,9 +71,11 @@ def _register_work_frontend(app: FastAPI) -> None:
 
         @app.get("/work", include_in_schema=False)
         @app.get("/work/{path:path}", include_in_schema=False)
-        def serve_work_fallback(path: str = "") -> RedirectResponse:
-            suffix = f"/{path}" if path else ""
-            return RedirectResponse(f"/work-legacy{suffix}", status_code=307)
+        def serve_missing_work(path: str = "") -> PlainTextResponse:
+            return PlainTextResponse(
+                "SmartCore frontend build is missing. Build frontend/ before starting the app.",
+                status_code=503,
+            )
 
     @app.get("/work-v2", include_in_schema=False)
     @app.get("/work-v2/{path:path}", include_in_schema=False)
@@ -110,11 +111,8 @@ def create_app() -> FastAPI:
     app.include_router(createLegacyTimeRouter())
     app.include_router(createAgentRouter())
     app.include_router(create_feishu_router())
-    app.include_router(legacyWorkRouter)
     app.include_router(screenRouter)
 
-    static_dir = Path(__file__).resolve().parent / "web" / "static"
-    app.mount("/static/work", StaticFiles(directory=static_dir), name="work_static")
     screen_static_dir = Path(__file__).resolve().parent / "screen" / "static"
     app.mount("/static/screen", StaticFiles(directory=screen_static_dir), name="screen_static")
 
