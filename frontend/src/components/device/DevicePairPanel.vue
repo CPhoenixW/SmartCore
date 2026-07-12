@@ -23,7 +23,7 @@ async function refreshPair() { if (currentPair.value) currentPair.value = await 
       <p v-if="!(devices.data.value ?? []).length" class="muted">还没有已激活设备。</p>
     </div>
     <form class="device-pair-form" @submit.prevent="start.mutate()"><input v-model.trim="deviceName" required placeholder="设备名称，例如：书桌副屏" /><select v-model="deviceKind"><option value="screen">副屏</option><option value="pi">树莓派</option><option value="browser">电脑后台</option><option value="feishuBot">飞书机器人</option></select><button class="button button--primary" :disabled="start.isPending.value">开始配对</button></form>
-    <div v-if="currentPair" class="pair-code"><div><strong>设备配对码</strong><code>{{ currentPair.claimCode }}</code><small>设备端领取后，点击确认完成双向授权。</small></div><span class="pair-stat">{{ currentPair.stat }}</span><button class="button button--ghost" type="button" @click="refreshPair">刷新</button><button v-if="currentPair.stat === 'claimed'" class="button button--primary" type="button" :disabled="confirm.isPending.value" @click="confirm.mutate()">确认此设备</button></div>
+    <div v-if="currentPair" class="pair-code"><div><strong>设备配对信息</strong><small>Pair ID</small><code>{{ currentPair.pairId }}</code><small>配对码</small><code>{{ currentPair.claimCode }}</code><small>设备端先领取，再回到这里确认；激活时两个值都需要使用。</small></div><span class="pair-stat">{{ currentPair.stat }}</span><button class="button button--ghost" type="button" @click="refreshPair">刷新</button><button v-if="currentPair.stat === 'claimed'" class="button button--primary" type="button" :disabled="confirm.isPending.value" @click="confirm.mutate()">确认此设备</button></div>
   </BaseCard>
 </template>
 
