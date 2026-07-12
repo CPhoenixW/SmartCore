@@ -21,7 +21,7 @@ function recordTime(row: LogRecord): string {
   return String(row.createdAt ?? row.scheduledAt ?? row.sentAt ?? row.receivedAt ?? "");
 }
 function recordTitle(row: LogRecord): string {
-  return String(row.action ?? row.title ?? row.msgType ?? row.targetKind ?? row.channel ?? "Log");
+  return String(row.action ?? row.title ?? row.msgType ?? row.targetKind ?? row.channel ?? t("logs.title"));
 }
 const availableStatuses = computed(() => [...new Set((query.data.value?.[tab.value] ?? []).map(recordStatus).filter(Boolean))]);
 const rows = computed(() => (query.data.value?.[tab.value] ?? [])
@@ -33,7 +33,7 @@ const rows = computed(() => (query.data.value?.[tab.value] ?? [])
   <section class="page-heading"><div><h1>{{ t("logs.title") }}</h1><p>{{ t("logs.subtitle") }}</p></div><button class="button" @click="query.refetch()">{{ t("common.refresh") }}</button></section>
   <BaseCard>
     <div class="tabs"><button v-for="name in ['act','notify','msg']" :key="name" class="tab" :class="{ 'tab--active': tab === name }" @click="tab = name as keyof LogsResponse; status = ''">{{ t(`logs.${name}`) }}</button></div>
-    <div class="filter-row"><input v-model="keyword" class="wide-input" :placeholder="t('common.search')" /><select v-model="status"><option value="">全部状态</option><option v-for="item in availableStatuses" :key="item" :value="item">{{ item }}</option></select></div>
-    <div class="log-cards"><details v-for="(row, index) in rows" :key="index"><summary><strong>{{ recordTitle(row) }}</strong><span>{{ recordStatus(row) || '—' }} · {{ formatDateTime(recordTime(row)) }}</span></summary><pre>{{ JSON.stringify(row, null, 2) }}</pre></details><EmptyState v-if="!rows.length" /></div>
+    <div class="filter-row"><input v-model="keyword" class="wide-input" :placeholder="t('common.search')" /><select v-model="status"><option value="">{{ t("logs.allStatus") }}</option><option v-for="item in availableStatuses" :key="item" :value="item">{{ item }}</option></select></div>
+    <div class="log-cards"><details v-for="(row, index) in rows" :key="index"><summary><strong>{{ recordTitle(row) }}</strong><span>{{ recordStatus(row) || t('common.notSet') }} · {{ formatDateTime(recordTime(row)) }}</span></summary><pre>{{ JSON.stringify(row, null, 2) }}</pre></details><EmptyState v-if="!rows.length" /></div>
   </BaseCard>
 </template>
