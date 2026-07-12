@@ -4,6 +4,7 @@ import WorkLayout from "@/layouts/WorkLayout.vue";
 export const router = createRouter({
   history: createWebHistory("/work/"),
   routes: [
+    { path: "/login", name: "login", component: () => import("@/views/LoginView.vue") },
     {
       path: "/",
       component: WorkLayout,
