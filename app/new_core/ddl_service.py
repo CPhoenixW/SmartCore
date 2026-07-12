@@ -271,6 +271,7 @@ def create_ddl_event(
         updatedAt=now,
     )
     db.add(base)
+    db.flush()
     db.add(DdlEvt(evtId=ddl_id, endTime=normalized_end, hardDdl=hardDdl))
     db.add(
         ActLog(

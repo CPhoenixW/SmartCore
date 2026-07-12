@@ -244,9 +244,15 @@ def _apply_sqlite_migrations(db_path: Path) -> None:
         conn.execute("PRAGMA foreign_keys = OFF")
         tables = {str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if "appUser" in tables:
+            _add_sqlite_column(conn, "appUser", "loginName", "loginName VARCHAR(100)")
+            _add_sqlite_column(conn, "appUser", "role", "role VARCHAR(20) NOT NULL DEFAULT 'user'")
+            _add_sqlite_column(conn, "appUser", "stat", "stat VARCHAR(20) NOT NULL DEFAULT 'active'")
+            _add_sqlite_column(conn, "appUser", "sessionVersion", "sessionVersion INTEGER NOT NULL DEFAULT 1")
+            _add_sqlite_column(conn, "appUser", "lastLoginAt", "lastLoginAt VARCHAR(64)")
             _add_sqlite_column(conn, "appUser", "language", "language VARCHAR(10) NOT NULL DEFAULT 'zh'")
             _add_sqlite_column(conn, "appUser", "avatarUrl", "avatarUrl VARCHAR(500)")
             _add_sqlite_column(conn, "appUser", "updatedAt", "updatedAt VARCHAR(64)")
+            conn.execute("UPDATE appUser SET role = CASE WHEN userId = 'default' THEN 'admin' ELSE COALESCE(role, 'user') END")
             conn.execute("UPDATE appUser SET language = COALESCE(language, 'zh')")
             conn.execute("UPDATE appUser SET updatedAt = COALESCE(updatedAt, createdAt, strftime('%Y-%m-%dT%H:%M:%f+08:00', 'now')) WHERE updatedAt IS NULL")
         if "evtBase" in tables:

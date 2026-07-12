@@ -67,7 +67,7 @@ def _relation_tools() -> list[dict[str, Any]]:
                 linked["description"] = "Include DDL-linked and course-generated plan occurrences. Defaults to true."
             reminders = properties.get("includeReminders")
             if isinstance(reminders, dict):
-                reminders["default"] = True
+                reminders["default"] = False
                 reminders["description"] = "Include standalone reminders. Automatic plan reminders remain hidden."
             text = properties.get("text") or properties.get("keyword")
             if isinstance(text, dict):
@@ -140,7 +140,7 @@ def createRelationQueryRouter() -> APIRouter:
         try:
             normalized = _normalize_query_body(body or {})
             normalized.setdefault("includeLinkedPlans", True)
-            normalized.setdefault("includeReminders", True)
+            normalized.setdefault("includeReminders", False)
             search_text = normalized.pop("text", None) or normalized.pop("keyword", None)
             result = query_events(db, normalized)
             items = []

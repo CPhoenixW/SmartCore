@@ -25,6 +25,12 @@ class AppUser(Base):
     __tablename__ = "appUser"
 
     userId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    loginName: Mapped[str | None] = mapped_column(String(100), unique=True)
+    passwd: Mapped[str | None] = mapped_column(String(500))
+    role: Mapped[str] = mapped_column(String(20), default="user", nullable=False)
+    stat: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
+    sessionVersion: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    lastLoginAt: Mapped[str | None] = mapped_column(String(64))
     displayName: Mapped[str] = mapped_column(String(100), nullable=False)
     language: Mapped[str] = mapped_column(String(10), default="zh", nullable=False)
     avatarUrl: Mapped[str | None] = mapped_column(String(500))
@@ -257,4 +263,94 @@ class MsgLog(Base):
     rawText: Mapped[str | None] = mapped_column(Text)
     intent: Mapped[str | None] = mapped_column(String(100))
     stat: Mapped[str | None] = mapped_column(String(50))
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class UserSession(Base):
+    __tablename__ = "userSession"
+
+    sessionId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    actorUserId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    activeUserId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    expiresAt: Mapped[str] = mapped_column(String(64), nullable=False)
+    revokedAt: Mapped[str | None] = mapped_column(String(64))
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class LifeDevice(Base):
+    __tablename__ = "lifeDevice"
+
+    deviceId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    deviceName: Mapped[str] = mapped_column(String(100), nullable=False)
+    deviceKind: Mapped[str] = mapped_column(String(30), nullable=False)
+    stat: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
+    lastSeenAt: Mapped[str | None] = mapped_column(String(64))
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class DeviceKey(Base):
+    __tablename__ = "deviceKey"
+
+    keyId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    deviceId: Mapped[str] = mapped_column(String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), nullable=False)
+    tokenHash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    lastUsedAt: Mapped[str | None] = mapped_column(String(64))
+    revokedAt: Mapped[str | None] = mapped_column(String(64))
+
+
+class DevicePair(Base):
+    __tablename__ = "devicePair"
+
+    pairId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    deviceId: Mapped[str | None] = mapped_column(String(32), ForeignKey("lifeDevice.deviceId", ondelete="SET NULL"))
+    deviceName: Mapped[str] = mapped_column(String(100), nullable=False)
+    deviceKind: Mapped[str] = mapped_column(String(30), nullable=False)
+    claimCode: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    stat: Mapped[str] = mapped_column(String(20), default="created", nullable=False)
+    expiresAt: Mapped[str] = mapped_column(String(64), nullable=False)
+    claimedAt: Mapped[str | None] = mapped_column(String(64))
+    confirmedAt: Mapped[str | None] = mapped_column(String(64))
+    activatedAt: Mapped[str | None] = mapped_column(String(64))
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class LifeIdentity(Base):
+    __tablename__ = "lifeIdentity"
+    __table_args__ = (UniqueConstraint("provider", "externalId", name="uq_life_identity_provider_external"),)
+
+    identityId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    deviceId: Mapped[str | None] = mapped_column(String(32), ForeignKey("lifeDevice.deviceId", ondelete="SET NULL"))
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    externalId: Mapped[str] = mapped_column(String(200), nullable=False)
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class DeviceDispatch(Base):
+    __tablename__ = "deviceDispatch"
+
+    dispatchId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    deviceId: Mapped[str] = mapped_column(String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), nullable=False)
+    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(50), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    stat: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    deliveredAt: Mapped[str | None] = mapped_column(String(64))
+    acknowledgedAt: Mapped[str | None] = mapped_column(String(64))
+
+
+class DeviceReceipt(Base):
+    __tablename__ = "deviceReceipt"
+    __table_args__ = (UniqueConstraint("dispatchId", name="uq_device_receipt_dispatch"),)
+
+    receiptId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    dispatchId: Mapped[str] = mapped_column(String(32), ForeignKey("deviceDispatch.dispatchId", ondelete="CASCADE"), nullable=False)
+    deviceId: Mapped[str] = mapped_column(String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), nullable=False)
+    result: Mapped[str] = mapped_column(String(30), nullable=False)
+    detail: Mapped[dict | None] = mapped_column(JSON)
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)

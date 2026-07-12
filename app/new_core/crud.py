@@ -41,7 +41,7 @@ def _ensure_user(db: Session, userId: str = DEFAULT_USER_ID) -> AppUser:
     user = db.get(AppUser, userId)
     if user is None:
         now = nowIso()
-        user = AppUser(userId=userId, displayName="默认用户", language="zh", avatarUrl=None, createdAt=now, updatedAt=now)
+        user = AppUser(userId=userId, loginName=userId, role="admin" if userId == DEFAULT_USER_ID else "user", displayName="默认用户", language="zh", avatarUrl=None, createdAt=now, updatedAt=now)
         db.add(user)
         db.flush()
     return user
