@@ -7,10 +7,11 @@ import BaseCard from "@/components/base/BaseCard.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
 import EventCard from "@/components/events/EventCard.vue";
 import EventEditor from "@/components/events/EventEditor.vue";
+import EventPreviewCard from "@/components/events/EventPreviewCard.vue";
 import { eventApi } from "@/api/event";
 import { useToast } from "@/composables/useToast";
-import type { EventStatus, SmartCoreEvent } from "@/types/event";
-import { addDays, eventDateKey, extractDateQuery, todayKey } from "@/utils/date";
+import type { DdlPlan, EventStatus, SmartCoreEvent } from "@/types/event";
+import { addDays, eventDateKey, extractDateQuery, getEventPrimaryTime, todayKey } from "@/utils/date";
 import { matchesEventSearch, sortEvents } from "@/utils/event";
 
 const { t } = useI18n();
@@ -32,6 +33,14 @@ const eventsQuery = useQuery({
 const filtered = computed(() => sortEvents((eventsQuery.data.value ?? [])
   .filter((event) => status.value === "all" || event.stat === status.value)
   .filter((event) => matchesEventSearch(event, text.value))));
+const selectedPlans = computed<DdlPlan[]>(() => selected.value?.evtType === "ddl" ? selected.value.plans ?? [] : []);
+const selectedDuration = computed(() => selected.value?.evtType === "plan" ? selected.value.durationMin : null);
+const selectedHardDdl = computed(() => selected.value?.evtType === "ddl" && selected.value.hardDdl);
+const selectedLocation = computed(() => selected.value?.evtType === "course" ? selected.value.location ?? "" : "");
+const selectedTeacher = computed(() => selected.value?.evtType === "course" ? selected.value.teacher ?? "" : "");
+const selectedSchedule = computed(() => selected.value?.evtType === "course"
+  ? t("course.scheduleSummary", { start: selected.value.stTime, end: selected.value.endTime, startWeek: selected.value.startWeek, endWeek: selected.value.endWeek })
+  : "");
 
 watch(filtered, (events) => {
   if (selected.value) selected.value = events.find((event) => event.evtId === selected.value?.evtId) ?? selected.value;
@@ -83,10 +92,36 @@ function markDone() { if (selected.value) updateMutation.mutate({ id: selected.v
 </script>
 
 <template>
-  <section class="page-heading"><div><h1>{{ t("update.title") }}</h1><p>{{ t("update.subtitle") }}</p></div></section>
-  <section class="date-toolbar"><button class="button" @click="move(-1)">{{ t("common.previous") }}</button><input v-model="date" type="date" /><button class="button" @click="date = todayKey()">{{ t("common.today") }}</button><button class="button" @click="move(1)">{{ t("common.next") }}</button><input v-model="text" :placeholder="t('common.search')" /><select v-model="status"><option value="all">{{ t("common.all") }}</option><option value="todo">{{ t("event.status.todo") }}</option><option value="done">{{ t("event.status.done") }}</option><option value="cancelled">{{ t("event.status.cancelled") }}</option></select></section>
-  <section class="editor-layout">
-    <BaseCard :title="`${t('update.events')} · ${filtered.length}`"><div class="event-list"><EventCard v-for="event in filtered" :key="event.evtId" :event="event" :selected="selected?.evtId === event.evtId" @select="selected = $event" /><div v-if="eventsQuery.isPending.value" class="empty-state">{{ t("common.loading") }}</div><EmptyState v-else-if="!filtered.length" /></div></BaseCard>
-    <BaseCard :title="t('update.editor')"><EventEditor v-if="selected" :event="selected" :busy="busy" @save="updateMutation.mutate({ id: selected!.evtId, payload: $event })" @done="markDone" @cancel="cancelMutation.mutate(selected!.evtId)" /><EmptyState v-else :text="t('update.select')" /></BaseCard>
-  </section>
+  <div class="dual-scroll-page">
+    <section class="page-heading"><div><h1>{{ t("update.title") }}</h1><p>{{ t("update.subtitle") }}</p></div></section>
+    <section class="date-toolbar"><button class="button" @click="move(-1)">{{ t("common.previous") }}</button><input v-model="date" type="date" /><button class="button" @click="date = todayKey()">{{ t("common.today") }}</button><button class="button" @click="move(1)">{{ t("common.next") }}</button><input v-model="text" :placeholder="t('common.search')" /><select v-model="status"><option value="all">{{ t("common.all") }}</option><option value="todo">{{ t("event.status.todo") }}</option><option value="done">{{ t("event.status.done") }}</option><option value="cancelled">{{ t("event.status.cancelled") }}</option></select></section>
+    <section class="split-scroll-layout">
+      <div class="split-scroll-column split-scroll-column--main">
+        <BaseCard :title="`${t('update.events')} · ${filtered.length}`"><div class="event-list"><EventCard v-for="event in filtered" :key="event.evtId" :event="event" :selected="selected?.evtId === event.evtId" @select="selected = $event" /><div v-if="eventsQuery.isPending.value" class="empty-state">{{ t("common.loading") }}</div><EmptyState v-else-if="!filtered.length" /></div></BaseCard>
+      </div>
+      <aside class="split-scroll-column split-scroll-column--side">
+        <div class="stack">
+          <BaseCard :title="t('preview.title')">
+            <EventPreviewCard
+              v-if="selected"
+              :type="selected.evtType"
+              :title="selected.title"
+              :description="selected.desc"
+              :priority="selected.prio"
+              :status="selected.stat"
+              :time="getEventPrimaryTime(selected)"
+              :duration-min="selectedDuration"
+              :hard-ddl="selectedHardDdl"
+              :plans="selectedPlans"
+              :location="selectedLocation"
+              :teacher="selectedTeacher"
+              :schedule="selectedSchedule"
+            />
+            <EmptyState v-else :text="t('update.select')" />
+          </BaseCard>
+          <BaseCard :title="t('update.editor')"><EventEditor v-if="selected" :event="selected" :busy="busy" @save="updateMutation.mutate({ id: selected!.evtId, payload: $event })" @done="markDone" @cancel="cancelMutation.mutate(selected!.evtId)" /><EmptyState v-else :text="t('update.select')" /></BaseCard>
+        </div>
+      </aside>
+    </section>
+  </div>
 </template>
