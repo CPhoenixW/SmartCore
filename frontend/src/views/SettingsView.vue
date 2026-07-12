@@ -22,7 +22,7 @@ async function save() {
   if (!form.displayName.trim() || saving.value) return;
   saving.value = true;
   try {
-    await store.save({ ...form, displayName: form.displayName.trim(), avatarUrl: form.avatarUrl?.trim() || null });
+    await store.save({ ...form, displayName: form.displayName.trim(), avatarUrl: form.avatarUrl?.trim() ?? "" });
     toast.success(t("settings.saved"));
   } catch (error) {
     toast.error(error instanceof Error ? error.message : String(error));
