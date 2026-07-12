@@ -17,6 +17,7 @@ from app.config import Settings, get_settings
 from app.db.session import get_db
 from app.device import service
 from app.screen.manager import screenManager
+from app.user_device.service import requireDevice
 
 DEVICE_TOKEN_HEADER = "X-SmartCore-Device-Token"
 _DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
@@ -98,12 +99,16 @@ def _parse_recognition(value: str | None) -> dict[str, Any] | None:
     return parsed
 
 
-@router.post("/dev/heartbeat", dependencies=[Depends(require_device_token)])
+@router.post("/dev/heartbeat")
 async def device_heartbeat(
     body: DeviceHeartbeatBody,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    token: str | None = Header(default=None, alias=DEVICE_TOKEN_HEADER),
 ) -> dict[str, Any]:
+    device = requireDevice(db, token)
+    if body.devId != device.deviceId:
+        raise HTTPException(status_code=403, detail="heartbeat device does not match credential")
     persons = list(body.persons)
     if body.person is not None and not persons:
         persons = [body.person]

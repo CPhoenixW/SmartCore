@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.new_core.models import DeviceDispatch, DeviceKey, DevicePair, LifeDevice, nowIso
+from app.new_core.models import Device, DeviceDispatch, DeviceKey, DevicePair, LifeDevice, nowIso
 
 _TZ = ZoneInfo("Asia/Shanghai")
 
@@ -91,6 +91,15 @@ def activatePair(db: Session, pairId: str, claimCode: str) -> tuple[LifeDevice, 
     token = newDeviceToken()
     db.add(device)
     db.flush()
+    db.add(
+        Device(
+            deviceId=device.deviceId,
+            userId=device.userId,
+            deviceName=device.deviceName,
+            deviceKind=device.deviceKind if device.deviceKind in {"screen", "browser", "mobile", "bot", "server", "pi"} else "browser",
+            isActive=True,
+        )
+    )
     db.add(DeviceKey(deviceId=device.deviceId, tokenHash=tokenHash(token)))
     pair.deviceId = device.deviceId
     pair.stat = "paired"

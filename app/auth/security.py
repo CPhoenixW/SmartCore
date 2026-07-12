@@ -92,11 +92,12 @@ def verify_password(password: str, encoded: str | None) -> bool:
         return False
 
 
-def create_session_token(user_id: str) -> str:
+def create_session_token(user_id: str, *, actor_user_id: str | None = None) -> str:
     settings = get_settings()
     payload: dict[str, Any] = {
         "v": _SESSION_VERSION,
         "u": user_id,
+        "a": actor_user_id or user_id,
         "exp": int(time.time()) + settings.auth_session_hours * 3600,
     }
     encoded = _b64encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
@@ -121,6 +122,23 @@ def decode_session_token(token: str | None) -> str | None:
         return None
 
 
+def decode_session_actor_id(token: str | None) -> str | None:
+    if not token:
+        return None
+    try:
+        encoded, signature = token.split(".", 1)
+        expected = _b64encode(hmac.new(auth_secret(), encoded.encode("ascii"), hashlib.sha256).digest())
+        if not hmac.compare_digest(signature, expected):
+            return None
+        payload = json.loads(_b64decode(encoded))
+        if payload.get("v") != _SESSION_VERSION or int(payload.get("exp", 0)) < int(time.time()):
+            return None
+        actor_id = str(payload.get("a") or payload.get("u") or "").strip()
+        return actor_id or None
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return None
+
+
 def session_user_id_from_request(request: Request) -> str | None:
     return decode_session_token(request.cookies.get(get_settings().auth_cookie_name))
 
@@ -130,3 +148,10 @@ def require_authenticated_user_id(request: Request) -> str:
     if user_id is None:
         raise HTTPException(status_code=401, detail="authentication required")
     return user_id
+
+
+def require_authenticated_actor_id(request: Request) -> str:
+    actor_id = decode_session_actor_id(request.cookies.get(get_settings().auth_cookie_name))
+    if actor_id is None:
+        raise HTTPException(status_code=401, detail="authentication required")
+    return actor_id

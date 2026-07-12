@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.auth.security import require_authenticated_user_id
 from app.db.session import get_db
 from app.new_core.course_semester import (
     create_course_event,
@@ -60,7 +61,7 @@ def list_actionable_events(
     text: str | None = None,
     includeReminders: bool = False,
     includeCourseTemplates: bool = False,
-    db: Session = Depends(get_db),
+    userId: str = Depends(require_authenticated_user_id), db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
         non_reminder_types = [item for item in (evtType or []) if item != "remind"]
@@ -68,6 +69,7 @@ def list_actionable_events(
         if not evtType or non_reminder_types:
             rows = list_events(
                 db,
+                user_id=userId,
                 date_value=date,
                 evt_types=non_reminder_types or None,
                 stats=stat,
@@ -79,6 +81,7 @@ def list_actionable_events(
             rows.extend(
                 list_reminder_events(
                     db,
+                    user_id=userId,
                     date_value=date,
                     stats=stat,
                     text=None,
@@ -92,11 +95,11 @@ def list_actionable_events(
 @router.get("/evt/{evtId}")
 def read_actionable_event(
     evtId: str,
-    db: Session = Depends(get_db),
+    userId: str = Depends(require_authenticated_user_id), db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
         base = db.get(EvtBase, evtId)
-        if base is None:
+        if base is None or base.userId != userId:
             raise ValueError(f"evt not found: {evtId}")
         if base.evtType == "course":
             data = get_course_event(db, evtId)
@@ -113,11 +116,11 @@ def read_actionable_event(
 def update_actionable_event(
     evtId: str,
     body: dict[str, Any],
-    db: Session = Depends(get_db),
+    userId: str = Depends(require_authenticated_user_id), db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
         base = db.get(EvtBase, evtId)
-        if base is None:
+        if base is None or base.userId != userId:
             raise ValueError(f"evt not found: {evtId}")
         plans = body.pop("plans", None)
         if base.evtType == "course":
@@ -136,10 +139,10 @@ def update_actionable_event(
 
 
 @router.delete("/evt/{evtId}")
-def cancel_actionable_event(evtId: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+def cancel_actionable_event(evtId: str, userId: str = Depends(require_authenticated_user_id), db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
         base = db.get(EvtBase, evtId)
-        if base is None:
+        if base is None or base.userId != userId:
             raise ValueError(f"evt not found: {evtId}")
         if base.evtType == "remind":
             return {"ok": True, "data": update_reminder_event(db, evtId, src="api", stat="cancelled")}
@@ -214,19 +217,19 @@ class CourseWriteBody(BaseModel):
 @router.get("/courseEvt")
 def list_relation_courses(
     text: str | None = None,
-    db: Session = Depends(get_db),
+    userId: str = Depends(require_authenticated_user_id), db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    rows = list_course_events(db)
+    rows = list_course_events(db, user_id=userId)
     return {"ok": True, "data": filter_events_by_text(rows, text)}
 
 
 @router.post("/courseEvt")
 def create_relation_course(
     body: CourseWriteBody,
-    db: Session = Depends(get_db),
+    userId: str = Depends(require_authenticated_user_id), db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
-        result = create_course_event(db, **body.model_dump(exclude_none=True), src="api")
+        result = create_course_event(db, **body.model_dump(exclude_none=True), userId=userId, src="api")
         close_past_course_occurrences(db)
         return {"ok": True, "data": result}
     except ValueError as exc:
@@ -235,8 +238,11 @@ def create_relation_course(
 
 
 @router.post("/courseEvt/{evtId}/sync")
-def resync_relation_course(evtId: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+def resync_relation_course(evtId: str, userId: str = Depends(require_authenticated_user_id), db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
+        base = db.get(EvtBase, evtId)
+        if base is None or base.userId != userId:
+            raise ValueError(f"evt not found: {evtId}")
         plans = sync_course_plans(db, evtId)
         db.commit()
         close_past_course_occurrences(db)
