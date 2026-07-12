@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
+import { useMutation, useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
 import { useToast } from "@/composables/useToast";
-import { authApi } from "@/api/auth";
+import { adminApi } from "@/api/admin";
 import { useUserStore } from "@/stores/user";
 import type { CurrentUser } from "@/types/user";
 
@@ -18,6 +19,13 @@ const fileInput = ref<HTMLInputElement | null>(null);
 watch(() => store.user, (user) => Object.assign(form, user), { immediate: true, deep: true });
 const initials = computed(() => form.displayName.trim().slice(0, 2).toUpperCase() || "SC");
 const previewUrl = computed(() => localPreview.value || form.avatarUrl || "");
+const isAdmin = computed(() => store.user.role === "admin");
+const adminUsers = useQuery({ queryKey: ["adminUsers"], queryFn: adminApi.users, enabled: isAdmin });
+const switchUser = useMutation({
+  mutationFn: (userId: string) => adminApi.switchUser(userId),
+  onSuccess: async () => { await store.load(); window.location.href = "/work"; },
+  onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
+});
 
 async function save() {
   if (!form.displayName.trim() || saving.value) return;
@@ -61,8 +69,6 @@ async function uploadAvatar(event: Event) {
   }
 }
 
-async function logout() { await authApi.logout(); window.location.href = "/work/login"; }
-
 function clearAvatar() {
   form.avatarUrl = "";
   localPreview.value = "";
@@ -92,5 +98,7 @@ function clearAvatar() {
     </BaseCard>
     <BaseCard :title="t('settings.avatarPreview')"><div class="profile-preview"><div class="avatar large"><img v-if="previewUrl" :src="previewUrl" :alt="t('settings.avatarPreview')" /><span v-else>{{ initials }}</span></div><strong>{{ form.displayName || 'SmartCore' }}</strong><span>{{ form.language === 'en' ? 'English' : t('settings.chinese') }} · {{ form.reminderChannel === 'feishu' ? t('settings.feishuReminder') : t('settings.screenReminder') }}</span></div></BaseCard>
   </section>
-  <BaseCard :title="t('settings.session')"><p>{{ t('settings.sessionHint') }}</p><button class="button button--ghost" type="button" @click="logout">{{ t('settings.logout') }}</button></BaseCard>
+  <BaseCard v-if="isAdmin" :title="t('settings.adminTitle')">
+    <div class="admin-user-list"><button v-for="user in adminUsers.data.value ?? []" :key="user.userId" class="admin-user-row" type="button" :disabled="switchUser.isPending.value || user.userId === store.user.userId" @click="switchUser.mutate(user.userId)"><span><strong>{{ user.displayName }}</strong><small>{{ user.loginName || user.userId }} · {{ user.role }}</small></span><span>{{ user.userId === store.user.userId ? t('settings.currentUser') : t('settings.switchUser') }}</span></button></div>
+  </BaseCard>
 </template>

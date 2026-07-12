@@ -295,7 +295,10 @@
     "saved": "Settings saved",
     "session": "Session",
     "sessionHint": "Sign in again to continue using this workbench after logging out.",
-    "logout": "Log out"
+    "logout": "Log out",
+    "adminTitle": "Administrator: switch workspace user",
+    "currentUser": "Current user",
+    "switchUser": "Switch to this user"
   },
   "pair": {
     "title": "Registered devices",
