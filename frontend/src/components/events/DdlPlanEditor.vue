@@ -31,17 +31,17 @@ function removePlan(index: number) {
 <template>
   <div class="ddl-plans">
     <div v-for="(plan, index) in plans" :key="plan.planEvtId ?? plan.evtId ?? index" class="ddl-plan-row">
-      <label class="check-field compact"><input :checked="plan.enabled !== false" type="checkbox" @change="replace(index, { enabled: ($event.target as HTMLInputElement).checked })" /></label>
-      <select :value="plan.planRole" aria-label="plan role" @change="replace(index, { planRole: ($event.target as HTMLSelectElement).value as DdlPlan['planRole'] })">
-        <option value="one_day_before">-1 day</option>
-        <option value="one_hour_before">-1 hour</option>
-        <option value="manual">manual</option>
+      <label class="check-field compact"><input :checked="plan.enabled !== false" type="checkbox" :aria-label="$t('preview.enabled')" @change="replace(index, { enabled: ($event.target as HTMLInputElement).checked })" /></label>
+      <select :value="plan.planRole" :aria-label="$t('preview.planRoleLabel')" @change="replace(index, { planRole: ($event.target as HTMLSelectElement).value as DdlPlan['planRole'] })">
+        <option value="one_day_before">{{ $t("preview.planRole.one_day_before") }}</option>
+        <option value="one_hour_before">{{ $t("preview.planRole.one_hour_before") }}</option>
+        <option value="manual">{{ $t("preview.planRole.manual") }}</option>
       </select>
       <input :value="plan.title ?? ''" :placeholder="$t('event.form.title')" @input="replace(index, { title: ($event.target as HTMLInputElement).value || null })" />
       <input type="datetime-local" :value="toLocalInput(plan.stTime)" required @input="replace(index, { stTime: localInputToIso(($event.target as HTMLInputElement).value) })" />
-      <input :value="plan.durationMin" type="number" min="1" aria-label="duration" @input="replace(index, { durationMin: Math.max(1, Number(($event.target as HTMLInputElement).value) || 1) })" />
-      <button class="icon-button danger" type="button" @click="removePlan(index)">×</button>
+      <input :value="plan.durationMin" type="number" min="1" :aria-label="$t('event.form.duration')" @input="replace(index, { durationMin: Math.max(1, Number(($event.target as HTMLInputElement).value) || 1) })" />
+      <button class="icon-button danger" type="button" :aria-label="$t('common.delete')" @click="removePlan(index)">×</button>
     </div>
-    <button class="button button--ghost" type="button" @click="addPlan">+ {{ $t("event.form.plans") }}</button>
+    <button class="button button--ghost" type="button" @click="addPlan">+ {{ $t("preview.addPlan") }}</button>
   </div>
 </template>
