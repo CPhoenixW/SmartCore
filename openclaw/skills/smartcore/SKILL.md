@@ -86,3 +86,5 @@ Card feedback body:
 ```
 
 If `chat_id` is omitted, SmartCore falls back to `FEISHU_DEFAULT_CHAT_ID`.
+
+Legacy feedback aliases: sendText and sendCard map to sendFeishuText and sendFeishuCard.

@@ -222,9 +222,11 @@ _feishuClient: FeishuClient | None = None
 
 
 def _getFeishuClient(settings: Settings) -> FeishuClient | None:
+    global _feishuClient
+    if _feishuClient is not None:
+        return _feishuClient
     if not settings.feishu_app_id or not settings.feishu_app_secret:
         return None
-    global _feishuClient
     if _feishuClient is None:
         _feishuClient = FeishuClient(settings.feishu_app_id, settings.feishu_app_secret)
     return _feishuClient

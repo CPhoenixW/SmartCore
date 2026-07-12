@@ -17,7 +17,11 @@ from app.new_core.event_relations import (
     cancel_event,
     create_course_event,
     create_plan_event,
+)
+from app.new_core.event_relations import (
     query_events as query_relation_events,
+)
+from app.new_core.event_relations import (
     update_event as update_relation_event,
 )
 from app.new_core.models import EvtBase

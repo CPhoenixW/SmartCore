@@ -33,7 +33,7 @@ class SetupBody(BaseModel):
 
 def _user_row(db: Session, user_id: str) -> dict[str, Any] | None:
     row = db.execute(
-        text("SELECT userId, displayName, language, avatarUrl, passwd FROM appUser WHERE userId = :user_id"),
+        text("SELECT userId, loginName, displayName, language, avatarUrl, passwd, role, stat FROM appUser WHERE userId = :user_id OR loginName = :user_id"),
         {"user_id": user_id},
     ).mappings().first()
     return dict(row) if row else None
@@ -50,6 +50,8 @@ def _default_user(db: Session) -> dict[str, Any]:
 def _public_user(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "userId": row["userId"],
+        "loginName": row.get("loginName"),
+        "role": row.get("role"),
         "displayName": row["displayName"],
         "language": row["language"],
         "avatarUrl": row["avatarUrl"],

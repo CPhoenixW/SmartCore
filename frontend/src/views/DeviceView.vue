@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
+import DevicePairPanel from "@/components/device/DevicePairPanel.vue";
 import BaseCard from "@/components/base/BaseCard.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
 import { deviceApi } from "@/api/device";
@@ -77,7 +78,7 @@ function stateLabel(state: string) {
     <section class="page-heading"><div><h1>{{ t("device.title") }}</h1><p>{{ t("device.subtitle") }}</p></div><button class="button" @click="refreshAll">{{ t("common.refresh") }}</button></section>
     <section class="split-scroll-layout">
       <div class="split-scroll-column split-scroll-column--main">
-        <div class="stack">
+        <div class="stack"><DevicePairPanel />
           <BaseCard :title="t('device.latest')"><div class="device-status"><span class="state-dot large" :class="`state-dot--${currentView.state}`" /><div><strong>{{ stateLabel(currentView.state) }}</strong><small>{{ currentView.seenAt ? formatDateTime(currentView.seenAt) : t('common.notSet') }}{{ currentView.stale ? ` · ${t('device.offline')}` : '' }}</small></div></div><div class="kv-grid"><div><span>{{ t("device.present") }}</span><strong>{{ currentView.present ? t("device.presentYes") : t("device.presentNo") }}</strong></div><div><span>{{ t("device.persons") }}</span><strong>{{ names.join(t('common.listSeparator')) || t('device.unidentified') }}</strong></div><div><span>{{ t("device.stateConfidence") }}</span><strong>{{ currentView.confidence == null ? t('common.notSet') : `${Math.round(currentView.confidence * 100)}%` }}</strong></div><div><span>{{ t("device.clockSkew") }}</span><strong>{{ currentView.meta.clockSkewSeconds == null ? t('common.notSet') : t("device.seconds", { value: Number(currentView.meta.clockSkewSeconds).toFixed(2) }) }}</strong></div><div><span>{{ t("device.model") }}</span><strong>{{ currentView.meta.model || t('common.notSet') }}</strong></div><div><span>{{ t("device.camera") }}</span><strong>{{ currentView.meta.camera || t('common.notSet') }}</strong></div></div></BaseCard>
           <BaseCard :title="`${t('device.recent')} · ${logs.length}`"><template #actions><input v-model="search" class="compact-search" :placeholder="t('device.searchPlaceholder')" /></template><div class="log-list"><details v-for="row in logs" :key="row.stateLogId ?? row.seenAt" class="device-log-detail"><summary><span><i class="state-dot" :class="`state-dot--${deviceStateView(row, Number.MAX_SAFE_INTEGER).state}`" />{{ stateLabel(deviceStateView(row, Number.MAX_SAFE_INTEGER).state) }} · {{ devicePersonNames(deviceStateView(row, Number.MAX_SAFE_INTEGER)).join(t('common.listSeparator')) || t('device.unidentifiedPerson') }}</span><small>{{ formatDateTime(row.seenAt) }} · {{ row.confidence == null ? t('common.notSet') : `${Math.round(Number(row.confidence) * 100)}%` }}</small></summary><pre>{{ JSON.stringify(row, null, 2) }}</pre></details><EmptyState v-if="!logs.length" /></div></BaseCard>
         </div>

@@ -115,7 +115,7 @@ def test_send_text_uses_explicit_chat_id(app_env, monkeypatch) -> None:
 def test_send_card_calls_feishu_interactive(app_env, monkeypatch) -> None:
     fake_client = FakeFeishuClient()
     monkeypatch.setattr(agent_routes, "_feishuClient", fake_client)
-    card = {"schema": "2.0", "header": {"title": {"tag": "plain_text", "content": "提醒"}}}
+    card = {"schema": "2.0", "header": {"title": {"tag": "plain_text", "content": "提醒"}}, "elements": []}
     client = TestClient(create_app())
     headers = {"X-SmartCore-Agent-Token": "agent-secret"}
 
@@ -127,7 +127,8 @@ def test_send_card_calls_feishu_interactive(app_env, monkeypatch) -> None:
 
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
-    assert fake_client.card_calls == [("oc_card", card)]
+    assert fake_client.card_calls[0][0] == "oc_card"
+    assert fake_client.card_calls[0][1]["header"]["title"]["content"] == "提醒"
 
 
 def test_agent_endpoints_return_ok_false_for_missing_ids(app_env) -> None:

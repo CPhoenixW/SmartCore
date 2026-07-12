@@ -1,4 +1,9 @@
-from app.auth.security import create_session_token, decode_session_token, hash_password, verify_password
+from app.auth.security import (
+    create_session_token,
+    decode_session_token,
+    hash_password,
+    verify_password,
+)
 
 
 def test_password_hash_is_not_plaintext_and_verifies() -> None:

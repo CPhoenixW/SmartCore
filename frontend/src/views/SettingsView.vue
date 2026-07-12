@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
 import { useToast } from "@/composables/useToast";
+import { authApi } from "@/api/auth";
 import { useUserStore } from "@/stores/user";
 import type { CurrentUser } from "@/types/user";
 
@@ -60,6 +61,8 @@ async function uploadAvatar(event: Event) {
   }
 }
 
+async function logout() { await authApi.logout(); window.location.href = "/work/login"; }
+
 function clearAvatar() {
   form.avatarUrl = "";
   localPreview.value = "";
@@ -89,4 +92,5 @@ function clearAvatar() {
     </BaseCard>
     <BaseCard :title="t('settings.avatarPreview')"><div class="profile-preview"><div class="avatar large"><img v-if="previewUrl" :src="previewUrl" :alt="t('settings.avatarPreview')" /><span v-else>{{ initials }}</span></div><strong>{{ form.displayName || 'SmartCore' }}</strong><span>{{ form.language === 'en' ? 'English' : t('settings.chinese') }} · {{ form.reminderChannel === 'feishu' ? t('settings.feishuReminder') : t('settings.screenReminder') }}</span></div></BaseCard>
   </section>
+  <BaseCard title="登录会话"><p>退出后需要重新登录才能继续访问此工作台。</p><button class="button button--ghost" type="button"@click="logout">退出登录</button></BaseCard>
 </template>

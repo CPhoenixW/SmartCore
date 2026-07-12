@@ -12,6 +12,7 @@ from app.agent.relation_query_routes import createRelationQueryRouter
 from app.agent.relation_write_routes import createRelationWriteRouter
 from app.agent.routes import createAgentRouter, createDevRouter
 from app.agent.v2_routes import createAgentV2Router
+from app.api.admin_routes import router as adminApiRouter
 from app.api.auth_routes import router as authApiRouter
 from app.api.avatar_routes import router as avatarApiRouter
 from app.api.device_state_routes import router as deviceStateApiRouter
@@ -30,6 +31,7 @@ from app.new_core.relation_maintenance import (
 )
 from app.scheduler.service import build_scheduler_service
 from app.screen.routes import router as screenRouter
+from app.user_device.routes import router as userDeviceRouter
 
 
 def _sync_event_relations() -> None:
@@ -113,6 +115,7 @@ def create_app() -> FastAPI:
 
     parse_router = __import__("app.api.ai_routes", fromlist=["router"]).router
     app.include_router(authApiRouter)
+    app.include_router(adminApiRouter)
     app.include_router(parse_router)
     app.include_router(avatarApiRouter)
     app.include_router(deviceStateApiRouter)
@@ -120,6 +123,7 @@ def create_app() -> FastAPI:
     app.include_router(apiRouter)
     app.include_router(createDevRouter())
     app.include_router(deviceRouter)
+    app.include_router(userDeviceRouter)
     app.include_router(createRelationQueryRouter())
     app.include_router(createRelationWriteRouter())
     app.include_router(createFeedbackRouter())
