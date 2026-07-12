@@ -18,7 +18,6 @@ dependencies = [
     "httpx",
     "openai>=1.0",
     "python-multipart",
-    "jinja2",
     "cryptography",
     "websockets",
 ]
@@ -38,7 +37,6 @@ include = ["app*"]
 [tool.setuptools.package-data]
 "app" = [
     "db/sql/*.sql",
-    "web/static/*",
     "web/dist/*",
     "web/dist/assets/*",
     "screen/static/*",

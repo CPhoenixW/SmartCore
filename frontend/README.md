@@ -10,4 +10,4 @@ npm run build
 npm run test:e2e
 ```
 
-The legacy workbench remains temporarily available at `/work-legacy` for rollback during the migration release window.
+The Vue workbench is the only web-panel implementation. When `app/web/dist` is absent, `/work` returns HTTP 503 so deployment errors are explicit.

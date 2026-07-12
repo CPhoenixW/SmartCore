@@ -25,7 +25,6 @@ function submitSearch() { void router.push({ name: "update", query: { q: search.
     <aside class="sidebar" :class="{ 'sidebar--open': mobileOpen }">
       <RouterLink class="brand" :to="{ name: 'overview' }" @click="mobileOpen = false"><span class="brand-mark">SC</span><span><strong>{{ t('app.name') }}</strong><small>{{ t('app.subtitle') }}</small></span></RouterLink>
       <nav class="nav-list" :aria-label="t('app.navigation')"><RouterLink v-for="item in nav" :key="item[0]" class="nav-link" :to="{ name: item[1] }" @click="mobileOpen = false"><span>{{ item[2] }}</span>{{ t(`nav.${item[0]}`) }}</RouterLink></nav>
-      <a class="legacy-link" href="/work-legacy">{{ t("app.legacyUi") }}</a>
     </aside>
     <div v-if="mobileOpen" class="sidebar-backdrop" @click="mobileOpen = false" />
     <section class="workspace">

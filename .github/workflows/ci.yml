@@ -34,6 +34,6 @@ jobs:
         with:
           name: pytest-report
           path: pytest-report.txt
-      - name: JavaScript syntax
+      - name: Screen JavaScript syntax
         run: |
-          find app/web/static app/screen/static -name '*.js' -print0 | xargs -0 -n1 node --check
+          find app/screen/static -name '*.js' -print0 | xargs -0 -n1 node --check
