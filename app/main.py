@@ -1,7 +1,8 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import quote
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -11,10 +12,13 @@ from app.agent.relation_query_routes import createRelationQueryRouter
 from app.agent.relation_write_routes import createRelationWriteRouter
 from app.agent.routes import createAgentRouter, createDevRouter
 from app.agent.v2_routes import createAgentV2Router
+from app.api.auth_routes import router as authApiRouter
 from app.api.avatar_routes import router as avatarApiRouter
 from app.api.device_state_routes import router as deviceStateApiRouter
 from app.api.event_view_routes import router as eventViewApiRouter
 from app.api.routes import router as apiRouter
+from app.auth.security import session_user_id_from_request
+from app.auth.storage import ensure_auth_schema
 from app.config import get_settings
 from app.db.session import SessionLocal, init_db
 from app.device.routes import router as deviceRouter
@@ -40,11 +44,16 @@ def _sync_event_relations() -> None:
         db.close()
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+def _initialize_database() -> None:
     init_db()
+    ensure_auth_schema()
     install_relation_compat()
     _sync_event_relations()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _initialize_database()
     settings = get_settings()
     scheduler_service = build_scheduler_service(settings)
     if scheduler_service is not None:
@@ -65,7 +74,15 @@ def _register_work_frontend(app: FastAPI) -> None:
 
         @app.get("/work", include_in_schema=False)
         @app.get("/work/{path:path}", include_in_schema=False)
-        def serve_work(path: str = "") -> FileResponse:
+        def serve_work(request: Request, path: str = "") -> Response:
+            user_id = session_user_id_from_request(request)
+            if path == "login":
+                if user_id:
+                    return RedirectResponse("/work", status_code=303)
+                return FileResponse(frontend_dist / "index.html")
+            if not user_id:
+                next_path = quote(request.url.path, safe="/")
+                return RedirectResponse(f"/work/login?next={next_path}", status_code=303)
             return FileResponse(frontend_dist / "index.html")
     else:
 
@@ -85,9 +102,7 @@ def _register_work_frontend(app: FastAPI) -> None:
 
 
 def create_app() -> FastAPI:
-    init_db()
-    install_relation_compat()
-    _sync_event_relations()
+    _initialize_database()
     settings = get_settings()
     ensure_feedback_tools()
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
@@ -97,6 +112,7 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     parse_router = __import__("app.api.ai_routes", fromlist=["router"]).router
+    app.include_router(authApiRouter)
     app.include_router(parse_router)
     app.include_router(avatarApiRouter)
     app.include_router(deviceStateApiRouter)

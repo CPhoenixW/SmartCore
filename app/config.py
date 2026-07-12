@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     debug: bool = False
     database_url: str = f"sqlite:///{PROJECT_ROOT / 'data' / 'smartcore.sqlite'}"
 
+    auth_secret: str = ""
+    auth_secret_file: str = str(PROJECT_ROOT / "data" / "auth_secret")
+    auth_cookie_name: str = "smartcore_session"
+    auth_cookie_secure: bool = False
+    auth_session_hours: int = 168
+
     feishu_app_id: str = ""
     feishu_app_secret: str = ""
     feishu_verification_token: str = ""
@@ -22,14 +28,12 @@ class Settings(BaseSettings):
     feishu_replay_max_age_seconds: int = 300
     semester_start: date | None = None
 
-    # All SmartCore-owned natural-language requests use this OpenAI-compatible gateway.
     llm_provider: str = "tokendance"
     llm_api_key: str = ""
     llm_base_url: str = "https://tokendance.space/gateway/v1"
     llm_model: str = "deepseek-v4-flash"
     llm_max_retries: int = 2
 
-    # Compatibility key for existing deployments. The base URL and model above remain authoritative.
     deepseek_api_key: str = ""
     deepseek_base_url: str = ""
 
