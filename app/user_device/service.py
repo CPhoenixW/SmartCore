@@ -96,7 +96,7 @@ def activatePair(db: Session, pairId: str, claimCode: str) -> tuple[LifeDevice, 
             deviceId=device.deviceId,
             userId=device.userId,
             deviceName=device.deviceName,
-            deviceKind=device.deviceKind if device.deviceKind in {"screen", "browser", "mobile", "bot", "server", "pi"} else "browser",
+            deviceKind=device.deviceKind if device.deviceKind in {"screen", "browser", "mobile", "bot", "server"} else "browser",
             isActive=True,
         )
     )
