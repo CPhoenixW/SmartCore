@@ -92,5 +92,5 @@ function clearAvatar() {
     </BaseCard>
     <BaseCard :title="t('settings.avatarPreview')"><div class="profile-preview"><div class="avatar large"><img v-if="previewUrl" :src="previewUrl" :alt="t('settings.avatarPreview')" /><span v-else>{{ initials }}</span></div><strong>{{ form.displayName || 'SmartCore' }}</strong><span>{{ form.language === 'en' ? 'English' : t('settings.chinese') }} · {{ form.reminderChannel === 'feishu' ? t('settings.feishuReminder') : t('settings.screenReminder') }}</span></div></BaseCard>
   </section>
-  <BaseCard title="登录会话"><p>退出后需要重新登录才能继续访问此工作台。</p><button class="button button--ghost" type="button"@click="logout">退出登录</button></BaseCard>
+  <BaseCard :title="t('settings.session')"><p>{{ t('settings.sessionHint') }}</p><button class="button button--ghost" type="button" @click="logout">{{ t('settings.logout') }}</button></BaseCard>
 </template>

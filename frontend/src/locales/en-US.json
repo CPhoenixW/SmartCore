@@ -127,7 +127,9 @@
     "addEvent": "Add event",
     "captureIdea": "Capture idea",
     "manageCourses": "Manage courses",
-    "deviceStatus": "Device status"
+    "deviceStatus": "Device status",
+    "emptyToday": "Nothing is scheduled today.",
+    "emptyDeadline": "No deadlines are due in the next 72 hours."
   },
   "add": {
     "title": "Add event",
@@ -290,6 +292,26 @@
     "screenReminder": "Screen notification",
     "feishuReminder": "Feishu notification",
     "chinese": "Chinese",
-    "saved": "Settings saved"
+    "saved": "Settings saved",
+    "session": "Session",
+    "sessionHint": "Sign in again to continue using this workbench after logging out.",
+    "logout": "Log out"
+  },
+  "pair": {
+    "title": "Registered devices",
+    "empty": "No active devices yet.",
+    "updated": "Presence record updated",
+    "notReported": "No report yet",
+    "namePlaceholder": "Device name, for example: Desk screen",
+    "start": "Start pairing",
+    "created": "Pairing code created. Waiting for the device.",
+    "required": "Create a pairing code first.",
+    "confirmed": "Confirmed. The device can now activate.",
+    "info": "Pairing details",
+    "id": "Pair ID",
+    "code": "Pairing code",
+    "hint": "Claim on the device, then confirm here. Activation needs both values.",
+    "confirm": "Confirm device",
+    "kind": {"screen": "Screen", "pi": "Raspberry Pi", "browser": "Computer agent", "feishuBot": "Feishu bot"}
   }
 }

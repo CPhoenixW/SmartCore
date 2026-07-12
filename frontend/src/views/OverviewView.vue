@@ -6,6 +6,7 @@ import BaseCard from "@/components/base/BaseCard.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
 import EventCard from "@/components/events/EventCard.vue";
 import { deviceApi } from "@/api/device";
+import { deviceRegistryApi } from "@/api/deviceRegistry";
 import { eventApi } from "@/api/event";
 import { ideaApi } from "@/api/idea";
 import { eventDateKey, todayKey } from "@/utils/date";
@@ -14,7 +15,12 @@ import { sortEvents } from "@/utils/event";
 const { t } = useI18n();
 const eventsQuery = useQuery({ queryKey: ["events", "overview-all"], queryFn: () => eventApi.list({ includeReminders: true, includeCourseTemplates: false }) });
 const ideasQuery = useQuery({ queryKey: ["ideas"], queryFn: ideaApi.list });
-const deviceQuery = useQuery({ queryKey: ["device", "latest"], queryFn: () => deviceApi.latest(), refetchInterval: 10_000 });
+const registeredDevices = useQuery({ queryKey: ["lifeDevices"], queryFn: deviceRegistryApi.list, refetchInterval: 15_000 });
+const deviceId = computed(() => {
+  const devices = registeredDevices.data.value ?? [];
+  return devices.find((device) => device.deviceKind === "pi")?.deviceId ?? devices[0]?.deviceId ?? "";
+});
+const deviceQuery = useQuery({ queryKey: ["device", "latest", deviceId], queryFn: () => deviceApi.latest(deviceId.value), enabled: computed(() => Boolean(deviceId.value)), refetchInterval: 10_000 });
 
 const actionable = computed(() => sortEvents((eventsQuery.data.value ?? []).filter((event) => event.evtType !== "course")));
 const todayEvents = computed(() => actionable.value.filter((event) => eventDateKey(event) === todayKey()));
@@ -51,14 +57,14 @@ const deviceState = computed(() => String(deviceQuery.data.value?.state ?? "offl
     <article><span>{{ t("overview.ideas") }}</span><strong>{{ openIdeas.length }}</strong></article>
   </section>
   <section class="dashboard-grid">
-    <BaseCard :title="t('overview.today')">
+    <BaseCard class="overview-today-card" :title="t('overview.today')">
       <div class="event-list">
         <EventCard v-for="event in todayEvents" :key="event.evtId" :event="event" @select="$router.push({ name: 'update', query: { date: eventDateKey(event), evtId: event.evtId } })" />
-        <EmptyState v-if="!todayEvents.length" />
+        <EmptyState v-if="!todayEvents.length" class="overview-empty" :text="t('overview.emptyToday')" />
       </div>
     </BaseCard>
     <div class="stack">
-      <BaseCard :title="t('overview.upcoming')"><div class="event-list"><EventCard v-for="event in future72" :key="event.evtId" :event="event" @select="$router.push({ name: 'update', query: { date: eventDateKey(event), evtId: event.evtId } })" /><EmptyState v-if="!future72.length" /></div></BaseCard>
+      <BaseCard :title="t('overview.upcoming')"><div class="event-list"><EventCard v-for="event in future72" :key="event.evtId" :event="event" @select="$router.push({ name: 'update', query: { date: eventDateKey(event), evtId: event.evtId } })" /><EmptyState v-if="!future72.length" class="overview-empty" :text="t('overview.emptyDeadline')" /></div></BaseCard>
       <BaseCard :title="t('overview.device')">
         <div class="device-inline"><span class="state-dot" :class="`state-dot--${deviceState}`" /><div><strong>{{ t(`device.state.${deviceState}`) }}</strong><small>{{ deviceQuery.data.value?.seenAt ?? t('common.notSet') }}</small></div></div>
         <div class="kv-grid compact-grid"><div><span>{{ t("overview.persons") }}</span><strong>{{ devicePersons }}</strong></div><div><span>{{ t("overview.stateConfidence") }}</span><strong>{{ deviceQuery.data.value?.confidence == null ? t('common.notSet') : `${Math.round(Number(deviceQuery.data.value.confidence) * 100)}%` }}</strong></div><div><span>{{ t("overview.present") }}</span><strong>{{ deviceMeta.present ? t("overview.presentYes") : t("overview.presentNo") }}</strong></div></div>
