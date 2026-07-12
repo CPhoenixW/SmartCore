@@ -19,5 +19,10 @@ export const useUserStore = defineStore("user", () => {
     i18n.global.locale.value = user.value.language === "en" ? "en-US" : "zh-CN";
     return user.value;
   }
-  return { user, loaded, load, save };
+  async function uploadAvatar(file: File) {
+    const result = await userApi.uploadAvatar(file);
+    user.value = { ...user.value, avatarUrl: result.avatarUrl ?? null };
+    return user.value.avatarUrl;
+  }
+  return { user, loaded, load, save, uploadAvatar };
 });

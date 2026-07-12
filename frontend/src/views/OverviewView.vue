@@ -36,9 +36,10 @@ const deviceMeta = computed(() => {
 });
 const devicePersons = computed(() => {
   const persons = deviceMeta.value.persons;
-  if (!Array.isArray(persons)) return "—";
-  return persons.map((person) => typeof person === "object" && person ? String((person as Record<string, unknown>).name ?? (person as Record<string, unknown>).personId ?? "") : "").filter(Boolean).join("、") || "—";
+  if (!Array.isArray(persons)) return t("common.notSet");
+  return persons.map((person) => typeof person === "object" && person ? String((person as Record<string, unknown>).name ?? (person as Record<string, unknown>).personId ?? "") : "").filter(Boolean).join(t("common.listSeparator")) || t("common.notSet");
 });
+const deviceState = computed(() => String(deviceQuery.data.value?.state ?? "offline"));
 </script>
 
 <template>
@@ -59,13 +60,13 @@ const devicePersons = computed(() => {
     <div class="stack">
       <BaseCard :title="t('overview.upcoming')"><div class="event-list"><EventCard v-for="event in future72" :key="event.evtId" :event="event" @select="$router.push({ name: 'update', query: { date: eventDateKey(event), evtId: event.evtId } })" /><EmptyState v-if="!future72.length" /></div></BaseCard>
       <BaseCard :title="t('overview.device')">
-        <div class="device-inline"><span class="state-dot" :class="`state-dot--${deviceQuery.data.value?.state ?? 'offline'}`" /><div><strong>{{ deviceQuery.data.value?.state ?? 'offline' }}</strong><small>{{ deviceQuery.data.value?.seenAt ?? '—' }}</small></div></div>
-        <div class="kv-grid compact-grid"><div><span>人物</span><strong>{{ devicePersons }}</strong></div><div><span>置信度</span><strong>{{ deviceQuery.data.value?.confidence == null ? '—' : `${Math.round(Number(deviceQuery.data.value.confidence) * 100)}%` }}</strong></div><div><span>是否有人</span><strong>{{ deviceMeta.present ? '有人' : '无人' }}</strong></div></div>
+        <div class="device-inline"><span class="state-dot" :class="`state-dot--${deviceState}`" /><div><strong>{{ t(`device.state.${deviceState}`) }}</strong><small>{{ deviceQuery.data.value?.seenAt ?? t('common.notSet') }}</small></div></div>
+        <div class="kv-grid compact-grid"><div><span>{{ t("overview.persons") }}</span><strong>{{ devicePersons }}</strong></div><div><span>{{ t("overview.stateConfidence") }}</span><strong>{{ deviceQuery.data.value?.confidence == null ? t('common.notSet') : `${Math.round(Number(deviceQuery.data.value.confidence) * 100)}%` }}</strong></div><div><span>{{ t("overview.present") }}</span><strong>{{ deviceMeta.present ? t("overview.presentYes") : t("overview.presentNo") }}</strong></div></div>
       </BaseCard>
     </div>
   </section>
   <section class="dashboard-grid secondary-grid">
-    <BaseCard title="最近灵感"><div class="idea-list compact-list"><article v-for="idea in recentIdeas" :key="idea.ideaId"><button @click="$router.push({ name: 'ideas' })"><strong>{{ idea.content }}</strong><small>{{ idea.createdAt }}</small></button></article><EmptyState v-if="!recentIdeas.length" /></div></BaseCard>
-    <BaseCard title="快捷入口"><div class="quick-grid"><RouterLink :to="{ name: 'add' }">添加事件</RouterLink><RouterLink :to="{ name: 'ideas' }">记录灵感</RouterLink><RouterLink :to="{ name: 'course' }">课表管理</RouterLink><RouterLink :to="{ name: 'device' }">设备状态</RouterLink></div></BaseCard>
+    <BaseCard :title="t('overview.recentIdeas')"><div class="idea-list compact-list"><article v-for="idea in recentIdeas" :key="idea.ideaId"><button @click="$router.push({ name: 'ideas' })"><strong>{{ idea.content }}</strong><small>{{ idea.createdAt }}</small></button></article><EmptyState v-if="!recentIdeas.length" /></div></BaseCard>
+    <BaseCard :title="t('overview.quickActions')"><div class="quick-grid"><RouterLink :to="{ name: 'add' }">{{ t("overview.addEvent") }}</RouterLink><RouterLink :to="{ name: 'ideas' }">{{ t("overview.captureIdea") }}</RouterLink><RouterLink :to="{ name: 'course' }">{{ t("overview.manageCourses") }}</RouterLink><RouterLink :to="{ name: 'device' }">{{ t("overview.deviceStatus") }}</RouterLink></div></BaseCard>
   </section>
 </template>

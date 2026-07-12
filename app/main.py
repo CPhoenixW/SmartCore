@@ -11,6 +11,7 @@ from app.agent.relation_query_routes import createRelationQueryRouter
 from app.agent.relation_write_routes import createRelationWriteRouter
 from app.agent.routes import createAgentRouter, createDevRouter
 from app.agent.v2_routes import createAgentV2Router
+from app.api.avatar_routes import router as avatarApiRouter
 from app.api.device_state_routes import router as deviceStateApiRouter
 from app.api.event_view_routes import router as eventViewApiRouter
 from app.api.routes import router as apiRouter
@@ -96,6 +97,7 @@ def create_app() -> FastAPI:
 
     parse_router = __import__("app.api.ai_routes", fromlist=["router"]).router
     app.include_router(parse_router)
+    app.include_router(avatarApiRouter)
     app.include_router(deviceStateApiRouter)
     app.include_router(eventViewApiRouter)
     app.include_router(apiRouter)

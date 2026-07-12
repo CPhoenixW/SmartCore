@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
+import EventPreviewCard from "@/components/events/EventPreviewCard.vue";
 import { aiApi } from "@/api/ai";
 import { courseApi } from "@/api/course";
 import { eventApi } from "@/api/event";
@@ -67,11 +68,24 @@ const estimatedCount = computed(() => {
   }
   return count;
 });
+const previewTime = computed(() => {
+  if (selected.value?.nextOccurrence?.stTime) return selected.value.nextOccurrence.stTime;
+  if (!form.semesterStart || !form.stTime) return "";
+  const semester = new Date(`${form.semesterStart}T12:00:00`);
+  if (Number.isNaN(semester.getTime())) return "";
+  const monday = new Date(semester);
+  monday.setDate(semester.getDate() - ((semester.getDay() + 6) % 7));
+  monday.setDate(monday.getDate() + (Math.max(1, form.startWeek) - 1) * 7 + Math.max(0, form.weekDay - 1));
+  const [hour = "00", minute = "00"] = form.stTime.split(":");
+  monday.setHours(Number(hour), Number(minute), 0, 0);
+  return monday.toISOString();
+});
+const scheduleText = computed(() => t("course.scheduleSummary", { start: form.stTime, end: form.endTime, startWeek: form.startWeek, endWeek: form.endWeek }));
 
 function validateForm() {
-  if (!form.courseName.trim() || !form.semesterStart || !form.stTime || !form.endTime) throw new Error("请完整填写课程名称、学期开始日期和时间");
-  if (form.endWeek < form.startWeek) throw new Error("结束周不能早于起始周");
-  if (form.endTime <= form.stTime) throw new Error("下课时间必须晚于上课时间");
+  if (!form.courseName.trim() || !form.semesterStart || !form.stTime || !form.endTime) throw new Error(t("course.validation.required"));
+  if (form.endWeek < form.startWeek) throw new Error(t("course.validation.weekRange"));
+  if (form.endTime <= form.stTime) throw new Error(t("course.validation.timeRange"));
 }
 
 const saveMutation = useMutation({
@@ -85,24 +99,24 @@ const saveMutation = useMutation({
 });
 const syncMutation = useMutation({
   mutationFn: courseApi.sync,
-  onSuccess: async () => { toast.success("上课计划和提醒已重新生成"); await queryClient.invalidateQueries({ queryKey: ["courses"] }); await queryClient.invalidateQueries({ queryKey: ["events"] }); },
+  onSuccess: async () => { toast.success(t("course.syncSuccess")); await queryClient.invalidateQueries({ queryKey: ["courses"] }); await queryClient.invalidateQueries({ queryKey: ["events"] }); },
   onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
 });
 const syncAllMutation = useMutation({
   mutationFn: async () => {
     for (const course of (coursesQuery.data.value ?? []).filter((item) => item.stat !== "cancelled")) await courseApi.sync(course.evtId);
   },
-  onSuccess: async () => { toast.success("全部课程计划已重新生成"); await queryClient.invalidateQueries({ queryKey: ["courses"] }); await queryClient.invalidateQueries({ queryKey: ["events"] }); },
+  onSuccess: async () => { toast.success(t("course.syncAllSuccess")); await queryClient.invalidateQueries({ queryKey: ["courses"] }); await queryClient.invalidateQueries({ queryKey: ["events"] }); },
   onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
 });
 const deleteMutation = useMutation({
   mutationFn: (id: string) => eventApi.cancel(id),
-  onSuccess: async () => { toast.success("课程及未完成计划已取消"); selected.value = null; fillForm(null); await queryClient.invalidateQueries({ queryKey: ["courses"] }); await queryClient.invalidateQueries({ queryKey: ["events"] }); },
+  onSuccess: async () => { toast.success(t("course.cancelSuccess")); selected.value = null; fillForm(null); await queryClient.invalidateQueries({ queryKey: ["courses"] }); await queryClient.invalidateQueries({ queryKey: ["events"] }); },
   onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
 });
 const parseMutation = useMutation({
   mutationFn: () => aiApi.parse<Record<string, unknown>>(natural.value, "create_course"),
-  onSuccess: (data) => { selected.value = null; fillForm(null); Object.assign(form, data); toast.success("课程信息已填入表单"); },
+  onSuccess: (data) => { selected.value = null; fillForm(null); Object.assign(form, data); toast.success(t("course.parsed")); },
   onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
 });
 const busy = computed(() => saveMutation.isPending.value || syncMutation.isPending.value || syncAllMutation.isPending.value || deleteMutation.isPending.value);
@@ -110,23 +124,32 @@ function reset() { selected.value = null; fillForm(null); }
 </script>
 
 <template>
-  <section class="page-heading"><div><h1>{{ t("course.title") }}</h1><p>{{ t("course.subtitle") }}</p></div><div class="heading-actions"><button class="button" :disabled="busy" @click="syncAllMutation.mutate()">{{ t("course.sync") }}</button><button class="button button--primary" @click="reset">新建课程</button></div></section>
-  <BaseCard title="自然语言添加课程"><div class="natural-input"><textarea v-model="natural" rows="2" placeholder="例如：学期 2026-09-13 开始，高等数学，周二 8:00-9:40，第 1-16 周" /><button class="button button--primary" :disabled="!natural.trim() || parseMutation.isPending.value" @click="parseMutation.mutate()">{{ t("add.parse") }}</button></div></BaseCard>
-  <section class="course-layout spaced-section">
-    <div class="stack">
-      <BaseCard title="周课表"><template #actions><input v-model="search" class="compact-search" :placeholder="t('common.search')" /></template><div class="timetable"><div v-for="(items, index) in byDay" :key="index" class="timetable-day"><strong>{{ index + 1 }}</strong><button v-for="course in items" :key="course.evtId" :class="{ selected: selected?.evtId === course.evtId }" @click="selected = course"><span>{{ course.stTime }}–{{ course.endTime }}</span>{{ course.courseName || course.title }}<small>{{ [course.location, course.teacher].filter(Boolean).join(' · ') || '—' }}</small><small>第 {{ course.startWeek }}–{{ course.endWeek }} 周 · {{ course.occurrenceCount ?? 0 }} 次</small></button></div></div></BaseCard>
-      <BaseCard title="课程列表"><div class="event-list"><article v-for="course in filteredCourses" :key="course.evtId" class="course-row" :class="{ cancelled: course.stat === 'cancelled' }"><button class="course-row__main" type="button" @click="selected = course"><strong>{{ course.courseName || course.title }}</strong><span>{{ course.stTime }}–{{ course.endTime }} · 第 {{ course.startWeek }}–{{ course.endWeek }} 周 · {{ course.weekMode }}</span><span>{{ course.location || '—' }} · {{ course.teacher || '—' }} · 共 {{ course.occurrenceCount ?? 0 }} 次</span><span v-if="course.nextOccurrence?.stTime">下次：{{ formatDateTime(course.nextOccurrence.stTime) }}</span></button><button class="button button--ghost" type="button" :disabled="busy || course.stat === 'cancelled'" @click="syncMutation.mutate(course.evtId)">{{ t("course.sync") }}</button></article><EmptyState v-if="!filteredCourses.length" /></div></BaseCard>
-    </div>
-    <BaseCard :title="selected ? t('common.edit') : t('common.create')"><form class="form-grid" @submit.prevent="saveMutation.mutate()">
-      <label class="field field--wide"><span>{{ t("course.name") }}</span><input v-model="form.courseName" required /></label>
-      <label class="field"><span>{{ t("course.teacher") }}</span><input v-model="form.teacher" /></label><label class="field"><span>{{ t("course.location") }}</span><input v-model="form.location" /></label>
-      <label class="field field--wide"><span>{{ t("course.semesterStart") }}</span><input v-model="form.semesterStart" type="date" required /></label>
-      <label class="field"><span>{{ t("course.weekday") }}</span><select v-model.number="form.weekDay"><option v-for="day in 7" :key="day" :value="day">{{ day }}</option></select></label><label class="field"><span>{{ t("course.weekMode") }}</span><select v-model="form.weekMode"><option value="all">每周</option><option value="odd">单周</option><option value="even">双周</option></select></label>
-      <label class="field"><span>{{ t("course.startWeek") }}</span><input v-model.number="form.startWeek" type="number" min="1" /></label><label class="field"><span>{{ t("course.endWeek") }}</span><input v-model.number="form.endWeek" type="number" min="1" /></label>
-      <label class="field"><span>{{ t("course.startTime") }}</span><input v-model="form.stTime" type="time" /></label><label class="field"><span>{{ t("course.endTime") }}</span><input v-model="form.endTime" type="time" /></label>
-      <label class="field"><span>{{ t("event.form.priority") }}</span><select v-model="form.prio"><option value="low">{{ t("event.priority.low") }}</option><option value="mid">{{ t("event.priority.mid") }}</option><option value="high">{{ t("event.priority.high") }}</option></select></label><div class="field summary-field"><span>预计生成</span><strong>{{ estimatedCount }} 个计划 / {{ estimatedCount * 2 }} 个提醒</strong></div>
-      <label class="field field--wide"><span>{{ t("event.form.description") }}</span><textarea v-model="form.desc" rows="3" /></label>
-      <div class="form-actions field--wide"><button class="button button--primary" type="submit" :disabled="busy">{{ t("common.save") }}</button><button class="button" type="button" @click="reset">{{ t("common.cancel") }}</button><button v-if="selected" class="button button--danger" type="button" :disabled="busy" @click="deleteMutation.mutate(selected.evtId)">{{ t("common.delete") }}</button></div>
-    </form></BaseCard>
-  </section>
+  <div class="dual-scroll-page">
+    <section class="page-heading"><div><h1>{{ t("course.title") }}</h1><p>{{ t("course.subtitle") }}</p></div><div class="heading-actions"><button class="button" :disabled="busy" @click="syncAllMutation.mutate()">{{ t("course.syncAll") }}</button><button class="button button--primary" @click="reset">{{ t("course.new") }}</button></div></section>
+    <section class="split-scroll-layout split-scroll-layout--course">
+      <div class="split-scroll-column split-scroll-column--main">
+        <div class="stack">
+          <BaseCard :title="t('course.natural')"><div class="natural-input"><textarea v-model="natural" rows="2" :placeholder="t('course.naturalPlaceholder')" /><button class="button button--primary" :disabled="!natural.trim() || parseMutation.isPending.value" @click="parseMutation.mutate()">{{ t("add.parse") }}</button></div></BaseCard>
+          <BaseCard :title="t('course.timetable')"><template #actions><input v-model="search" class="compact-search" :placeholder="t('course.searchPlaceholder')" /></template><div class="timetable-scroll"><div class="timetable timetable--large"><div v-for="(items, index) in byDay" :key="index" class="timetable-day"><strong>{{ t(`course.weekdayNames.${index + 1}`) }}</strong><button v-for="course in items" :key="course.evtId" :class="{ selected: selected?.evtId === course.evtId }" @click="selected = course"><span>{{ course.stTime }}–{{ course.endTime }}</span>{{ course.courseName || course.title }}<small>{{ [course.location, course.teacher].filter(Boolean).join(' · ') || t('common.notSet') }}</small><small>{{ t("course.weeksAndCount", { start: course.startWeek, end: course.endWeek, count: course.occurrenceCount ?? 0 }) }}</small></button></div></div></div></BaseCard>
+          <BaseCard :title="t('course.list')"><div class="event-list"><article v-for="course in filteredCourses" :key="course.evtId" class="course-row" :class="{ cancelled: course.stat === 'cancelled' }"><button class="course-row__main" type="button" @click="selected = course"><strong>{{ course.courseName || course.title }}</strong><span>{{ course.stTime }}–{{ course.endTime }} · {{ t("course.weekRange", { start: course.startWeek, end: course.endWeek }) }} · {{ t(`course.weekModeValues.${course.weekMode}`) }}</span><span>{{ course.location || t('common.notSet') }} · {{ course.teacher || t('common.notSet') }} · {{ t("course.occurrenceCount", { count: course.occurrenceCount ?? 0 }) }}</span><span v-if="course.nextOccurrence?.stTime">{{ t("course.nextClass") }}：{{ formatDateTime(course.nextOccurrence.stTime) }}</span></button><button class="button button--ghost" type="button" :disabled="busy || course.stat === 'cancelled'" @click="syncMutation.mutate(course.evtId)">{{ t("course.sync") }}</button></article><EmptyState v-if="!filteredCourses.length" /></div></BaseCard>
+        </div>
+      </div>
+      <aside class="split-scroll-column split-scroll-column--side">
+        <div class="stack">
+          <BaseCard :title="t('preview.title')"><EventPreviewCard type="course" :title="form.courseName" :description="form.desc" :priority="form.prio" :status="selected?.stat ?? 'todo'" :time="previewTime" :location="form.location" :teacher="form.teacher" :schedule="scheduleText" /></BaseCard>
+          <BaseCard :title="selected ? t('course.edit') : t('course.create')"><form class="form-grid" @submit.prevent="saveMutation.mutate()">
+            <label class="field field--wide"><span>{{ t("course.name") }}</span><input v-model="form.courseName" :placeholder="t('course.namePlaceholder')" required /></label>
+            <label class="field"><span>{{ t("course.teacher") }}</span><input v-model="form.teacher" :placeholder="t('course.teacherPlaceholder')" /></label><label class="field"><span>{{ t("course.location") }}</span><input v-model="form.location" :placeholder="t('course.locationPlaceholder')" /></label>
+            <label class="field field--wide"><span>{{ t("course.semesterStart") }}</span><input v-model="form.semesterStart" type="date" required /></label>
+            <label class="field"><span>{{ t("course.weekday") }}</span><select v-model.number="form.weekDay"><option v-for="day in 7" :key="day" :value="day">{{ t(`course.weekdayNames.${day}`) }}</option></select></label><label class="field"><span>{{ t("course.weekMode") }}</span><select v-model="form.weekMode"><option value="all">{{ t("course.weekModeValues.all") }}</option><option value="odd">{{ t("course.weekModeValues.odd") }}</option><option value="even">{{ t("course.weekModeValues.even") }}</option></select></label>
+            <label class="field"><span>{{ t("course.startWeek") }}</span><input v-model.number="form.startWeek" type="number" min="1" /></label><label class="field"><span>{{ t("course.endWeek") }}</span><input v-model.number="form.endWeek" type="number" min="1" /></label>
+            <label class="field"><span>{{ t("course.startTime") }}</span><input v-model="form.stTime" type="time" /></label><label class="field"><span>{{ t("course.endTime") }}</span><input v-model="form.endTime" type="time" /></label>
+            <label class="field"><span>{{ t("event.form.priority") }}</span><select v-model="form.prio"><option value="low">{{ t("event.priority.low") }}</option><option value="mid">{{ t("event.priority.mid") }}</option><option value="high">{{ t("event.priority.high") }}</option></select></label><div class="field summary-field"><span>{{ t("course.estimated") }}</span><strong>{{ t("course.estimatedValue", { plans: estimatedCount, reminders: estimatedCount * 2 }) }}</strong></div>
+            <label class="field field--wide"><span>{{ t("event.form.description") }}</span><textarea v-model="form.desc" rows="3" :placeholder="t('event.placeholder.description')" /></label>
+            <div class="form-actions field--wide"><button class="button button--primary" type="submit" :disabled="busy">{{ busy ? t("common.saving") : t("common.save") }}</button><button class="button" type="button" @click="reset">{{ t("common.cancel") }}</button><button v-if="selected" class="button button--danger" type="button" :disabled="busy" @click="deleteMutation.mutate(selected.evtId)">{{ t("common.delete") }}</button></div>
+          </form></BaseCard>
+        </div>
+      </aside>
+    </section>
+  </div>
 </template>
