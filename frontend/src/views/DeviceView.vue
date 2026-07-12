@@ -6,6 +6,7 @@ import DevicePairPanel from "@/components/device/DevicePairPanel.vue";
 import BaseCard from "@/components/base/BaseCard.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
 import { deviceApi } from "@/api/device";
+import { deviceRegistryApi } from "@/api/deviceRegistry";
 import { useToast } from "@/composables/useToast";
 import type { PhotoRequest } from "@/types/device";
 import { formatDateTime } from "@/utils/date";
@@ -17,10 +18,15 @@ const queryClient = useQueryClient();
 const search = ref("");
 const activeRequestId = ref<string | null>(null);
 const displayedPhoto = ref<PhotoRequest | null>(null);
-const latest = useQuery({ queryKey: ["device", "latest"], queryFn: () => deviceApi.latest(), refetchInterval: 10_000 });
-const recent = useQuery({ queryKey: ["device", "recent"], queryFn: () => deviceApi.recent("pi", 240), refetchInterval: 60_000 });
-const usage = useQuery({ queryKey: ["device", "usage"], queryFn: () => deviceApi.usageToday(), refetchInterval: 60_000 });
-const photos = useQuery({ queryKey: ["device", "photos"], queryFn: () => deviceApi.photoRequests(), refetchInterval: 2_000 });
+const registeredDevices = useQuery({ queryKey: ["lifeDevices"], queryFn: deviceRegistryApi.list, refetchInterval: 15_000 });
+const activeDeviceId = computed(() => {
+  const devices = registeredDevices.data.value ?? [];
+  return devices.find((device) => device.deviceKind === "pi")?.deviceId ?? devices[0]?.deviceId ?? "";
+});
+const latest = useQuery({ queryKey: ["device", "latest", activeDeviceId], queryFn: () => deviceApi.latest(activeDeviceId.value), enabled: computed(() => Boolean(activeDeviceId.value)), refetchInterval: 10_000 });
+const recent = useQuery({ queryKey: ["device", "recent", activeDeviceId], queryFn: () => deviceApi.recent(activeDeviceId.value, 240), enabled: computed(() => Boolean(activeDeviceId.value)), refetchInterval: 60_000 });
+const usage = useQuery({ queryKey: ["device", "usage", activeDeviceId], queryFn: () => deviceApi.usageToday(activeDeviceId.value), enabled: computed(() => Boolean(activeDeviceId.value)), refetchInterval: 60_000 });
+const photos = useQuery({ queryKey: ["device", "photos", activeDeviceId], queryFn: () => deviceApi.photoRequests(activeDeviceId.value), enabled: computed(() => Boolean(activeDeviceId.value)), refetchInterval: 2_000 });
 const currentView = computed(() => deviceStateView(latest.data.value));
 const names = computed(() => devicePersonNames(currentView.value));
 const logs = computed(() => (recent.data.value ?? []).filter((row) => {
@@ -32,7 +38,7 @@ const activePhoto = computed(() => (photos.data.value ?? []).find((item) => item
 const photoUrl = computed(() => displayedPhoto.value?.imageUrl ? `${displayedPhoto.value.imageUrl}?t=${encodeURIComponent(displayedPhoto.value.completedAt ?? "")}` : "");
 const maxUsage = computed(() => Math.max(1, ...(usage.data.value?.hourlyMinutes ?? [1])));
 const requestPhoto = useMutation({
-  mutationFn: () => deviceApi.requestPhoto(),
+  mutationFn: () => deviceApi.requestPhoto(activeDeviceId.value),
   onSuccess: async (request) => {
     displayedPhoto.value = null;
     activeRequestId.value = request.requestId;
@@ -58,7 +64,7 @@ onBeforeUnmount(() => {
   displayedPhoto.value = null;
   activeRequestId.value = null;
 });
-async function refreshAll() { await Promise.all([latest.refetch(), recent.refetch(), usage.refetch(), photos.refetch()]); }
+async function refreshAll() { await Promise.all([registeredDevices.refetch(), latest.refetch(), recent.refetch(), usage.refetch(), photos.refetch()]); }
 function photoMeta(item: PhotoRequest | null | undefined) {
   if (!item) return t("device.noPhotoRequest");
   const knownStatuses = new Set(["pending", "uploaded", "failed", "expired", "cancelled"]);
