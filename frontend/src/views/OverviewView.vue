@@ -46,6 +46,10 @@ const devicePersons = computed(() => {
   return persons.map((person) => typeof person === "object" && person ? String((person as Record<string, unknown>).name ?? (person as Record<string, unknown>).personId ?? "") : "").filter(Boolean).join(t("common.listSeparator")) || t("common.notSet");
 });
 const deviceState = computed(() => String(deviceQuery.data.value?.state ?? "offline"));
+const deviceTitle = computed(() => {
+  const device = (registeredDevices.data.value ?? []).find((item) => item.deviceId === deviceId.value);
+  return device?.deviceName || t("overview.device");
+});
 </script>
 
 <template>
@@ -68,7 +72,7 @@ const deviceState = computed(() => String(deviceQuery.data.value?.state ?? "offl
     </div>
     <div class="stack">
       <BaseCard :title="t('overview.upcoming')"><div class="event-list"><EventCard v-for="event in future72" :key="event.evtId" :event="event" @select="$router.push({ name: 'update', query: { date: eventDateKey(event), evtId: event.evtId } })" /><EmptyState v-if="!future72.length" class="overview-empty" :text="t('overview.emptyDeadline')" /></div></BaseCard>
-      <BaseCard :title="t('overview.device')">
+      <BaseCard :title="deviceTitle">
         <div class="device-inline"><span class="state-dot" :class="`state-dot--${deviceState}`" /><div><strong>{{ t(`device.state.${deviceState}`) }}</strong><small>{{ deviceQuery.data.value?.seenAt ?? t('common.notSet') }}</small></div></div>
         <div class="kv-grid compact-grid"><div><span>{{ t("overview.persons") }}</span><strong>{{ devicePersons }}</strong></div><div><span>{{ t("overview.stateConfidence") }}</span><strong>{{ deviceQuery.data.value?.confidence == null ? t('common.notSet') : `${Math.round(Number(deviceQuery.data.value.confidence) * 100)}%` }}</strong></div><div><span>{{ t("overview.present") }}</span><strong>{{ deviceMeta.present ? t("overview.presentYes") : t("overview.presentNo") }}</strong></div></div>
       </BaseCard>

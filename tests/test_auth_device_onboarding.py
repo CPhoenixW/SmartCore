@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
@@ -48,6 +49,15 @@ def test_screen_websocket_requires_its_device_credential(app_env) -> None:
     assert client.get("/screen/events", params={"deviceId": device_id}).status_code == 401
 
 
+def test_deleted_device_token_is_revoked(app_env) -> None:
+    client = _setup_client()
+    activated = _paired_device(client, "screen")
+    device_id = activated["device"]["deviceId"]
+    token = activated["deviceToken"]
+    assert client.delete(f"/api/device/{device_id}").status_code == 200
+    assert client.get("/screen/events", params={"deviceId": device_id}, headers={"X-SmartCore-Device-Token": token}).status_code == 401
+
+
 def test_feishu_binding_claims_then_confirms_device(app_env, monkeypatch) -> None:
     client = _setup_client()
     pair = client.post("/api/device/pair/start", json={"deviceName": "Feishu", "deviceKind": "feishuBot"}).json()["data"]
@@ -65,3 +75,39 @@ def test_feishu_binding_claims_then_confirms_device(app_env, monkeypatch) -> Non
     assert client.post(f"/api/device/pair/{pair['pairId']}/confirm").json()["data"]["stat"] == "paired"
     devices = client.get("/api/device").json()["data"]
     assert any(device["deviceKind"] == "feishuBot" for device in devices)
+
+
+def test_important_date_natural_language_falls_back_to_a_ddl(app_env, monkeypatch) -> None:
+    client = _setup_client()
+    monkeypatch.setattr("app.api.ai_routes.complete_chat", lambda *_args, **_kwargs: "模型没有按要求输出")
+    response = client.post("/api/llm/parse", json={
+        "text": "依依宝宝2026年8月28号过生日，千万不能忘了给她准备礼物",
+        "now": "2026-07-13T10:00:00+08:00",
+    })
+    assert response.status_code == 200
+    parsed = response.json()["data"]["parsed"]
+    assert parsed["evtType"] == "ddl"
+    assert parsed["title"] == "依依宝宝生日礼物"
+    assert parsed["prio"] == "high"
+    assert parsed["hardDdl"] is True
+    assert parsed["endTime"] == "2026-08-28T09:00:00+08:00"
+    assert len(parsed["plans"]) == 2
+
+
+@pytest.mark.parametrize(
+    ("text", "raw", "expected_type", "time_key"),
+    [
+        ("明天晚上八点复习热流体，持续30分钟", '{"evtType":"plan","title":"复习热流体","prio":"mid","stTime":"2026-07-14T20:00:00+08:00","durationMin":30}', "plan", "stTime"),
+        ("周五下午提醒我给导师发邮件", '{"evtType":"remind","title":"给导师发邮件","prio":"mid","triggerTime":"2026-07-17T15:00:00+08:00"}', "remind", "triggerTime"),
+        ("下周一之前提交机器学习作业，务必完成", '{"evtType":"ddl","title":"提交机器学习作业","prio":"high","endTime":"2026-07-20T09:00:00+08:00","hardDdl":true}', "ddl", "endTime"),
+    ],
+)
+def test_natural_language_event_shapes_are_loaded_into_the_form(app_env, monkeypatch, text, raw, expected_type, time_key) -> None:
+    client = _setup_client()
+    monkeypatch.setattr("app.api.ai_routes.complete_chat", lambda *_args, **_kwargs: raw)
+    response = client.post("/api/llm/parse", json={"text": text, "now": "2026-07-13T10:00:00+08:00"})
+    assert response.status_code == 200
+    parsed = response.json()["data"]["parsed"]
+    assert parsed["evtType"] == expected_type
+    assert parsed["title"]
+    assert parsed[time_key].endswith("+08:00")

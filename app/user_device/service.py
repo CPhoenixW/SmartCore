@@ -194,6 +194,24 @@ def pendingDispatches(db: Session, device: LifeDevice) -> list[DeviceDispatch]:
     return rows
 
 
+def removeDevice(db: Session, userId: str, deviceId: str) -> None:
+    device = db.get(LifeDevice, deviceId)
+    if device is None or device.userId != userId:
+        raise HTTPException(status_code=404, detail="device not found")
+    # Retire credentials before removing the record so an already copied token stops working.
+    for key in db.scalars(select(DeviceKey).where(DeviceKey.deviceId == deviceId)):
+        key.revokedAt = nowIso()
+    for identity in db.scalars(select(LifeIdentity).where(LifeIdentity.deviceId == deviceId)):
+        db.delete(identity)
+    for pair in db.scalars(select(DevicePair).where(DevicePair.deviceId == deviceId)):
+        pair.deviceId = None
+    legacy = db.get(Device, deviceId)
+    if legacy is not None:
+        db.delete(legacy)
+    db.delete(device)
+    db.commit()
+
+
 def deviceDict(device: LifeDevice) -> dict:
     return {
         "deviceId": device.deviceId,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -233,6 +234,36 @@ def _normalize_event(data: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _important_date_fallback(text: str) -> dict[str, Any] | None:
+    """Keep important date-only reminders useful when the model output is malformed."""
+    match = re.search(r"(?P<year>20\d{2})\s*年\s*(?P<month>\d{1,2})\s*月\s*(?P<day>\d{1,2})\s*(?:日|号)?", text)
+    if match is None or not re.search(r"生日|纪念日|周年|千万不能忘|别忘", text):
+        return None
+    year, month, day = (int(match.group(name)) for name in ("year", "month", "day"))
+    try:
+        date_text = f"{year:04d}-{month:02d}-{day:02d}T09:00:00+08:00"
+        # Validate calendar dates without changing the user-facing ISO value.
+        datetime(year, month, day)
+    except ValueError:
+        return None
+    subject = re.search(r"(.{1,24}?)(?:在)?\s*20\d{2}\s*年", text)
+    title = "重要日期提醒"
+    if subject:
+        name = subject.group(1).strip(" ，,。！!：:")
+        if name:
+            title = f"{name}生日礼物" if "生日" in text and "生日" not in name else name
+    return {
+        "tab": "ddl",
+        "evtType": "ddl",
+        "title": title,
+        "desc": text.strip(),
+        "prio": "high",
+        "endTime": date_text,
+        "hardDdl": True,
+        "plans": default_ddl_plans(date_text),
+    }
+
+
 def _course_prompt(text: str, now: str) -> str:
     return f"""
 你是 SmartCore 的课程表解析器。只返回严格 JSON，不要 Markdown，不要解释。
@@ -293,7 +324,12 @@ DDL 的 plans 是数组，每项格式：
 }}
 如果用户没有特别说明 DDL 安排，默认生成两个计划：截止前一天安排30分钟、截止前一小时安排30分钟。
 如果用户明确提出更多安排，可以输出多个 manual 计划。
-“提醒我……”且没有持续时长，通常解析为 remind；“从X点做Y分钟”解析为 plan；“截止、最晚、提交”解析为 ddl。
+分类规则（必须遵守）：
+- “提醒我……”且没有持续时长，通常解析为 remind；“从X点做Y分钟”解析为 plan；“截止、最晚、提交”解析为 ddl。
+- 生日、纪念日、约会、缴费、考试等带有明确日期且需要事先准备的事项，解析为 ddl；例如“依依宝宝2026年8月28号过生日，千万不能忘了给她准备礼物”必须是高优先级 ddl，title 为“依依宝宝生日礼物”，desc 保留原意，hardDdl=true。
+- 用户仅给出年月日、没有时分时，使用当天 09:00:00+08:00；不得编造日期，只有明确表达“今天/明天/下周”等相对日期时才根据当前时间换算。
+- “千万不能忘、务必、必须、重要”对应 prio=high；“可以、以后、有空”对应 prio=low。
+- 输出前检查：title 非空；每个时间字段均为带 +08:00 的 ISO8601；ddl 必须有 endTime 和 hardDdl，plan 必须有 stTime 和 durationMin，remind 必须有 triggerTime。
 """.strip()
 
 
@@ -315,12 +351,19 @@ def parse_text(body: ParseBody) -> dict[str, Any]:
         )
         data = _extract_json_object(raw)
         parsed = _normalize_course(data) if is_course else _normalize_event(data)
+        if not is_course and (not parsed["title"] or not (parsed.get("endTime") or parsed.get("stTime") or parsed.get("triggerTime"))):
+            fallback = _important_date_fallback(body.text)
+            if fallback is not None:
+                parsed = fallback
     except LLMConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except LLMGatewayError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except (ValueError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=502, detail=f"模型返回内容无法解析：{exc}") from exc
+        fallback = None if is_course else _important_date_fallback(body.text)
+        if fallback is None:
+            raise HTTPException(status_code=502, detail=f"模型返回内容无法解析：{exc}") from exc
+        parsed = fallback
 
     return {
         "ok": True,
