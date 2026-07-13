@@ -19,6 +19,7 @@ from app.user_device.service import (
     pendingDispatches,
     queueDispatch,
     readClaimedPair,
+    removeDevice,
     requireDevice,
     startPair,
 )
@@ -65,6 +66,12 @@ def _device_from_token(db: Session = Depends(get_db), token: str | None = Header
 def listDevices(userId: str = Depends(require_authenticated_user_id), db: Session = Depends(get_db)) -> dict[str, Any]:
     rows = list(db.scalars(select(LifeDevice).where(LifeDevice.userId == userId).order_by(LifeDevice.createdAt.desc())))
     return _ok([deviceDict(row) for row in rows])
+
+
+@router.delete("/{deviceId}")
+def deleteDevice(deviceId: str, userId: str = Depends(require_authenticated_user_id), db: Session = Depends(get_db)) -> dict[str, Any]:
+    removeDevice(db, userId, deviceId)
+    return _ok({"deviceId": deviceId, "deleted": True})
 
 
 @router.post("/pair/start")
