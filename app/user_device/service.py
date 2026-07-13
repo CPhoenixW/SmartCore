@@ -9,7 +9,15 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.new_core.models import Device, DeviceDispatch, DeviceKey, DevicePair, LifeDevice, nowIso
+from app.new_core.models import (
+    Device,
+    DeviceDispatch,
+    DeviceKey,
+    DevicePair,
+    LifeDevice,
+    LifeIdentity,
+    nowIso,
+)
 
 _TZ = ZoneInfo("Asia/Shanghai")
 
@@ -40,6 +48,17 @@ def requireDevice(db: Session, token: str | None) -> LifeDevice:
 
 
 def startPair(db: Session, userId: str, deviceName: str, deviceKind: str) -> DevicePair:
+    if deviceKind == "feishuBot":
+        pending = db.scalar(
+            select(DevicePair).where(
+                DevicePair.userId == userId,
+                DevicePair.deviceKind == "feishuBot",
+                DevicePair.stat.in_(("created", "claimed", "userConfirmed")),
+                DevicePair.expiresAt > nowIso(),
+            )
+        )
+        if pending is not None:
+            raise HTTPException(status_code=409, detail="a Feishu pairing request is already pending")
     pair = DevicePair(
         userId=userId,
         deviceName=deviceName.strip() or "New device",
@@ -68,6 +87,13 @@ def claimPair(db: Session, pairId: str, claimCode: str, deviceName: str | None =
     return pair
 
 
+def readClaimedPair(db: Session, pairId: str, claimCode: str) -> DevicePair:
+    pair = db.get(DevicePair, pairId)
+    if pair is None or pair.claimCode != claimCode:
+        raise HTTPException(status_code=404, detail="pair request not found")
+    return pair
+
+
 def confirmPair(db: Session, pairId: str, userId: str) -> DevicePair:
     pair = db.get(DevicePair, pairId)
     if pair is None or pair.userId != userId:
@@ -76,9 +102,45 @@ def confirmPair(db: Session, pairId: str, userId: str) -> DevicePair:
         raise HTTPException(status_code=409, detail="device has not claimed this request")
     pair.stat = "userConfirmed"
     pair.confirmedAt = nowIso()
+    if pair.deviceKind == "feishuBot":
+        device, _ = activatePair(db, pairId, pair.claimCode)
+        identity = db.scalar(
+            select(LifeIdentity)
+            .where(
+                LifeIdentity.userId == pair.userId,
+                LifeIdentity.provider == "feishu",
+                LifeIdentity.deviceId.is_(None),
+            )
+            .order_by(LifeIdentity.createdAt.desc())
+        )
+        if identity is not None:
+            identity.deviceId = device.deviceId
+            db.commit()
+        return db.get(DevicePair, pairId) or pair
     db.commit()
     db.refresh(pair)
     return pair
+
+
+def claimFeishuPair(db: Session, claimCode: str, externalId: str) -> DevicePair:
+    pair = db.scalar(select(DevicePair).where(DevicePair.claimCode == claimCode))
+    if pair is None or pair.deviceKind != "feishuBot":
+        raise HTTPException(status_code=404, detail="feishu pairing code not found")
+    existing = db.scalar(select(LifeIdentity).where(LifeIdentity.provider == "feishu", LifeIdentity.externalId == externalId))
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="this Feishu account is already bound")
+    claimed = claimPair(db, pair.pairId, claimCode, pair.deviceName)
+    if existing is None:
+        db.add(LifeIdentity(userId=claimed.userId, provider="feishu", externalId=externalId))
+        db.commit()
+        db.refresh(claimed)
+    return claimed
+
+
+def feishuIdentity(db: Session, externalId: str | None) -> LifeIdentity | None:
+    if not externalId:
+        return None
+    return db.scalar(select(LifeIdentity).where(LifeIdentity.provider == "feishu", LifeIdentity.externalId == externalId, LifeIdentity.deviceId.is_not(None)))
 
 
 def activatePair(db: Session, pairId: str, claimCode: str) -> tuple[LifeDevice, str]:

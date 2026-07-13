@@ -649,13 +649,16 @@ def createMsgLog(
     rawText: str | None,
     intent: str | None,
     stat: str,
+    userId: str = DEFAULT_USER_ID,
+    sourceDeviceId: str | None = None,
 ) -> dict[str, Any]:
-    _ensure_user(db)
+    _ensure_user(db, userId)
     row = MsgLog(
-        userId=DEFAULT_USER_ID,
+        userId=userId,
         channel=src if src in _ALLOWED_MSG_CHANNELS else "system",
         direction="in",
         externalId=externalId,
+        sourceDeviceId=sourceDeviceId,
         rawText=rawText,
         intent=intent,
         stat=stat,

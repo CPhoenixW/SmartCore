@@ -2,19 +2,22 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.db.session import get_db
+from app.feishu.client import FeishuAPIError, FeishuClient
 from app.feishu.commands import extract_message_text, extract_routing_context
 from app.feishu.security import FeishuSecurityError, parse_event_payload, validate_request_headers
 from app.new_core import crud
+from app.user_device.service import claimFeishuPair, feishuIdentity
 
 logger = logging.getLogger(__name__)
 _DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
@@ -23,6 +26,7 @@ ALLOWED_EVENT_TYPES = {
     "im.message.receive_v1",
     "card.action.trigger",
 }
+_BIND_PATTERN = re.compile(r"^(?:绑定|bind)\s+([^\s]+)$", re.IGNORECASE)
 
 
 class FeishuEventHandler:
@@ -70,12 +74,47 @@ class FeishuEventHandler:
             if handled:
                 return 200, response
 
+        if event_type == "im.message.receive_v1":
+            handled, response = self._handlePairCommand(payload, db)
+            if handled:
+                return 200, response
+
         if not self.settings.openclaw_events_endpoint:
             return 200, {"code": 0, "msg": "openclaw not configured"}
 
         if event_type == "card.action.trigger":
             return self._forwardCardAction(payload, db, now=now)
         return self._forwardTextMessage(payload, db, now=now)
+
+    def _reply(self, payload: dict[str, Any], text: str) -> None:
+        chat, _ = extract_routing_context(payload)
+        chat_id = chat.get("chat_id")
+        if not chat_id or not self.settings.feishu_app_id or not self.settings.feishu_app_secret:
+            return
+        try:
+            FeishuClient(self.settings.feishu_app_id, self.settings.feishu_app_secret).send_text(chat_id, text)
+        except (FeishuAPIError, httpx.HTTPError):
+            logger.exception("failed to reply to Feishu pairing command")
+
+    def _handlePairCommand(self, payload: dict[str, Any], db: Session) -> tuple[bool, dict[str, Any]]:
+        _, text = extract_message_text(payload)
+        if not text:
+            return False, {}
+        match = _BIND_PATTERN.fullmatch(text.strip())
+        if not match:
+            return False, {}
+        _, user = extract_routing_context(payload)
+        external_id = user.get("open_id") or user.get("user_id")
+        if not external_id:
+            self._reply(payload, "无法识别你的飞书账号，请在私聊中重试。")
+            return True, {"code": 0, "msg": "missing Feishu identity"}
+        try:
+            claimFeishuPair(db, match.group(1), external_id)
+        except HTTPException as exc:
+            self._reply(payload, f"绑定失败：{exc.detail}")
+            return True, {"code": 0, "msg": "pairing failed"}
+        self._reply(payload, "已认领配对请求。请回到 SmartCore 工作台确认，完成后这个飞书账号才会开始接收提醒。")
+        return True, {"code": 0, "msg": "pairing claimed"}
 
     def _openclawHeaders(self) -> dict[str, str] | None:
         token = self.settings.openclaw_events_token
@@ -118,6 +157,7 @@ class FeishuEventHandler:
         self,
         payload: dict[str, Any],
         *,
+        db: Session,
         message_id: str,
         text: str,
         now: float | None,
@@ -144,6 +184,10 @@ class FeishuEventHandler:
             normalized["chat"] = chat
         if user:
             normalized["user"] = user
+        identity = feishuIdentity(db, user.get("open_id") or user.get("user_id"))
+        if identity is not None:
+            normalized["userId"] = identity.userId
+            normalized["sourceDeviceId"] = identity.deviceId
         return normalized
 
     def _normalizeCardAction(
@@ -247,6 +291,7 @@ class FeishuEventHandler:
 
         normalized = self._normalizeMessage(
             payload,
+            db=db,
             message_id=message_id or "",
             text=text,
             now=now,
@@ -262,6 +307,8 @@ class FeishuEventHandler:
             stat = "forward_failed"
 
         if message_id:
+            chat, user = extract_routing_context(payload)
+            identity = feishuIdentity(db, user.get("open_id") or user.get("user_id"))
             crud.createMsgLog(
                 db,
                 src="feishu",
@@ -269,6 +316,8 @@ class FeishuEventHandler:
                 rawText=text,
                 intent="openclaw_forward",
                 stat=stat,
+                userId=identity.userId if identity is not None else crud.DEFAULT_USER_ID,
+                sourceDeviceId=identity.deviceId if identity is not None else None,
             )
         return 200, {"code": 0, "msg": "ok"}
 

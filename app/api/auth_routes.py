@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.auth.security import (
@@ -17,6 +17,7 @@ from app.auth.security import (
 from app.config import get_settings
 from app.db.session import get_db
 from app.new_core import crud
+from app.new_core.models import AppUser, nowIso
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -27,6 +28,12 @@ class LoginBody(BaseModel):
 
 
 class SetupBody(BaseModel):
+    password: str
+    displayName: str | None = None
+
+
+class RegisterBody(BaseModel):
+    loginName: str
     password: str
     displayName: str | None = None
 
@@ -69,6 +76,15 @@ def _set_session_cookie(response: Response, user_id: str) -> None:
         samesite="lax",
         path="/",
     )
+
+
+def _normalized_login_name(value: str) -> str:
+    login_name = value.strip()
+    if len(login_name) < 3 or len(login_name) > 100:
+        raise HTTPException(status_code=400, detail="login name must contain 3 to 100 characters")
+    if not login_name.replace("-", "").replace("_", "").isalnum():
+        raise HTTPException(status_code=400, detail="login name may contain only letters, numbers, hyphens, and underscores")
+    return login_name
 
 
 @router.get("/status")
@@ -117,6 +133,39 @@ def setup_password(
     current = _user_row(db, str(user["userId"]))
     assert current is not None
     return {"ok": True, "data": _public_user(current)}
+
+
+@router.post("/register")
+def register(
+    body: RegisterBody,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    login_name = _normalized_login_name(body.loginName)
+    if db.scalar(select(AppUser).where(AppUser.loginName == login_name)) is not None:
+        raise HTTPException(status_code=409, detail="login name is already in use")
+    try:
+        password = hash_password(body.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    now = nowIso()
+    user = AppUser(
+        loginName=login_name,
+        passwd=password,
+        displayName=(body.displayName or "").strip() or login_name,
+        role="user",
+        stat="active",
+        createdAt=now,
+        updatedAt=now,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    _set_session_cookie(response, user.userId)
+    return {"ok": True, "data": _public_user({
+        "userId": user.userId, "loginName": user.loginName, "role": user.role,
+        "displayName": user.displayName, "language": user.language, "avatarUrl": user.avatarUrl,
+    })}
 
 
 @router.post("/login")

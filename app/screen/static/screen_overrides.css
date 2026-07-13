@@ -23,3 +23,4 @@ body { font-family: "MiSans", "Segoe UI", system-ui, -apple-system, BlinkMacSyst
   overflow-wrap: anywhere;
   line-height: 1.35;
 }
+.screen-setup{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:32px;background:rgba(238,244,255,.96);color:#11213d;text-align:center}.screen-setup[hidden]{display:none}.screen-setup>div{max-width:520px;padding:32px;border:1px solid #cad8ee;border-radius:18px;background:#fff;box-shadow:0 18px 54px rgba(45,74,120,.14)}.screen-setup strong{display:block;font-size:28px}.screen-setup p{margin-top:12px;color:#526987;line-height:1.7}

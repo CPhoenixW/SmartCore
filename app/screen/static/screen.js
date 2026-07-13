@@ -1,6 +1,8 @@
 (function () {
   const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = `${wsProto}//${location.host}/screen/ws`;
+  const wsBaseUrl = `${wsProto}//${location.host}/screen/ws`;
+  const credentialKey = "smartcoreScreenCredential";
+  let deviceCredential = null;
   const shellEl = document.querySelector(".screen-shell");
   const clockHoursEl = document.getElementById("clockHours");
   const clockSepEl = document.getElementById("clockSep");
@@ -29,6 +31,88 @@
   let activeReminder = null;
   let expireTimer = null;
   let cachedEvents = [];
+
+  function readCredential() {
+    try {
+      const value = JSON.parse(localStorage.getItem(credentialKey) || "null");
+      return value?.deviceId && value?.deviceToken ? value : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function requestJson(url, options) {
+    const response = await fetch(url, options);
+    const body = await response.json();
+    if (!response.ok || !body.ok) throw new Error(body.detail || "设备连接失败");
+    return body.data;
+  }
+
+  function showSetup(text) {
+    const panel = document.getElementById("screenSetup");
+    const copy = document.getElementById("screenSetupText");
+    if (copy) copy.textContent = text;
+    if (panel) panel.hidden = false;
+  }
+
+  function hideSetup() {
+    const panel = document.getElementById("screenSetup");
+    if (panel) panel.hidden = true;
+  }
+
+  async function activateScreen() {
+    deviceCredential = readCredential();
+    if (deviceCredential) {
+      hideSetup();
+      loadTodayEvents();
+      connectWs();
+      return;
+    }
+    const params = new URLSearchParams(location.search);
+    const pairId = params.get("pairId");
+    const claimCode = params.get("claimCode");
+    if (!pairId || !claimCode) {
+      showSetup("请在 SmartCore 工作台创建“副屏”配对，然后使用生成的副屏连接链接打开此页面。");
+      return;
+    }
+    try {
+      await requestJson(`/api/device/pair/${pairId}/claim`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claimCode, deviceName: "副屏" }),
+      });
+      showSetup("已认领。请回到工作台确认这台副屏，确认后会自动连接。");
+      const poll = async () => {
+        try {
+          const pair = await requestJson(`/api/device/pair/${pairId}/status?claimCode=${encodeURIComponent(claimCode)}`);
+          if (pair.stat === "userConfirmed") {
+            const activated = await requestJson(`/api/device/pair/${pairId}/activate`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ claimCode }),
+            });
+            deviceCredential = { deviceId: activated.device.deviceId, deviceToken: activated.deviceToken };
+            localStorage.setItem(credentialKey, JSON.stringify(deviceCredential));
+            history.replaceState(null, "", "/screen");
+            hideSetup();
+            loadTodayEvents();
+            connectWs();
+            return;
+          }
+          if (pair.stat === "paired") {
+            showSetup("该配对已在其他副屏完成。请重新创建一条副屏连接链接。");
+            return;
+          }
+          setTimeout(poll, 1800);
+        } catch (error) {
+          showSetup(error instanceof Error ? error.message : "设备连接失败");
+        }
+      };
+      poll();
+    } catch (error) {
+      showSetup(error instanceof Error ? error.message : "设备连接失败");
+    }
+  }
 
   function setWsConnected(connected) {
     wsStatusEl?.classList.toggle("connected", connected);
@@ -207,8 +291,12 @@
   }
 
   async function loadTodayEvents() {
+    if (!deviceCredential) return;
     try {
-      const resp = await fetch("/api/planEvt");
+      const query = new URLSearchParams({ deviceId: deviceCredential.deviceId });
+      const resp = await fetch(`/screen/events?${query.toString()}`, {
+        headers: { "X-SmartCore-Device-Token": deviceCredential.deviceToken },
+      });
       const data = await resp.json();
       cachedEvents = (data.data || []).filter((evt) => evt.evtType === "plan");
       renderSchedule(cachedEvents);
@@ -285,9 +373,10 @@
       return;
     }
     try {
-      await fetch("/api/reminder/action", {
+      const query = new URLSearchParams({ deviceId: deviceCredential.deviceId });
+      await fetch(`/screen/reminder/action?${query.toString()}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-SmartCore-Device-Token": deviceCredential.deviceToken },
         body: JSON.stringify({ evtId: activeReminder.evtId, action }),
       });
     } catch {
@@ -317,8 +406,10 @@
   }
 
   function connectWs() {
+    if (!deviceCredential) return;
     if (ws && [WebSocket.OPEN, WebSocket.CONNECTING].includes(ws.readyState)) return;
-    ws = new WebSocket(wsUrl);
+    const query = new URLSearchParams(deviceCredential);
+    ws = new WebSocket(`${wsBaseUrl}?${query.toString()}`);
     ws.onopen = () => setWsConnected(true);
     ws.onmessage = (event) => {
       try {
@@ -343,6 +434,5 @@
   tickClock();
   renderState("unknown");
   renderSchedule([]);
-  loadTodayEvents();
-  connectWs();
+  activateScreen();
 })();
