@@ -14,6 +14,10 @@ export const authApi = {
     method: "POST",
     body: JSON.stringify({ password, displayName: displayName || null }),
   }),
+  register: (loginName: string, password: string, displayName?: string) => apiRequest<CurrentUser>("/api/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ loginName, password, displayName: displayName || null }),
+  }),
   login: (userId: string, password: string) => apiRequest<CurrentUser>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ userId, password }),

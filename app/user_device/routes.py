@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,6 +18,7 @@ from app.user_device.service import (
     pairDict,
     pendingDispatches,
     queueDispatch,
+    readClaimedPair,
     requireDevice,
     startPair,
 )
@@ -83,6 +84,11 @@ def pairRead(pairId: str, userId: str = Depends(require_authenticated_user_id), 
 @router.post("/pair/{pairId}/claim")
 def pairClaim(pairId: str, body: ClaimPairBody, db: Session = Depends(get_db)) -> dict[str, Any]:
     return _ok(pairDict(claimPair(db, pairId, body.claimCode, body.deviceName)))
+
+
+@router.get("/pair/{pairId}/status")
+def pairClaimStatus(pairId: str, claimCode: str = Query(min_length=8, max_length=100), db: Session = Depends(get_db)) -> dict[str, Any]:
+    return _ok(pairDict(readClaimedPair(db, pairId, claimCode)))
 
 
 @router.post("/pair/{pairId}/confirm")

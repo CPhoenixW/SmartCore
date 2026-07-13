@@ -51,15 +51,11 @@ class PhotoFailureBody(BaseModel):
     error: str = Field(min_length=1, max_length=1000)
 
 
-def require_device_token(
-    settings: Settings = Depends(get_settings),
-    token: str | None = Header(default=None, alias=DEVICE_TOKEN_HEADER),
-) -> None:
-    expected = settings.device_api_token
-    if not expected:
-        return
-    if token != expected:
-        raise HTTPException(status_code=401, detail="invalid or missing device token")
+def _require_bound_device(db: Session, token: str | None, dev_id: str):
+    device = requireDevice(db, token)
+    if device.deviceId != dev_id:
+        raise HTTPException(status_code=403, detail="device does not match credential")
+    return device
 
 
 def _ok(data: Any) -> dict[str, Any]:
@@ -151,15 +147,17 @@ async def device_heartbeat(
     )
 
 
-@router.get("/dev/photo/request", dependencies=[Depends(require_device_token)])
+@router.get("/dev/photo/request")
 def poll_photo_request(
     devId: str = Query(min_length=1, max_length=50),
     db: Session = Depends(get_db),
+    token: str | None = Header(default=None, alias=DEVICE_TOKEN_HEADER),
 ) -> dict[str, Any]:
+    _require_bound_device(db, token, devId)
     return _ok(service.next_pending_photo_request(db, device_id=devId))
 
 
-@router.post("/dev/photo/{request_id}", dependencies=[Depends(require_device_token)])
+@router.post("/dev/photo/{request_id}")
 async def upload_requested_photo(
     request_id: str,
     devId: str = Form(...),
@@ -168,7 +166,9 @@ async def upload_requested_photo(
     image: UploadFile = File(...),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    token: str | None = Header(default=None, alias=DEVICE_TOKEN_HEADER),
 ) -> dict[str, Any]:
+    _require_bound_device(db, token, devId)
     try:
         request_row = service.get_photo_request(db, request_id)
         if request_row.deviceId != devId:
@@ -214,13 +214,15 @@ async def upload_requested_photo(
     return _ok(result)
 
 
-@router.post("/dev/photo/{request_id}/failed", dependencies=[Depends(require_device_token)])
+@router.post("/dev/photo/{request_id}/failed")
 def report_photo_failure(
     request_id: str,
     body: PhotoFailureBody,
     db: Session = Depends(get_db),
+    token: str | None = Header(default=None, alias=DEVICE_TOKEN_HEADER),
 ) -> dict[str, Any]:
     try:
+        _require_bound_device(db, token, body.devId)
         return _ok(
             service.fail_photo_request(
                 db,

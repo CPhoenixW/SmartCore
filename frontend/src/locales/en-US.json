@@ -313,7 +313,13 @@
     "info": "Pairing details",
     "id": "Pair ID",
     "code": "Pairing code",
-    "hint": "Claim on the device, then confirm here. Activation needs both values.",
+    "hint": "Claim on the device, then confirm here.",
+    "feishuGuide": "Send: bind {code} to the Feishu bot. Return here to confirm after it replies.",
+    "screenGuide": "Copy the screen link and open it in the screen browser. It claims automatically; then confirm here.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyFailed": "Could not copy. Select the text and copy it manually.",
+    "openScreen": "Copy screen link",
     "confirm": "Confirm device",
     "kind": {"screen": "Screen", "pi": "Raspberry Pi", "browser": "Computer agent", "feishuBot": "Feishu bot"}
   }
