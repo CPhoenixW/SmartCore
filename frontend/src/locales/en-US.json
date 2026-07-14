@@ -310,6 +310,7 @@
     "title": "Registered devices",
     "empty": "No active devices yet.",
     "updated": "Presence record updated",
+    "bound": "Feishu account bound",
     "notReported": "No report yet",
     "namePlaceholder": "Device name, for example: Desk screen",
     "start": "Start pairing",

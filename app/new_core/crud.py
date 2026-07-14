@@ -40,6 +40,8 @@ def _parseNow(now: str) -> datetime:
 def _ensure_user(db: Session, userId: str = DEFAULT_USER_ID) -> AppUser:
     user = db.get(AppUser, userId)
     if user is None:
+        if userId != DEFAULT_USER_ID:
+            raise ValueError("user is unavailable")
         now = nowIso()
         user = AppUser(userId=userId, loginName=userId, role="admin" if userId == DEFAULT_USER_ID else "user", displayName="默认用户", language="zh", avatarUrl=None, createdAt=now, updatedAt=now)
         db.add(user)
