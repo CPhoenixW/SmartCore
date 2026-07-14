@@ -106,6 +106,7 @@ def _reminder_dict(base: EvtBase, remind: RemindEvt) -> dict[str, Any]:
     return _event_dict(
         base,
         planEvtId=remind.planEvtId,
+        ddlEvtId=remind.ddlEvtId,
         remindKind=remind.remindKind,
         triggerTime=remind.triggerTime,
         offsetMin=remind.offsetMin,
@@ -118,6 +119,16 @@ def _plan_reminders(db: Session, plan_evt_id: str) -> list[dict[str, Any]]:
         select(EvtBase, RemindEvt)
         .join(RemindEvt, RemindEvt.evtId == EvtBase.evtId)
         .where(RemindEvt.planEvtId == plan_evt_id)
+        .order_by(RemindEvt.triggerTime.asc())
+    ).all()
+    return [_reminder_dict(base, remind) for base, remind in rows]
+
+
+def _ddl_reminders(db: Session, ddl_evt_id: str) -> list[dict[str, Any]]:
+    rows = db.execute(
+        select(EvtBase, RemindEvt)
+        .join(RemindEvt, RemindEvt.evtId == EvtBase.evtId)
+        .where(RemindEvt.ddlEvtId == ddl_evt_id)
         .order_by(RemindEvt.triggerTime.asc())
     ).all()
     return [_reminder_dict(base, remind) for base, remind in rows]
@@ -169,7 +180,10 @@ def _ddl_dict(db: Session, base: EvtBase, ddl: DdlEvt) -> dict[str, Any]:
             item = _plan_dict(db, plan_base, plan)
             item.update({"planRole": link.planRole, "sortOrder": link.sortOrder})
             plans.append(item)
-    return _event_dict(base, endTime=ddl.endTime, hardDdl=ddl.hardDdl, plans=plans)
+    return _event_dict(
+        base, endTime=ddl.endTime, hardDdl=ddl.hardDdl, plans=plans,
+        ddlReminders=_ddl_reminders(db, base.evtId),
+    )
 
 
 def _course_occurrences(db: Session, course_evt_id: str) -> list[dict[str, Any]]:
@@ -782,6 +796,13 @@ def cancel_event(db: Session, evt_id: str, *, src: str = "api") -> dict[str, Any
                 plan_base.stat = "cancelled"
                 plan_base.updatedAt = nowIso()
                 sync_plan_reminders(db, plan_base.evtId)
+        for reminder_base, _ in db.execute(
+            select(EvtBase, RemindEvt)
+            .join(RemindEvt, RemindEvt.evtId == EvtBase.evtId)
+            .where(RemindEvt.ddlEvtId == evt_id)
+        ).all():
+            reminder_base.stat = "cancelled"
+            reminder_base.updatedAt = nowIso()
     _record_action(
         db,
         user_id=base.userId,

@@ -65,7 +65,12 @@
       "priority": "优先级",
       "status": "状态",
       "hardDdl": "硬性截止",
-      "plans": "关联计划"
+      "plans": "关联计划",
+      "linkedReminders": "关联提醒",
+      "reminderContent": "提醒内容",
+      "enableReminder": "启用提醒",
+      "deleteReminder": "删除提醒",
+      "addLinkedReminder": "添加关联提醒"
     },
     "placeholder": {
       "planTitle": "例如：复习热流体",
@@ -297,6 +302,7 @@
     "sessionHint": "退出后需要重新登录才能继续访问此工作台。",
     "logout": "退出登录",
     "adminTitle": "管理员：切换工作账户",
+    "feishuPairing": "飞书机器人配对",
     "currentUser": "当前账户",
     "switchUser": "切换到此账户"
   },

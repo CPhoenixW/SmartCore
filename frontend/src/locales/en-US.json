@@ -65,7 +65,12 @@
       "priority": "Priority",
       "status": "Status",
       "hardDdl": "Hard deadline",
-      "plans": "Linked plans"
+      "plans": "Linked plans",
+      "linkedReminders": "Linked reminders",
+      "reminderContent": "Reminder content",
+      "enableReminder": "Enable reminder",
+      "deleteReminder": "Delete reminder",
+      "addLinkedReminder": "Add linked reminder"
     },
     "placeholder": {
       "planTitle": "Example: Review thermofluids",
@@ -297,6 +302,7 @@
     "sessionHint": "Sign in again to continue using this workbench after logging out.",
     "logout": "Log out",
     "adminTitle": "Administrator: switch workspace user",
+    "feishuPairing": "Feishu bot pairing",
     "currentUser": "Current user",
     "switchUser": "Switch to this user"
   },

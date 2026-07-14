@@ -98,6 +98,88 @@ def _normalize_plan_specs(
     return normalized
 
 
+def _normalize_reminder_specs(
+    ddl_title: str,
+    reminder_specs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for order, raw in enumerate(reminder_specs):
+        if not isinstance(raw, dict) or raw.get("enabled", True) is False:
+            continue
+        trigger_time = str(raw.get("triggerTime") or raw.get("at") or "").strip()
+        if not trigger_time:
+            raise ValueError(f"ddlReminders[{order}].triggerTime required")
+        title = str(raw.get("title") or f"{ddl_title} · 提醒").strip()
+        if not title:
+            raise ValueError(f"ddlReminders[{order}].title required")
+        priority = str(raw.get("prio") or raw.get("priority") or "high").lower()
+        if priority not in {"low", "mid", "high"}:
+            raise ValueError(f"ddlReminders[{order}].prio invalid")
+        normalized.append({
+            "remindEvtId": str(raw.get("remindEvtId") or raw.get("evtId") or "").strip() or None,
+            "title": title,
+            "desc": raw.get("desc") or "DDL 关联提醒",
+            "triggerTime": _parse_datetime(trigger_time).isoformat(),
+            "prio": priority,
+        })
+    return normalized
+
+
+def _add_ddl_reminder(db: Session, *, ddl_id: str, ddl_base: EvtBase, spec: dict[str, Any], src: str) -> str:
+    reminder_id = newId()
+    now = nowIso()
+    db.add(EvtBase(
+        evtId=reminder_id, userId=ddl_base.userId, title=spec["title"], desc=spec["desc"],
+        evtType="remind", prio=spec["prio"], stat="todo" if ddl_base.stat == "todo" else "cancelled",
+        createdAt=now, updatedAt=now,
+    ))
+    db.add(RemindEvt(
+        evtId=reminder_id, planEvtId=None, ddlEvtId=ddl_id, remindKind="ddl_linked",
+        triggerTime=spec["triggerTime"], offsetMin=0, firedAt=None,
+    ))
+    db.add(ActLog(
+        userId=ddl_base.userId, actorKind="system" if src == "api" else _actor_kind(src),
+        actorId="ddl-reminder" if src == "api" else src, action="auto_create" if src == "api" else "create",
+        targetKind="evt", targetId=reminder_id, result="ok",
+    ))
+    return reminder_id
+
+
+def replace_ddl_reminders(db: Session, ddl_evt_id: str, reminders: list[dict[str, Any]], *, src: str = "api", commit: bool = True) -> dict[str, Any]:
+    ddl_base = db.get(EvtBase, ddl_evt_id)
+    ddl = db.get(DdlEvt, ddl_evt_id)
+    if ddl_base is None or ddl is None:
+        raise ValueError(f"ddl not found: {ddl_evt_id}")
+    normalized = _normalize_reminder_specs(ddl_base.title, reminders)
+    existing = {row.evtId: row for row in db.scalars(select(RemindEvt).where(RemindEvt.ddlEvtId == ddl_evt_id)).all()}
+    retained: set[str] = set()
+    for spec in normalized:
+        reminder_id = spec["remindEvtId"]
+        if reminder_id and reminder_id in existing:
+            reminder = existing[reminder_id]
+            base = db.get(EvtBase, reminder_id)
+            if base is None:
+                raise ValueError(f"linked reminder not found: {reminder_id}")
+            base.title, base.desc, base.prio = spec["title"], spec["desc"], spec["prio"]
+            base.stat = "todo" if ddl_base.stat == "todo" else "cancelled"
+            base.updatedAt = nowIso()
+            if reminder.triggerTime != spec["triggerTime"]:
+                reminder.triggerTime, reminder.firedAt = spec["triggerTime"], None
+            retained.add(reminder_id)
+        else:
+            retained.add(_add_ddl_reminder(db, ddl_id=ddl_evt_id, ddl_base=ddl_base, spec=spec, src=src))
+    for reminder_id, reminder in existing.items():
+        if reminder_id not in retained:
+            base = db.get(EvtBase, reminder_id)
+            db.delete(reminder)
+            if base is not None:
+                db.delete(base)
+    db.flush()
+    if commit:
+        db.commit()
+    return get_event(db, ddl_evt_id)
+
+
 def _actor_kind(src: str) -> str:
     return "llm" if src in {"openclaw", "llm"} else "user"
 
@@ -246,6 +328,7 @@ def create_ddl_event(
     desc: str | None = None,
     prio: str = "high",
     plans: list[dict[str, Any]] | None = None,
+    ddlReminders: list[dict[str, Any]] | None = None,
     userId: str = crud.DEFAULT_USER_ID,
     src: str = "api",
 ) -> dict[str, Any]:
@@ -288,6 +371,8 @@ def create_ddl_event(
 
     for spec in normalized:
         _add_plan(db, ddl_id=ddl_id, ddl_base=base, spec=spec, src=src)
+    for spec in _normalize_reminder_specs(clean_title, ddlReminders or []):
+        _add_ddl_reminder(db, ddl_id=ddl_id, ddl_base=base, spec=spec, src=src)
 
     try:
         db.commit()

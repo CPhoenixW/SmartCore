@@ -10,7 +10,7 @@ from app.agent.routes import _done, _failed, requireAgentToken
 from app.agent.v2_routes import _normalize_update_patch, _resolved_iso
 from app.db.session import get_db
 from app.new_core.course_semester import create_course_event, update_course_event
-from app.new_core.ddl_service import create_ddl_event, replace_ddl_plans
+from app.new_core.ddl_service import create_ddl_event, replace_ddl_plans, replace_ddl_reminders
 from app.new_core.event_relations import create_plan_event, update_event
 from app.new_core.models import EvtBase
 from app.new_core.reminder_service import create_reminder_event, update_reminder_event
@@ -35,6 +35,24 @@ def _normalized_plans(body: dict[str, Any]) -> list[dict[str, Any]] | None:
                 body,
                 f"plans[{index}].stTime",
             )
+        result.append(normalized)
+    return result
+
+
+def _normalized_ddl_reminders(body: dict[str, Any]) -> list[dict[str, Any]] | None:
+    reminders = body["ddlReminders"] if "ddlReminders" in body else body.get("linkedReminders")
+    if reminders is None:
+        return None
+    if not isinstance(reminders, list):
+        raise ValueError("ddlReminders must be an array")
+    result: list[dict[str, Any]] = []
+    for index, reminder in enumerate(reminders):
+        if not isinstance(reminder, dict):
+            raise ValueError(f"ddlReminders[{index}] must be an object")
+        normalized = dict(reminder)
+        raw_time = reminder.get("triggerTime") or reminder.get("at")
+        if raw_time not in (None, ""):
+            normalized["triggerTime"] = _resolved_iso(raw_time, body, f"ddlReminders[{index}].triggerTime")
         result.append(normalized)
     return result
 
@@ -98,6 +116,7 @@ def createRelationWriteRouter() -> APIRouter:
                         desc=body.get("desc") or body.get("description"),
                         prio=body.get("prio") or body.get("priority") or "high",
                         plans=_normalized_plans(body),
+                        ddlReminders=_normalized_ddl_reminders(body),
                         src="openclaw",
                     )
                 )
@@ -162,11 +181,14 @@ def createRelationWriteRouter() -> APIRouter:
                 return _done(update_course_event(db, str(evt_id), src="openclaw", **patch))
 
             plans = _normalized_plans(body) if ("plans" in body or "linkedPlans" in body) else None
-            if not patch and plans is None:
+            reminders = _normalized_ddl_reminders(body) if ("ddlReminders" in body or "linkedReminders" in body) else None
+            if not patch and plans is None and reminders is None:
                 raise ValueError("no supported update fields")
             result = update_event(db, str(evt_id), src="openclaw", **patch)
             if base.evtType == "ddl" and plans is not None:
                 result = replace_ddl_plans(db, str(evt_id), plans, src="openclaw")
+            if base.evtType == "ddl" and reminders is not None:
+                result = replace_ddl_reminders(db, str(evt_id), reminders, src="openclaw")
             return _done(result)
         except (ValueError, TypeError, IntegrityError) as exc:
             db.rollback()

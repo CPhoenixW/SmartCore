@@ -2,7 +2,8 @@
 import { reactive, watch } from "vue";
 import { z } from "zod";
 import DdlPlanEditor from "./DdlPlanEditor.vue";
-import type { CreateDdlPayload, DdlPlan, Priority } from "@/types/event";
+import DdlReminderEditor from "./DdlReminderEditor.vue";
+import type { CreateDdlPayload, DdlPlan, DdlReminder, Priority } from "@/types/event";
 import { defaultDdlPlans, localInputToIso, toLocalInput } from "@/utils/date";
 
 const props = defineProps<{ initial?: Partial<CreateDdlPayload>; busy?: boolean }>();
@@ -12,7 +13,7 @@ const emit = defineEmits<{
 }>();
 const schema = z.object({ title: z.string().trim().min(1), endTime: z.string().min(1), prio: z.enum(["low", "mid", "high"]) });
 const defaultEnd = new Date(Date.now() + 86_400_000).toISOString();
-const form = reactive({ title: "", desc: "", endTime: toLocalInput(defaultEnd), hardDdl: false, prio: "high" as Priority, plans: defaultDdlPlans(defaultEnd) as DdlPlan[] });
+const form = reactive({ title: "", desc: "", endTime: toLocalInput(defaultEnd), hardDdl: false, prio: "high" as Priority, plans: defaultDdlPlans(defaultEnd) as DdlPlan[], ddlReminders: [] as DdlReminder[] });
 
 function payload(): CreateDdlPayload {
   return {
@@ -22,6 +23,7 @@ function payload(): CreateDdlPayload {
     hardDdl: form.hardDdl,
     prio: form.prio,
     plans: form.plans.map((plan, sortOrder) => ({ ...plan, sortOrder })),
+    ddlReminders: form.ddlReminders.map((reminder) => ({ ...reminder })),
   };
 }
 
@@ -30,6 +32,7 @@ watch(() => props.initial, (value) => {
   Object.assign(form, value, {
     endTime: toLocalInput(value.endTime) || form.endTime,
     plans: value.plans ? structuredClone(value.plans).map((plan) => ({ ...plan, enabled: plan.enabled !== false })) : form.plans,
+    ddlReminders: value.ddlReminders ? structuredClone(value.ddlReminders).map((item) => ({ ...item, enabled: item.enabled !== false })) : form.ddlReminders,
   });
 }, { immediate: true, deep: true });
 watch(form, () => emit("preview", payload()), { immediate: true, deep: true });
@@ -50,7 +53,9 @@ function submit() {
   const parsed = schema.parse(form);
   const plans = form.plans.filter((plan) => plan.enabled !== false);
   if (plans.some((plan) => !plan.stTime || plan.durationMin < 1)) return;
-  emit("submit", { ...parsed, desc: form.desc.trim() || null, hardDdl: form.hardDdl, endTime: localInputToIso(parsed.endTime), plans: plans.map((plan, sortOrder) => ({ ...plan, sortOrder })) });
+  const ddlReminders = form.ddlReminders.filter((item) => item.enabled !== false);
+  if (ddlReminders.some((item) => !item.title?.trim() || !item.triggerTime)) return;
+  emit("submit", { ...parsed, desc: form.desc.trim() || null, hardDdl: form.hardDdl, endTime: localInputToIso(parsed.endTime), plans: plans.map((plan, sortOrder) => ({ ...plan, sortOrder })), ddlReminders });
 }
 </script>
 
@@ -62,6 +67,7 @@ function submit() {
     <label class="field"><span>{{ $t("event.form.priority") }}</span><select v-model="form.prio"><option value="low">{{ $t("event.priority.low") }}</option><option value="mid">{{ $t("event.priority.mid") }}</option><option value="high">{{ $t("event.priority.high") }}</option></select></label>
     <label class="check-field field--wide"><input v-model="form.hardDdl" type="checkbox" />{{ $t("event.form.hardDdl") }}</label>
     <div class="field--wide"><h3>{{ $t("event.form.plans") }}</h3><DdlPlanEditor v-model="form.plans" /></div>
+    <div class="field--wide"><h3>{{ $t("event.form.linkedReminders") }}</h3><DdlReminderEditor v-model="form.ddlReminders" /></div>
     <div class="form-actions field--wide"><button class="button button--primary" type="submit" :disabled="busy">{{ busy ? $t("common.saving") : $t("event.action.createDeadline") }}</button></div>
   </form>
 </template>

@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { reactive, watch } from "vue";
 import DdlPlanEditor from "./DdlPlanEditor.vue";
-import type { DdlPlan, EventStatus, Priority, SmartCoreEvent } from "@/types/event";
+import DdlReminderEditor from "./DdlReminderEditor.vue";
+import type { DdlPlan, DdlReminder, EventStatus, Priority, SmartCoreEvent } from "@/types/event";
 import { getEventPrimaryTime, localInputToIso, toLocalInput } from "@/utils/date";
 
 const props = defineProps<{ event: SmartCoreEvent; busy?: boolean }>();
 const emit = defineEmits<{ save: [payload: Record<string, unknown>]; done: []; cancel: [] }>();
-const form = reactive({ title: "", desc: "", stat: "todo" as EventStatus, prio: "mid" as Priority, time: "", durationMin: 30, hardDdl: false, plans: [] as DdlPlan[] });
+const form = reactive({ title: "", desc: "", stat: "todo" as EventStatus, prio: "mid" as Priority, time: "", durationMin: 30, hardDdl: false, plans: [] as DdlPlan[], ddlReminders: [] as DdlReminder[] });
 
 watch(
   () => props.event,
@@ -19,6 +20,7 @@ watch(
     durationMin: event.evtType === "plan" ? event.durationMin : 30,
     hardDdl: event.evtType === "ddl" ? event.hardDdl : false,
     plans: event.evtType === "ddl" ? structuredClone(event.plans ?? []) : [],
+    ddlReminders: event.evtType === "ddl" ? structuredClone(event.ddlReminders ?? []) : [],
   }),
   { immediate: true, deep: true },
 );
@@ -31,7 +33,9 @@ function save() {
   if (props.event.evtType === "remind") payload.triggerTime = time;
   if (props.event.evtType === "ddl") {
     const enabledPlans = form.plans.filter((plan) => plan.enabled !== false && plan.stTime);
-    Object.assign(payload, { endTime: time, hardDdl: form.hardDdl, plans: enabledPlans });
+    const enabledReminders = form.ddlReminders.filter((reminder) => reminder.enabled !== false);
+    if (enabledReminders.some((reminder) => !reminder.title?.trim() || !reminder.triggerTime)) return;
+    Object.assign(payload, { endTime: time, hardDdl: form.hardDdl, plans: enabledPlans, ddlReminders: enabledReminders });
   }
   emit("save", payload);
 }
@@ -47,6 +51,7 @@ function save() {
     <label v-if="event.evtType === 'plan'" class="field"><span>{{ $t("event.form.duration") }}</span><input v-model.number="form.durationMin" type="number" min="1" /></label>
     <label v-if="event.evtType === 'ddl'" class="check-field field--wide"><input v-model="form.hardDdl" type="checkbox" />{{ $t("event.form.hardDdl") }}</label>
     <div v-if="event.evtType === 'ddl'" class="field--wide"><DdlPlanEditor v-model="form.plans" /></div>
+    <div v-if="event.evtType === 'ddl'" class="field--wide"><h3>{{ $t("event.form.linkedReminders") }}</h3><DdlReminderEditor v-model="form.ddlReminders" /></div>
     <div class="form-actions field--wide">
       <button class="button button--primary" type="submit" :disabled="busy">{{ $t("common.save") }}</button>
       <button v-if="event.stat !== 'done'" class="button" type="button" :disabled="busy" @click="$emit('done')">{{ $t("event.status.done") }}</button>

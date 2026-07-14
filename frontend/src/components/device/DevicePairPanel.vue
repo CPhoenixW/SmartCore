@@ -6,13 +6,16 @@ import BaseCard from "@/components/base/BaseCard.vue";
 import { deviceRegistryApi } from "@/api/deviceRegistry";
 import { useToast } from "@/composables/useToast";
 
+const props = withDefaults(defineProps<{ allowedKinds?: string[]; title?: string }>(), { allowedKinds: () => ["screen", "pi", "browser", "feishuBot"] });
+
 const toast = useToast();
 const { t } = useI18n();
 const queryClient = useQueryClient();
 const deviceName = ref("");
-const deviceKind = ref("screen");
+const deviceKind = ref(props.allowedKinds[0] ?? "screen");
 const currentPair = ref<Awaited<ReturnType<typeof deviceRegistryApi.startPair>> | null>(null);
 const devices = useQuery({ queryKey: ["lifeDevices"], queryFn: deviceRegistryApi.list, refetchInterval: 15_000 });
+const visibleDevices = computed(() => (devices.data.value ?? []).filter((item) => props.allowedKinds.includes(item.deviceKind)));
 const start = useMutation({
   mutationFn: () => deviceRegistryApi.startPair(deviceName.value, deviceKind.value),
   onSuccess: (pair) => { currentPair.value = pair; toast.success(t("pair.created")); },
@@ -64,15 +67,15 @@ function deleteDevice(deviceId: string, name: string) {
 </script>
 
 <template>
-  <BaseCard :title="t('pair.title')">
+  <BaseCard :title="title ?? t('pair.title')">
     <div class="device-pair-list">
-      <article v-for="item in devices.data.value ?? []" :key="item.deviceId" class="device-pair-row">
+      <article v-for="item in visibleDevices" :key="item.deviceId" class="device-pair-row">
         <div class="device-pair-identity"><strong>{{ item.deviceName }}</strong><small>{{ t(`pair.kind.${item.deviceKind}`) }} · {{ item.stat }}</small></div>
         <div class="device-pair-actions"><small>{{ item.lastSeenAt ? t('pair.updated') : t('pair.notReported') }}</small><button class="icon-button" type="button" :aria-label="t('pair.delete')" :title="t('pair.delete')" :disabled="remove.isPending.value" @click="deleteDevice(item.deviceId, item.deviceName)">×</button></div>
       </article>
-      <p v-if="!(devices.data.value ?? []).length" class="muted">{{ t('pair.empty') }}</p>
+      <p v-if="!visibleDevices.length" class="muted">{{ t('pair.empty') }}</p>
     </div>
-    <form class="device-pair-form" @submit.prevent="start.mutate()"><input v-model.trim="deviceName" required :placeholder="t('pair.namePlaceholder')" /><select v-model="deviceKind"><option value="screen">{{ t('pair.kind.screen') }}</option><option value="pi">{{ t('pair.kind.pi') }}</option><option value="browser">{{ t('pair.kind.browser') }}</option><option value="feishuBot">{{ t('pair.kind.feishuBot') }}</option></select><button class="button button--primary" :disabled="start.isPending.value">{{ t('pair.start') }}</button></form>
+    <form class="device-pair-form" :class="{ 'device-pair-form--single': allowedKinds.length === 1 }" @submit.prevent="start.mutate()"><input v-model.trim="deviceName" required :placeholder="t('pair.namePlaceholder')" /><select v-if="allowedKinds.length > 1" v-model="deviceKind"><option v-if="allowedKinds.includes('screen')" value="screen">{{ t('pair.kind.screen') }}</option><option v-if="allowedKinds.includes('pi')" value="pi">{{ t('pair.kind.pi') }}</option><option v-if="allowedKinds.includes('browser')" value="browser">{{ t('pair.kind.browser') }}</option><option v-if="allowedKinds.includes('feishuBot')" value="feishuBot">{{ t('pair.kind.feishuBot') }}</option></select><button class="button button--primary" :disabled="start.isPending.value">{{ t('pair.start') }}</button></form>
     <section v-if="currentPair" class="pair-flow">
       <header><div><small>{{ t('pair.step') }}</small><strong>{{ currentPair.deviceName }}</strong></div><span class="pair-stat">{{ currentPair.stat }}</span></header>
       <p>{{ guide }}</p>
@@ -84,5 +87,5 @@ function deleteDevice(deviceId: string, name: string) {
 </template>
 
 <style scoped>
-.device-pair-list{display:grid;gap:4px}.device-pair-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 2px;border-bottom:1px solid var(--border-subtle)}.device-pair-identity strong,.device-pair-identity small{display:block}.device-pair-identity small,.device-pair-actions small{margin-top:4px;color:var(--text-muted);font-size:12px}.device-pair-actions{display:flex;align-items:center;gap:10px}.icon-button{display:grid;place-items:center;width:30px;height:30px;border:1px solid var(--border-color);border-radius:50%;background:#fff;color:#94a3b8;font-size:21px;line-height:1}.icon-button:hover{border-color:#fecaca;background:#fff1f2;color:#dc2626}.device-pair-form{display:grid;grid-template-columns:minmax(0,1fr) 160px auto;gap:12px;margin-top:18px}.device-pair-form input,.device-pair-form select{width:100%;min-height:46px;padding:0 15px;border:1px solid var(--border-color);border-radius:18px;background:#fff;font:inherit}.device-pair-form .button{border-radius:18px}.pair-flow{display:grid;gap:13px;margin-top:18px;padding:18px;border:1px solid #dbeafe;border-radius:16px;background:linear-gradient(135deg,#f8fbff,#fff)}.pair-flow header,.pair-flow footer,.pair-link,.pair-command{display:flex;align-items:center;justify-content:space-between;gap:12px}.pair-flow header small,.pair-flow header strong{display:block}.pair-flow header small{margin-bottom:3px;color:#64748b;font-size:12px}.pair-flow p{margin:0;color:#475569;line-height:1.55}.pair-stat{padding:5px 9px;border-radius:999px;background:#eff6ff;color:#2563eb;font-size:12px}.pair-command{padding:11px 12px;border-radius:12px;background:#f8fafc}.pair-command code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pair-link{padding:11px 12px;border-radius:12px;background:#eff6ff;color:#1e40af}.pair-link span{font-size:13px}.pair-flow footer{justify-content:flex-end}@media(max-width:700px){.device-pair-form{grid-template-columns:1fr}.device-pair-row{align-items:flex-start}.device-pair-actions small{display:none}.pair-flow header,.pair-flow footer,.pair-link,.pair-command{align-items:flex-start;flex-direction:column}.pair-flow footer{align-items:stretch}.pair-flow footer .button{width:100%}}
+.device-pair-list{display:grid;gap:4px}.device-pair-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 2px;border-bottom:1px solid var(--border-subtle)}.device-pair-identity strong,.device-pair-identity small{display:block}.device-pair-identity small,.device-pair-actions small{margin-top:4px;color:var(--text-muted);font-size:12px}.device-pair-actions{display:flex;align-items:center;gap:10px}.icon-button{display:grid;place-items:center;width:30px;height:30px;border:1px solid var(--border-color);border-radius:50%;background:#fff;color:#94a3b8;font-size:21px;line-height:1}.icon-button:hover{border-color:#fecaca;background:#fff1f2;color:#dc2626}.device-pair-form{display:grid;grid-template-columns:minmax(0,1fr) 160px auto;gap:12px;margin-top:18px}.device-pair-form--single{grid-template-columns:minmax(0,1fr) auto}.device-pair-form input,.device-pair-form select{width:100%;min-height:46px;padding:0 15px;border:1px solid var(--border-color);border-radius:18px;background:#fff;font:inherit}.device-pair-form .button{border-radius:18px}.pair-flow{display:grid;gap:13px;margin-top:18px;padding:18px;border:1px solid #dbeafe;border-radius:16px;background:linear-gradient(135deg,#f8fbff,#fff)}.pair-flow header,.pair-flow footer,.pair-link,.pair-command{display:flex;align-items:center;justify-content:space-between;gap:12px}.pair-flow header small,.pair-flow header strong{display:block}.pair-flow header small{margin-bottom:3px;color:#64748b;font-size:12px}.pair-flow p{margin:0;color:#475569;line-height:1.55}.pair-stat{padding:5px 9px;border-radius:999px;background:#eff6ff;color:#2563eb;font-size:12px}.pair-command{padding:11px 12px;border-radius:12px;background:#f8fafc}.pair-command code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pair-link{padding:11px 12px;border-radius:12px;background:#eff6ff;color:#1e40af}.pair-link span{font-size:13px}.pair-flow footer{justify-content:flex-end}@media(max-width:700px){.device-pair-form{grid-template-columns:1fr}.device-pair-row{align-items:flex-start}.device-pair-actions small{display:none}.pair-flow header,.pair-flow footer,.pair-link,.pair-command{align-items:flex-start;flex-direction:column}.pair-flow footer{align-items:stretch}.pair-flow footer .button{width:100%}}
 </style>
