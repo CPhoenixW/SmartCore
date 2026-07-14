@@ -310,6 +310,7 @@
     "title": "已注册设备",
     "empty": "还没有已激活设备。",
     "updated": "在线记录已更新",
+    "bound": "飞书账号已绑定",
     "notReported": "尚未上报",
     "namePlaceholder": "设备名称，例如：书桌副屏",
     "start": "开始配对",

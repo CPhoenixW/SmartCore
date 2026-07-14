@@ -206,7 +206,8 @@ def _rebuild_remind_evt_for_standalone(conn: object) -> None:
 
 
 def _rebuild_act_log_for_user_targets(conn: object) -> None:
-    if not _sqlite_columns(conn, "actLog") or "'user'" in _sqlite_table_sql(conn, "actLog"):
+    sql = _sqlite_table_sql(conn, "actLog")
+    if not _sqlite_columns(conn, "actLog") or "CHECK (targetKind IN ('user'," in sql:
         return
     conn.execute("DROP TABLE IF EXISTS actLog_new")
     conn.execute(
@@ -233,6 +234,33 @@ def _rebuild_act_log_for_user_targets(conn: object) -> None:
     conn.execute("INSERT INTO actLog_new SELECT * FROM actLog")
     conn.execute("DROP TABLE actLog")
     conn.execute("ALTER TABLE actLog_new RENAME TO actLog")
+
+
+def _repair_duplicate_login_names(conn: object) -> None:
+    """Retire generated passwordless shadows before enforcing unique login names."""
+    if not _sqlite_columns(conn, "appUser"):
+        return
+    duplicates = conn.execute(
+        "SELECT loginName FROM appUser WHERE loginName IS NOT NULL "
+        "GROUP BY loginName HAVING COUNT(*) > 1"
+    ).fetchall()
+    for (login_name,) in duplicates:
+        rows = conn.execute(
+            "SELECT userId, passwd, displayName FROM appUser WHERE loginName = ? ORDER BY createdAt",
+            (login_name,),
+        ).fetchall()
+        keeper = next((row for row in rows if row[1]), rows[0])
+        for user_id, password, display_name in rows:
+            if user_id == keeper[0] or password or display_name != "默认用户":
+                continue
+            conn.execute(
+                "UPDATE appUser SET loginName = NULL, stat = 'disabled' WHERE userId = ?",
+                (user_id,),
+            )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_appUser_loginName ON appUser(loginName) "
+        "WHERE loginName IS NOT NULL"
+    )
 
 
 def _rebuild_ddl_plan_for_multiple_links(conn: object) -> None:
@@ -291,6 +319,7 @@ def _apply_sqlite_migrations(db_path: Path) -> None:
             conn.execute("UPDATE appUser SET role = CASE WHEN userId = 'default' THEN 'admin' ELSE COALESCE(role, 'user') END")
             conn.execute("UPDATE appUser SET language = COALESCE(language, 'zh')")
             conn.execute("UPDATE appUser SET updatedAt = COALESCE(updatedAt, createdAt, strftime('%Y-%m-%dT%H:%M:%f+08:00', 'now')) WHERE updatedAt IS NULL")
+            _repair_duplicate_login_names(conn)
         if "evtBase" in tables:
             _add_sqlite_column(conn, "evtBase", "userId", "userId VARCHAR(32) NOT NULL DEFAULT 'default'")
             conn.execute("UPDATE evtBase SET userId = COALESCE(userId, 'default')")

@@ -71,7 +71,7 @@ function deleteDevice(deviceId: string, name: string) {
     <div class="device-pair-list">
       <article v-for="item in visibleDevices" :key="item.deviceId" class="device-pair-row">
         <div class="device-pair-identity"><strong>{{ item.deviceName }}</strong><small>{{ t(`pair.kind.${item.deviceKind}`) }} · {{ item.stat }}</small></div>
-        <div class="device-pair-actions"><small>{{ item.lastSeenAt ? t('pair.updated') : t('pair.notReported') }}</small><button class="icon-button" type="button" :aria-label="t('pair.delete')" :title="t('pair.delete')" :disabled="remove.isPending.value" @click="deleteDevice(item.deviceId, item.deviceName)">×</button></div>
+        <div class="device-pair-actions"><small>{{ item.deviceKind === 'feishuBot' ? t('pair.bound') : item.lastSeenAt ? t('pair.updated') : t('pair.notReported') }}</small><button class="icon-button" type="button" :aria-label="t('pair.delete')" :title="t('pair.delete')" :disabled="remove.isPending.value" @click="deleteDevice(item.deviceId, item.deviceName)">×</button></div>
       </article>
       <p v-if="!visibleDevices.length" class="muted">{{ t('pair.empty') }}</p>
     </div>
