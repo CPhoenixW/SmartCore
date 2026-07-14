@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -127,6 +127,7 @@ class RemindEvt(Base):
     __tablename__ = "remindEvt"
     __table_args__ = (
         UniqueConstraint("planEvtId", "remindKind", name="uq_plan_remind_kind"),
+        CheckConstraint("planEvtId IS NULL OR ddlEvtId IS NULL", name="ck_remind_evt_single_owner"),
     )
 
     evtId: Mapped[str] = mapped_column(
@@ -134,6 +135,9 @@ class RemindEvt(Base):
     )
     planEvtId: Mapped[str | None] = mapped_column(
         String(32), ForeignKey("planEvt.evtId", ondelete="CASCADE"), nullable=True
+    )
+    ddlEvtId: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("ddlEvt.evtId", ondelete="CASCADE"), nullable=True
     )
     remindKind: Mapped[str] = mapped_column(String(30), nullable=False)
     triggerTime: Mapped[str] = mapped_column(String(64), nullable=False)

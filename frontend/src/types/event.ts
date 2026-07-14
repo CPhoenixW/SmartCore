@@ -40,6 +40,7 @@ export interface ReminderEvent extends BaseEvent {
   evtType: "remind";
   triggerTime: string;
   planEvtId?: string | null;
+  ddlEvtId?: string | null;
   remindKind?: string | null;
   offsetMin?: number | null;
   firedAt?: string | null;
@@ -57,11 +58,22 @@ export interface DdlPlan {
   sortOrder?: number;
 }
 
+export interface DdlReminder {
+  remindEvtId?: string;
+  evtId?: string;
+  title?: string | null;
+  desc?: string | null;
+  triggerTime: string;
+  prio?: Priority;
+  enabled?: boolean;
+}
+
 export interface DdlEvent extends BaseEvent {
   evtType: "ddl";
   endTime: string;
   hardDdl: boolean;
   plans: DdlPlan[];
+  ddlReminders: DdlReminder[];
 }
 
 export interface CourseEvent extends BaseEvent {
@@ -117,6 +129,7 @@ export interface CreateDdlPayload {
   hardDdl: boolean;
   prio: Priority;
   plans: DdlPlan[];
+  ddlReminders: DdlReminder[];
 }
 
 export type UpdateEventPayload = Record<string, unknown>;

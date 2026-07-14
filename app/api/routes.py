@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.auth.security import require_authenticated_user_id
 from app.db.session import get_db
 from app.new_core import crud
-from app.new_core.ddl_service import create_ddl_event, replace_ddl_plans
+from app.new_core.ddl_service import create_ddl_event, replace_ddl_plans, replace_ddl_reminders
 from app.new_core.event_relations import (
     cancel_event,
     create_course_event,
@@ -174,9 +174,12 @@ def patch_evt(
         if base.evtType == "remind":
             return ok(update_reminder_event(db, evtId, src="api", **body))
         plans = body.pop("plans", None)
+        ddl_reminders = body.pop("ddlReminders", None)
         result = update_event(db, evtId, src="api", **body)
         if base.evtType == "ddl" and plans is not None:
             result = replace_ddl_plans(db, evtId, plans, src="api")
+        if base.evtType == "ddl" and ddl_reminders is not None:
+            result = replace_ddl_reminders(db, evtId, ddl_reminders, src="api")
         return ok(result)
     except ValueError as exc:
         db.rollback()
@@ -265,6 +268,15 @@ class DdlPlanBody(BaseModel):
     sortOrder: int | None = None
 
 
+class DdlReminderBody(BaseModel):
+    remindEvtId: str | None = None
+    triggerTime: str
+    title: str | None = None
+    desc: str | None = None
+    prio: Literal["low", "mid", "high"] = "high"
+    enabled: bool = True
+
+
 class DdlEvtBody(BaseModel):
     title: str
     endTime: str
@@ -272,6 +284,7 @@ class DdlEvtBody(BaseModel):
     desc: str | None = None
     prio: str = "high"
     plans: list[DdlPlanBody] | None = None
+    ddlReminders: list[DdlReminderBody] | None = None
 
 
 @router.get("/ddlEvt")
@@ -286,6 +299,11 @@ def create_ddl_evt(body: DdlEvtBody, userId: str = Depends(require_authenticated
         payload["plans"] = (
             [plan.model_dump(exclude_none=True) for plan in body.plans]
             if body.plans is not None
+            else None
+        )
+        payload["ddlReminders"] = (
+            [item.model_dump(exclude_none=True) for item in body.ddlReminders]
+            if body.ddlReminders is not None
             else None
         )
         return ok(create_ddl_event(db, **payload, userId=userId, src="api"))

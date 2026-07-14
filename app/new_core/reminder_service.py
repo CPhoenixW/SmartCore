@@ -35,17 +35,18 @@ def _event_dict(base: EvtBase, remind: RemindEvt) -> dict[str, Any]:
         "createdAt": base.createdAt,
         "updatedAt": base.updatedAt,
         "triggerTime": remind.triggerTime,
+        "ddlEvtId": remind.ddlEvtId,
         "remindKind": remind.remindKind,
         "firedAt": remind.firedAt,
-        "standalone": remind.planEvtId is None,
+        "standalone": remind.planEvtId is None and remind.ddlEvtId is None,
     }
 
 
 def _ensure_standalone(remind: RemindEvt | None, evt_id: str) -> RemindEvt:
     if remind is None:
         raise ValueError(f"reminder not found: {evt_id}")
-    if remind.planEvtId is not None:
-        raise ValueError("automatic plan reminders cannot be edited directly")
+    if remind.planEvtId is not None or remind.ddlEvtId is not None:
+        raise ValueError("linked reminders cannot be edited directly")
     return remind
 
 
@@ -117,6 +118,7 @@ def create_reminder_event(
     remind = RemindEvt(
         evtId=evt_id,
         planEvtId=None,
+        ddlEvtId=None,
         remindKind="manual",
         triggerTime=trigger,
         offsetMin=0,

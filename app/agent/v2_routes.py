@@ -192,6 +192,16 @@ def _enhanced_tools() -> list[dict[str, Any]]:
                     "weekMode": {"type": "string", "enum": ["all", "odd", "even"]},
                 }
             )
+            properties["plans"] = {
+                "type": "array",
+                "description": "DDL linked timed work blocks. Each item needs title, stTime, durationMin, and planRole.",
+                "items": {"type": "object"},
+            }
+            properties["ddlReminders"] = {
+                "type": "array",
+                "description": "DDL linked one-shot reminders. Each item needs title and absolute triggerTime; do not use this for timed work blocks.",
+                "items": {"type": "object"},
+            }
         for field_name in ("stTime", "endTime", "dueAt", "ddlAt"):
             if field_name in properties:
                 properties[field_name]["description"] = (

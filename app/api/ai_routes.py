@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -14,6 +15,7 @@ from app.new_core.ddl_service import default_ddl_plans
 from app.new_core.models import nowIso
 
 router = APIRouter(prefix="/api", tags=["api"])
+_DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
 
 
 class ParseBody(BaseModel):
@@ -177,11 +179,13 @@ def _event_type(data: dict[str, Any]) -> str:
 
 
 def _normalize_ddl_plans(data: dict[str, Any], end_time: Any) -> list[dict[str, Any]]:
-    raw_plans = data.get("plans") or data.get("linkedPlans")
-    if not isinstance(raw_plans, list) or not raw_plans:
+    raw_plans = data["plans"] if "plans" in data else data.get("linkedPlans")
+    if raw_plans is None:
         if not end_time:
             return []
         return default_ddl_plans(str(end_time))
+    if not isinstance(raw_plans, list):
+        return []
     result: list[dict[str, Any]] = []
     for index, raw in enumerate(raw_plans):
         if not isinstance(raw, dict):
@@ -204,6 +208,31 @@ def _normalize_ddl_plans(data: dict[str, Any], end_time: Any) -> list[dict[str, 
     return result
 
 
+def _normalize_ddl_reminders(data: dict[str, Any]) -> list[dict[str, Any]]:
+    if "ddlReminders" in data:
+        raw_reminders = data["ddlReminders"]
+    elif "linkedReminders" in data:
+        raw_reminders = data["linkedReminders"]
+    else:
+        raw_reminders = data.get("reminders")
+    if not isinstance(raw_reminders, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for raw in raw_reminders:
+        if not isinstance(raw, dict):
+            continue
+        trigger_time = raw.get("triggerTime") or raw.get("remindAt") or raw.get("at")
+        title = str(raw.get("title") or "").strip()
+        if trigger_time and title:
+            result.append({
+                "title": title,
+                "desc": str(raw.get("desc") or raw.get("description") or "").strip() or None,
+                "triggerTime": trigger_time,
+                "prio": _normalize_priority(raw.get("prio") or raw.get("priority"), tab="ddl"),
+            })
+    return result
+
+
 def _normalize_event(data: dict[str, Any]) -> dict[str, Any]:
     tab = _event_type(data)
     normalized = {
@@ -215,11 +244,20 @@ def _normalize_event(data: dict[str, Any]) -> dict[str, Any]:
     }
     if tab == "ddl":
         end_time = data.get("endTime") or data.get("deadline") or data.get("at")
+        ddl_reminders = _normalize_ddl_reminders(data)
+        has_explicit_plans = "plans" in data or "linkedPlans" in data
         normalized.update(
             {
                 "endTime": end_time,
                 "hardDdl": bool(data.get("hardDdl", False)),
-                "plans": _normalize_ddl_plans(data, end_time),
+                # A reminder-only deadline must not silently acquire work blocks
+                # merely because the model omitted an empty plans array.
+                "plans": (
+                    []
+                    if ddl_reminders and not has_explicit_plans
+                    else _normalize_ddl_plans(data, end_time)
+                ),
+                "ddlReminders": ddl_reminders,
             }
         )
     elif tab == "remind":
@@ -252,6 +290,17 @@ def _important_date_fallback(text: str) -> dict[str, Any] | None:
         name = subject.group(1).strip(" ，,。！!：:")
         if name:
             title = f"{name}生日礼物" if "生日" in text and "生日" not in name else name
+    reminders: list[dict[str, Any]] = []
+    for reminder in re.finditer(r"提前\s*([一二三四五六七八九十\d]+)\s*(天|小时)[^，。；;]*?提醒(?:我)?([^，。；;]+)", text):
+        raw_amount = reminder.group(1)
+        unit = reminder.group(2)
+        chinese_days = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+        amount = int(raw_amount) if raw_amount.isdigit() else chinese_days.get(raw_amount, 0)
+        action = reminder.group(3).strip(" ，,。！!")
+        if action and amount > 0:
+            offset = timedelta(days=amount) if unit == "天" else timedelta(hours=amount)
+            reminder_time = datetime(year, month, day, 9, tzinfo=_DEFAULT_TZ) - offset
+            reminders.append({"title": action, "triggerTime": reminder_time.isoformat(), "prio": "high"})
     return {
         "tab": "ddl",
         "evtType": "ddl",
@@ -260,7 +309,8 @@ def _important_date_fallback(text: str) -> dict[str, Any] | None:
         "prio": "high",
         "endTime": date_text,
         "hardDdl": True,
-        "plans": default_ddl_plans(date_text),
+        "plans": [] if reminders else default_ddl_plans(date_text),
+        "ddlReminders": reminders,
     }
 
 
@@ -313,7 +363,7 @@ def _event_prompt(text: str, now: str) -> str:
 必须根据类型输出：
 1. plan：evtType、title、desc、prio、stTime、durationMin。
 2. remind：evtType、title、desc、prio、triggerTime。
-3. ddl：evtType、title、desc、prio、endTime、hardDdl、plans。
+3. ddl：evtType、title、desc、prio、endTime、hardDdl、plans、ddlReminders。
 
 DDL 的 plans 是数组，每项格式：
 {{
@@ -324,6 +374,9 @@ DDL 的 plans 是数组，每项格式：
 }}
 如果用户没有特别说明 DDL 安排，默认生成两个计划：截止前一天安排30分钟、截止前一小时安排30分钟。
 如果用户明确提出更多安排，可以输出多个 manual 计划。
+DDL 的 ddlReminders 是一次性精确提醒数组，每项格式：
+{{"title":"提醒内容","triggerTime":"ISO8601","desc":"可选","prio":"high/mid/low"}}。
+“提前 N 天/小时提醒我做 X”必须生成一条 ddlReminders，触发时间按 DDL endTime 倒推；这不是 plan，不得生成计划开始/结束提醒。只有“安排/花 N 分钟做 X”才生成 plans。
 分类规则（必须遵守）：
 - “提醒我……”且没有持续时长，通常解析为 remind；“从X点做Y分钟”解析为 plan；“截止、最晚、提交”解析为 ddl。
 - 生日、纪念日、约会、缴费、考试等带有明确日期且需要事先准备的事项，解析为 ddl；例如“依依宝宝2026年8月28号过生日，千万不能忘了给她准备礼物”必须是高优先级 ddl，title 为“依依宝宝生日礼物”，desc 保留原意，hardDdl=true。

@@ -17,7 +17,7 @@ from app.new_core.course_semester import (
     sync_course_plans,
     update_course_event,
 )
-from app.new_core.ddl_service import replace_ddl_plans
+from app.new_core.ddl_service import replace_ddl_plans, replace_ddl_reminders
 from app.new_core.event_relations import (
     apply_reminder_action,
     cancel_event,
@@ -123,6 +123,7 @@ def update_actionable_event(
         if base is None or base.userId != userId:
             raise ValueError(f"evt not found: {evtId}")
         plans = body.pop("plans", None)
+        ddl_reminders = body.pop("ddlReminders", None)
         if base.evtType == "course":
             result = update_course_event(db, evtId, src="api", **body)
         elif base.evtType == "remind":
@@ -131,6 +132,8 @@ def update_actionable_event(
             result = update_event(db, evtId, src="api", **body)
             if base.evtType == "ddl" and plans is not None:
                 result = replace_ddl_plans(db, evtId, plans, src="api")
+            if base.evtType == "ddl" and ddl_reminders is not None:
+                result = replace_ddl_reminders(db, evtId, ddl_reminders, src="api")
         close_past_course_occurrences(db)
         return {"ok": True, "data": result}
     except ValueError as exc:

@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from "vue";
 import { useMutation, useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
+import DevicePairPanel from "@/components/device/DevicePairPanel.vue";
 import { useToast } from "@/composables/useToast";
 import { adminApi } from "@/api/admin";
 import { useUserStore } from "@/stores/user";
@@ -77,8 +78,9 @@ function clearAvatar() {
 
 <template>
   <section class="page-heading"><div><h1>{{ t("settings.title") }}</h1><p>{{ t("settings.subtitle") }}</p></div></section>
-  <section class="form-layout">
-    <BaseCard :title="t('settings.title')">
+  <section class="settings-scroll-layout">
+    <div class="settings-scroll-column">
+      <BaseCard :title="t('settings.title')">
       <form class="form-grid" @submit.prevent="save">
         <label class="field field--wide"><span>{{ t("settings.displayName") }}</span><input v-model="form.displayName" required /></label>
         <label class="field"><span>{{ t("settings.language") }}</span><select v-model="form.language"><option value="zh">{{ t("settings.chinese") }}</option><option value="en">English</option></select></label>
@@ -95,10 +97,14 @@ function clearAvatar() {
         <label class="field field--wide"><span>{{ t("settings.avatarUrl") }}</span><input v-model="form.avatarUrl" :placeholder="t('settings.avatarUrlPlaceholder')" /></label>
         <div class="form-actions field--wide"><button class="button button--primary" type="submit" :disabled="saving || uploading">{{ saving ? t("common.saving") : t("common.save") }}</button></div>
       </form>
-    </BaseCard>
-    <BaseCard :title="t('settings.avatarPreview')"><div class="profile-preview"><div class="avatar large"><img v-if="previewUrl" :src="previewUrl" :alt="t('settings.avatarPreview')" /><span v-else>{{ initials }}</span></div><strong>{{ form.displayName || 'SmartCore' }}</strong><span>{{ form.language === 'en' ? 'English' : t('settings.chinese') }} · {{ form.reminderChannel === 'feishu' ? t('settings.feishuReminder') : t('settings.screenReminder') }}</span></div></BaseCard>
+      </BaseCard>
+      <BaseCard v-if="isAdmin" :title="t('settings.adminTitle')">
+        <div class="admin-user-list"><button v-for="user in adminUsers.data.value ?? []" :key="user.userId" class="admin-user-row" type="button" :disabled="switchUser.isPending.value || user.userId === store.user.userId" @click="switchUser.mutate(user.userId)"><span><strong>{{ user.displayName }}</strong><small>{{ user.loginName || user.userId }} · {{ user.role }}</small></span><span>{{ user.userId === store.user.userId ? t('settings.currentUser') : t('settings.switchUser') }}</span></button></div>
+      </BaseCard>
+      <DevicePairPanel v-if="isAdmin" :allowed-kinds="['feishuBot']" :title="t('settings.feishuPairing')" />
+    </div>
+    <aside class="settings-scroll-column settings-scroll-column--preview">
+      <BaseCard :title="t('settings.avatarPreview')"><div class="profile-preview"><div class="avatar large"><img v-if="previewUrl" :src="previewUrl" :alt="t('settings.avatarPreview')" /><span v-else>{{ initials }}</span></div><strong>{{ form.displayName || 'SmartCore' }}</strong><span>{{ form.language === 'en' ? 'English' : t('settings.chinese') }} · {{ form.reminderChannel === 'feishu' ? t('settings.feishuReminder') : t('settings.screenReminder') }}</span></div></BaseCard>
+    </aside>
   </section>
-  <BaseCard v-if="isAdmin" :title="t('settings.adminTitle')">
-    <div class="admin-user-list"><button v-for="user in adminUsers.data.value ?? []" :key="user.userId" class="admin-user-row" type="button" :disabled="switchUser.isPending.value || user.userId === store.user.userId" @click="switchUser.mutate(user.userId)"><span><strong>{{ user.displayName }}</strong><small>{{ user.loginName || user.userId }} · {{ user.role }}</small></span><span>{{ user.userId === store.user.userId ? t('settings.currentUser') : t('settings.switchUser') }}</span></button></div>
-  </BaseCard>
 </template>

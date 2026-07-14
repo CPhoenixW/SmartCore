@@ -163,7 +163,9 @@ def _rebuild_remind_evt_for_standalone(conn: object) -> None:
     sql = _sqlite_table_sql(conn, "remindEvt")
     plan_not_null = bool(info.get("planEvtId") and int(info["planEvtId"][3]) == 1)
     constrained_kinds = "remindKind IN" in sql
-    if not plan_not_null and not constrained_kinds:
+    has_ddl_link = "ddlEvtId" in _sqlite_columns(conn, "remindEvt")
+    exclusive_owner = "planEvtId IS NULL OR ddlEvtId IS NULL" in sql
+    if not plan_not_null and not constrained_kinds and has_ddl_link and exclusive_owner:
         return
 
     conn.execute("DROP TABLE IF EXISTS remindEvt_new")
@@ -172,24 +174,27 @@ def _rebuild_remind_evt_for_standalone(conn: object) -> None:
         CREATE TABLE remindEvt_new (
             evtId VARCHAR(32) PRIMARY KEY,
             planEvtId VARCHAR(32),
+            ddlEvtId VARCHAR(32),
             remindKind VARCHAR(30) NOT NULL,
             triggerTime VARCHAR(64) NOT NULL,
             offsetMin INTEGER NOT NULL DEFAULT 0,
             firedAt VARCHAR(64),
             FOREIGN KEY (evtId) REFERENCES evtBase(evtId) ON DELETE CASCADE,
             FOREIGN KEY (planEvtId) REFERENCES planEvt(evtId) ON DELETE CASCADE,
+            FOREIGN KEY (ddlEvtId) REFERENCES ddlEvt(evtId) ON DELETE CASCADE,
             UNIQUE (planEvtId, remindKind),
-            CHECK (offsetMin >= 0)
+            CHECK (offsetMin >= 0),
+            CHECK (planEvtId IS NULL OR ddlEvtId IS NULL)
         )
         """
     )
     conn.execute(
         """
         INSERT INTO remindEvt_new (
-            evtId, planEvtId, remindKind, triggerTime, offsetMin, firedAt
+            evtId, planEvtId, ddlEvtId, remindKind, triggerTime, offsetMin, firedAt
         )
         SELECT
-            evtId, planEvtId, remindKind, triggerTime, COALESCE(offsetMin, 0), firedAt
+            evtId, planEvtId, NULL, remindKind, triggerTime, COALESCE(offsetMin, 0), firedAt
         FROM remindEvt
         """
     )
@@ -197,6 +202,37 @@ def _rebuild_remind_evt_for_standalone(conn: object) -> None:
     conn.execute("ALTER TABLE remindEvt_new RENAME TO remindEvt")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_remindEvt_trigger ON remindEvt(triggerTime)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_remindEvt_plan ON remindEvt(planEvtId)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_remindEvt_ddl_trigger ON remindEvt(ddlEvtId, triggerTime)")
+
+
+def _rebuild_act_log_for_user_targets(conn: object) -> None:
+    if not _sqlite_columns(conn, "actLog") or "'user'" in _sqlite_table_sql(conn, "actLog"):
+        return
+    conn.execute("DROP TABLE IF EXISTS actLog_new")
+    conn.execute(
+        """
+        CREATE TABLE actLog_new (
+            actId VARCHAR(32) PRIMARY KEY,
+            userId VARCHAR(32) NOT NULL,
+            actorKind VARCHAR(20) NOT NULL,
+            actorId VARCHAR(100),
+            action VARCHAR(30) NOT NULL,
+            targetKind VARCHAR(30) NOT NULL,
+            targetId VARCHAR(32) NOT NULL,
+            sourceDeviceId VARCHAR(50),
+            result VARCHAR(20) NOT NULL DEFAULT 'ok',
+            errorMessage TEXT,
+            createdAt VARCHAR(64) NOT NULL,
+            CHECK (actorKind IN ('user', 'system', 'device', 'llm')),
+            CHECK (action IN ('create', 'update', 'delete', 'complete', 'cancel', 'auto_create', 'link', 'notify')),
+            CHECK (targetKind IN ('user', 'evt', 'planEvt', 'ddlEvt', 'courseEvt', 'remindEvt', 'coursePlan', 'idea', 'device')),
+            CHECK (result IN ('ok', 'failed'))
+        )
+        """
+    )
+    conn.execute("INSERT INTO actLog_new SELECT * FROM actLog")
+    conn.execute("DROP TABLE actLog")
+    conn.execute("ALTER TABLE actLog_new RENAME TO actLog")
 
 
 def _rebuild_ddl_plan_for_multiple_links(conn: object) -> None:
@@ -267,6 +303,7 @@ def _apply_sqlite_migrations(db_path: Path) -> None:
             _add_sqlite_column(conn, "idea", "userId", "userId VARCHAR(32) NOT NULL DEFAULT 'default'")
             conn.execute("UPDATE idea SET userId = COALESCE(userId, 'default')")
         if "actLog" in tables:
+            _rebuild_act_log_for_user_targets(conn)
             _rebuild_table_if_incompatible(
                 conn,
                 "actLog",
