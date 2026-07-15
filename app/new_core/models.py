@@ -311,6 +311,7 @@ class DevicePair(Base):
     pairId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
     userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
     deviceId: Mapped[str | None] = mapped_column(String(32), ForeignKey("lifeDevice.deviceId", ondelete="SET NULL"))
+    botId: Mapped[str | None] = mapped_column(String(32), ForeignKey("feishuBot.botId", ondelete="SET NULL"))
     deviceName: Mapped[str] = mapped_column(String(100), nullable=False)
     deviceKind: Mapped[str] = mapped_column(String(30), nullable=False)
     claimCode: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
@@ -320,6 +321,27 @@ class DevicePair(Base):
     confirmedAt: Mapped[str | None] = mapped_column(String(64))
     activatedAt: Mapped[str | None] = mapped_column(String(64))
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class FeishuBot(Base):
+    __tablename__ = "feishuBot"
+
+    botId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    deviceId: Mapped[str | None] = mapped_column(String(32), ForeignKey("lifeDevice.deviceId", ondelete="SET NULL"))
+    botName: Mapped[str] = mapped_column(String(100), nullable=False)
+    appId: Mapped[str] = mapped_column(String(200), nullable=False)
+    appSecretCipher: Mapped[str] = mapped_column(Text, nullable=False)
+    verificationTokenCipher: Mapped[str] = mapped_column(Text, nullable=False)
+    encryptKeyCipher: Mapped[str] = mapped_column(Text, nullable=False)
+    defaultChatCipher: Mapped[str | None] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    isDefault: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    lastTestAt: Mapped[str | None] = mapped_column(String(64))
+    lastTestStat: Mapped[str | None] = mapped_column(String(20))
+    lastTestMessage: Mapped[str | None] = mapped_column(String(300))
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
 
 
 class LifeIdentity(Base):

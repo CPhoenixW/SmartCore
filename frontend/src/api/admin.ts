@@ -8,7 +8,38 @@ export interface AdminUser {
   stat: string;
 }
 
+export interface FeishuBot {
+  botId: string;
+  userId: string;
+  deviceId?: string | null;
+  botName: string;
+  appIdHint: string;
+  enabled: boolean;
+  isDefault: boolean;
+  hasRecipient: boolean;
+  lastTestAt?: string | null;
+  lastTestStat?: string | null;
+  lastTestMessage?: string | null;
+}
+
+export interface FeishuBotInput {
+  botName: string;
+  appId: string;
+  appSecret: string;
+  verificationToken: string;
+  encryptKey: string;
+  defaultChatId?: string;
+  isDefault?: boolean;
+}
+
 export const adminApi = {
   users: () => apiRequest<AdminUser[]>("/api/admin/users"),
   switchUser: (userId: string) => apiRequest<{ activeUser: AdminUser }>("/api/admin/activeUser", { method: "POST", body: JSON.stringify({ userId }) }),
+  feishuBots: () => apiRequest<FeishuBot[]>("/api/admin/feishuBots"),
+  createFeishuBot: (data: FeishuBotInput) => apiRequest<FeishuBot>("/api/admin/feishuBots", { method: "POST", body: JSON.stringify(data) }),
+  updateFeishuBot: (botId: string, data: Partial<FeishuBotInput>) => apiRequest<FeishuBot>(`/api/admin/feishuBots/${botId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  toggleFeishuBot: (botId: string) => apiRequest<FeishuBot>(`/api/admin/feishuBots/${botId}/toggle`, { method: "POST" }),
+  deleteFeishuBot: (botId: string) => apiRequest<{ deleted: boolean }>(`/api/admin/feishuBots/${botId}`, { method: "DELETE" }),
+  startFeishuPair: (botId: string) => apiRequest<{ pairId: string; claimCode: string; expiresAt: string; stat: string; botId: string }>(`/api/admin/feishuBots/${botId}/pair/start`, { method: "POST" }),
+  testFeishuBot: (botId: string) => apiRequest<FeishuBot>(`/api/admin/feishuBots/${botId}/test`, { method: "POST" }),
 };

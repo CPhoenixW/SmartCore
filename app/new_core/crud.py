@@ -622,10 +622,11 @@ def writeNotifyLog(
     targetId: str | None = None,
     evtId: str | None = None,
     failReason: str | None = None,
+    userId: str = DEFAULT_USER_ID,
 ) -> dict[str, Any]:
-    _ensure_user(db)
+    _ensure_user(db, userId)
     row = NotifyLog(
-        userId=DEFAULT_USER_ID,
+        userId=userId,
         evtId=evtId,
         channel=channel,
         receiver=targetId,

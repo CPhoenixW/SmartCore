@@ -47,7 +47,7 @@ def requireDevice(db: Session, token: str | None) -> LifeDevice:
     return device
 
 
-def startPair(db: Session, userId: str, deviceName: str, deviceKind: str) -> DevicePair:
+def startPair(db: Session, userId: str, deviceName: str, deviceKind: str, *, botId: str | None = None) -> DevicePair:
     if deviceKind == "feishuBot":
         pending = db.scalar(
             select(DevicePair).where(
@@ -63,6 +63,7 @@ def startPair(db: Session, userId: str, deviceName: str, deviceKind: str) -> Dev
         userId=userId,
         deviceName=deviceName.strip() or "New device",
         deviceKind=deviceKind,
+        botId=botId,
         claimCode=secrets.token_urlsafe(18),
         expiresAt=(datetime.now(_TZ) + timedelta(minutes=10)).isoformat(),
     )
@@ -104,6 +105,13 @@ def confirmPair(db: Session, pairId: str, userId: str) -> DevicePair:
     pair.confirmedAt = nowIso()
     if pair.deviceKind == "feishuBot":
         device, _ = activatePair(db, pairId, pair.claimCode)
+        if pair.botId:
+            from app.new_core.models import FeishuBot
+
+            bot = db.get(FeishuBot, pair.botId)
+            if bot is not None:
+                bot.deviceId = device.deviceId
+                bot.updatedAt = nowIso()
         identity = db.scalar(
             select(LifeIdentity)
             .where(
@@ -122,10 +130,12 @@ def confirmPair(db: Session, pairId: str, userId: str) -> DevicePair:
     return pair
 
 
-def claimFeishuPair(db: Session, claimCode: str, externalId: str) -> DevicePair:
+def claimFeishuPair(db: Session, claimCode: str, externalId: str, *, botId: str | None = None) -> DevicePair:
     pair = db.scalar(select(DevicePair).where(DevicePair.claimCode == claimCode))
     if pair is None or pair.deviceKind != "feishuBot":
         raise HTTPException(status_code=404, detail="feishu pairing code not found")
+    if pair.botId and pair.botId != botId:
+        raise HTTPException(status_code=403, detail="this pairing code belongs to another Feishu bot")
     existing = db.scalar(select(LifeIdentity).where(LifeIdentity.provider == "feishu", LifeIdentity.externalId == externalId))
     if existing is not None:
         raise HTTPException(status_code=409, detail="this Feishu account is already bound")

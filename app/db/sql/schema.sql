@@ -255,6 +255,7 @@ CREATE TABLE IF NOT EXISTS devicePair (
     pairId VARCHAR(32) PRIMARY KEY,
     userId VARCHAR(32) NOT NULL REFERENCES appUser(userId) ON DELETE CASCADE,
     deviceId VARCHAR(32) REFERENCES lifeDevice(deviceId) ON DELETE SET NULL,
+    botId VARCHAR(32) REFERENCES feishuBot(botId) ON DELETE SET NULL,
     deviceName VARCHAR(100) NOT NULL,
     deviceKind VARCHAR(30) NOT NULL,
     claimCode VARCHAR(100) NOT NULL UNIQUE,
@@ -265,6 +266,24 @@ CREATE TABLE IF NOT EXISTS devicePair (
     activatedAt VARCHAR(64),
     createdAt VARCHAR(64) NOT NULL,
     CHECK (stat IN ('created', 'claimed', 'userConfirmed', 'paired', 'expired', 'cancelled'))
+);
+CREATE TABLE IF NOT EXISTS feishuBot (
+    botId VARCHAR(32) PRIMARY KEY,
+    userId VARCHAR(32) NOT NULL REFERENCES appUser(userId) ON DELETE CASCADE,
+    deviceId VARCHAR(32) REFERENCES lifeDevice(deviceId) ON DELETE SET NULL,
+    botName VARCHAR(100) NOT NULL,
+    appId VARCHAR(200) NOT NULL,
+    appSecretCipher TEXT NOT NULL,
+    verificationTokenCipher TEXT NOT NULL,
+    encryptKeyCipher TEXT NOT NULL,
+    defaultChatCipher TEXT,
+    enabled BOOLEAN NOT NULL DEFAULT 1,
+    isDefault BOOLEAN NOT NULL DEFAULT 0,
+    lastTestAt VARCHAR(64),
+    lastTestStat VARCHAR(20),
+    lastTestMessage VARCHAR(300),
+    createdAt VARCHAR(64) NOT NULL,
+    updatedAt VARCHAR(64) NOT NULL
 );
 CREATE TABLE IF NOT EXISTS lifeIdentity (
     identityId VARCHAR(32) PRIMARY KEY,
@@ -297,3 +316,4 @@ CREATE TABLE IF NOT EXISTS deviceReceipt (
 );
 CREATE INDEX IF NOT EXISTS idx_lifeDevice_user ON lifeDevice(userId, stat);
 CREATE INDEX IF NOT EXISTS idx_deviceDispatch_pending ON deviceDispatch(deviceId, stat, createdAt);
+CREATE INDEX IF NOT EXISTS idx_feishuBot_user_enabled ON feishuBot(userId, enabled);

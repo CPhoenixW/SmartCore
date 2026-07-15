@@ -3,7 +3,7 @@ import { computed, reactive, ref, watch } from "vue";
 import { useMutation, useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
-import DevicePairPanel from "@/components/device/DevicePairPanel.vue";
+import FeishuBotManager from "@/components/device/FeishuBotManager.vue";
 import { useToast } from "@/composables/useToast";
 import { adminApi } from "@/api/admin";
 import { useUserStore } from "@/stores/user";
@@ -101,7 +101,7 @@ function clearAvatar() {
       <BaseCard v-if="isAdmin" :title="t('settings.adminTitle')">
         <div class="admin-user-list"><button v-for="user in adminUsers.data.value ?? []" :key="user.userId" class="admin-user-row" type="button" :disabled="switchUser.isPending.value || user.userId === store.user.userId" @click="switchUser.mutate(user.userId)"><span><strong>{{ user.displayName }}</strong><small>{{ user.loginName || user.userId }} · {{ user.role }}</small></span><span>{{ user.userId === store.user.userId ? t('settings.currentUser') : t('settings.switchUser') }}</span></button></div>
       </BaseCard>
-      <DevicePairPanel v-if="isAdmin" :allowed-kinds="['feishuBot']" :title="t('settings.feishuPairing')" />
+      <FeishuBotManager v-if="isAdmin" />
     </div>
     <aside class="settings-scroll-column settings-scroll-column--preview">
       <BaseCard :title="t('settings.avatarPreview')"><div class="profile-preview"><div class="avatar large"><img v-if="previewUrl" :src="previewUrl" :alt="t('settings.avatarPreview')" /><span v-else>{{ initials }}</span></div><strong>{{ form.displayName || 'SmartCore' }}</strong><span>{{ form.language === 'en' ? 'English' : t('settings.chinese') }} · {{ form.reminderChannel === 'feishu' ? t('settings.feishuReminder') : t('settings.screenReminder') }}</span></div></BaseCard>
