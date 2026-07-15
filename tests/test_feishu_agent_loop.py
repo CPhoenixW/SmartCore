@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.agent import routes as agent_routes
+from app.feishu.client import FeishuClient
 from app.main import create_app
 
 
@@ -46,8 +47,11 @@ class FakeFeishuClient:
 
 def test_feishu_message_normalization_includes_routing_context(app_env, monkeypatch) -> None:
     forwarded: dict = {}
+    acknowledgements: list[tuple[str, str]] = []
+    operations: list[str] = []
 
     def fake_post(url, **kwargs):
+        operations.append("forward")
         forwarded["json"] = kwargs["json"]
 
         class Resp:
@@ -58,6 +62,13 @@ def test_feishu_message_normalization_includes_routing_context(app_env, monkeypa
 
     monkeypatch.setenv("OPENCLAW_EVENTS_ENDPOINT", "http://openclaw.local/events")
     monkeypatch.setattr("httpx.post", fake_post)
+    monkeypatch.setattr(
+        FeishuClient,
+        "send_text",
+        lambda _self, chat_id, text, **_kwargs: (
+            operations.append("ack") or acknowledgements.append((chat_id, text)) or {"code": 0}
+        ),
+    )
     client = TestClient(create_app())
 
     resp = client.post("/feishu/event", json=_message_event("帮我记一下明天晚上洗衣服"))
@@ -72,6 +83,35 @@ def test_feishu_message_normalization_includes_routing_context(app_env, monkeypa
     assert event["user"]["user_id"] == "u_sender"
     assert event["request"]["timezone"] == "Asia/Shanghai"
     assert "now" in event["request"]
+    assert acknowledgements == [("oc_user_chat", "已收到，正在处理…")]
+    assert operations == ["ack", "forward"]
+
+
+def test_feishu_processing_ack_failure_does_not_block_openclaw_forward(app_env, monkeypatch) -> None:
+    forwarded: dict = {}
+
+    def fake_post(_url, **kwargs):
+        forwarded["json"] = kwargs["json"]
+
+        class Resp:
+            is_error = False
+            status_code = 200
+
+        return Resp()
+
+    def fail_ack(*_args, **_kwargs):
+        raise RuntimeError("unavailable")
+
+    monkeypatch.setenv("OPENCLAW_EVENTS_ENDPOINT", "http://openclaw.local/events")
+    monkeypatch.setattr("httpx.post", fake_post)
+    monkeypatch.setattr(FeishuClient, "send_text", fail_ack)
+    client = TestClient(create_app())
+
+    response = client.post("/feishu/event", json=_message_event("测试", message_id="om_ack_failure"))
+
+    assert response.status_code == 200
+    assert response.json()["msg"] == "ok"
+    assert forwarded["json"]["message_id"] == "om_ack_failure"
 
 
 def test_send_text_uses_default_chat_id(app_env, monkeypatch) -> None:

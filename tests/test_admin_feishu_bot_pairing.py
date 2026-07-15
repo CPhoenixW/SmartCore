@@ -74,6 +74,7 @@ def test_admin_can_pair_a_managed_feishu_bot_without_exposing_credentials(app_en
     claimed = _post_event(client, _event(f"绑定 {code}", "personal-token"), "personal-key")
     assert claimed.status_code == 200
     assert sent and sent[-1][0] == "oc_pair_chat"
+    assert all(text != "已收到，正在处理…" for _, text in sent)
 
     confirmed = client.post(f"/api/device/pair/{pair.json()['data']['pairId']}/confirm")
     assert confirmed.status_code == 200
