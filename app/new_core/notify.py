@@ -3,11 +3,14 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from app.config import get_settings
 from app.feishu.cards import build_reminder_card
 from app.feishu.client import FeishuAPIError, FeishuClient
+from app.feishu.bot_service import runtime
 from app.new_core import crud
+from app.new_core.models import FeishuBot
 from app.new_core.preferences import get_user_preferences
 from app.screen.manager import screenManager
 
@@ -59,12 +62,29 @@ def _sendScreen(
     return ok, None if ok else "screen websocket offline"
 
 
-def _sendFeishuText(title: str, content: str) -> tuple[bool, str | None, str | None]:
+def _managedFeishu(db: Session, userId: str) -> tuple[FeishuClient | None, str]:
+    bot = db.scalar(
+        select(FeishuBot)
+        .where(FeishuBot.userId == userId, FeishuBot.enabled.is_(True))
+        .order_by(FeishuBot.isDefault.desc(), FeishuBot.createdAt)
+    )
+    if bot is None:
+        return None, ""
+    try:
+        configured = runtime(bot)
+    except ValueError:
+        return None, ""
+    return configured.client(), configured.chatId
+
+
+def _sendFeishuText(db: Session, title: str, content: str, *, userId: str = crud.DEFAULT_USER_ID) -> tuple[bool, str | None, str | None]:
     settings = get_settings()
-    receive_id = settings.feishu_default_chat_id
+    client, receive_id = _managedFeishu(db, userId)
+    if client is None:
+        receive_id = settings.feishu_default_chat_id
+        client = _getFeishuClient()
     if not receive_id:
         return False, None, "FEISHU_DEFAULT_CHAT_ID not configured"
-    client = _getFeishuClient()
     if client is None:
         return False, receive_id, "feishu app credentials not configured"
     try:
@@ -74,24 +94,28 @@ def _sendFeishuText(title: str, content: str) -> tuple[bool, str | None, str | N
     return True, receive_id, None
 
 
-def _sendFeishu(title: str, content: str) -> tuple[bool, str | None, str | None]:
-    return _sendFeishuText(title, content)
+def _sendFeishu(db: Session, title: str, content: str, *, userId: str = crud.DEFAULT_USER_ID) -> tuple[bool, str | None, str | None]:
+    return _sendFeishuText(db, title, content, userId=userId)
 
 
 _baselineSendFeishu = _sendFeishu
 
 
 def _sendFeishuReminderCard(
+    db: Session,
     *,
     evtId: str,
     title: str,
     content: str,
+    userId: str = crud.DEFAULT_USER_ID,
 ) -> tuple[bool, str | None, str | None]:
     settings = get_settings()
-    receive_id = settings.feishu_default_chat_id
+    client, receive_id = _managedFeishu(db, userId)
+    if client is None:
+        receive_id = settings.feishu_default_chat_id
+        client = _getFeishuClient()
     if not receive_id:
         return False, None, "FEISHU_DEFAULT_CHAT_ID not configured"
-    client = _getFeishuClient()
     if client is None:
         return False, receive_id, "feishu app credentials not configured"
     card = buildReminderCard(evtId=evtId, title=title, content=content)
@@ -103,15 +127,17 @@ def _sendFeishuReminderCard(
 
 
 def _deliverFeishu(
+    db: Session,
     title: str,
     content: str,
     *,
     evtId: str | None = None,
     phase: str = "end",
+    userId: str = crud.DEFAULT_USER_ID,
 ) -> tuple[bool, str | None, str | None]:
     if phase in {"end", "notice"} and evtId is not None and _sendFeishu is _baselineSendFeishu:
-        return _sendFeishuReminderCard(evtId=evtId, title=title, content=content)
-    return _sendFeishu(title, content)
+        return _sendFeishuReminderCard(db, evtId=evtId, title=title, content=content, userId=userId)
+    return _sendFeishu(db, title, content, userId=userId)
 
 
 def sendReminder(
@@ -123,6 +149,7 @@ def sendReminder(
     channel: str,
     dedupKey: str | None = None,
     phase: str = "end",
+    userId: str = crud.DEFAULT_USER_ID,
 ) -> dict[str, str]:
     if dedupKey and crud.notifyDedupExists(db, dedupKey):
         return {"channel": channel, "stat": "deduped"}
@@ -139,15 +166,18 @@ def sendReminder(
             stat=stat,
             evtId=evtId,
             failReason=fail,
+            userId=userId,
         )
         return {"channel": "screen", "stat": stat}
 
     if channel == "feishu":
         ok, target_id, fail = _deliverFeishu(
+            db,
             title,
             content,
             evtId=evtId,
             phase=phase,
+            userId=userId,
         )
         stat = "sent" if ok else "failed"
         crud.writeNotifyLog(
@@ -160,6 +190,7 @@ def sendReminder(
             stat=stat,
             evtId=evtId,
             failReason=fail,
+            userId=userId,
         )
         return {"channel": "feishu", "stat": stat}
 
@@ -175,18 +206,21 @@ def routeNotify(
     dedupKey: str | None = None,
     evtId: str | None = None,
     phase: str = "end",
+    userId: str = crud.DEFAULT_USER_ID,
 ) -> dict[str, str]:
     if dedupKey and crud.notifyDedupExists(db, dedupKey):
         return {"channel": "skipped", "stat": "deduped"}
 
-    preference = get_user_preferences(db).get("reminderChannel", "screen")
+    preference = get_user_preferences(db, user_id=userId).get("reminderChannel", "screen")
 
     if preference == "feishu":
         ok, target_id, fail = _deliverFeishu(
+            db,
             title,
             content,
             evtId=evtId,
             phase=phase,
+            userId=userId,
         )
         stat = "sent" if ok else "failed"
         crud.writeNotifyLog(
@@ -199,6 +233,7 @@ def routeNotify(
             stat=stat,
             evtId=evtId,
             failReason=fail,
+            userId=userId,
         )
         return {"channel": "feishu", "stat": stat}
 
@@ -212,6 +247,7 @@ def routeNotify(
             stat="failed",
             evtId=evtId,
             failReason="screen websocket offline",
+            userId=userId,
         )
         return {"channel": "screen", "stat": "failed"}
 
@@ -226,5 +262,6 @@ def routeNotify(
         stat=stat,
         evtId=evtId,
         failReason=fail,
+        userId=userId,
     )
     return {"channel": "screen", "stat": stat}

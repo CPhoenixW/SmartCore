@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.db.session import get_db
+from app.feishu.bot_service import BotRuntime, enabledRuntimes, setDefaultChat
 from app.feishu.client import FeishuAPIError, FeishuClient
 from app.feishu.commands import extract_message_text, extract_routing_context
 from app.feishu.security import FeishuSecurityError, parse_event_payload, validate_request_headers
@@ -42,22 +43,29 @@ class FeishuEventHandler:
         now: float | None = None,
     ) -> tuple[int, dict[str, Any]]:
         body_text = body.decode("utf-8")
-        try:
-            if self.settings.feishu_encrypt_key:
-                validate_request_headers(
-                    headers,
-                    encrypt_key=self.settings.feishu_encrypt_key,
-                    body=body_text,
-                    now=now,
-                    max_age_seconds=self.settings.feishu_replay_max_age_seconds,
+        matched: BotRuntime | None = None
+        payload: dict[str, Any] | None = None
+        for candidate in enabledRuntimes(db, self.settings):
+            try:
+                if candidate.encryptKey:
+                    validate_request_headers(
+                        headers,
+                        encrypt_key=candidate.encryptKey,
+                        body=body_text,
+                        now=now,
+                        max_age_seconds=self.settings.feishu_replay_max_age_seconds,
+                    )
+                payload = parse_event_payload(
+                    body_text,
+                    encrypt_key=candidate.encryptKey,
+                    verification_token=candidate.verificationToken,
                 )
-            payload = parse_event_payload(
-                body_text,
-                encrypt_key=self.settings.feishu_encrypt_key,
-                verification_token=self.settings.feishu_verification_token,
-            )
-        except FeishuSecurityError as exc:
-            logger.warning("feishu security validation failed: %s", exc)
+                matched = candidate
+                break
+            except (FeishuSecurityError, ValueError):
+                continue
+        if matched is None or payload is None:
+            logger.warning("feishu security validation failed")
             return 403, {"code": 403, "msg": "forbidden"}
 
         if payload.get("type") == "url_verification":
@@ -75,7 +83,7 @@ class FeishuEventHandler:
                 return 200, response
 
         if event_type == "im.message.receive_v1":
-            handled, response = self._handlePairCommand(payload, db)
+            handled, response = self._handlePairCommand(payload, db, matched)
             if handled:
                 return 200, response
 
@@ -86,17 +94,17 @@ class FeishuEventHandler:
             return self._forwardCardAction(payload, db, now=now)
         return self._forwardTextMessage(payload, db, now=now)
 
-    def _reply(self, payload: dict[str, Any], text: str) -> None:
+    def _reply(self, payload: dict[str, Any], text: str, bot: BotRuntime) -> None:
         chat, _ = extract_routing_context(payload)
         chat_id = chat.get("chat_id")
-        if not chat_id or not self.settings.feishu_app_id or not self.settings.feishu_app_secret:
+        if not chat_id or not bot.appId or not bot.appSecret:
             return
         try:
-            FeishuClient(self.settings.feishu_app_id, self.settings.feishu_app_secret).send_text(chat_id, text)
+            bot.client().send_text(chat_id, text)
         except (FeishuAPIError, httpx.HTTPError):
             logger.exception("failed to reply to Feishu pairing command")
 
-    def _handlePairCommand(self, payload: dict[str, Any], db: Session) -> tuple[bool, dict[str, Any]]:
+    def _handlePairCommand(self, payload: dict[str, Any], db: Session, bot: BotRuntime) -> tuple[bool, dict[str, Any]]:
         _, text = extract_message_text(payload)
         if not text:
             return False, {}
@@ -106,14 +114,22 @@ class FeishuEventHandler:
         _, user = extract_routing_context(payload)
         external_id = user.get("open_id") or user.get("user_id")
         if not external_id:
-            self._reply(payload, "无法识别你的飞书账号，请在私聊中重试。")
+            self._reply(payload, "无法识别你的飞书账号，请在私聊中重试。", bot)
             return True, {"code": 0, "msg": "missing Feishu identity"}
         try:
-            claimFeishuPair(db, match.group(1), external_id)
+            claimed = claimFeishuPair(db, match.group(1), external_id, botId=bot.botId)
+            chat, _ = extract_routing_context(payload)
+            if bot.botId and chat.get("chat_id"):
+                from app.new_core.models import FeishuBot
+
+                managed = db.get(FeishuBot, bot.botId)
+                if managed is not None:
+                    setDefaultChat(managed, chat["chat_id"])
+                    db.commit()
         except HTTPException as exc:
-            self._reply(payload, f"绑定失败：{exc.detail}")
+            self._reply(payload, f"绑定失败：{exc.detail}", bot)
             return True, {"code": 0, "msg": "pairing failed"}
-        self._reply(payload, "已认领配对请求。请回到 SmartCore 工作台确认，完成后这个飞书账号才会开始接收提醒。")
+        self._reply(payload, "已认领配对请求。请回到 SmartCore 工作台确认，完成后这个飞书账号才会开始接收提醒。", bot)
         return True, {"code": 0, "msg": "pairing claimed"}
 
     def _openclawHeaders(self) -> dict[str, str] | None:

@@ -117,6 +117,7 @@ def runReminderTick(
             dedupKey=dedup_key,
             evtId=target_evt_id,
             phase="notice",
+            userId=reminder_base.userId,
         )
         if result.get("stat") in {"sent", "deduped"}:
             mark_reminder_fired(db, reminder_base.evtId, fired_at=nowDt.isoformat())
@@ -142,6 +143,7 @@ def runReminderTick(
             dedupKey=dedup_key,
             evtId=base.evtId,
             phase="end",
+            userId=base.userId,
         )
         if result.get("stat") in {"sent", "deduped"}:
             sent += 1
