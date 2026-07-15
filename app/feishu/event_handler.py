@@ -14,7 +14,6 @@ from sqlalchemy.orm import Session
 from app.config import Settings, get_settings
 from app.db.session import get_db
 from app.feishu.bot_service import BotRuntime, enabledRuntimes, setDefaultChat
-from app.feishu.client import FeishuAPIError, FeishuClient
 from app.feishu.commands import extract_message_text, extract_routing_context
 from app.feishu.security import FeishuSecurityError, parse_event_payload, validate_request_headers
 from app.new_core import crud
@@ -92,17 +91,17 @@ class FeishuEventHandler:
 
         if event_type == "card.action.trigger":
             return self._forwardCardAction(payload, db, now=now)
-        return self._forwardTextMessage(payload, db, now=now)
+        return self._forwardTextMessage(payload, db, matched, now=now)
 
-    def _reply(self, payload: dict[str, Any], text: str, bot: BotRuntime) -> None:
+    def _reply(self, payload: dict[str, Any], text: str, bot: BotRuntime, *, action: str) -> None:
         chat, _ = extract_routing_context(payload)
         chat_id = chat.get("chat_id")
         if not chat_id or not bot.appId or not bot.appSecret:
             return
         try:
             bot.client().send_text(chat_id, text)
-        except (FeishuAPIError, httpx.HTTPError):
-            logger.exception("failed to reply to Feishu pairing command")
+        except Exception:
+            logger.exception("failed to send Feishu reply: action=%s", action)
 
     def _handlePairCommand(self, payload: dict[str, Any], db: Session, bot: BotRuntime) -> tuple[bool, dict[str, Any]]:
         _, text = extract_message_text(payload)
@@ -114,7 +113,7 @@ class FeishuEventHandler:
         _, user = extract_routing_context(payload)
         external_id = user.get("open_id") or user.get("user_id")
         if not external_id:
-            self._reply(payload, "无法识别你的飞书账号，请在私聊中重试。", bot)
+            self._reply(payload, "无法识别你的飞书账号，请在私聊中重试。", bot, action="pairing")
             return True, {"code": 0, "msg": "missing Feishu identity"}
         try:
             claimed = claimFeishuPair(db, match.group(1), external_id, botId=bot.botId)
@@ -127,9 +126,9 @@ class FeishuEventHandler:
                     setDefaultChat(managed, chat["chat_id"])
                     db.commit()
         except HTTPException as exc:
-            self._reply(payload, f"绑定失败：{exc.detail}", bot)
+            self._reply(payload, f"绑定失败：{exc.detail}", bot, action="pairing")
             return True, {"code": 0, "msg": "pairing failed"}
-        self._reply(payload, "已认领配对请求。请回到 SmartCore 工作台确认，完成后这个飞书账号才会开始接收提醒。", bot)
+        self._reply(payload, "已认领配对请求。请回到 SmartCore 工作台确认，完成后这个飞书账号才会开始接收提醒。", bot, action="pairing")
         return True, {"code": 0, "msg": "pairing claimed"}
 
     def _openclawHeaders(self) -> dict[str, str] | None:
@@ -295,6 +294,7 @@ class FeishuEventHandler:
         self,
         payload: dict[str, Any],
         db: Session,
+        bot: BotRuntime,
         *,
         now: float | None,
     ) -> tuple[int, dict[str, Any]]:
@@ -304,6 +304,8 @@ class FeishuEventHandler:
 
         if message_id and crud.msgLogExists(db, src="feishu", externalId=message_id):
             return 200, {"code": 0, "msg": "duplicate message ignored"}
+
+        self._reply(payload, "已收到，正在处理…", bot, action="processing_ack")
 
         normalized = self._normalizeMessage(
             payload,
