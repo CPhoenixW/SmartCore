@@ -10,7 +10,7 @@ from app.feishu.cards import build_reminder_card
 from app.feishu.client import FeishuAPIError, FeishuClient
 from app.feishu.bot_service import runtime
 from app.new_core import crud
-from app.new_core.models import FeishuBot
+from app.new_core.models import FeishuBind, FeishuBot
 from app.new_core.preferences import get_user_preferences
 from app.screen.manager import screenManager
 
@@ -43,6 +43,7 @@ def _sendScreen(
     *,
     evtId: str | None = None,
     phase: str = "end",
+    userId: str = crud.DEFAULT_USER_ID,
 ) -> tuple[bool, str | None]:
     if phase == "start":
         message: dict[str, Any] = {
@@ -58,33 +59,41 @@ def _sendScreen(
         }
         if evtId:
             message["evtId"] = evtId
-    ok = screenManager.broadcastFromThread(message)
+    ok = screenManager.broadcastFromThread(message, userId=userId)
     return ok, None if ok else "screen websocket offline"
 
 
-def _managedFeishu(db: Session, userId: str) -> tuple[FeishuClient | None, str]:
+def _managedFeishu(db: Session, userId: str) -> tuple[FeishuClient | None, str, bool]:
     bot = db.scalar(
         select(FeishuBot)
         .where(FeishuBot.userId == userId, FeishuBot.enabled.is_(True))
         .order_by(FeishuBot.isDefault.desc(), FeishuBot.createdAt)
     )
     if bot is None:
-        return None, ""
+        return None, "", False
     try:
         configured = runtime(bot)
     except ValueError:
-        return None, ""
-    return configured.client(), configured.chatId
+        return None, "", True
+    binding = db.scalar(
+        select(FeishuBind).where(
+            FeishuBind.userId == userId,
+            FeishuBind.botId == bot.botId,
+            FeishuBind.stat == "active",
+            FeishuBind.isPrimary.is_(True),
+        )
+    )
+    return configured.client(), binding.chatId if binding is not None else "", True
 
 
 def _sendFeishuText(db: Session, title: str, content: str, *, userId: str = crud.DEFAULT_USER_ID) -> tuple[bool, str | None, str | None]:
     settings = get_settings()
-    client, receive_id = _managedFeishu(db, userId)
-    if client is None:
+    client, receive_id, managed = _managedFeishu(db, userId)
+    if not managed:
         receive_id = settings.feishu_default_chat_id
         client = _getFeishuClient()
     if not receive_id:
-        return False, None, "FEISHU_DEFAULT_CHAT_ID not configured"
+        return False, None, "no active primary Feishu chat"
     if client is None:
         return False, receive_id, "feishu app credentials not configured"
     try:
@@ -110,12 +119,12 @@ def _sendFeishuReminderCard(
     userId: str = crud.DEFAULT_USER_ID,
 ) -> tuple[bool, str | None, str | None]:
     settings = get_settings()
-    client, receive_id = _managedFeishu(db, userId)
-    if client is None:
+    client, receive_id, managed = _managedFeishu(db, userId)
+    if not managed:
         receive_id = settings.feishu_default_chat_id
         client = _getFeishuClient()
     if not receive_id:
-        return False, None, "FEISHU_DEFAULT_CHAT_ID not configured"
+        return False, None, "no active primary Feishu chat"
     if client is None:
         return False, receive_id, "feishu app credentials not configured"
     card = buildReminderCard(evtId=evtId, title=title, content=content)
@@ -155,7 +164,7 @@ def sendReminder(
         return {"channel": channel, "stat": "deduped"}
 
     if channel == "screen":
-        ok, fail = _sendScreen(title, content, evtId=evtId, phase=phase)
+        ok, fail = _sendScreen(title, content, evtId=evtId, phase=phase, userId=userId)
         stat = "sent" if ok else "failed"
         crud.writeNotifyLog(
             db,
@@ -237,7 +246,7 @@ def routeNotify(
         )
         return {"channel": "feishu", "stat": stat}
 
-    if not screenOnline:
+    if not screenOnline or not screenManager.online(userId):
         crud.writeNotifyLog(
             db,
             dedupKey=None,
@@ -251,7 +260,7 @@ def routeNotify(
         )
         return {"channel": "screen", "stat": "failed"}
 
-    ok, fail = _sendScreen(title, content, evtId=evtId, phase=phase)
+    ok, fail = _sendScreen(title, content, evtId=evtId, phase=phase, userId=userId)
     stat = "sent" if ok else "failed"
     crud.writeNotifyLog(
         db,

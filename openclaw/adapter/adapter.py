@@ -50,7 +50,7 @@ def sanitize_event(event: dict[str, Any]) -> dict[str, Any]:
         "source": event.get("source"),
         "event_type": event.get("event_type") or event.get("eventType"),
     }
-    for key in ("chat_id", "message_id", "text"):
+    for key in ("chat_id", "message_id", "text", "userId", "sourceBindId"):
         if event.get(key) is not None:
             sanitized[key] = event.get(key)
     for key in ("request", "chat", "user"):
@@ -90,6 +90,7 @@ def build_prompt(event: dict[str, Any]) -> str:
     chat = event.get("chat") if isinstance(event.get("chat"), dict) else {}
     user = event.get("user") if isinstance(event.get("user"), dict) else {}
     reply_chat_id = event.get("chat_id") or chat.get("chat_id")
+    scope = str(event.get("agentScope") or "").strip()
     return (
         "You are SmartCore Agent handling one forwarded Feishu event.\n"
         "Do not run onboarding, identity setup, or general assistant bootstrap flows.\n"
@@ -98,11 +99,12 @@ def build_prompt(event: dict[str, Any]) -> str:
         f"SmartCore base URL: {base_url}\n"
         f"Read the SmartCore API token from {token_file} only inside the command that calls SmartCore. Never print it.\n"
         "Required SmartCore header name: X-SmartCore-Agent-Token.\n"
+        f"For EVERY /agent database or feedback request, also send X-SmartCore-Agent-Scope: {scope}\n"
         "For relative time queries, calculate explicit ISO-8601 start/end ranges from event.request.now and event.request.timezone.\n"
-        "Every handled event must end with a Feishu reply through POST /agent/sendText or POST /agent/sendCard.\n"
+        "Every handled event must end with a Feishu reply through the scoped /agent/feedback endpoints.\n"
         "On success, send a short confirmation. On failure or ambiguity, send one concise clarification or error message.\n"
-        "Always pass chat routing to feedback APIs: use event.chat_id or event.chat.chat_id as chat_id/receiveId.\n"
-        f"Preferred reply chat_id: {reply_chat_id or 'use event.chat_id from compact event'}\n"
+        "Do not pass chat_id, receiveId, openId, or userId to feedback APIs: the signed scope is the only routing authority.\n"
+        f"Bound reply chat_id: {reply_chat_id or 'missing'}\n"
         f"User routing context: {json.dumps(user, ensure_ascii=False) if user else '{}'}\n"
         "If the target is ambiguous, send a concise clarification through SmartCore feedback instead of guessing.\n"
         "Forwarded compact event JSON follows:\n"

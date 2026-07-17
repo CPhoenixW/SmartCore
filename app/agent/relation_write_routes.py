@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.agent.routes import _done, _failed, requireAgentToken
+from app.agent.scope import AgentScope, require_agent_scope
 from app.agent.v2_routes import _normalize_update_patch, _resolved_iso
 from app.db.session import get_db
 from app.new_core.course_semester import create_course_event, update_course_event
@@ -59,9 +60,9 @@ def _normalized_ddl_reminders(body: dict[str, Any]) -> list[dict[str, Any]] | No
 
 def createRelationWriteRouter() -> APIRouter:
     router = APIRouter(prefix="/agent", tags=["agent-relation-writes"])
-    protected = [Depends(requireAgentToken)]
+    protected = [Depends(requireAgentToken), Depends(require_agent_scope)]
 
-    def create(body: dict[str, Any], db: Session) -> dict[str, Any]:
+    def create(body: dict[str, Any], db: Session, scope: AgentScope) -> dict[str, Any]:
         try:
             evt_type = str(body.get("evtType") or body.get("type") or "").lower()
             if evt_type == "life":
@@ -84,6 +85,7 @@ def createRelationWriteRouter() -> APIRouter:
                         durationMin=int(body.get("durationMin") or 30),
                         desc=body.get("desc") or body.get("description"),
                         prio=body.get("prio") or body.get("priority") or "mid",
+                        userId=scope.userId,
                         src="openclaw",
                     )
                 )
@@ -99,6 +101,7 @@ def createRelationWriteRouter() -> APIRouter:
                         triggerTime=_resolved_iso(raw_time, body, "triggerTime"),
                         desc=body.get("desc") or body.get("description"),
                         prio=body.get("prio") or body.get("priority") or "mid",
+                        userId=scope.userId,
                         src="openclaw",
                     )
                 )
@@ -117,6 +120,7 @@ def createRelationWriteRouter() -> APIRouter:
                         prio=body.get("prio") or body.get("priority") or "high",
                         plans=_normalized_plans(body),
                         ddlReminders=_normalized_ddl_reminders(body),
+                        userId=scope.userId,
                         src="openclaw",
                     )
                 )
@@ -149,6 +153,7 @@ def createRelationWriteRouter() -> APIRouter:
                         weekMode=str(body.get("weekMode") or "all"),
                         desc=body.get("desc") or body.get("description"),
                         prio=body.get("prio") or body.get("priority") or "mid",
+                        userId=scope.userId,
                         src="openclaw",
                     )
                 )
@@ -157,13 +162,13 @@ def createRelationWriteRouter() -> APIRouter:
             db.rollback()
             return _failed([str(exc)])
 
-    def update(body: dict[str, Any], db: Session) -> dict[str, Any]:
+    def update(body: dict[str, Any], db: Session, scope: AgentScope) -> dict[str, Any]:
         evt_id = body.get("evtId") or body.get("eventId")
         if not evt_id:
             return _failed(["evtId required"])
         try:
             base = db.get(EvtBase, str(evt_id))
-            if base is None:
+            if base is None or base.userId != scope.userId:
                 raise ValueError(f"evt not found: {evt_id}")
             patch = _normalize_update_patch(body, evt_type=base.evtType)
             if "semesterStart" in body:
@@ -195,19 +200,19 @@ def createRelationWriteRouter() -> APIRouter:
             return _failed([str(exc)])
 
     @router.post("/db/create_event", dependencies=protected)
-    def create_modern(body: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
-        return create(body, db)
+    def create_modern(body: dict[str, Any], db: Session = Depends(get_db), scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
+        return create(body, db, scope)
 
     @router.post("/evtCreate", dependencies=protected)
-    def create_legacy(body: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
-        return create(body, db)
+    def create_legacy(body: dict[str, Any], db: Session = Depends(get_db), scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
+        return create(body, db, scope)
 
     @router.post("/db/update_event", dependencies=protected)
-    def update_modern(body: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
-        return update(body, db)
+    def update_modern(body: dict[str, Any], db: Session = Depends(get_db), scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
+        return update(body, db, scope)
 
     @router.post("/evtUpdate", dependencies=protected)
-    def update_legacy(body: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
-        return update(body, db)
+    def update_legacy(body: dict[str, Any], db: Session = Depends(get_db), scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
+        return update(body, db, scope)
 
     return router

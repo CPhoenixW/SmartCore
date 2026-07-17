@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.agent.routes import _done, _failed, requireAgentToken
+from app.agent.scope import AgentScope, require_agent_scope
 from app.agent.v2_routes import _enhanced_tools, _normalize_query_body
 from app.db.session import get_db
 from app.new_core.event_relations import query_events
@@ -106,7 +107,7 @@ def _relation_tools() -> list[dict[str, Any]]:
 
 def createRelationQueryRouter() -> APIRouter:
     router = APIRouter(prefix="/agent", tags=["agent-relations"])
-    protected = [Depends(requireAgentToken)]
+    protected = [Depends(requireAgentToken), Depends(require_agent_scope)]
 
     @router.get("/tools", dependencies=protected)
     def tools() -> dict[str, Any]:
@@ -136,11 +137,12 @@ def createRelationQueryRouter() -> APIRouter:
             "tools": definitions,
         }
 
-    def execute(body: dict[str, Any] | None, db: Session) -> dict[str, Any]:
+    def execute(body: dict[str, Any] | None, db: Session, scope: AgentScope) -> dict[str, Any]:
         try:
             normalized = _normalize_query_body(body or {})
             normalized.setdefault("includeLinkedPlans", True)
             normalized.setdefault("includeReminders", False)
+            normalized["userId"] = scope.userId
             search_text = normalized.pop("text", None) or normalized.pop("keyword", None)
             result = query_events(db, normalized)
             items = []
@@ -167,14 +169,16 @@ def createRelationQueryRouter() -> APIRouter:
     def query_modern(
         body: dict[str, Any] | None = None,
         db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
     ) -> dict[str, Any]:
-        return execute(body, db)
+        return execute(body, db, scope)
 
     @router.post("/evtQuery", dependencies=protected)
     def query_legacy(
         body: dict[str, Any] | None = None,
         db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
     ) -> dict[str, Any]:
-        return execute(body, db)
+        return execute(body, db, scope)
 
     return router

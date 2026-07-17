@@ -11,13 +11,15 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
+from app.agent.scope import issue_agent_scope
 from app.config import Settings, get_settings
 from app.db.session import get_db
-from app.feishu.bot_service import BotRuntime, enabledRuntimes, setDefaultChat
+from app.feishu.bot_service import BotRuntime, enabledRuntimes
 from app.feishu.commands import extract_message_text, extract_routing_context
 from app.feishu.security import FeishuSecurityError, parse_event_payload, validate_request_headers
 from app.new_core import crud
-from app.user_device.service import claimFeishuPair, feishuIdentity
+from app.new_core.models import EvtBase
+from app.user_device.service import claimFeishuChatPair, feishuBinding
 
 logger = logging.getLogger(__name__)
 _DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
@@ -77,7 +79,7 @@ class FeishuEventHandler:
             return 200, {"code": 0, "msg": "ignored event type"}
 
         if event_type == "card.action.trigger":
-            handled, response = self._handleSmartcoreReminderAction(payload, db, now=now)
+            handled, response = self._handleSmartcoreReminderAction(payload, db, matched, now=now)
             if handled:
                 return 200, response
 
@@ -90,7 +92,7 @@ class FeishuEventHandler:
             return 200, {"code": 0, "msg": "openclaw not configured"}
 
         if event_type == "card.action.trigger":
-            return self._forwardCardAction(payload, db, now=now)
+            return self._forwardCardAction(payload, db, matched, now=now)
         return self._forwardTextMessage(payload, db, matched, now=now)
 
     def _reply(self, payload: dict[str, Any], text: str, bot: BotRuntime, *, action: str) -> None:
@@ -116,19 +118,12 @@ class FeishuEventHandler:
             self._reply(payload, "无法识别你的飞书账号，请在私聊中重试。", bot, action="pairing")
             return True, {"code": 0, "msg": "missing Feishu identity"}
         try:
-            claimed = claimFeishuPair(db, match.group(1), external_id, botId=bot.botId)
             chat, _ = extract_routing_context(payload)
-            if bot.botId and chat.get("chat_id"):
-                from app.new_core.models import FeishuBot
-
-                managed = db.get(FeishuBot, bot.botId)
-                if managed is not None:
-                    setDefaultChat(managed, chat["chat_id"])
-                    db.commit()
+            claimed = claimFeishuChatPair(db, match.group(1), botId=bot.botId, externalId=external_id, chatId=str(chat.get("chat_id") or ""), chatType=str(chat.get("chat_type") or "p2p"))
         except HTTPException as exc:
             self._reply(payload, f"绑定失败：{exc.detail}", bot, action="pairing")
             return True, {"code": 0, "msg": "pairing failed"}
-        self._reply(payload, "已认领配对请求。请回到 SmartCore 工作台确认，完成后这个飞书账号才会开始接收提醒。", bot, action="pairing")
+        self._reply(payload, "已认领会话。请回到 SmartCore 工作台确认后启用该会话。", bot, action="pairing")
         return True, {"code": 0, "msg": "pairing claimed"}
 
     def _openclawHeaders(self) -> dict[str, str] | None:
@@ -173,6 +168,7 @@ class FeishuEventHandler:
         payload: dict[str, Any],
         *,
         db: Session,
+        bot: BotRuntime,
         message_id: str,
         text: str,
         now: float | None,
@@ -199,10 +195,15 @@ class FeishuEventHandler:
             normalized["chat"] = chat
         if user:
             normalized["user"] = user
-        identity = feishuIdentity(db, user.get("open_id") or user.get("user_id"))
-        if identity is not None:
-            normalized["userId"] = identity.userId
-            normalized["sourceDeviceId"] = identity.deviceId
+        binding = feishuBinding(db, botId=bot.botId, externalId=user.get("open_id") or user.get("user_id"), chatId=chat.get("chat_id"))
+        if binding is not None:
+            normalized["userId"] = binding.userId
+            normalized["sourceBindId"] = binding.bindId
+            normalized["agentScope"] = issue_agent_scope(
+                userId=binding.userId,
+                botId=bot.botId,
+                chatId=str(chat.get("chat_id") or ""),
+            )
         return normalized
 
     def _normalizeCardAction(
@@ -251,6 +252,7 @@ class FeishuEventHandler:
         self,
         payload: dict[str, Any],
         db: Session,
+        bot: BotRuntime,
         *,
         now: float | None,
     ) -> tuple[bool, dict[str, Any]]:
@@ -266,6 +268,14 @@ class FeishuEventHandler:
         action_name = value.get("action")
         if not isinstance(evt_id, str) or not evt_id:
             return True, {"toast": {"type": "error", "content": "缺少事件 ID"}}
+        context = event_body.get("context") if isinstance(event_body.get("context"), dict) else {}
+        operator = event_body.get("operator") if isinstance(event_body.get("operator"), dict) else {}
+        operator_id = operator.get("operator_id") if isinstance(operator.get("operator_id"), dict) else {}
+        external_id = operator_id.get("open_id") or operator_id.get("user_id")
+        binding = feishuBinding(db, botId=bot.botId, externalId=external_id, chatId=context.get("open_chat_id"))
+        event = db.get(EvtBase, evt_id)
+        if binding is None or event is None or event.userId != binding.userId:
+            return True, {"toast": {"type": "error", "content": "无权操作此提醒"}}
         if action_name == "reminderDone":
             mapped = "done"
         elif action_name == "reminderSnooze10":
@@ -305,11 +315,17 @@ class FeishuEventHandler:
         if message_id and crud.msgLogExists(db, src="feishu", externalId=message_id):
             return 200, {"code": 0, "msg": "duplicate message ignored"}
 
+        chat, user = extract_routing_context(payload)
+        binding = feishuBinding(db, botId=bot.botId, externalId=user.get("open_id") or user.get("user_id"), chatId=chat.get("chat_id"))
+        if binding is None:
+            self._reply(payload, "请先在 SmartCore 工作台生成配对码，并发送“绑定 配对码”。", bot, action="unbound")
+            return 200, {"code": 0, "msg": "unbound chat"}
         self._reply(payload, "已收到，正在处理…", bot, action="processing_ack")
 
         normalized = self._normalizeMessage(
             payload,
             db=db,
+            bot=bot,
             message_id=message_id or "",
             text=text,
             now=now,
@@ -325,8 +341,6 @@ class FeishuEventHandler:
             stat = "forward_failed"
 
         if message_id:
-            chat, user = extract_routing_context(payload)
-            identity = feishuIdentity(db, user.get("open_id") or user.get("user_id"))
             crud.createMsgLog(
                 db,
                 src="feishu",
@@ -334,8 +348,8 @@ class FeishuEventHandler:
                 rawText=text,
                 intent="openclaw_forward",
                 stat=stat,
-                userId=identity.userId if identity is not None else crud.DEFAULT_USER_ID,
-                sourceDeviceId=identity.deviceId if identity is not None else None,
+                userId=binding.userId,
+                sourceDeviceId=None,
             )
         return 200, {"code": 0, "msg": "ok"}
 
@@ -343,6 +357,7 @@ class FeishuEventHandler:
         self,
         payload: dict[str, Any],
         db: Session,
+        bot: BotRuntime,
         *,
         now: float | None,
     ) -> tuple[int, dict[str, Any]]:

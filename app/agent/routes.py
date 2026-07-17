@@ -11,10 +11,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
+from app.agent.scope import AgentScope, require_agent_scope
 from app.db.session import get_db
 from app.feishu.client import FeishuAPIError, FeishuClient
 from app.new_core import crud
-from app.new_core.models import DdlPlan
+from app.new_core.models import DdlPlan, EvtBase, Idea
 from app.screen.manager import screenManager
 
 AGENT_TOKEN_HEADER = "X-SmartCore-Agent-Token"
@@ -434,7 +435,7 @@ class DevStateBody(BaseModel):
 
 def createAgentRouter() -> APIRouter:
     router = APIRouter(prefix="/agent", tags=["agent"])
-    protected = [Depends(requireAgentToken)]
+    protected = [Depends(requireAgentToken), Depends(require_agent_scope)]
 
     @router.get("/tools", dependencies=protected)
     def listTools() -> dict[str, Any]:
@@ -568,15 +569,18 @@ def createAgentRouter() -> APIRouter:
 
     @router.post("/evtDelete", dependencies=protected)
     @router.post("/db/delete_event", dependencies=protected)
-    def evtDelete(body: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    def evtDelete(body: dict[str, Any], db: Session = Depends(get_db), scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
         evt_id = body.get("evtId") or body.get("eventId")
         if not evt_id:
             return _failed(["evtId required"])
+        event = db.get(EvtBase, str(evt_id))
+        if event is None or event.userId != scope.userId:
+            return _failed([f"evt not found: {evt_id}"])
         return _run_write(db, lambda: crud.cancelEvt(db, str(evt_id), src="openclaw"))
 
     @router.post("/ideaCapture", dependencies=protected)
     @router.post("/idea/capture", dependencies=protected)
-    def ideaCapture(body: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    def ideaCapture(body: dict[str, Any], db: Session = Depends(get_db), scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
         content = str(body.get("content") or "").strip()
         if not content:
             return _failed(["content required"])
@@ -587,29 +591,27 @@ def createAgentRouter() -> APIRouter:
                 content=content,
                 srcType=str(body.get("srcType") or "text"),
                 mediaPath=body.get("mediaPath"),
+                userId=scope.userId,
             ),
         )
 
     @router.post("/ideaToEvt", dependencies=protected)
     @router.post("/idea/to_event", dependencies=protected)
-    def ideaToEvt(body: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    def ideaToEvt(body: dict[str, Any], db: Session = Depends(get_db), scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
         idea_id = body.get("ideaId")
         if not idea_id:
             return _failed(["ideaId required"])
 
         def operation() -> dict[str, Any]:
+            idea = db.get(Idea, str(idea_id))
+            if idea is None or idea.userId != scope.userId:
+                raise ValueError(f"idea not found: {idea_id}")
             evt_type = str(body.get("evtType") or "plan").lower()
             if evt_type == "life":
                 evt_type = "plan"
             title = str(body.get("title") or "").strip()
             if not title:
-                idea = next(
-                    (item for item in crud.listIdeas(db) if item["ideaId"] == idea_id),
-                    None,
-                )
-                if idea is None:
-                    raise ValueError(f"idea not found: {idea_id}")
-                title = str(idea["content"])[:300]
+                title = str(idea.content)[:300]
             if evt_type == "ddl":
                 end_time = body.get("endTime") or body.get("ddlAt") or body.get("at")
                 if not end_time:
@@ -621,6 +623,7 @@ def createAgentRouter() -> APIRouter:
                     hardDdl=bool(body.get("hardDdl", False)),
                     desc=body.get("desc"),
                     prio=body.get("prio", "high"),
+                    userId=scope.userId,
                     src="openclaw",
                 )
             else:
@@ -634,6 +637,7 @@ def createAgentRouter() -> APIRouter:
                     durationMin=int(body.get("durationMin") or 30),
                     desc=body.get("desc"),
                     prio=body.get("prio", "mid"),
+                    userId=scope.userId,
                     src="openclaw",
                 )
             crud.updateIdea(db, str(idea_id), handled=True)
@@ -686,14 +690,15 @@ def createAgentRouter() -> APIRouter:
 
     @router.post("/screenPush", dependencies=protected)
     @router.post("/feedback/screen_push", dependencies=protected)
-    async def screenPush(body: dict[str, Any]) -> dict[str, Any]:
+    async def screenPush(body: dict[str, Any], scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
         delivered = await screenManager.broadcast(
             {
                 "kind": "reminder",
                 "evtId": body.get("evtId"),
                 "title": body.get("title", ""),
                 "content": body.get("content", ""),
-            }
+            },
+            userId=scope.userId,
         )
         return {
             "ok": delivered > 0,

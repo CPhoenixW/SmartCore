@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.auth.security import auth_secret
 from app.config import Settings
 from app.feishu.client import FeishuClient
-from app.new_core.models import FeishuBot, LifeDevice, nowIso
+from app.new_core.models import FeishuBind, FeishuBot, LifeDevice, LifeIdentity, nowIso
 
 
 def _fernet() -> Fernet:
@@ -128,4 +128,16 @@ def seedLegacyBot(db: Session, settings: Settings) -> None:
             isDefault=True,
         )
     )
+    db.commit()
+
+
+def migrateFeishuBinds(db: Session) -> None:
+    """Preserve the legacy default chat as the user's first primary endpoint."""
+    for bot in db.scalars(select(FeishuBot)).all():
+        if db.scalar(select(FeishuBind.bindId).where(FeishuBind.botId == bot.botId)) is not None:
+            continue
+        chat_id = open_sealed(bot.defaultChatCipher)
+        identity = db.scalar(select(LifeIdentity).where(LifeIdentity.userId == bot.userId, LifeIdentity.provider == "feishu").order_by(LifeIdentity.createdAt))
+        if chat_id and identity is not None:
+            db.add(FeishuBind(userId=bot.userId, botId=bot.botId, identityId=identity.identityId, chatId=chat_id, isPrimary=True))
     db.commit()

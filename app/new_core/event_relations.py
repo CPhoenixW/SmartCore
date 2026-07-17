@@ -938,6 +938,7 @@ def query_events(db: Session, body: dict[str, Any]) -> dict[str, Any]:
     time_range = body.get("timeRange") or body.get("time_range") or {}
     rows = list_events(
         db,
+        user_id=str(body.get("userId") or _DEFAULT_USER_ID),
         include_reminders=bool(body.get("includeReminders", False)),
         date_value=body.get("date"),
         evt_types=evt_types,
