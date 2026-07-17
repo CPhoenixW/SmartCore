@@ -845,6 +845,19 @@ def get_event(db: Session, evt_id: str, *, include_reminders: bool = False) -> d
 def _event_in_range(item: dict[str, Any], start: datetime | None, end: datetime | None) -> bool:
     if start is None and end is None:
         return True
+    if item.get("evtType") == "course":
+        try:
+            course_start = _parse_date(str(item.get("stDate") or ""))
+            course_end = _parse_date(str(item.get("endDate") or ""))
+            weekday = int(item.get("weekDay"))
+        except (TypeError, ValueError):
+            return False
+        left = max(course_start, start.date() if start else course_start)
+        right = min(course_end, end.date() if end else course_end)
+        if left > right:
+            return False
+        first_match = left + timedelta(days=(weekday - left.isoweekday()) % 7)
+        return first_match <= right
     raw = item.get("stTime") or item.get("endTime") or item.get("triggerTime")
     if not raw:
         return False
