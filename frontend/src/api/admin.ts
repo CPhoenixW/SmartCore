@@ -32,6 +32,8 @@ export interface FeishuBotInput {
   isDefault?: boolean;
 }
 
+export interface FeishuBind { bindId: string; chatId: string; chatType: string; stat: string; isPrimary: boolean; createdAt: string; lastSeenAt?: string | null; }
+
 export const adminApi = {
   users: () => apiRequest<AdminUser[]>("/api/admin/users"),
   switchUser: (userId: string) => apiRequest<{ activeUser: AdminUser }>("/api/admin/activeUser", { method: "POST", body: JSON.stringify({ userId }) }),
@@ -41,5 +43,9 @@ export const adminApi = {
   toggleFeishuBot: (botId: string) => apiRequest<FeishuBot>(`/api/admin/feishuBots/${botId}/toggle`, { method: "POST" }),
   deleteFeishuBot: (botId: string) => apiRequest<{ deleted: boolean }>(`/api/admin/feishuBots/${botId}`, { method: "DELETE" }),
   startFeishuPair: (botId: string) => apiRequest<{ pairId: string; claimCode: string; expiresAt: string; stat: string; botId: string }>(`/api/admin/feishuBots/${botId}/pair/start`, { method: "POST" }),
+  confirmFeishuPair: (botId: string, pairId: string) => apiRequest<{ bindId: string; chatId: string; stat: string; isPrimary: boolean }>(`/api/admin/feishuBots/${botId}/pair/${pairId}/confirm`, { method: "POST" }),
+  feishuBinds: (botId: string) => apiRequest<FeishuBind[]>(`/api/admin/feishuBots/${botId}/binds`),
+  setPrimaryFeishuBind: (botId: string, bindId: string) => apiRequest<FeishuBind>(`/api/admin/feishuBots/${botId}/binds/${bindId}/primary`, { method: "POST" }),
+  deleteFeishuBind: (botId: string, bindId: string) => apiRequest<{ deleted: boolean }>(`/api/admin/feishuBots/${botId}/binds/${bindId}`, { method: "DELETE" }),
   testFeishuBot: (botId: string) => apiRequest<FeishuBot>(`/api/admin/feishuBots/${botId}/test`, { method: "POST" }),
 };

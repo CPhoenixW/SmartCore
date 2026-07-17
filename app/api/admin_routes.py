@@ -12,8 +12,8 @@ from app.config import get_settings
 from app.db.session import get_db
 from app.feishu.bot_service import botDict, open_sealed, seal
 from app.feishu.client import FeishuAPIError, FeishuClient
-from app.new_core.models import ActLog, AppUser, FeishuBot, nowIso
-from app.user_device.service import startPair
+from app.new_core.models import ActLog, AppUser, FeishuBind, FeishuBot, nowIso
+from app.user_device.service import confirmFeishuChatPair, startFeishuChatPair
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -107,6 +107,8 @@ def createFeishuBot(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     _actor(db, actorId)
+    if db.scalar(select(FeishuBot.botId).where(FeishuBot.userId == activeUserId)) is not None:
+        raise HTTPException(status_code=409, detail="each SmartCore user can configure one Feishu bot")
     bot = FeishuBot(
         userId=activeUserId,
         botName=body.botName.strip(),
@@ -182,8 +184,73 @@ def startFeishuBotPair(
     bot = _bot(db, botId, activeUserId)
     if not bot.enabled:
         raise HTTPException(status_code=409, detail="enable the Feishu bot before pairing")
-    pair = startPair(db, activeUserId, bot.botName, "feishuBot", botId=bot.botId)
+    pair = startFeishuChatPair(db, activeUserId, bot.botId)
     return {"ok": True, "data": {"pairId": pair.pairId, "claimCode": pair.claimCode, "expiresAt": pair.expiresAt, "stat": pair.stat, "botId": bot.botId}}
+
+
+@router.post("/feishuBots/{botId}/pair/{pairId}/confirm")
+def confirmFeishuBotChatPair(
+    botId: str,
+    pairId: str,
+    actorId: str = Depends(require_authenticated_actor_id),
+    activeUserId: str = Depends(require_authenticated_user_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    _actor(db, actorId)
+    _bot(db, botId, activeUserId)
+    row = confirmFeishuChatPair(db, pairId, activeUserId)
+    return {"ok": True, "data": {"bindId": row.bindId, "chatId": row.chatId, "stat": row.stat, "isPrimary": row.isPrimary}}
+
+
+def _bind_dict(row: FeishuBind) -> dict[str, Any]:
+    return {"bindId": row.bindId, "chatId": row.chatId, "chatType": row.chatType, "stat": row.stat, "isPrimary": row.isPrimary, "createdAt": row.createdAt, "lastSeenAt": row.lastSeenAt}
+
+
+@router.get("/feishuBots/{botId}/binds")
+def feishuBinds(botId: str, actorId: str = Depends(require_authenticated_actor_id), activeUserId: str = Depends(require_authenticated_user_id), db: Session = Depends(get_db)) -> dict[str, Any]:
+    _actor(db, actorId)
+    _bot(db, botId, activeUserId)
+    rows = db.scalars(select(FeishuBind).where(FeishuBind.botId == botId).order_by(FeishuBind.isPrimary.desc(), FeishuBind.createdAt)).all()
+    return {"ok": True, "data": [_bind_dict(row) for row in rows]}
+
+
+@router.post("/feishuBots/{botId}/binds/{bindId}/primary")
+def setPrimaryFeishuBind(botId: str, bindId: str, actorId: str = Depends(require_authenticated_actor_id), activeUserId: str = Depends(require_authenticated_user_id), db: Session = Depends(get_db)) -> dict[str, Any]:
+    _actor(db, actorId)
+    bot = _bot(db, botId, activeUserId)
+    selected = db.get(FeishuBind, bindId)
+    if selected is None or selected.botId != botId or selected.userId != activeUserId or selected.stat != "active":
+        raise HTTPException(status_code=404, detail="Feishu chat binding not found")
+    for row in db.scalars(select(FeishuBind).where(FeishuBind.botId == botId)):
+        row.isPrimary = row.bindId == bindId
+        row.updatedAt = nowIso()
+    bot.defaultChatCipher = seal(selected.chatId)
+    bot.updatedAt = nowIso()
+    db.commit()
+    return {"ok": True, "data": _bind_dict(selected)}
+
+
+@router.delete("/feishuBots/{botId}/binds/{bindId}")
+def deleteFeishuBind(botId: str, bindId: str, actorId: str = Depends(require_authenticated_actor_id), activeUserId: str = Depends(require_authenticated_user_id), db: Session = Depends(get_db)) -> dict[str, Any]:
+    _actor(db, actorId)
+    bot = _bot(db, botId, activeUserId)
+    selected = db.get(FeishuBind, bindId)
+    if selected is None or selected.botId != botId or selected.userId != activeUserId:
+        raise HTTPException(status_code=404, detail="Feishu chat binding not found")
+    was_primary = selected.isPrimary
+    db.delete(selected)
+    db.flush()
+    if was_primary:
+        replacement = db.scalar(select(FeishuBind).where(FeishuBind.botId == botId, FeishuBind.stat == "active").order_by(FeishuBind.createdAt))
+        if replacement is None:
+            bot.defaultChatCipher = None
+        else:
+            replacement.isPrimary = True
+            replacement.updatedAt = nowIso()
+            bot.defaultChatCipher = seal(replacement.chatId)
+        bot.updatedAt = nowIso()
+    db.commit()
+    return {"ok": True, "data": {"bindId": bindId, "deleted": True}}
 
 
 @router.post("/feishuBots/{botId}/test")
@@ -195,7 +262,8 @@ def testFeishuBot(
 ) -> dict[str, Any]:
     _actor(db, actorId)
     bot = _bot(db, botId, activeUserId)
-    target = open_sealed(bot.defaultChatCipher)
+    binding = db.scalar(select(FeishuBind).where(FeishuBind.botId == bot.botId, FeishuBind.stat == "active", FeishuBind.isPrimary.is_(True)))
+    target = binding.chatId if binding is not None else ""
     if not target:
         raise HTTPException(status_code=409, detail="pair a Feishu account before sending a test message")
     try:

@@ -7,6 +7,7 @@ from app.feishu.client import FeishuClient
 from app.feishu.security import compute_signature
 from app.main import create_app
 from app.db.session import SessionLocal
+from app.new_core.models import FeishuBot
 from app.new_core.notify import routeNotify
 from app.new_core.preferences import update_user_preferences
 
@@ -50,6 +51,13 @@ def test_admin_can_pair_a_managed_feishu_bot_without_exposing_credentials(app_en
     monkeypatch.setattr(FeishuClient, "send_text", lambda self, chat, text, **kwargs: sent.append((chat, text)) or {"code": 0})
     monkeypatch.setattr(FeishuClient, "send_interactive_card", lambda self, chat, card, **kwargs: cards.append(chat) or {"code": 0})
     client = TestClient(create_app())
+    db = SessionLocal()
+    try:
+        for row in db.query(FeishuBot).all():
+            db.delete(row)
+        db.commit()
+    finally:
+        db.close()
     assert client.post("/api/auth/setup", json={"password": "correct-horse-battery-staple"}).status_code == 200
 
     created = client.post(
@@ -76,9 +84,9 @@ def test_admin_can_pair_a_managed_feishu_bot_without_exposing_credentials(app_en
     assert sent and sent[-1][0] == "oc_pair_chat"
     assert all(text != "已收到，正在处理…" for _, text in sent)
 
-    confirmed = client.post(f"/api/device/pair/{pair.json()['data']['pairId']}/confirm")
+    confirmed = client.post(f"/api/admin/feishuBots/{bot['botId']}/pair/{pair.json()['data']['pairId']}/confirm")
     assert confirmed.status_code == 200
-    assert confirmed.json()["data"]["stat"] == "paired"
+    assert confirmed.json()["data"]["stat"] == "active"
 
     db = SessionLocal()
     try:
@@ -97,11 +105,16 @@ def test_admin_can_pair_a_managed_feishu_bot_without_exposing_credentials(app_en
 def test_feishu_pair_code_is_rejected_by_another_bot(app_env, monkeypatch) -> None:
     monkeypatch.setattr(FeishuClient, "send_text", lambda *args, **kwargs: {"code": 0})
     client = TestClient(create_app())
+    db = SessionLocal()
+    try:
+        for row in db.query(FeishuBot).all():
+            db.delete(row)
+        db.commit()
+    finally:
+        db.close()
     assert client.post("/api/auth/setup", json={"password": "correct-horse-battery-staple"}).status_code == 200
     body = {"appId": "cli_bot", "appSecret": "secret", "encryptKey": "key"}
-    first = client.post("/api/admin/feishuBots", json={**body, "botName": "First", "verificationToken": "first-token"}).json()["data"]
-    second = client.post("/api/admin/feishuBots", json={**body, "botName": "Second", "verificationToken": "second-token"}).json()["data"]
-    pair = client.post(f"/api/admin/feishuBots/{first['botId']}/pair/start").json()["data"]
-    response = _post_event(client, _event(f"绑定 {pair['claimCode']}", "second-token"), "key")
-    assert response.status_code == 200
-    assert response.json()["msg"] == "pairing failed"
+    first = client.post("/api/admin/feishuBots", json={**body, "botName": "First", "verificationToken": "first-token"})
+    assert first.status_code == 200
+    second = client.post("/api/admin/feishuBots", json={**body, "botName": "Second", "verificationToken": "second-token"})
+    assert second.status_code == 409

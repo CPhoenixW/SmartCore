@@ -5,16 +5,18 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.agent.routes import (
     _AGENT_TOOLS,
     _done,
     _failed,
-    _getFeishuClient,
-    _resolveReceiveId,
     requireAgentToken,
 )
-from app.config import Settings, get_settings
+from app.agent.scope import AgentScope, require_agent_scope
+from app.db.session import get_db
+from app.feishu.bot_service import runtime
 from app.feishu.cards import (
     build_message_card,
     build_operation_success_card,
@@ -23,6 +25,7 @@ from app.feishu.cards import (
     normalize_card,
 )
 from app.feishu.client import FeishuAPIError
+from app.new_core.models import FeishuBind, FeishuBot
 
 
 def _schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
@@ -156,41 +159,55 @@ def _receive_id_type(body: dict[str, Any]) -> str:
     return "chat_id"
 
 
-def _resolve_target(body: dict[str, Any], settings: Settings) -> str | None:
-    for key in ("openId", "open_id", "userId", "user_id"):
-        value = body.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return _resolveReceiveId(body, settings)
-
-
 def _send_card(
     body: dict[str, Any],
     card: dict[str, Any],
-    settings: Settings,
+    db: Session,
+    scope: AgentScope,
 ) -> dict[str, Any]:
-    receive_id = _resolve_target(body, settings)
-    if not receive_id:
-        return _failed(["receiveId/chatId required or configure FEISHU_DEFAULT_CHAT_ID"])
-    client = _getFeishuClient(settings)
-    if client is None:
-        return _failed(["feishu not configured"])
+    bot = db.get(FeishuBot, scope.botId)
+    binding = db.scalar(select(FeishuBind).where(
+        FeishuBind.botId == scope.botId,
+        FeishuBind.userId == scope.userId,
+        FeishuBind.chatId == scope.chatId,
+        FeishuBind.stat == "active",
+    ))
+    if bot is None or bot.userId != scope.userId or binding is None:
+        return _failed(["scoped Feishu chat is no longer active"])
     try:
         normalized = normalize_card(card)
-        receive_id_type = _receive_id_type(body)
-        response = client.send_interactive_card(
-            receive_id,
+        response = runtime(bot).client().send_interactive_card(
+            scope.chatId,
             normalized,
-            receive_id_type=receive_id_type,
+            receive_id_type="chat_id",
         )
         return _done(
             {
                 "message": response.get("data") or response,
-                "receiveId": receive_id,
-                "receiveIdType": receive_id_type,
+                "receiveId": scope.chatId,
+                "receiveIdType": "chat_id",
                 "msgType": "interactive",
             }
         )
+    except (ValueError, FeishuAPIError) as exc:
+        return _failed([str(exc)])
+
+
+def _send_text(body: dict[str, Any], db: Session, scope: AgentScope) -> dict[str, Any]:
+    text = body.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return _failed(["text required"])
+    bot = db.get(FeishuBot, scope.botId)
+    binding = db.scalar(select(FeishuBind).where(
+        FeishuBind.botId == scope.botId,
+        FeishuBind.userId == scope.userId,
+        FeishuBind.chatId == scope.chatId,
+        FeishuBind.stat == "active",
+    ))
+    if bot is None or bot.userId != scope.userId or binding is None:
+        return _failed(["scoped Feishu chat is no longer active"])
+    try:
+        return _done(runtime(bot).client().send_text(scope.chatId, text.strip()))
     except (ValueError, FeishuAPIError) as exc:
         return _failed([str(exc)])
 
@@ -213,7 +230,7 @@ def _extract_query_items(body: dict[str, Any]) -> list[dict[str, Any]] | None:
 def createFeedbackRouter() -> APIRouter:
     ensure_feedback_tools()
     router = APIRouter(prefix="/agent", tags=["agent-feedback"])
-    protected = [Depends(requireAgentToken)]
+    protected = [Depends(requireAgentToken), Depends(require_agent_scope)]
 
     @router.get("/tools", dependencies=protected)
     def list_tools() -> dict[str, Any]:
@@ -245,7 +262,8 @@ def createFeedbackRouter() -> APIRouter:
     @router.post("/feedback/send_card", dependencies=protected)
     def send_card(
         body: dict[str, Any],
-        settings: Settings = Depends(get_settings),
+        db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
     ) -> dict[str, Any]:
         raw_card = body.get("card")
         if isinstance(raw_card, dict):
@@ -259,12 +277,22 @@ def createFeedbackRouter() -> APIRouter:
                 content=content.strip(),
                 template=str(body.get("template") or "blue"),
             )
-        return _send_card(body, card, settings)
+        return _send_card(body, card, db, scope)
+
+    @router.post("/sendText", dependencies=protected)
+    @router.post("/feedback/send_text", dependencies=protected)
+    def send_text(
+        body: dict[str, Any],
+        db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
+    ) -> dict[str, Any]:
+        return _send_text(body, db, scope)
 
     @router.post("/feedback/send_query_result_card", dependencies=protected)
     def send_query_result_card(
         body: dict[str, Any],
-        settings: Settings = Depends(get_settings),
+        db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
     ) -> dict[str, Any]:
         items = _extract_query_items(body)
         if items is None:
@@ -275,12 +303,13 @@ def createFeedbackRouter() -> APIRouter:
             items=items,
             empty_text=str(body.get("emptyText") or body.get("empty_text") or "没有找到匹配的事项。"),
         )
-        return _send_card(body, card, settings)
+        return _send_card(body, card, db, scope)
 
     @router.post("/feedback/send_operation_success_card", dependencies=protected)
     def send_operation_success_card(
         body: dict[str, Any],
-        settings: Settings = Depends(get_settings),
+        db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
     ) -> dict[str, Any]:
         event = body.get("event") or body.get("data")
         if isinstance(event, dict) and isinstance(event.get("event"), dict):
@@ -293,12 +322,13 @@ def createFeedbackRouter() -> APIRouter:
             operation=str(body.get("operation") or body.get("action") or "").strip() or None,
             event=event,
         )
-        return _send_card(body, card, settings)
+        return _send_card(body, card, db, scope)
 
     @router.post("/feedback/send_reminder_card", dependencies=protected)
     def send_reminder_card(
         body: dict[str, Any],
-        settings: Settings = Depends(get_settings),
+        db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
     ) -> dict[str, Any]:
         evt_id = body.get("evtId") or body.get("eventId")
         if not isinstance(evt_id, str) or not evt_id.strip():
@@ -312,6 +342,6 @@ def createFeedbackRouter() -> APIRouter:
             allow_done=bool(body.get("allowDone", True)),
             allow_snooze=bool(body.get("allowSnooze", True)),
         )
-        return _send_card(body, card, settings)
+        return _send_card(body, card, db, scope)
 
     return router

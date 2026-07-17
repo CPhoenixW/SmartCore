@@ -16,6 +16,8 @@ from app.new_core.models import (
     DevicePair,
     LifeDevice,
     LifeIdentity,
+    FeishuBind,
+    FeishuChatPair,
     nowIso,
 )
 
@@ -145,6 +147,70 @@ def claimFeishuPair(db: Session, claimCode: str, externalId: str, *, botId: str 
         db.commit()
         db.refresh(claimed)
     return claimed
+
+
+def startFeishuChatPair(db: Session, userId: str, botId: str) -> FeishuChatPair:
+    pending = db.scalar(select(FeishuChatPair).where(FeishuChatPair.userId == userId, FeishuChatPair.botId == botId, FeishuChatPair.stat.in_(("created", "claimed")), FeishuChatPair.expiresAt > nowIso()))
+    if pending is not None:
+        return pending
+    row = FeishuChatPair(userId=userId, botId=botId, claimCode=secrets.token_urlsafe(18), expiresAt=(datetime.now(_TZ) + timedelta(minutes=10)).isoformat())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def claimFeishuChatPair(db: Session, claimCode: str, *, botId: str | None, externalId: str, chatId: str, chatType: str) -> FeishuChatPair:
+    pair = db.scalar(select(FeishuChatPair).where(FeishuChatPair.claimCode == claimCode))
+    if pair is None or pair.botId != botId or pair.expiresAt < nowIso() or pair.stat not in {"created", "claimed"}:
+        raise HTTPException(status_code=404, detail="Feishu chat pairing code not found")
+    identity = db.scalar(select(LifeIdentity).where(LifeIdentity.provider == "feishu", LifeIdentity.externalId == externalId))
+    if identity is not None and identity.userId != pair.userId:
+        raise HTTPException(status_code=409, detail="this Feishu account belongs to another SmartCore user")
+    if identity is None:
+        identity = LifeIdentity(userId=pair.userId, provider="feishu", externalId=externalId)
+        db.add(identity)
+        db.flush()
+    pair.identityId = identity.identityId
+    pair.chatId = chatId
+    pair.chatType = chatType or "p2p"
+    pair.stat = "claimed"
+    pair.claimedAt = nowIso()
+    db.commit()
+    db.refresh(pair)
+    return pair
+
+
+def confirmFeishuChatPair(db: Session, pairId: str, userId: str) -> FeishuBind:
+    pair = db.get(FeishuChatPair, pairId)
+    if pair is None or pair.userId != userId or pair.stat != "claimed" or not pair.identityId or not pair.chatId:
+        raise HTTPException(status_code=409, detail="Feishu chat pairing awaits a valid claim")
+    row = db.scalar(select(FeishuBind).where(FeishuBind.botId == pair.botId, FeishuBind.identityId == pair.identityId, FeishuBind.chatId == pair.chatId))
+    if row is None:
+        row = FeishuBind(userId=userId, botId=pair.botId, identityId=pair.identityId, chatId=pair.chatId, chatType=pair.chatType or "p2p")
+        row.isPrimary = db.scalar(select(FeishuBind.bindId).where(FeishuBind.userId == userId, FeishuBind.stat == "active")) is None
+        db.add(row)
+    row.stat = "active"
+    row.updatedAt = nowIso()
+    if row.isPrimary:
+        from app.feishu.bot_service import seal
+        from app.new_core.models import FeishuBot
+
+        bot = db.get(FeishuBot, row.botId)
+        if bot is not None:
+            bot.defaultChatCipher = seal(row.chatId)
+            bot.updatedAt = nowIso()
+    pair.stat = "confirmed"
+    pair.confirmedAt = nowIso()
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def feishuBinding(db: Session, *, botId: str | None, externalId: str | None, chatId: str | None) -> FeishuBind | None:
+    if not botId or not externalId or not chatId:
+        return None
+    return db.scalar(select(FeishuBind).join(LifeIdentity, LifeIdentity.identityId == FeishuBind.identityId).where(FeishuBind.botId == botId, LifeIdentity.provider == "feishu", LifeIdentity.externalId == externalId, FeishuBind.chatId == chatId, FeishuBind.stat == "active"))
 
 
 def feishuIdentity(db: Session, externalId: str | None) -> LifeIdentity | None:

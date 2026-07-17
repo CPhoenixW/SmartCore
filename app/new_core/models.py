@@ -344,6 +344,40 @@ class FeishuBot(Base):
     updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
 
 
+class FeishuBind(Base):
+    __tablename__ = "feishuBind"
+    __table_args__ = (UniqueConstraint("botId", "identityId", "chatId", name="uq_feishu_bind_endpoint"),)
+
+    bindId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    botId: Mapped[str] = mapped_column(String(32), ForeignKey("feishuBot.botId", ondelete="CASCADE"), nullable=False)
+    identityId: Mapped[str] = mapped_column(String(32), ForeignKey("lifeIdentity.identityId", ondelete="CASCADE"), nullable=False)
+    chatId: Mapped[str] = mapped_column(String(300), nullable=False)
+    chatType: Mapped[str] = mapped_column(String(20), default="p2p", nullable=False)
+    stat: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
+    isPrimary: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    lastSeenAt: Mapped[str | None] = mapped_column(String(64))
+
+
+class FeishuChatPair(Base):
+    __tablename__ = "feishuChatPair"
+
+    pairId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    botId: Mapped[str] = mapped_column(String(32), ForeignKey("feishuBot.botId", ondelete="CASCADE"), nullable=False)
+    claimCode: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    stat: Mapped[str] = mapped_column(String(20), default="created", nullable=False)
+    identityId: Mapped[str | None] = mapped_column(String(32), ForeignKey("lifeIdentity.identityId", ondelete="SET NULL"))
+    chatId: Mapped[str | None] = mapped_column(String(300))
+    chatType: Mapped[str | None] = mapped_column(String(20))
+    expiresAt: Mapped[str] = mapped_column(String(64), nullable=False)
+    claimedAt: Mapped[str | None] = mapped_column(String(64))
+    confirmedAt: Mapped[str | None] = mapped_column(String(64))
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
 class LifeIdentity(Base):
     __tablename__ = "lifeIdentity"
     __table_args__ = (UniqueConstraint("provider", "externalId", name="uq_life_identity_provider_external"),)

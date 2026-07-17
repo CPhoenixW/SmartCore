@@ -1,7 +1,7 @@
 from collections.abc import Callable, Generator
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -418,21 +418,27 @@ def init_db() -> None:
         _apply_sqlite_migrations(settings.database_path)
         engine, _ = _ensure_engine()
         Base.metadata.create_all(bind=engine)
-        from app.feishu.bot_service import seedLegacyBot
+        with engine.begin() as connection:
+            connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_feishuBot_user ON feishuBot(userId)"))
+        from app.feishu.bot_service import migrateFeishuBinds, seedLegacyBot
 
         db = SessionLocal()
         try:
             seedLegacyBot(db, settings)
+            migrateFeishuBinds(db)
         finally:
             db.close()
         return
 
     engine, _ = _ensure_engine()
     Base.metadata.create_all(bind=engine)
-    from app.feishu.bot_service import seedLegacyBot
+    with engine.begin() as connection:
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_feishuBot_user ON feishuBot(userId)"))
+    from app.feishu.bot_service import migrateFeishuBinds, seedLegacyBot
 
     db = SessionLocal()
     try:
         seedLegacyBot(db, settings)
+        migrateFeishuBinds(db)
     finally:
         db.close()

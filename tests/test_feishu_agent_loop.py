@@ -3,9 +3,11 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.agent import routes as agent_routes
+from app.agent.scope import issue_agent_scope
+from app.db.session import SessionLocal
 from app.feishu.client import FeishuClient
 from app.main import create_app
+from app.new_core.models import FeishuBind, FeishuBot, LifeIdentity
 
 
 def _message_event(text: str, *, chat_id: str = "oc_user_chat", message_id: str = "om_1") -> dict:
@@ -45,6 +47,20 @@ class FakeFeishuClient:
         return {"code": 0, "data": {"message_id": "om_card"}}
 
 
+def _bind_default_chat(chat_id: str) -> str:
+    db = SessionLocal()
+    try:
+        bot = db.query(FeishuBot).one()
+        identity = LifeIdentity(userId="default", provider="feishu", externalId="ou_sender")
+        db.add(identity)
+        db.flush()
+        db.add(FeishuBind(userId="default", botId=bot.botId, identityId=identity.identityId, chatId=chat_id, isPrimary=True))
+        db.commit()
+        return issue_agent_scope(userId="default", botId=bot.botId, chatId=chat_id)
+    finally:
+        db.close()
+
+
 def test_feishu_message_normalization_includes_routing_context(app_env, monkeypatch) -> None:
     forwarded: dict = {}
     acknowledgements: list[tuple[str, str]] = []
@@ -70,6 +86,7 @@ def test_feishu_message_normalization_includes_routing_context(app_env, monkeypa
         ),
     )
     client = TestClient(create_app())
+    _bind_default_chat("oc_user_chat")
 
     resp = client.post("/feishu/event", json=_message_event("帮我记一下明天晚上洗衣服"))
 
@@ -83,6 +100,7 @@ def test_feishu_message_normalization_includes_routing_context(app_env, monkeypa
     assert event["user"]["user_id"] == "u_sender"
     assert event["request"]["timezone"] == "Asia/Shanghai"
     assert "now" in event["request"]
+    assert isinstance(event["agentScope"], str) and event["agentScope"]
     assert acknowledgements == [("oc_user_chat", "已收到，正在处理…")]
     assert operations == ["ack", "forward"]
 
@@ -106,6 +124,7 @@ def test_feishu_processing_ack_failure_does_not_block_openclaw_forward(app_env, 
     monkeypatch.setattr("httpx.post", fake_post)
     monkeypatch.setattr(FeishuClient, "send_text", fail_ack)
     client = TestClient(create_app())
+    _bind_default_chat("oc_user_chat")
 
     response = client.post("/feishu/event", json=_message_event("测试", message_id="om_ack_failure"))
 
@@ -114,66 +133,52 @@ def test_feishu_processing_ack_failure_does_not_block_openclaw_forward(app_env, 
     assert forwarded["json"]["message_id"] == "om_ack_failure"
 
 
-def test_send_text_uses_default_chat_id(app_env, monkeypatch) -> None:
+def test_scoped_send_text_uses_bound_chat_only(app_env, monkeypatch) -> None:
     fake_client = FakeFeishuClient()
-    monkeypatch.setattr(agent_routes, "_feishuClient", fake_client)
+    monkeypatch.setattr(FeishuClient, "send_text", fake_client.send_text)
     client = TestClient(create_app())
-    headers = {"X-SmartCore-Agent-Token": "agent-secret"}
+    scope = _bind_default_chat("oc_bound")
+    headers = {"X-SmartCore-Agent-Token": "agent-secret", "X-SmartCore-Agent-Scope": scope}
 
     resp = client.post(
         "/agent/sendText",
         headers=headers,
-        json={"text": "已记录"},
+        json={"text": "已记录", "chatId": "oc_wrong"},
     )
 
     assert resp.status_code == 200
     body = resp.json()
     assert body["ok"] is True
     assert body["stat"] == "done"
-    assert fake_client.text_calls == [("oc_default", "已记录")]
+    assert fake_client.text_calls == [("oc_bound", "已记录")]
     assert "tenant_access_token" not in json.dumps(body)
     assert "app-secret" not in json.dumps(body)
 
 
-def test_send_text_uses_explicit_chat_id(app_env, monkeypatch) -> None:
-    fake_client = FakeFeishuClient()
-    monkeypatch.setattr(agent_routes, "_feishuClient", fake_client)
-    client = TestClient(create_app())
-    headers = {"X-SmartCore-Agent-Token": "agent-secret"}
-
-    resp = client.post(
-        "/agent/sendText",
-        headers=headers,
-        json={"text": "好的", "chatId": "oc_explicit"},
-    )
-
-    assert resp.status_code == 200
-    assert resp.json()["ok"] is True
-    assert fake_client.text_calls == [("oc_explicit", "好的")]
-
-
 def test_send_card_calls_feishu_interactive(app_env, monkeypatch) -> None:
     fake_client = FakeFeishuClient()
-    monkeypatch.setattr(agent_routes, "_feishuClient", fake_client)
+    monkeypatch.setattr(FeishuClient, "send_interactive_card", fake_client.send_interactive_card)
     card = {"schema": "2.0", "header": {"title": {"tag": "plain_text", "content": "提醒"}}, "elements": []}
     client = TestClient(create_app())
-    headers = {"X-SmartCore-Agent-Token": "agent-secret"}
+    scope = _bind_default_chat("oc_bound")
+    headers = {"X-SmartCore-Agent-Token": "agent-secret", "X-SmartCore-Agent-Scope": scope}
 
     resp = client.post(
         "/agent/sendCard",
         headers=headers,
-        json={"chat_id": "oc_card", "card": card},
+        json={"chat_id": "oc_wrong", "card": card},
     )
 
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
-    assert fake_client.card_calls[0][0] == "oc_card"
+    assert fake_client.card_calls[0][0] == "oc_bound"
     assert fake_client.card_calls[0][1]["header"]["title"]["content"] == "提醒"
 
 
 def test_agent_endpoints_return_ok_false_for_missing_ids(app_env) -> None:
     client = TestClient(create_app())
-    headers = {"X-SmartCore-Agent-Token": "agent-secret"}
+    scope = _bind_default_chat("oc_bound")
+    headers = {"X-SmartCore-Agent-Token": "agent-secret", "X-SmartCore-Agent-Scope": scope}
 
     for path, payload in (
         ("/agent/evtUpdate", {}),
@@ -188,14 +193,29 @@ def test_agent_endpoints_return_ok_false_for_missing_ids(app_env) -> None:
         assert body["errors"]
 
 
+def test_scoped_create_ignores_caller_supplied_user_id(app_env) -> None:
+    client = TestClient(create_app())
+    scope = _bind_default_chat("oc_bound")
+    headers = {"X-SmartCore-Agent-Token": "agent-secret", "X-SmartCore-Agent-Scope": scope}
+
+    response = client.post(
+        "/agent/db/create_event",
+        headers=headers,
+        json={"evtType": "plan", "title": "只属于默认用户", "stTime": "2026-07-17T10:00:00+08:00", "userId": "other"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["userId"] == "default"
+
+
 def test_openclaw_skill_requires_feishu_reply() -> None:
     skill = Path("openclaw/skills/smartcore/SKILL.md").read_text(encoding="utf-8")
-    assert "sendText" in skill
-    assert "sendCard" in skill
+    assert "sendFeishuText" in skill
+    assert "X-SmartCore-Agent-Scope" in skill
     assert "Every handled Feishu event must end with" in skill
 
 
 def test_openclaw_adapter_prompt_requires_feishu_reply() -> None:
     adapter_source = Path("openclaw/adapter/adapter.py").read_text(encoding="utf-8")
-    assert "POST /agent/sendText or POST /agent/sendCard" in adapter_source
-    assert "event.chat_id" in adapter_source
+    assert "X-SmartCore-Agent-Scope" in adapter_source
+    assert "scoped /agent/feedback endpoints" in adapter_source

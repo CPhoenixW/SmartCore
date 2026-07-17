@@ -10,7 +10,7 @@ Use this skill when the user asks about schedules, reminders, ideas, or SmartCor
 ## Boundaries
 
 - Call `GET /agent/tools` first when tool shape is uncertain.
-- Use only authenticated `/agent/*` endpoints with `X-SmartCore-Agent-Token`.
+- Use only authenticated `/agent/*` endpoints with `X-SmartCore-Agent-Token` and the per-message `X-SmartCore-Agent-Scope` supplied in the OpenClaw prompt.
 - Treat `/agent/tools` as the source of truth for tool names, paths, schemas, and aliases.
 - Never read SQLite, backups, Docker volumes, or `.env` directly.
 
@@ -64,15 +64,14 @@ Example query:
 ## Feedback Rules
 
 Every handled Feishu event must end with `sendFeishuText` or `sendFeishuCard` so the
-user receives a response. Pass routing context from the forwarded event using
-`chat_id` / `receiveId` from `event.chat_id` or `event.chat.chat_id`.
+user receives a response. The server derives the recipient from the signed scope; do
+not pass or override `chat_id`, `receiveId`, `openId`, or `userId`.
 
 Text feedback body:
 
 ```json
 {
-  "text": "已记录：明天晚上洗衣服",
-  "chat_id": "oc_xxx"
+  "text": "已记录：明天晚上洗衣服"
 }
 ```
 
@@ -80,11 +79,8 @@ Card feedback body:
 
 ```json
 {
-  "chat_id": "oc_xxx",
   "card": { "type": "template", "data": {} }
 }
 ```
 
-If `chat_id` is omitted, SmartCore falls back to `FEISHU_DEFAULT_CHAT_ID`.
-
-Legacy feedback aliases: sendText and sendCard map to sendFeishuText and sendFeishuCard.
+The scoped feedback endpoints reject missing, expired, or mismatched scope tokens.
