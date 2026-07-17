@@ -122,3 +122,26 @@ def test_day_view_contains_course_plan_but_not_course_template_or_reminders() ->
         assert rows[0]["courseName"] == "Physics"
     finally:
         db.close()
+
+
+def test_time_range_query_handles_course_clock_fields() -> None:
+    db = _session()
+    try:
+        create_course_event(
+            db,
+            courseName="Internship",
+            stTime="10:00",
+            endTime="19:00",
+            stDate="2026-07-13",
+            endDate="2026-08-14",
+            weekDay=5,
+        )
+        rows = list_events(
+            db,
+            start="2026-07-17T00:00:00+08:00",
+            end="2026-07-17T23:59:59+08:00",
+        )
+        assert {row["evtType"] for row in rows} == {"course", "plan"}
+        assert any(row["evtType"] == "course" and row["title"] == "Internship" for row in rows)
+    finally:
+        db.close()
