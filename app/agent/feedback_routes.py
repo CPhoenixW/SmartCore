@@ -172,7 +172,7 @@ def _send_card(
         FeishuBind.chatId == scope.chatId,
         FeishuBind.stat == "active",
     ))
-    if bot is None or bot.userId != scope.userId or binding is None:
+    if bot is None or not bot.enabled or binding is None:
         return _failed(["scoped Feishu chat is no longer active"])
     try:
         normalized = normalize_card(card)

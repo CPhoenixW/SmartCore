@@ -197,7 +197,7 @@ def confirmFeishuChatPair(db: Session, pairId: str, userId: str) -> FeishuBind:
         from app.new_core.models import FeishuBot
 
         bot = db.get(FeishuBot, row.botId)
-        if bot is not None:
+        if bot is not None and bot.userId == userId:
             bot.defaultChatCipher = seal(row.chatId)
             bot.updatedAt = nowIso()
     pair.stat = "confirmed"

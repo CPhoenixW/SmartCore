@@ -24,6 +24,7 @@ from app.config import get_settings
 from app.db.session import SessionLocal, init_db
 from app.device.routes import router as deviceRouter
 from app.feishu.event_handler import create_feishu_router
+from app.feishu.pair_routes import router as feishuPairRouter
 from app.new_core.relation_compat import install_relation_compat
 from app.new_core.relation_maintenance import (
     close_past_course_occurrences,
@@ -124,6 +125,7 @@ def create_app() -> FastAPI:
     app.include_router(createDevRouter())
     app.include_router(deviceRouter)
     app.include_router(userDeviceRouter)
+    app.include_router(feishuPairRouter)
     app.include_router(createRelationQueryRouter())
     app.include_router(createRelationWriteRouter())
     app.include_router(createFeedbackRouter())

@@ -64,26 +64,39 @@ def _sendScreen(
 
 
 def _managedFeishu(db: Session, userId: str) -> tuple[FeishuClient | None, str, bool]:
+    binding = db.scalar(
+        select(FeishuBind)
+        .join(FeishuBot, FeishuBot.botId == FeishuBind.botId)
+        .where(
+            FeishuBind.userId == userId,
+            FeishuBind.stat == "active",
+            FeishuBind.isPrimary.is_(True),
+            FeishuBot.enabled.is_(True),
+        )
+        .order_by(FeishuBind.createdAt)
+    )
+    if binding is not None:
+        bot = db.get(FeishuBot, binding.botId)
+        if bot is None:
+            return None, "", True
+        try:
+            configured = runtime(bot)
+        except ValueError:
+            return None, "", True
+        return configured.client(), binding.chatId, True
     bot = db.scalar(
-        select(FeishuBot)
-        .where(FeishuBot.userId == userId, FeishuBot.enabled.is_(True))
-        .order_by(FeishuBot.isDefault.desc(), FeishuBot.createdAt)
+        select(FeishuBot).where(
+            FeishuBot.userId == userId,
+            FeishuBot.enabled.is_(True),
+        )
     )
     if bot is None:
-        return None, "", False
+        return None, "", userId != crud.DEFAULT_USER_ID
     try:
         configured = runtime(bot)
     except ValueError:
         return None, "", True
-    binding = db.scalar(
-        select(FeishuBind).where(
-            FeishuBind.userId == userId,
-            FeishuBind.botId == bot.botId,
-            FeishuBind.stat == "active",
-            FeishuBind.isPrimary.is_(True),
-        )
-    )
-    return configured.client(), binding.chatId if binding is not None else "", True
+    return configured.client(), "", True
 
 
 def _sendFeishuText(db: Session, title: str, content: str, *, userId: str = crud.DEFAULT_USER_ID) -> tuple[bool, str | None, str | None]:
