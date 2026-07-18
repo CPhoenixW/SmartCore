@@ -124,6 +124,29 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         ),
     },
     {
+        "name": "evtComplete",
+        "method": "POST",
+        "path": "/agent/db/complete_event",
+        "riskLevel": "write",
+        "confirmationRequired": False,
+        "description": (
+            "Mark an owned event done and append a completion result or reflection "
+            "to its existing description."
+        ),
+        "inputSchema": _schema_object(
+            {
+                "evtId": {"type": "string", "minLength": 1},
+                "summary": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000,
+                    "description": "What was completed, the outcome, and any reflection.",
+                },
+            },
+            ["evtId", "summary"],
+        ),
+    },
+    {
         "name": "evtDelete",
         "method": "POST",
         "path": "/agent/db/delete_event",

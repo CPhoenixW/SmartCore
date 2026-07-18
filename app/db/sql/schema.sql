@@ -35,6 +35,21 @@ CREATE TABLE IF NOT EXISTS evtBase (
     CHECK (stat IN ('todo', 'done', 'cancelled'))
 );
 
+CREATE TABLE IF NOT EXISTS dailySummary (
+    summaryId VARCHAR(32) PRIMARY KEY,
+    userId VARCHAR(32) NOT NULL,
+    reportDate VARCHAR(10) NOT NULL,
+    content TEXT,
+    stat VARCHAR(20) NOT NULL DEFAULT 'queued',
+    errorMessage TEXT,
+    generatedAt VARCHAR(64),
+    createdAt VARCHAR(64) NOT NULL,
+    updatedAt VARCHAR(64) NOT NULL,
+    FOREIGN KEY (userId) REFERENCES appUser(userId) ON DELETE CASCADE,
+    UNIQUE (userId, reportDate),
+    CHECK (stat IN ('queued', 'complete', 'failed'))
+);
+
 CREATE TABLE IF NOT EXISTS planEvt (
     evtId VARCHAR(32) PRIMARY KEY,
     stTime VARCHAR(64) NOT NULL,
@@ -205,6 +220,7 @@ CREATE TABLE IF NOT EXISTS msgLog (
 
 CREATE INDEX IF NOT EXISTS idx_evtBase_user_stat_time ON evtBase(userId, stat, updatedAt);
 CREATE INDEX IF NOT EXISTS idx_evtBase_user_type ON evtBase(userId, evtType);
+CREATE INDEX IF NOT EXISTS idx_dailySummary_user_date ON dailySummary(userId, reportDate);
 CREATE INDEX IF NOT EXISTS idx_planEvt_stTime ON planEvt(stTime);
 CREATE INDEX IF NOT EXISTS idx_ddlEvt_endTime ON ddlEvt(endTime);
 CREATE INDEX IF NOT EXISTS idx_courseEvt_weekDay ON courseEvt(weekDay);

@@ -7,8 +7,9 @@ import os
 import sys
 import urllib.error
 import urllib.request
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 
 def runtime_config() -> dict[str, str]:

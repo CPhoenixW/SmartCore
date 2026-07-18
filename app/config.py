@@ -41,6 +41,9 @@ class Settings(BaseSettings):
 
     scheduler_enabled: bool = False
     scheduler_interval_seconds: int = 60
+    daily_summary_enabled: bool = False
+    daily_summary_hour: int = 22
+    daily_summary_timezone: str = "Asia/Shanghai"
 
     agent_api_token: str = ""
     device_api_token: str = ""

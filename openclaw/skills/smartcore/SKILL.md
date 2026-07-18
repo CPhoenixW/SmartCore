@@ -18,7 +18,8 @@ Use this skill when the user asks about schedules, reminders, ideas, or SmartCor
 
 1. Discover tools: `GET /agent/tools`
 2. Read/query: `evtQuery`
-3. Write directly: `evtCreate`, `evtUpdate`, `evtDelete`, `ideaCapture`, `ideaToEvt`
+3. Write directly: `evtCreate`, `evtUpdate`, `evtComplete`, `evtDelete`,
+   `ideaCapture`, `ideaToEvt`
 4. Return one concise user-facing final answer; the Adapter delivers it to Feishu.
 
 The preferred DB paths are `/agent/db/query_events`, `/agent/db/create_event`,
@@ -76,8 +77,25 @@ The helper sends this range contract internally:
 - `life` is accepted as an alias of `plan`; returned records use the database value `plan`.
 - DDL uses `endTime` or the compatibility alias `ddlAt`.
 - Plan uses `stTime` or the compatibility alias `dueAt`.
+- When the user says a task is complete and provides an outcome, progress note,
+  reflection, or lesson learned, use `evtComplete` with the exact `evtId` and a
+  concise `summary`. It marks the event done and appends `完成总结：...` to the
+  existing description.
+- Do not use `evtUpdate` to replace the description when recording a completion
+  summary. Query ambiguous candidates first, then call `evtComplete`.
 - Keep request bodies small and stable.
 - Check `ok`, `stat`, and `errors` on every response before reporting success.
+
+## Scheduled Daily Summary
+
+- A forwarded `daily_summary` event is read-only. Query exactly its `reportDate`
+  with no status filter, `includeLinkedPlans=true`, and course templates hidden.
+- Read every returned event's title, status, and description. Descriptions are
+  the primary source for completion outcomes and reflections.
+- Summarize completed work, unfinished work, useful reflections, and concise
+  next actions in Feishu-compatible Markdown.
+- Do not mutate events and do not call the daily-summary persistence endpoint.
+  The Adapter saves the final answer before delivering it.
 
 ## Reply Rules
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy.orm import Session
@@ -8,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.config import Settings
 from app.db.session import SessionLocal
 from app.new_core.scheduler import runReminderTick
+from app.scheduler.daily_summary import dispatch_daily_summaries
 from app.screen.manager import screenManager
 
 
@@ -17,13 +20,13 @@ def build_scheduler_service(
     session_factory: Callable[[], Session] | None = None,
     scheduler: BackgroundScheduler | None = None,
 ) -> SchedulerService | None:
-    if not settings.scheduler_enabled:
+    if not settings.scheduler_enabled and not settings.daily_summary_enabled:
         return None
     if session_factory is None:
         session_factory = SessionLocal
     return SchedulerService(
+        settings=settings,
         session_factory=session_factory,
-        interval_seconds=settings.scheduler_interval_seconds,
         scheduler=scheduler,
     )
 
@@ -32,13 +35,15 @@ class SchedulerService:
     def __init__(
         self,
         *,
+        settings: Settings,
         session_factory: Callable[[], Session],
-        interval_seconds: int,
         scheduler: BackgroundScheduler | None = None,
     ) -> None:
+        self._settings = settings
         self._session_factory = session_factory
-        self._interval_seconds = interval_seconds
-        self._scheduler = scheduler or BackgroundScheduler()
+        self._scheduler = scheduler or BackgroundScheduler(
+            timezone=settings.daily_summary_timezone
+        )
 
     def _tick(self) -> None:
         from app.new_core.models import nowIso
@@ -49,14 +54,42 @@ class SchedulerService:
         finally:
             db.close()
 
+    def _daily_summary_tick(self) -> None:
+        db = self._session_factory()
+        try:
+            dispatch_daily_summaries(
+                db,
+                settings=self._settings,
+                now=datetime.now(ZoneInfo(self._settings.daily_summary_timezone)),
+            )
+        finally:
+            db.close()
+
     def start(self) -> None:
-        self._scheduler.add_job(
-            self._tick,
-            trigger="interval",
-            seconds=self._interval_seconds,
-            id="smartcore-reminder-tick",
-            replace_existing=True,
-        )
+        if self._settings.scheduler_enabled:
+            self._scheduler.add_job(
+                self._tick,
+                trigger="interval",
+                seconds=self._settings.scheduler_interval_seconds,
+                id="smartcore-reminder-tick",
+                replace_existing=True,
+            )
+        if self._settings.daily_summary_enabled:
+            if not 0 <= self._settings.daily_summary_hour <= 23:
+                raise ValueError("DAILY_SUMMARY_HOUR must be between 0 and 23")
+            ZoneInfo(self._settings.daily_summary_timezone)
+            self._scheduler.add_job(
+                self._daily_summary_tick,
+                trigger="cron",
+                hour=self._settings.daily_summary_hour,
+                minute=0,
+                timezone=self._settings.daily_summary_timezone,
+                id="smartcore-daily-summary",
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=300,
+            )
         self._scheduler.start()
 
     def shutdown(self) -> None:

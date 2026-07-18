@@ -116,7 +116,14 @@ def sanitize_event(event: dict[str, Any]) -> dict[str, Any]:
         "source": event.get("source"),
         "event_type": event.get("event_type") or event.get("eventType"),
     }
-    for key in ("chat_id", "message_id", "text", "userId", "sourceBindId"):
+    for key in (
+        "chat_id",
+        "message_id",
+        "text",
+        "userId",
+        "sourceBindId",
+        "reportDate",
+    ):
         if event.get(key) is not None:
             sanitized[key] = event.get(key)
     for key in ("request", "chat", "user"):
@@ -157,8 +164,22 @@ def build_prompt(event: dict[str, Any]) -> str:
     user = event.get("user") if isinstance(event.get("user"), dict) else {}
     reply_chat_id = event.get("chat_id") or chat.get("chat_id")
     scope = str(event.get("agentScope") or "").strip()
+    daily_summary_instructions = ""
+    if event.get("event_type") == "daily_summary":
+        report_date = str(event.get("reportDate") or "").strip()
+        daily_summary_instructions = (
+            "This is a scheduled daily-summary task, not a user question.\n"
+            f"Report date: {report_date}\n"
+            "Query exactly that local date with no status filter and include linked plans. "
+            "Read every returned title, status, and description.\n"
+            "Focus on completion results and reflections recorded in descriptions. "
+            "Summarize completed work, unfinished work, useful reflections, and concise next actions.\n"
+            "Do not create, update, complete, or delete any event during this summary.\n"
+            "Return a concise Markdown daily report. Do not call the daily-summary persistence API; "
+            "the Adapter saves your final answer deterministically.\n"
+        )
     return (
-        "You are SmartCore Agent handling one forwarded Feishu event.\n"
+        "You are SmartCore Agent handling one forwarded SmartCore event.\n"
         "Do not run onboarding, identity setup, or general assistant bootstrap flows.\n"
         "Use SmartCore Agent APIs for all data operations.\n"
         "Do not access SQLite files, Docker volumes, backups, or SmartCore internals directly.\n"
@@ -175,6 +196,7 @@ def build_prompt(event: dict[str, Any]) -> str:
         "Do not call Feishu feedback endpoints or sendFeishu tools; the Adapter owns final delivery.\n"
         "Return exactly one concise user-facing final answer in finalAssistantVisibleText.\n"
         "On failure or ambiguity, return one concise clarification or error message.\n"
+        f"{daily_summary_instructions}"
         f"Bound reply chat_id: {reply_chat_id or 'missing'}\n"
         f"User routing context: {json.dumps(user, ensure_ascii=False) if user else '{}'}\n"
         "If the target is ambiguous, return a concise clarification instead of guessing.\n"
@@ -268,6 +290,72 @@ def send_final_reply(event: dict[str, Any], text: str) -> None:
         raise RuntimeError(f"SmartCore reply rejected: {compact(errors, 300)}")
 
 
+def save_daily_summary(
+    event: dict[str, Any],
+    *,
+    stat: str,
+    content: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    scope = str(event.get("agentScope") or "").strip()
+    report_date = str(event.get("reportDate") or "").strip()
+    if not scope or not report_date:
+        raise ValueError("daily summary event is missing scope or report date")
+    token_file = Path(
+        os.environ.get(
+            "SMARTCORE_AGENT_TOKEN_FILE",
+            "/root/.openclaw/smartcore-agent-api-token",
+        )
+    )
+    token = token_file.read_text(encoding="utf-8").strip()
+    if not token:
+        raise ValueError("empty SmartCore agent token")
+    base_url = os.environ.get("SMARTCORE_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+    request = urllib.request.Request(
+        f"{base_url}/agent/daily-summary",
+        data=json.dumps(
+            {
+                "reportDate": report_date,
+                "content": content,
+                "stat": stat,
+                "errorMessage": error_message,
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "X-SmartCore-Agent-Token": token,
+            "X-SmartCore-Agent-Scope": scope,
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(
+        request,
+        timeout=int(os.environ.get("SMARTCORE_REPLY_TIMEOUT_SECONDS", "15")),
+    ) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, dict) or payload.get("ok") is not True:
+        errors = payload.get("errors") if isinstance(payload, dict) else None
+        raise RuntimeError(f"SmartCore daily summary rejected: {compact(errors, 300)}")
+
+
+def mark_daily_summary_failed(event: dict[str, Any], error_message: str) -> None:
+    if event.get("event_type") != "daily_summary":
+        return
+    try:
+        save_daily_summary(
+            event,
+            stat="failed",
+            error_message=compact(error_message, 500),
+        )
+    except Exception as exc:
+        log(
+            "daily summary failure state not saved",
+            event_id=event.get("event_id"),
+            error=repr(exc),
+        )
+
+
 def deliver_reply(event: dict[str, Any], text: str) -> bool:
     try:
         send_final_reply(event, text)
@@ -309,7 +397,24 @@ def run_openclaw(event: dict[str, Any]) -> None:
         )
         duration_ms = int((time.monotonic() - started) * 1000)
         final_text = extract_final_text(result.stdout)
-        reply_text = final_text if result.returncode == 0 and final_text else FAILURE_REPLY
+        succeeded = result.returncode == 0 and bool(final_text)
+        if succeeded and event.get("event_type") == "daily_summary":
+            try:
+                save_daily_summary(event, stat="complete", content=final_text)
+            except Exception as exc:
+                succeeded = False
+                mark_daily_summary_failed(event, f"persistence failed: {type(exc).__name__}")
+                log(
+                    "daily summary persistence failed",
+                    event_id=event.get("event_id"),
+                    error=repr(exc),
+                )
+        elif not succeeded:
+            mark_daily_summary_failed(
+                event,
+                f"OpenClaw returned code {result.returncode} without a final report",
+            )
+        reply_text = final_text if succeeded else FAILURE_REPLY
         reply_delivered = deliver_reply(event, reply_text)
         log(
             "openclaw finished",
@@ -321,6 +426,7 @@ def run_openclaw(event: dict[str, Any]) -> None:
         )
     except Exception as exc:
         duration_ms = int((time.monotonic() - started) * 1000)
+        mark_daily_summary_failed(event, f"OpenClaw execution failed: {type(exc).__name__}")
         reply_delivered = deliver_reply(event, FAILURE_REPLY)
         log(
             "openclaw failed",
@@ -332,7 +438,7 @@ def run_openclaw(event: dict[str, Any]) -> None:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "SmartCoreOpenClawAdapter/0.4"
+    server_version = "SmartCoreOpenClawAdapter/0.5"
 
     def _json(self, status: int, payload: dict[str, Any]) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")

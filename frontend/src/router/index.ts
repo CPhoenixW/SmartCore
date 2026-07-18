@@ -10,6 +10,7 @@ export const router = createRouter({
       component: WorkLayout,
       children: [
         { path: "", alias: "overview", name: "overview", component: () => import("@/views/OverviewView.vue") },
+        { path: "daily-summary", name: "dailySummary", component: () => import("@/views/DailySummaryView.vue") },
         { path: "add", name: "add", component: () => import("@/views/AddEventView.vue") },
         { path: "update", name: "update", component: () => import("@/views/UpdateEventView.vue") },
         { path: "course", name: "course", component: () => import("@/views/CourseView.vue") },
