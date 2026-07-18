@@ -1,18 +1,23 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { useQuery } from "@tanstack/vue-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
 import EventCard from "@/components/events/EventCard.vue";
+import EventStatusToggle from "@/components/events/EventStatusToggle.vue";
 import { deviceApi } from "@/api/device";
 import { deviceRegistryApi } from "@/api/deviceRegistry";
 import { eventApi } from "@/api/event";
 import { ideaApi } from "@/api/idea";
+import { useToast } from "@/composables/useToast";
+import type { SmartCoreEvent } from "@/types/event";
 import { addDays, eventDateKey, todayKey } from "@/utils/date";
 import { sortEvents } from "@/utils/event";
 
 const { t } = useI18n();
+const queryClient = useQueryClient();
+const toast = useToast();
 const selectedDate = ref(todayKey());
 const eventsQuery = useQuery({ queryKey: ["events", "overview-all"], queryFn: () => eventApi.list({ includeReminders: true, includeCourseTemplates: false }) });
 const dayEventsQuery = useQuery({
@@ -27,9 +32,9 @@ const deviceId = computed(() => {
 });
 const deviceQuery = useQuery({ queryKey: ["device", "latest", deviceId], queryFn: () => deviceApi.latest(deviceId.value), enabled: computed(() => Boolean(deviceId.value)), refetchInterval: 10_000 });
 
-const actionable = computed(() => sortEvents((eventsQuery.data.value ?? []).filter((event) => event.evtType !== "course")));
+const actionable = computed(() => sortEvents((eventsQuery.data.value ?? []).filter((event) => event.evtType !== "course" && event.stat !== "cancelled")));
 const todayEvents = computed(() => actionable.value.filter((event) => eventDateKey(event) === todayKey()));
-const selectedDateEvents = computed(() => sortEvents((dayEventsQuery.data.value ?? []).filter((event) => event.evtType !== "course")));
+const selectedDateEvents = computed(() => sortEvents((dayEventsQuery.data.value ?? []).filter((event) => event.evtType !== "course" && event.stat !== "cancelled")));
 const selectedDateTitle = computed(() => selectedDate.value === todayKey() ? t("overview.today") : selectedDate.value);
 const todos = computed(() => actionable.value.filter((event) => event.stat === "todo"));
 const future72 = computed(() => {
@@ -57,6 +62,13 @@ const deviceTitle = computed(() => {
   const device = (registeredDevices.data.value ?? []).find((item) => item.deviceId === deviceId.value);
   return device?.deviceName || t("overview.device");
 });
+const statusMutation = useMutation({
+  mutationFn: ({ event, stat }: { event: SmartCoreEvent; stat: "todo" | "done" }) => eventApi.update(event.evtId, { stat }),
+  onSuccess: async () => {
+    await queryClient.invalidateQueries({ queryKey: ["events"] });
+  },
+  onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
+});
 function moveSelectedDate(days: number) {
   selectedDate.value = addDays(selectedDate.value, days);
 }
@@ -80,7 +92,16 @@ function moveSelectedDate(days: number) {
         <button class="button" type="button" @click="moveSelectedDate(1)">{{ t("common.next") }}</button>
       </div>
       <div class="event-list">
-        <EventCard v-for="event in selectedDateEvents" :key="event.evtId" :event="event" @select="$router.push({ name: 'update', query: { date: eventDateKey(event), evtId: event.evtId } })" />
+        <div v-for="event in selectedDateEvents" :key="event.evtId" class="overview-event-row">
+          <EventStatusToggle
+            :status="event.stat"
+            :busy="statusMutation.isPending.value"
+            :mark-done-label="t('event.action.markDone')"
+            :mark-todo-label="t('event.action.markTodo')"
+            @change="statusMutation.mutate({ event, stat: $event })"
+          />
+          <EventCard :event="event" @select="$router.push({ name: 'update', query: { date: eventDateKey(event), evtId: event.evtId } })" />
+        </div>
         <div v-if="dayEventsQuery.isPending.value" class="empty-state">{{ t("common.loading") }}</div>
         <EmptyState v-else-if="!selectedDateEvents.length" class="overview-empty" :text="t('overview.emptySelectedDate')" />
       </div>
@@ -112,6 +133,15 @@ function moveSelectedDate(days: number) {
   border-radius: 9px;
   background: #fff;
   color: var(--color-text);
+}
+.overview-event-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+}
+.overview-event-row :deep(.event-card) {
+  min-width: 0;
 }
 @media (max-width: 760px) {
   .overview-date-toolbar {
