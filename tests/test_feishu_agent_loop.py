@@ -208,14 +208,15 @@ def test_scoped_create_ignores_caller_supplied_user_id(app_env) -> None:
     assert response.json()["data"]["userId"] == "default"
 
 
-def test_openclaw_skill_requires_feishu_reply() -> None:
+def test_openclaw_skill_delegates_feishu_reply_to_adapter() -> None:
     skill = Path("openclaw/skills/smartcore/SKILL.md").read_text(encoding="utf-8")
-    assert "sendFeishuText" in skill
+    assert "Adapter sends that text" in skill
     assert "X-SmartCore-Agent-Scope" in skill
-    assert "Every handled Feishu event must end with" in skill
+    assert "Do not call `sendFeishuText`" in skill
 
 
-def test_openclaw_adapter_prompt_requires_feishu_reply() -> None:
+def test_openclaw_adapter_prompt_owns_feishu_reply() -> None:
     adapter_source = Path("openclaw/adapter/adapter.py").read_text(encoding="utf-8")
     assert "X-SmartCore-Agent-Scope" in adapter_source
-    assert "scoped /agent/feedback endpoints" in adapter_source
+    assert "the Adapter owns final delivery" in adapter_source
+    assert "/agent/feedback/send_text" in adapter_source

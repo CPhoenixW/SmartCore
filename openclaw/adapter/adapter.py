@@ -7,6 +7,7 @@ import re
 import subprocess
 import threading
 import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,7 @@ BASE_DIR = Path(__file__).resolve().parent
 LOG_PATH = Path(os.environ.get("ADAPTER_LOG_PATH", str(BASE_DIR / "adapter.log")))
 MAX_FINAL_TEXT = 800
 MAX_STDERR = 800
+FAILURE_REPLY = "抱歉，这次处理没有成功，请稍后再试。"
 
 
 def load_env(path: Path) -> None:
@@ -94,19 +96,19 @@ def build_prompt(event: dict[str, Any]) -> str:
     return (
         "You are SmartCore Agent handling one forwarded Feishu event.\n"
         "Do not run onboarding, identity setup, or general assistant bootstrap flows.\n"
-        "Use SmartCore Agent APIs and Feedback APIs for all data operations and Feishu replies.\n"
+        "Use SmartCore Agent APIs for all data operations.\n"
         "Do not access SQLite files, Docker volumes, backups, or SmartCore internals directly.\n"
         f"SmartCore base URL: {base_url}\n"
         f"Read the SmartCore API token from {token_file} only inside the command that calls SmartCore. Never print it.\n"
         "Required SmartCore header name: X-SmartCore-Agent-Token.\n"
         f"For EVERY /agent database or feedback request, also send X-SmartCore-Agent-Scope: {scope}\n"
         "For relative time queries, calculate explicit ISO-8601 start/end ranges from event.request.now and event.request.timezone.\n"
-        "Every handled event must end with a Feishu reply through the scoped /agent/feedback endpoints.\n"
-        "On success, send a short confirmation. On failure or ambiguity, send one concise clarification or error message.\n"
-        "Do not pass chat_id, receiveId, openId, or userId to feedback APIs: the signed scope is the only routing authority.\n"
+        "Do not call Feishu feedback endpoints or sendFeishu tools; the Adapter owns final delivery.\n"
+        "Return exactly one concise user-facing final answer in finalAssistantVisibleText.\n"
+        "On failure or ambiguity, return one concise clarification or error message.\n"
         f"Bound reply chat_id: {reply_chat_id or 'missing'}\n"
         f"User routing context: {json.dumps(user, ensure_ascii=False) if user else '{}'}\n"
-        "If the target is ambiguous, send a concise clarification through SmartCore feedback instead of guessing.\n"
+        "If the target is ambiguous, return a concise clarification instead of guessing.\n"
         "Forwarded compact event JSON follows:\n"
         f"{json.dumps(sanitize_event(event), ensure_ascii=False, indent=2)}"
     )
@@ -152,6 +154,61 @@ def summarize_openclaw(stdout: str, stderr: str) -> dict[str, Any]:
     return summary
 
 
+def extract_final_text(stdout: str) -> str:
+    try:
+        payload = json.loads(stdout)
+    except Exception:
+        return ""
+    value = find_key(payload, "finalAssistantVisibleText")
+    return value.strip() if isinstance(value, str) else ""
+
+
+def send_final_reply(event: dict[str, Any], text: str) -> None:
+    scope = str(event.get("agentScope") or "").strip()
+    if not scope:
+        raise ValueError("missing agent scope")
+
+    token_file = Path(
+        os.environ.get(
+            "SMARTCORE_AGENT_TOKEN_FILE",
+            "/root/.openclaw/smartcore-agent-api-token",
+        )
+    )
+    token = token_file.read_text(encoding="utf-8").strip()
+    if not token:
+        raise ValueError("empty SmartCore agent token")
+
+    base_url = os.environ.get("SMARTCORE_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+    request = urllib.request.Request(
+        f"{base_url}/agent/feedback/send_text",
+        data=json.dumps({"text": text}, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "X-SmartCore-Agent-Token": token,
+            "X-SmartCore-Agent-Scope": scope,
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(
+        request,
+        timeout=int(os.environ.get("SMARTCORE_REPLY_TIMEOUT_SECONDS", "15")),
+    ) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, dict) or payload.get("ok") is not True:
+        errors = payload.get("errors") if isinstance(payload, dict) else None
+        raise RuntimeError(f"SmartCore reply rejected: {compact(errors, 300)}")
+
+
+def deliver_reply(event: dict[str, Any], text: str) -> bool:
+    try:
+        send_final_reply(event, text)
+        log("final reply delivered", event_id=event.get("event_id"))
+        return True
+    except Exception as exc:
+        log("final reply failed", event_id=event.get("event_id"), error=repr(exc))
+        return False
+
+
 def run_openclaw(event: dict[str, Any]) -> None:
     started = time.monotonic()
     chat = event.get("chat") if isinstance(event.get("chat"), dict) else {}
@@ -182,20 +239,31 @@ def run_openclaw(event: dict[str, Any]) -> None:
             timeout=int(os.environ.get("OPENCLAW_TIMEOUT_SECONDS", "600")),
         )
         duration_ms = int((time.monotonic() - started) * 1000)
+        final_text = extract_final_text(result.stdout)
+        reply_text = final_text if result.returncode == 0 and final_text else FAILURE_REPLY
+        reply_delivered = deliver_reply(event, reply_text)
         log(
             "openclaw finished",
             event_id=event.get("event_id"),
             returncode=result.returncode,
             duration_ms=duration_ms,
+            reply_delivered=reply_delivered,
             **summarize_openclaw(result.stdout, result.stderr),
         )
     except Exception as exc:
         duration_ms = int((time.monotonic() - started) * 1000)
-        log("openclaw failed", event_id=event.get("event_id"), duration_ms=duration_ms, error=repr(exc))
+        reply_delivered = deliver_reply(event, FAILURE_REPLY)
+        log(
+            "openclaw failed",
+            event_id=event.get("event_id"),
+            duration_ms=duration_ms,
+            reply_delivered=reply_delivered,
+            error=repr(exc),
+        )
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "SmartCoreOpenClawAdapter/0.3"
+    server_version = "SmartCoreOpenClawAdapter/0.4"
 
     def _json(self, status: int, payload: dict[str, Any]) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")

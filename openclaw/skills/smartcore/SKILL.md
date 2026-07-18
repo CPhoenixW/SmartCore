@@ -19,7 +19,7 @@ Use this skill when the user asks about schedules, reminders, ideas, or SmartCor
 1. Discover tools: `GET /agent/tools`
 2. Read/query: `evtQuery`
 3. Write directly: `evtCreate`, `evtUpdate`, `evtDelete`, `ideaCapture`, `ideaToEvt`
-4. Feedback: `sendFeishuText`, `sendFeishuCard`, `screenPush`
+4. Return one concise user-facing final answer; the Adapter delivers it to Feishu.
 
 The preferred DB paths are `/agent/db/query_events`, `/agent/db/create_event`,
 `/agent/db/update_event`, and `/agent/db/delete_event`. The old short paths remain
@@ -59,28 +59,13 @@ Example query:
 - DDL uses `endTime` or the compatibility alias `ddlAt`.
 - Plan uses `stTime` or the compatibility alias `dueAt`.
 - Keep request bodies small and stable.
-- Check `ok`, `stat`, and `errors` on every response before sending success feedback.
+- Check `ok`, `stat`, and `errors` on every response before reporting success.
 
-## Feedback Rules
+## Reply Rules
 
-Every handled Feishu event must end with `sendFeishuText` or `sendFeishuCard` so the
-user receives a response. The server derives the recipient from the signed scope; do
-not pass or override `chat_id`, `receiveId`, `openId`, or `userId`.
-
-Text feedback body:
-
-```json
-{
-  "text": "已记录：明天晚上洗衣服"
-}
-```
-
-Card feedback body:
-
-```json
-{
-  "card": { "type": "template", "data": {} }
-}
-```
-
-The scoped feedback endpoints reject missing, expired, or mismatched scope tokens.
+- Do not call `sendFeishuText`, `sendFeishuCard`, or `/agent/feedback/*` while handling
+  a forwarded event.
+- Return exactly one concise user-facing final answer. The Adapter sends that text
+  through SmartCore using the signed scope.
+- Never include internal reasoning, tool output, tokens, IDs, or delivery instructions
+  in the final answer.
