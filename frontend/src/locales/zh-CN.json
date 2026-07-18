@@ -81,7 +81,9 @@
     "action": {
       "createPlan": "创建计划",
       "createReminder": "创建提醒",
-      "createDeadline": "创建截止事项"
+      "createDeadline": "创建截止事项",
+      "markDone": "标记为完成",
+      "markTodo": "恢复为待办"
     },
     "created": "事件已创建",
     "updated": "事件已更新",

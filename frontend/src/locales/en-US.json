@@ -81,7 +81,9 @@
     "action": {
       "createPlan": "Create plan",
       "createReminder": "Create reminder",
-      "createDeadline": "Create deadline"
+      "createDeadline": "Create deadline",
+      "markDone": "Mark as done",
+      "markTodo": "Mark as to do"
     },
     "created": "Event created",
     "updated": "Event updated",
