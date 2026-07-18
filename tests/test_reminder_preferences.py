@@ -63,7 +63,7 @@ def test_plan_owns_start_and_end_minus_ten_reminders(monkeypatch) -> None:
             screenOnline=True,
         )
         assert len(calls) == 1
-        assert calls[0]["phase"] == "notice"
+        assert calls[0]["phase"] == "start"
         assert calls[0]["evtId"] == event["evtId"]
         assert "开始前 10 分钟" in calls[0]["title"]
 

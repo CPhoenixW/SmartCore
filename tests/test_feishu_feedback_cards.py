@@ -63,6 +63,24 @@ def test_scheduler_reminder_card_uses_compatible_shape() -> None:
     assert "body" not in card
 
 
+def test_start_reminder_card_has_no_task_actions() -> None:
+    start_card = buildReminderCard(
+        evtId="evt-start",
+        title="Task starts soon",
+        content="Starts in 10 minutes",
+        phase="start",
+    )
+    end_card = buildReminderCard(
+        evtId="evt-end",
+        title="Task ends soon",
+        content="Ends in 10 minutes",
+        phase="notice",
+    )
+
+    assert all(element["tag"] != "action" for element in start_card["elements"])
+    assert end_card["elements"][-1]["tag"] == "action"
+
+
 def test_message_card_converts_markdown_table_to_feishu_columns() -> None:
     card = build_message_card(
         content=(

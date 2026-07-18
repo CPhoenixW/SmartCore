@@ -3,3 +3,14 @@
 @media(max-width:760px){.visual-preview{padding:18px}.visual-preview__plan-list>div{align-items:flex-start;flex-direction:column}.timetable--large{min-width:1050px}.avatar-upload-row{align-items:stretch;flex-direction:column}.avatar-upload-row .button{width:100%}}
 /* Settings keeps account controls and identity preview independently scrollable. */
 .settings-scroll-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,.72fr);gap:20px;height:calc(100vh - 190px);min-height:480px;overflow:hidden}.settings-scroll-column{display:flex;min-height:0;flex-direction:column;gap:20px;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:2px 8px 28px 2px}.settings-scroll-column>.card{flex-shrink:0}.settings-scroll-column--preview{padding-left:4px}.settings-scroll-column--preview .card{min-height:310px}@media(max-width:760px){.settings-scroll-layout{display:flex;height:auto;min-height:0;overflow:visible}.settings-scroll-column{overflow:visible;padding:0}.settings-scroll-column--preview{padding-left:0}}
+
+/* Shared by Overview and Update Event so type colors stay consistent. */
+.event-card--type-plan{border-left:4px solid #3b82f6;background:#f8fbff}
+.event-card--type-remind{border-left:4px solid #a855f7;background:#fdfaff}
+.event-card--type-ddl{border-left:4px solid #f97316;background:#fffaf5}
+.event-card--type-course{border-left:4px solid #0891b2;background:#f5fdff}
+.event-card--type-plan:hover,.event-card--type-plan.event-card--selected{background:#eff6ff}
+.event-card--type-remind:hover,.event-card--type-remind.event-card--selected{background:#faf5ff}
+.event-card--type-ddl:hover,.event-card--type-ddl.event-card--selected{background:#fff7ed}
+.event-card--type-course:hover,.event-card--type-course.event-card--selected{background:#ecfeff}
+.event-card--overdue{border-color:#fecaca;background:#fff7f7}
