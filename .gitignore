@@ -2,6 +2,8 @@ passwd.txt
 .env
 .env.*
 !.env.example
+deploy/*.env
+!deploy/*.env.example
 *.sqlite
 *.sqlite-*
 *.db

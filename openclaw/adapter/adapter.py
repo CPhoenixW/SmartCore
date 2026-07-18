@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 BASE_DIR = Path(__file__).resolve().parent
-LOG_PATH = BASE_DIR / "adapter.log"
+LOG_PATH = Path(os.environ.get("ADAPTER_LOG_PATH", str(BASE_DIR / "adapter.log")))
 MAX_FINAL_TEXT = 800
 MAX_STDERR = 800
 

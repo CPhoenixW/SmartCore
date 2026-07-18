@@ -22,7 +22,10 @@ Do not commit real secrets, databases, or backups. `passwd.txt`, `.env`, `data/`
 
 ## Deployment
 
-Production runs as three Docker Compose services: the FastAPI app, Caddy (public HTTPS), and `tunnel-boundary` (HTTP for Cloudflare Tunnel on the host docker bridge). The web panel is reached over Tailscale on the app port, not through the tunnel boundary.
+Production runs as one Docker Compose project: the FastAPI app, Caddy, the
+Cloudflare Tunnel boundary, Cloudflared, and the OpenClaw Adapter. The OpenClaw
+Gateway and DERP remain host infrastructure. The web panel is reached over
+Tailscale on the app port, not through the tunnel boundary.
 
 Normal production releases use the guarded deployment script:
 

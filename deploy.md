@@ -41,6 +41,12 @@ data, reminder, card, audit, and deployment authority. OpenClaw may call only
 SmartCore Agent APIs and Feedback APIs; it must not connect directly to the
 SmartCore database file or Docker volumes.
 
+The OpenClaw Gateway remains a host user service. Its SmartCore Adapter is built
+from `deploy/adapter.Dockerfile` and managed by the SmartCore Compose project.
+Adapter secrets live only in `deploy/adapter.env`; the mounted OpenClaw home and
+workspace let the Adapter invoke the host-managed OpenClaw installation without
+granting it access to SmartCore data volumes.
+
 ## Guardrails
 
 never_commit:

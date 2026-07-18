@@ -9,7 +9,8 @@ EXPECTED_ROOT="${SMARTCORE_DEPLOY_ROOT:-/opt/smartcore}"
 LOCK_FILE="${SMARTCORE_DEPLOY_LOCK_FILE:-/var/lock/smartcore-deploy.lock}"
 STATE_DIR="${SMARTCORE_DEPLOY_STATE_DIR:-/var/lib/smartcore-deploy}"
 STATE_FILE="$STATE_DIR/state"
-IMAGE_REPO="${SMARTCORE_IMAGE_REPO:-smartcore}"
+APP_IMAGE_REPO="${SMARTCORE_IMAGE_REPO:-smartcore}"
+ADAPTER_IMAGE_REPO="${SMARTCORE_ADAPTER_IMAGE_REPO:-smartcore-openclaw-adapter}"
 
 log() {
     printf '[smartcore-deploy] %s\n' "$*"
@@ -43,24 +44,29 @@ acquire_lock() {
 verify_environment() {
     [[ "$ROOT" == "$EXPECTED_ROOT" ]] || die "run this script from $EXPECTED_ROOT (got $ROOT)"
     [[ -f "$ENV_FILE" ]] || die "missing production environment file: $ENV_FILE"
+    [[ -f "$ROOT/deploy/adapter.env" ]] || die "missing Adapter environment file"
+    [[ -f "$ROOT/deploy/cloudflared.env" ]] || die "missing Cloudflared environment file"
     [[ "$(git -C "$ROOT" branch --show-current)" == "main" ]] || die "production checkout must be on main"
     [[ -z "$(git -C "$ROOT" status --porcelain)" ]] || die "production checkout has uncommitted files"
     compose config --quiet
 }
 
 tag_running_image() {
-    local tag="$1"
+    local service="$1"
+    local image_repo="$2"
+    local tag="$3"
     local container_id image_id
-    container_id="$(compose ps --quiet app)"
+    container_id="$(compose ps --quiet "$service")"
     [[ -n "$container_id" ]] || return 0
     image_id="$(docker inspect --format '{{.Image}}' "$container_id")"
     [[ -n "$image_id" ]] || return 0
-    docker image tag "$image_id" "$IMAGE_REPO:$tag"
+    docker image tag "$image_id" "$image_repo:$tag"
 }
 
 running_revision() {
+    local service="$1"
     local container_id revision
-    container_id="$(compose ps --quiet app)"
+    container_id="$(compose ps --quiet "$service")"
     [[ -n "$container_id" ]] || return 1
     revision="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$container_id" 2>/dev/null || true)"
     if [[ "$revision" =~ ^[0-9a-f]{7,40}$ ]]; then
@@ -81,17 +87,15 @@ backup_database() {
 }
 
 wait_for_health() {
+    local service="$1"
     local container_id status
-    container_id="$(compose ps --quiet app)"
+    container_id="$(compose ps --quiet "$service")"
     [[ -n "$container_id" ]] || return 1
 
     for _ in $(seq 1 45); do
         status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{if .State.Running}}healthy{{else}}unhealthy{{end}}{{end}}' "$container_id")"
         case "$status" in
             healthy)
-                compose exec --no-TTY app python -c \
-                    "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)" \
-                    >/dev/null
                 return 0
                 ;;
             unhealthy|exited|dead)
@@ -103,9 +107,18 @@ wait_for_health() {
     return 1
 }
 
-activate_image() {
+wait_for_release() {
+    local cloudflared_id
+    wait_for_health app || return 1
+    wait_for_health openclaw-adapter || return 1
+    cloudflared_id="$(compose ps --quiet cloudflared)"
+    [[ -n "$cloudflared_id" ]] || return 1
+    [[ "$(docker inspect --format '{{.State.Running}}' "$cloudflared_id")" == true ]]
+}
+
+activate_release() {
     local tag="$1"
-    SMARTCORE_IMAGE_TAG="$tag" compose up --detach --no-build app
+    SMARTCORE_IMAGE_TAG="$tag" compose up --detach --no-build
 }
 
 write_state() {
@@ -122,14 +135,16 @@ write_state() {
 rollback_to() {
     local target="$1"
     local current="${2:-unknown}"
-    docker image inspect "$IMAGE_REPO:$target" >/dev/null 2>&1 \
-        || die "rollback image does not exist: $IMAGE_REPO:$target"
+    docker image inspect "$APP_IMAGE_REPO:$target" >/dev/null 2>&1 \
+        || die "rollback image does not exist: $APP_IMAGE_REPO:$target"
+    docker image inspect "$ADAPTER_IMAGE_REPO:$target" >/dev/null 2>&1 \
+        || die "rollback image does not exist: $ADAPTER_IMAGE_REPO:$target"
 
-    log "rolling back application image to $target"
-    activate_image "$target"
-    wait_for_health || die "rollback image failed its health check"
+    log "rolling back application and Adapter images to $target"
+    activate_release "$target"
+    wait_for_release || die "rollback release failed its health check"
     write_state "$target" "$current"
-    log "rollback complete: $IMAGE_REPO:$target"
+    log "rollback complete: release $target"
 }
 
 manual_rollback() {
@@ -146,15 +161,19 @@ manual_rollback() {
 deploy() {
     verify_environment
 
-    local checkout_sha deployed_sha new_sha
+    local checkout_sha deployed_sha adapter_sha new_sha
     local deployed_revision_known=false
     checkout_sha="$(git -C "$ROOT" rev-parse HEAD)"
-    if deployed_sha="$(running_revision)"; then
-        deployed_revision_known=true
+    if deployed_sha="$(running_revision app)"; then
+        if adapter_sha="$(running_revision openclaw-adapter)" \
+            && [[ "$adapter_sha" == "$deployed_sha" ]]; then
+            deployed_revision_known=true
+        fi
     else
         deployed_sha="$checkout_sha"
     fi
-    tag_running_image "$deployed_sha"
+    tag_running_image app "$APP_IMAGE_REPO" "$deployed_sha"
+    tag_running_image openclaw-adapter "$ADAPTER_IMAGE_REPO" "$deployed_sha"
 
     log "fetching origin/main"
     git -C "$ROOT" fetch --prune origin main
@@ -165,23 +184,29 @@ deploy() {
 
     compose config --quiet
     if [[ "$deployed_revision_known" == true && "$new_sha" == "$deployed_sha" ]] \
-        && wait_for_health; then
+        && wait_for_release; then
         log "revision $new_sha is already running and healthy"
         return 0
     fi
 
     backup_database
 
-    log "building $IMAGE_REPO:$new_sha"
+    log "building $APP_IMAGE_REPO:$new_sha"
     docker build \
         --build-arg "VCS_REF=$new_sha" \
         --file "$ROOT/deploy/Dockerfile" \
-        --tag "$IMAGE_REPO:$new_sha" \
+        --tag "$APP_IMAGE_REPO:$new_sha" \
+        "$ROOT"
+    log "building $ADAPTER_IMAGE_REPO:$new_sha"
+    docker build \
+        --build-arg "VCS_REF=$new_sha" \
+        --file "$ROOT/deploy/adapter.Dockerfile" \
+        --tag "$ADAPTER_IMAGE_REPO:$new_sha" \
         "$ROOT"
 
-    log "activating $IMAGE_REPO:$new_sha"
-    if ! activate_image "$new_sha" || ! wait_for_health; then
-        log "new release failed; restoring $IMAGE_REPO:$deployed_sha"
+    log "activating release $new_sha"
+    if ! activate_release "$new_sha" || ! wait_for_release; then
+        log "new release failed; restoring release $deployed_sha"
         rollback_to "$deployed_sha" "$new_sha"
         die "deployment failed and the previous image was restored"
     fi

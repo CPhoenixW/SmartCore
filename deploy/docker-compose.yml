@@ -66,6 +66,43 @@ services:
     networks:
       - smartcore
 
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command:
+      - tunnel
+      - --no-autoupdate
+      - run
+    env_file:
+      - cloudflared.env
+    restart: unless-stopped
+    network_mode: bridge
+    depends_on:
+      - tunnel-boundary
+
+  openclaw-adapter:
+    image: "smartcore-openclaw-adapter:${SMARTCORE_IMAGE_TAG:-latest}"
+    build:
+      context: ..
+      dockerfile: deploy/adapter.Dockerfile
+    env_file:
+      - adapter.env
+    volumes:
+      - "${OPENCLAW_HOME:-/root/.openclaw}:/root/.openclaw"
+      - "${OPENCLAW_WORKSPACE_DIR:-/root/.openclaw-smartcore-workspace}:/root/.openclaw-smartcore-workspace"
+      - smartcore-adapter-logs:/data
+    network_mode: host
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os, urllib.request; urllib.request.urlopen(f'http://{os.environ[\"HOST\"]}:{os.environ[\"PORT\"]}/healthz', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
 networks:
   smartcore:
     driver: bridge
@@ -75,3 +112,4 @@ volumes:
   smartcore-backups:
   caddy-data:
   caddy-config:
+  smartcore-adapter-logs:
