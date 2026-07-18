@@ -24,6 +24,27 @@ Do not commit real secrets, databases, or backups. `passwd.txt`, `.env`, `data/`
 
 Production runs as three Docker Compose services: the FastAPI app, Caddy (public HTTPS), and `tunnel-boundary` (HTTP for Cloudflare Tunnel on the host docker bridge). The web panel is reached over Tailscale on the app port, not through the tunnel boundary.
 
+Normal production releases use the guarded deployment script:
+
+```bash
+ssh server
+cd /opt/smartcore
+./scripts/deploy_prod.sh
+```
+
+The script fast-forwards `main`, backs up SQLite, builds an image tagged with the Git
+revision, switches the app container, checks `/healthz`, and restores the previous image
+automatically if the new release is unhealthy. To roll back the latest successful release:
+
+```bash
+./scripts/deploy_prod.sh --rollback
+```
+
+Python and frontend dependencies are locked in `requirements.lock`,
+`requirements-dev.lock`, and `frontend/package-lock.json`. Update them intentionally with
+`./scripts/update_dependency_locks.sh`; ordinary source-only builds reuse the cached
+dependency layers.
+
 ### Prerequisites
 
 - Docker and Docker Compose on the server

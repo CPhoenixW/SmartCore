@@ -119,7 +119,14 @@ class FeishuEventHandler:
             return True, {"code": 0, "msg": "missing Feishu identity"}
         try:
             chat, _ = extract_routing_context(payload)
-            claimed = claimFeishuChatPair(db, match.group(1), botId=bot.botId, externalId=external_id, chatId=str(chat.get("chat_id") or ""), chatType=str(chat.get("chat_type") or "p2p"))
+            claimFeishuChatPair(
+                db,
+                match.group(1),
+                botId=bot.botId,
+                externalId=external_id,
+                chatId=str(chat.get("chat_id") or ""),
+                chatType=str(chat.get("chat_type") or "p2p"),
+            )
         except HTTPException as exc:
             self._reply(payload, f"绑定失败：{exc.detail}", bot, action="pairing")
             return True, {"code": 0, "msg": "pairing failed"}

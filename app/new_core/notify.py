@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy.orm import Session
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.feishu.bot_service import runtime
 from app.feishu.cards import build_reminder_card
 from app.feishu.client import FeishuAPIError, FeishuClient
-from app.feishu.bot_service import runtime
 from app.new_core import crud
 from app.new_core.models import FeishuBind, FeishuBot
 from app.new_core.preferences import get_user_preferences

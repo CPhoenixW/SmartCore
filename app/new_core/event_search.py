@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from datetime import datetime, timedelta
-from typing import Any, Iterable
+from typing import Any
 from zoneinfo import ZoneInfo
 
 _DEFAULT_TZ = ZoneInfo("Asia/Shanghai")

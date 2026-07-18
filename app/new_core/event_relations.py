@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import date, datetime, time, timedelta
-from typing import Any, Iterable
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select

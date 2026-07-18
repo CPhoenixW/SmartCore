@@ -10,8 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.config import Settings, get_settings
 from app.agent.scope import AgentScope, require_agent_scope
+from app.config import Settings, get_settings
 from app.db.session import get_db
 from app.feishu.client import FeishuAPIError, FeishuClient
 from app.new_core import crud
