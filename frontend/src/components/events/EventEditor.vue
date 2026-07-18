@@ -4,6 +4,7 @@ import DdlPlanEditor from "./DdlPlanEditor.vue";
 import DdlReminderEditor from "./DdlReminderEditor.vue";
 import type { DdlPlan, DdlReminder, EventStatus, Priority, SmartCoreEvent } from "@/types/event";
 import { getEventPrimaryTime, localInputToIso, toLocalInput } from "@/utils/date";
+import { cloneDdlRelations } from "@/utils/eventEditor";
 
 const props = defineProps<{ event: SmartCoreEvent; busy?: boolean }>();
 const emit = defineEmits<{ save: [payload: Record<string, unknown>]; done: []; cancel: [] }>();
@@ -11,17 +12,20 @@ const form = reactive({ title: "", desc: "", stat: "todo" as EventStatus, prio: 
 
 watch(
   () => props.event,
-  (event) => Object.assign(form, {
-    title: event.title,
-    desc: event.desc ?? "",
-    stat: event.stat,
-    prio: event.prio,
-    time: toLocalInput(getEventPrimaryTime(event)),
-    durationMin: event.evtType === "plan" ? event.durationMin : 30,
-    hardDdl: event.evtType === "ddl" ? event.hardDdl : false,
-    plans: event.evtType === "ddl" ? structuredClone(event.plans ?? []) : [],
-    ddlReminders: event.evtType === "ddl" ? structuredClone(event.ddlReminders ?? []) : [],
-  }),
+  (event) => {
+    const relations = cloneDdlRelations(event);
+    Object.assign(form, {
+      title: event.title,
+      desc: event.desc ?? "",
+      stat: event.stat,
+      prio: event.prio,
+      time: toLocalInput(getEventPrimaryTime(event)),
+      durationMin: event.evtType === "plan" ? event.durationMin : 30,
+      hardDdl: event.evtType === "ddl" ? event.hardDdl : false,
+      plans: relations.plans,
+      ddlReminders: relations.ddlReminders,
+    });
+  },
   { immediate: true, deep: true },
 );
 

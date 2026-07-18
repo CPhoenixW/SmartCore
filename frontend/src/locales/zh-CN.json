@@ -132,7 +132,9 @@
     "addEvent": "添加事件",
     "captureIdea": "记录灵感",
     "manageCourses": "课表管理",
-    "deviceStatus": "设备状态"
+    "deviceStatus": "设备状态",
+    "selectDate": "选择事项日期",
+    "emptySelectedDate": "这一天没有安排任何事项。"
     ,"emptyToday": "今天没有安排，留一点空白给自己。"
     ,"emptyDeadline": "未来 72 小时没有临近截止事项。"
   },

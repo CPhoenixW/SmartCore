@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
@@ -9,11 +9,16 @@ import { deviceApi } from "@/api/device";
 import { deviceRegistryApi } from "@/api/deviceRegistry";
 import { eventApi } from "@/api/event";
 import { ideaApi } from "@/api/idea";
-import { eventDateKey, todayKey } from "@/utils/date";
+import { addDays, eventDateKey, todayKey } from "@/utils/date";
 import { sortEvents } from "@/utils/event";
 
 const { t } = useI18n();
+const selectedDate = ref(todayKey());
 const eventsQuery = useQuery({ queryKey: ["events", "overview-all"], queryFn: () => eventApi.list({ includeReminders: true, includeCourseTemplates: false }) });
+const dayEventsQuery = useQuery({
+  queryKey: computed(() => ["events", "overview-day", selectedDate.value]),
+  queryFn: () => eventApi.list({ date: selectedDate.value, includeReminders: true, includeCourseTemplates: false }),
+});
 const ideasQuery = useQuery({ queryKey: ["ideas"], queryFn: ideaApi.list });
 const registeredDevices = useQuery({ queryKey: ["lifeDevices"], queryFn: deviceRegistryApi.list, refetchInterval: 15_000 });
 const deviceId = computed(() => {
@@ -24,6 +29,8 @@ const deviceQuery = useQuery({ queryKey: ["device", "latest", deviceId], queryFn
 
 const actionable = computed(() => sortEvents((eventsQuery.data.value ?? []).filter((event) => event.evtType !== "course")));
 const todayEvents = computed(() => actionable.value.filter((event) => eventDateKey(event) === todayKey()));
+const selectedDateEvents = computed(() => sortEvents((dayEventsQuery.data.value ?? []).filter((event) => event.evtType !== "course")));
+const selectedDateTitle = computed(() => selectedDate.value === todayKey() ? t("overview.today") : selectedDate.value);
 const todos = computed(() => actionable.value.filter((event) => event.stat === "todo"));
 const future72 = computed(() => {
   const now = Date.now();
@@ -50,6 +57,9 @@ const deviceTitle = computed(() => {
   const device = (registeredDevices.data.value ?? []).find((item) => item.deviceId === deviceId.value);
   return device?.deviceName || t("overview.device");
 });
+function moveSelectedDate(days: number) {
+  selectedDate.value = addDays(selectedDate.value, days);
+}
 </script>
 
 <template>
@@ -62,10 +72,17 @@ const deviceTitle = computed(() => {
   </section>
   <section class="dashboard-grid">
     <div class="stack">
-    <BaseCard class="overview-today-card" :title="t('overview.today')">
+    <BaseCard class="overview-today-card" :title="selectedDateTitle">
+      <div class="overview-date-toolbar">
+        <button class="button" type="button" @click="moveSelectedDate(-1)">{{ t("common.previous") }}</button>
+        <input v-model="selectedDate" type="date" :aria-label="t('overview.selectDate')" />
+        <button class="button" type="button" @click="selectedDate = todayKey()">{{ t("common.today") }}</button>
+        <button class="button" type="button" @click="moveSelectedDate(1)">{{ t("common.next") }}</button>
+      </div>
       <div class="event-list">
-        <EventCard v-for="event in todayEvents" :key="event.evtId" :event="event" @select="$router.push({ name: 'update', query: { date: eventDateKey(event), evtId: event.evtId } })" />
-        <EmptyState v-if="!todayEvents.length" class="overview-empty" :text="t('overview.emptyToday')" />
+        <EventCard v-for="event in selectedDateEvents" :key="event.evtId" :event="event" @select="$router.push({ name: 'update', query: { date: eventDateKey(event), evtId: event.evtId } })" />
+        <div v-if="dayEventsQuery.isPending.value" class="empty-state">{{ t("common.loading") }}</div>
+        <EmptyState v-else-if="!selectedDateEvents.length" class="overview-empty" :text="t('overview.emptySelectedDate')" />
       </div>
     </BaseCard>
     <BaseCard :title="t('overview.recentIdeas')"><div class="idea-list compact-list"><article v-for="idea in recentIdeas" :key="idea.ideaId"><button @click="$router.push({ name: 'ideas' })"><strong>{{ idea.content }}</strong><small>{{ idea.createdAt }}</small></button></article><EmptyState v-if="!recentIdeas.length" /></div></BaseCard>
@@ -80,3 +97,25 @@ const deviceTitle = computed(() => {
     </div>
   </section>
 </template>
+
+<style scoped>
+.overview-date-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(150px, 1fr) auto auto;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.overview-date-toolbar input {
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--color-text);
+}
+@media (max-width: 760px) {
+  .overview-date-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+</style>

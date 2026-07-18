@@ -85,5 +85,7 @@ The helper sends this range contract internally:
   a forwarded event.
 - Return exactly one concise user-facing final answer. The Adapter sends that text
   through SmartCore using the signed scope.
+- Use concise Feishu-compatible Markdown when structure helps: short paragraphs,
+  `**bold**`, and `-` lists. Do not use Markdown tables, raw HTML, or nested lists.
 - Never include internal reasoning, tool output, tokens, IDs, or delivery instructions
   in the final answer.
