@@ -233,11 +233,12 @@ def test_openclaw_skill_delegates_feishu_reply_to_adapter() -> None:
     assert "Adapter sends that text" in skill
     assert "X-SmartCore-Agent-Scope" in skill
     assert "Do not call `sendFeishuText`" in skill
-    assert "`date: YYYY-MM-DD`" in skill
-    assert "`timeRange.start`" in skill
+    assert "`--date YYYY-MM-DD`" in skill
+    assert "`--start`" in skill
     assert "`data.items`" in skill
     assert "`start_time`" in skill
     assert "Do not pipe a response through `head`" in skill
+    assert "scripts/query_events.py" in skill
 
 
 def test_openclaw_adapter_prompt_owns_feishu_reply() -> None:
@@ -247,3 +248,5 @@ def test_openclaw_adapter_prompt_owns_feishu_reply() -> None:
     assert "/agent/feedback/send_text" in adapter_source
     assert "timeRange.start and timeRange.end" in adapter_source
     assert "data.items" in adapter_source
+    assert "scripts/smartcore/scripts/query_events.py" not in adapter_source
+    assert "skills/smartcore/scripts/query_events.py" in adapter_source
