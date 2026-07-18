@@ -125,6 +125,9 @@ def test_sync_bundled_skill_updates_workspace_atomically(tmp_path, monkeypatch) 
     source = tmp_path / "bundled" / "SKILL.md"
     source.parent.mkdir()
     source.write_text("new contract\n", encoding="utf-8")
+    source_script = source.parent / "scripts" / "query_events.py"
+    source_script.parent.mkdir()
+    source_script.write_text("print('query')\n", encoding="utf-8")
     workspace = tmp_path / "workspace"
     target = workspace / "skills" / "smartcore" / "SKILL.md"
     target.parent.mkdir(parents=True)
@@ -135,5 +138,6 @@ def test_sync_bundled_skill_updates_workspace_atomically(tmp_path, monkeypatch) 
 
     assert adapter.sync_bundled_skill() is True
     assert target.read_text(encoding="utf-8") == "new contract\n"
+    assert (target.parent / "scripts" / "query_events.py").read_text(encoding="utf-8") == "print('query')\n"
     assert adapter.sync_bundled_skill() is False
     assert not (target.parent / ".SKILL.md.tmp").exists()

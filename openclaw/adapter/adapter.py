@@ -31,13 +31,13 @@ def load_env(path: Path) -> None:
 
 
 def sync_bundled_skill() -> bool:
-    source = Path(
+    skill_file = Path(
         os.environ.get(
             "SMARTCORE_BUNDLED_SKILL",
             "/adapter/skills/smartcore/SKILL.md",
         )
     )
-    if not source.is_file():
+    if not skill_file.is_file():
         return False
     workspace = Path(
         os.environ.get(
@@ -45,16 +45,21 @@ def sync_bundled_skill() -> bool:
             "/root/.openclaw-smartcore-workspace",
         )
     )
-    target = workspace / "skills" / "smartcore" / "SKILL.md"
-    content = source.read_text(encoding="utf-8")
-    if target.is_file() and target.read_text(encoding="utf-8") == content:
-        return False
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_name(f".{target.name}.tmp")
-    temporary.write_text(content, encoding="utf-8")
-    temporary.chmod(0o600)
-    temporary.replace(target)
-    return True
+    source_root = skill_file.parent
+    target_root = workspace / "skills" / "smartcore"
+    changed = False
+    for source in sorted(path for path in source_root.rglob("*") if path.is_file()):
+        target = target_root / source.relative_to(source_root)
+        content = source.read_bytes()
+        if target.is_file() and target.read_bytes() == content:
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_name(f".{target.name}.tmp")
+        temporary.write_bytes(content)
+        temporary.chmod(0o700 if source.suffix == ".py" else 0o600)
+        temporary.replace(target)
+        changed = True
+    return changed
 
 
 def log(log_message: str, **fields: Any) -> None:
@@ -133,6 +138,8 @@ def build_prompt(event: dict[str, Any]) -> str:
         "timeRange.start and timeRange.end with absolute ISO-8601 values.\n"
         "Never send start_time, end_time, filter, or locally filter a truncated response. "
         "Check ok/errors and read results from data.items before answering.\n"
+        "For event queries, use the bundled skills/smartcore/scripts/query_events.py helper "
+        "instead of constructing curl commands.\n"
         "Do not call Feishu feedback endpoints or sendFeishu tools; the Adapter owns final delivery.\n"
         "Return exactly one concise user-facing final answer in finalAssistantVisibleText.\n"
         "On failure or ambiguity, return one concise clarification or error message.\n"

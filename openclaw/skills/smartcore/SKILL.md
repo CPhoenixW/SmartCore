@@ -27,11 +27,13 @@ available only as compatibility aliases.
 
 ## Query Rules
 
+- Run event queries with the bundled helper; do not construct `curl` commands:
+  `python3 skills/smartcore/scripts/query_events.py --scope '<signed scope>' ...`
 - For a single local day, including 今天、明天 or a specific calendar date, prefer
-  `date: YYYY-MM-DD`. Resolve relative dates from the forwarded
+  `--date YYYY-MM-DD`. Resolve relative dates from the forwarded
   `request.timezone` and `request.now`.
-- For a multi-day or partial-day range, send exactly `timeRange.start` and
-  `timeRange.end` as absolute ISO-8601 date-times with offsets.
+- For a multi-day or partial-day range, send `--start` and `--end` as absolute
+  ISO-8601 date-times with offsets.
 - Never send `start_time`, `end_time`, `filter`, `filter.time_range`, or other
   undocumented fields. If SmartCore returns `ok: false`, correct the request from
   `errors`; never interpret a failed call as an empty schedule.
@@ -43,24 +45,21 @@ available only as compatibility aliases.
   Do not pipe a response through `head`, truncate it, or perform local date filtering.
 - Use `evtId` returned by SmartCore. Never invent ids.
 - Query candidates before modifying or cancelling an ambiguous event.
+- Do not add `--status` unless the user explicitly asks for unfinished, completed,
+  or cancelled items.
 
-Single-day query:
+Single-day command:
 
-```json
-{
-  "date": "2026-07-20",
-  "stat": "todo",
-  "includeLinkedPlans": true,
-  "includeCourseTemplates": false,
-  "limit": 100
-}
+```bash
+python3 skills/smartcore/scripts/query_events.py \
+  --scope '<signed scope from the current prompt>' \
+  --date 2026-07-20
 ```
 
-Range query:
+The helper sends this range contract internally:
 
 ```json
 {
-  "stat": "todo",
   "timeRange": {
     "start": "2026-07-07T00:00:00+08:00",
     "end": "2026-07-07T23:59:59+08:00"
