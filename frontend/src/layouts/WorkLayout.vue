@@ -13,7 +13,7 @@ const search = ref(String(route.query.q ?? ""));
 const mobileOpen = ref(false);
 const loggingOut = ref(false);
 const nav = [
-  ["overview", "overview", "⌂"], ["add", "add", "+"], ["update", "update", "✎"], ["course", "course", "□"],
+  ["overview", "overview", "⌂"], ["dailySummary", "dailySummary", "☷"], ["add", "add", "+"], ["update", "update", "✎"], ["course", "course", "□"],
   ["device", "device", "◉"], ["ideas", "ideas", "◇"], ["logs", "logs", "≡"], ["settings", "settings", "⚙"],
 ] as const;
 const initials = computed(() => userStore.user.displayName?.slice(0, 2).toUpperCase() || "SC");

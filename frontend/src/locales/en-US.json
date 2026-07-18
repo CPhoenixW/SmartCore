@@ -10,6 +10,7 @@
   },
   "nav": {
     "overview": "Overview",
+    "dailySummary": "Daily summary",
     "add": "Add event",
     "update": "Update event",
     "course": "Course",
@@ -139,6 +140,24 @@
     "emptySelectedDate": "Nothing is scheduled for this date.",
     "emptyToday": "Nothing is scheduled today.",
     "emptyDeadline": "No deadlines are due in the next 72 hours."
+  },
+  "dailySummary": {
+    "title": "Daily summary",
+    "subtitle": "Review completed work, outcomes and reflections",
+    "todayTitle": "Today's summary",
+    "dateTitle": "Summary for {date}",
+    "selectDate": "Select summary date",
+    "searchPlaceholder": "Search report content or date",
+    "empty": "There is no summary report for this date.",
+    "noMatch": "Nothing in this report matches the search.",
+    "queued": "OpenClaw is generating this report.",
+    "failed": "This report could not be generated and may be retried later.",
+    "generatedAt": "Generated at {time}",
+    "status": {
+      "queued": "Generating",
+      "complete": "Complete",
+      "failed": "Failed"
+    }
   },
   "add": {
     "title": "Add event",

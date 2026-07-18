@@ -10,6 +10,7 @@
   },
   "nav": {
     "overview": "总览",
+    "dailySummary": "每日总结",
     "add": "添加事件",
     "update": "更新事件",
     "course": "课表",
@@ -136,9 +137,27 @@
     "manageCourses": "课表管理",
     "deviceStatus": "设备状态",
     "selectDate": "选择事项日期",
-    "emptySelectedDate": "这一天没有安排任何事项。"
-    ,"emptyToday": "今天没有安排，留一点空白给自己。"
-    ,"emptyDeadline": "未来 72 小时没有临近截止事项。"
+    "emptySelectedDate": "这一天没有安排任何事项。",
+    "emptyToday": "今天没有安排，留一点空白给自己。",
+    "emptyDeadline": "未来 72 小时没有临近截止事项。"
+  },
+  "dailySummary": {
+    "title": "每日总结",
+    "subtitle": "回顾每天完成的任务、结果与心得",
+    "todayTitle": "今天的总结",
+    "dateTitle": "{date} 的总结",
+    "selectDate": "选择总结日期",
+    "searchPlaceholder": "搜索总结内容或日期",
+    "empty": "这一天还没有总结报告。",
+    "noMatch": "这份总结中没有匹配的内容。",
+    "queued": "OpenClaw 正在生成这份总结。",
+    "failed": "这份总结生成失败，稍后可重新触发。",
+    "generatedAt": "生成于 {time}",
+    "status": {
+      "queued": "生成中",
+      "complete": "已完成",
+      "failed": "生成失败"
+    }
   },
   "add": {
     "title": "添加事件",

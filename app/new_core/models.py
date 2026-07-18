@@ -63,6 +63,25 @@ class EvtBase(Base):
     updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
 
 
+class DailySummary(Base):
+    __tablename__ = "dailySummary"
+    __table_args__ = (
+        UniqueConstraint("userId", "reportDate", name="uq_daily_summary_user_date"),
+    )
+
+    summaryId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    reportDate: Mapped[str] = mapped_column(String(10), nullable=False)
+    content: Mapped[str | None] = mapped_column(Text)
+    stat: Mapped[str] = mapped_column(String(20), default="queued", nullable=False)
+    errorMessage: Mapped[str | None] = mapped_column(Text)
+    generatedAt: Mapped[str | None] = mapped_column(String(64))
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
 class PlanEvt(Base):
     __tablename__ = "planEvt"
 

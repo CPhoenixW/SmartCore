@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.agent.daily_summary_routes import createDailySummaryAgentRouter
 from app.agent.feedback_routes import createFeedbackRouter, ensure_feedback_tools
 from app.agent.legacy_time_routes import createLegacyTimeRouter
 from app.agent.relation_query_routes import createRelationQueryRouter
@@ -15,6 +16,7 @@ from app.agent.v2_routes import createAgentV2Router
 from app.api.admin_routes import router as adminApiRouter
 from app.api.auth_routes import router as authApiRouter
 from app.api.avatar_routes import router as avatarApiRouter
+from app.api.daily_summary_routes import router as dailySummaryApiRouter
 from app.api.device_state_routes import router as deviceStateApiRouter
 from app.api.event_view_routes import router as eventViewApiRouter
 from app.api.routes import router as apiRouter
@@ -120,6 +122,7 @@ def create_app() -> FastAPI:
     app.include_router(parse_router)
     app.include_router(avatarApiRouter)
     app.include_router(deviceStateApiRouter)
+    app.include_router(dailySummaryApiRouter)
     app.include_router(eventViewApiRouter)
     app.include_router(apiRouter)
     app.include_router(createDevRouter())
@@ -129,6 +132,7 @@ def create_app() -> FastAPI:
     app.include_router(createRelationQueryRouter())
     app.include_router(createRelationWriteRouter())
     app.include_router(createFeedbackRouter())
+    app.include_router(createDailySummaryAgentRouter())
     app.include_router(createAgentV2Router())
     app.include_router(createLegacyTimeRouter())
     app.include_router(createAgentRouter())
