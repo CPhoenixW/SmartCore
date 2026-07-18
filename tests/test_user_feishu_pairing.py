@@ -43,7 +43,7 @@ def _user_client(app, user_id: str) -> TestClient:
 
 def test_normal_user_pairs_default_bot_and_uses_own_chat(app_env, monkeypatch) -> None:
     text_calls: list[tuple[str, str]] = []
-    card_calls: list[str] = []
+    card_calls: list[tuple[str, dict]] = []
     monkeypatch.setattr(
         FeishuClient,
         "send_text",
@@ -52,7 +52,7 @@ def test_normal_user_pairs_default_bot_and_uses_own_chat(app_env, monkeypatch) -
     monkeypatch.setattr(
         FeishuClient,
         "send_interactive_card",
-        lambda self, chat, card, **kwargs: card_calls.append(chat) or {"code": 0},
+        lambda self, chat, card, **kwargs: card_calls.append((chat, card)) or {"code": 0},
     )
     app = create_app()
     db = SessionLocal()
@@ -110,11 +110,25 @@ def test_normal_user_pairs_default_bot_and_uses_own_chat(app_env, monkeypatch) -
             evtId="evt_shared",
             userId="normal",
         )
+        start_routed = routeNotify(
+            db,
+            title="Starts soon",
+            content="No task actions yet",
+            screenOnline=False,
+            evtId="evt_shared",
+            phase="start",
+            userId="normal",
+        )
     finally:
         db.close()
     assert routed == {"channel": "feishu", "stat": "sent"}
-    assert card_calls == ["oc_shared_chat"]
-
+    assert start_routed == {"channel": "feishu", "stat": "sent"}
+    assert [chat for chat, _card in card_calls] == [
+        "oc_shared_chat",
+        "oc_shared_chat",
+    ]
+    assert card_calls[0][1]["elements"][-1]["tag"] == "action"
+    assert all(element["tag"] != "action" for element in card_calls[1][1]["elements"])
     scope = issue_agent_scope(
         userId="normal",
         botId=bot_id,
@@ -130,7 +144,11 @@ def test_normal_user_pairs_default_bot_and_uses_own_chat(app_env, monkeypatch) -
     )
     assert feedback.status_code == 200
     assert feedback.json()["ok"] is True
-    assert card_calls == ["oc_shared_chat", "oc_shared_chat"]
+    assert [chat for chat, _card in card_calls] == [
+        "oc_shared_chat",
+        "oc_shared_chat",
+        "oc_shared_chat",
+    ]
 
 
 def test_user_feishu_pairing_is_owner_scoped(app_env, monkeypatch) -> None:

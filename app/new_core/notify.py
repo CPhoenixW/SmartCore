@@ -27,13 +27,20 @@ def _getFeishuClient() -> FeishuClient | None:
     return _feishuClient
 
 
-def buildReminderCard(*, evtId: str, title: str, content: str) -> dict[str, Any]:
+def buildReminderCard(
+    *,
+    evtId: str,
+    title: str,
+    content: str,
+    phase: str = "end",
+) -> dict[str, Any]:
+    allow_actions = phase != "start"
     return build_reminder_card(
         evt_id=evtId,
         title=title,
         content=content,
-        allow_done=True,
-        allow_snooze=True,
+        allow_done=allow_actions,
+        allow_snooze=allow_actions,
     )
 
 
@@ -129,6 +136,7 @@ def _sendFeishuReminderCard(
     evtId: str,
     title: str,
     content: str,
+    phase: str,
     userId: str = crud.DEFAULT_USER_ID,
 ) -> tuple[bool, str | None, str | None]:
     settings = get_settings()
@@ -140,7 +148,12 @@ def _sendFeishuReminderCard(
         return False, None, "no active primary Feishu chat"
     if client is None:
         return False, receive_id, "feishu app credentials not configured"
-    card = buildReminderCard(evtId=evtId, title=title, content=content)
+    card = buildReminderCard(
+        evtId=evtId,
+        title=title,
+        content=content,
+        phase=phase,
+    )
     try:
         client.send_interactive_card(receive_id, card)
     except FeishuAPIError as exc:
@@ -157,8 +170,15 @@ def _deliverFeishu(
     phase: str = "end",
     userId: str = crud.DEFAULT_USER_ID,
 ) -> tuple[bool, str | None, str | None]:
-    if phase in {"end", "notice"} and evtId is not None and _sendFeishu is _baselineSendFeishu:
-        return _sendFeishuReminderCard(db, evtId=evtId, title=title, content=content, userId=userId)
+    if phase in {"start", "end", "notice"} and evtId is not None and _sendFeishu is _baselineSendFeishu:
+        return _sendFeishuReminderCard(
+            db,
+            evtId=evtId,
+            title=title,
+            content=content,
+            phase=phase,
+            userId=userId,
+        )
     return _sendFeishu(db, title, content, userId=userId)
 
 

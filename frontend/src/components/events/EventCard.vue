@@ -14,7 +14,7 @@ const overdue = computed(() => isOverdue(props.event));
 </script>
 
 <template>
-  <button class="event-card" :class="[`event-card--${event.stat}`, { 'event-card--selected': selected, 'event-card--overdue': overdue }]" type="button" @click="$emit('select', event)">
+  <button class="event-card" :class="[`event-card--${event.stat}`, `event-card--type-${event.evtType}`, { 'event-card--selected': selected, 'event-card--overdue': overdue }]" type="button" @click="$emit('select', event)">
     <div class="event-card__top"><strong>{{ event.title }}</strong><time>{{ time }}</time></div>
     <p v-if="event.desc">{{ event.desc }}</p>
     <div class="event-card__tags">

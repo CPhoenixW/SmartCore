@@ -116,7 +116,11 @@ def runReminderTick(
             screenOnline=screenOnline,
             dedupKey=dedup_key,
             evtId=target_evt_id,
-            phase="notice",
+            phase=(
+                "start"
+                if reminder.remindKind == "plan_start_10m"
+                else "notice"
+            ),
             userId=reminder_base.userId,
         )
         if result.get("stat") in {"sent", "deduped"}:
