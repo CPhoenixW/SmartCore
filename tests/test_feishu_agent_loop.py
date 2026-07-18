@@ -135,7 +135,7 @@ def test_feishu_processing_ack_failure_does_not_block_openclaw_forward(app_env, 
 
 def test_scoped_send_text_uses_bound_chat_only(app_env, monkeypatch) -> None:
     fake_client = FakeFeishuClient()
-    monkeypatch.setattr(FeishuClient, "send_text", fake_client.send_text)
+    monkeypatch.setattr(FeishuClient, "send_interactive_card", fake_client.send_interactive_card)
     client = TestClient(create_app())
     scope = _bind_default_chat("oc_bound")
     headers = {"X-SmartCore-Agent-Token": "agent-secret", "X-SmartCore-Agent-Scope": scope}
@@ -143,14 +143,17 @@ def test_scoped_send_text_uses_bound_chat_only(app_env, monkeypatch) -> None:
     resp = client.post(
         "/agent/sendText",
         headers=headers,
-        json={"text": "已记录", "chatId": "oc_wrong"},
+        json={"text": "**已记录**\n- 事项一", "chatId": "oc_wrong"},
     )
 
     assert resp.status_code == 200
     body = resp.json()
     assert body["ok"] is True
     assert body["stat"] == "done"
-    assert fake_client.text_calls == [("oc_bound", "已记录")]
+    assert fake_client.text_calls == []
+    assert fake_client.card_calls[0][0] == "oc_bound"
+    markdown = fake_client.card_calls[0][1]["elements"][0]["text"]
+    assert markdown == {"tag": "lark_md", "content": "**已记录**\n- 事项一"}
     assert "tenant_access_token" not in json.dumps(body)
     assert "app-secret" not in json.dumps(body)
 
@@ -238,6 +241,7 @@ def test_openclaw_skill_delegates_feishu_reply_to_adapter() -> None:
     assert "`data.items`" in skill
     assert "`start_time`" in skill
     assert "Do not pipe a response through `head`" in skill
+    assert "Feishu-compatible Markdown" in skill
     assert "scripts/query_events.py" in skill
 
 

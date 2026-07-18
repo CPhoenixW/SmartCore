@@ -197,19 +197,8 @@ def _send_text(body: dict[str, Any], db: Session, scope: AgentScope) -> dict[str
     text = body.get("text")
     if not isinstance(text, str) or not text.strip():
         return _failed(["text required"])
-    bot = db.get(FeishuBot, scope.botId)
-    binding = db.scalar(select(FeishuBind).where(
-        FeishuBind.botId == scope.botId,
-        FeishuBind.userId == scope.userId,
-        FeishuBind.chatId == scope.chatId,
-        FeishuBind.stat == "active",
-    ))
-    if bot is None or bot.userId != scope.userId or binding is None:
-        return _failed(["scoped Feishu chat is no longer active"])
-    try:
-        return _done(runtime(bot).client().send_text(scope.chatId, text.strip()))
-    except (ValueError, FeishuAPIError) as exc:
-        return _failed([str(exc)])
+    card = build_message_card(content=text.strip())
+    return _send_card(body, card, db, scope)
 
 
 def _extract_query_items(body: dict[str, Any]) -> list[dict[str, Any]] | None:

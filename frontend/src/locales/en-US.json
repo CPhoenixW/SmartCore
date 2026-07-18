@@ -133,6 +133,8 @@
     "captureIdea": "Capture idea",
     "manageCourses": "Manage courses",
     "deviceStatus": "Device status",
+    "selectDate": "Select schedule date",
+    "emptySelectedDate": "Nothing is scheduled for this date.",
     "emptyToday": "Nothing is scheduled today.",
     "emptyDeadline": "No deadlines are due in the next 72 hours."
   },

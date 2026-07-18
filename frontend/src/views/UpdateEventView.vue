@@ -42,10 +42,6 @@ const selectedSchedule = computed(() => selected.value?.evtType === "course"
   ? t("course.scheduleSummary", { start: selected.value.stTime, end: selected.value.endTime, startWeek: selected.value.startWeek, endWeek: selected.value.endWeek })
   : "");
 
-watch(filtered, (events) => {
-  if (selected.value) selected.value = events.find((event) => event.evtId === selected.value?.evtId) ?? selected.value;
-}, { immediate: true });
-
 watch(text, (value) => {
   const found = extractDateQuery(value);
   if (found && found !== date.value) date.value = found;
@@ -67,6 +63,14 @@ async function openDirectEvent() {
     selected.value = event;
     const eventDate = eventDateKey(event);
     if (eventDate !== date.value) date.value = eventDate;
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function selectEvent(event: SmartCoreEvent) {
+  try {
+    selected.value = await eventApi.read(event.evtId);
   } catch (error) {
     toast.error(error instanceof Error ? error.message : String(error));
   }
@@ -97,7 +101,7 @@ function markDone() { if (selected.value) updateMutation.mutate({ id: selected.v
     <section class="date-toolbar"><button class="button" @click="move(-1)">{{ t("common.previous") }}</button><input v-model="date" type="date" /><button class="button" @click="date = todayKey()">{{ t("common.today") }}</button><button class="button" @click="move(1)">{{ t("common.next") }}</button><input v-model="text" :placeholder="t('common.search')" /><select v-model="status"><option value="all">{{ t("common.all") }}</option><option value="todo">{{ t("event.status.todo") }}</option><option value="done">{{ t("event.status.done") }}</option><option value="cancelled">{{ t("event.status.cancelled") }}</option></select></section>
     <section class="split-scroll-layout">
       <div class="split-scroll-column split-scroll-column--main">
-        <BaseCard :title="`${t('update.events')} · ${filtered.length}`"><div class="event-list"><EventCard v-for="event in filtered" :key="event.evtId" :event="event" :selected="selected?.evtId === event.evtId" @select="selected = $event" /><div v-if="eventsQuery.isPending.value" class="empty-state">{{ t("common.loading") }}</div><EmptyState v-else-if="!filtered.length" /></div></BaseCard>
+        <BaseCard :title="`${t('update.events')} · ${filtered.length}`"><div class="event-list"><EventCard v-for="event in filtered" :key="event.evtId" :event="event" :selected="selected?.evtId === event.evtId" @select="selectEvent" /><div v-if="eventsQuery.isPending.value" class="empty-state">{{ t("common.loading") }}</div><EmptyState v-else-if="!filtered.length" /></div></BaseCard>
       </div>
       <aside class="split-scroll-column split-scroll-column--side">
         <div class="stack">
