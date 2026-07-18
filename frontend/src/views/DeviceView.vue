@@ -8,11 +8,12 @@ import EmptyState from "@/components/base/EmptyState.vue";
 import { deviceApi } from "@/api/device";
 import { deviceRegistryApi } from "@/api/deviceRegistry";
 import { useToast } from "@/composables/useToast";
-import type { PhotoRequest } from "@/types/device";
+import type { DeviceUsagePoint, PhotoRequest } from "@/types/device";
 import { formatDateTime } from "@/utils/date";
 import { devicePersonNames, deviceStateView } from "@/utils/device";
+import { usageChartPosition, usageLineCoordinates } from "@/utils/usageChart";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const toast = useToast();
 const queryClient = useQueryClient();
 const search = ref("");
@@ -25,7 +26,7 @@ const activeDeviceId = computed(() => {
 });
 const latest = useQuery({ queryKey: ["device", "latest", activeDeviceId], queryFn: () => deviceApi.latest(activeDeviceId.value), enabled: computed(() => Boolean(activeDeviceId.value)), refetchInterval: 10_000 });
 const recent = useQuery({ queryKey: ["device", "recent", activeDeviceId], queryFn: () => deviceApi.recent(activeDeviceId.value, 240), enabled: computed(() => Boolean(activeDeviceId.value)), refetchInterval: 60_000 });
-const usage = useQuery({ queryKey: ["device", "usage", activeDeviceId], queryFn: () => deviceApi.usageToday(activeDeviceId.value), enabled: computed(() => Boolean(activeDeviceId.value)), refetchInterval: 60_000 });
+const usage = useQuery({ queryKey: ["device", "usage", activeDeviceId, 12], queryFn: () => deviceApi.recentUsage(activeDeviceId.value, 12), enabled: computed(() => Boolean(activeDeviceId.value)), refetchInterval: 60_000 });
 const photos = useQuery({ queryKey: ["device", "photos", activeDeviceId], queryFn: () => deviceApi.photoRequests(activeDeviceId.value), enabled: computed(() => Boolean(activeDeviceId.value)), refetchInterval: 2_000 });
 const currentView = computed(() => deviceStateView(latest.data.value));
 const names = computed(() => devicePersonNames(currentView.value));
@@ -36,7 +37,10 @@ const logs = computed(() => (recent.data.value ?? []).filter((row) => {
 }));
 const activePhoto = computed(() => (photos.data.value ?? []).find((item) => item.requestId === activeRequestId.value));
 const photoUrl = computed(() => displayedPhoto.value?.imageUrl ? `${displayedPhoto.value.imageUrl}?t=${encodeURIComponent(displayedPhoto.value.completedAt ?? "")}` : "");
-const maxUsage = computed(() => Math.max(1, ...(usage.data.value?.hourlyMinutes ?? [1])));
+const usagePoints = computed(() => usage.data.value?.points ?? []);
+const maxUsage = computed(() => Math.max(1, ...usagePoints.value.map((point) => point.minutes)));
+const lineCoordinates = computed(() => usageLineCoordinates(usagePoints.value.map((point) => point.minutes)));
+const areaCoordinates = computed(() => lineCoordinates.value ? `3,92 ${lineCoordinates.value} 97,92` : "");
 const requestPhoto = useMutation({
   mutationFn: () => deviceApi.requestPhoto(activeDeviceId.value),
   onSuccess: async (request) => {
@@ -71,8 +75,24 @@ function photoMeta(item: PhotoRequest | null | undefined) {
   const statusLabel = knownStatuses.has(item.stat) ? t(`device.photoStatus.${item.stat}`) : item.stat;
   return `${statusLabel} · ${formatDateTime(item.capturedAt ?? item.requestedAt)}`;
 }
-function usageTooltip(hour: number, minutes: number) {
-  return t("device.usageTooltip", { hour: String(hour).padStart(2, "0"), next: String((hour + 1) % 24).padStart(2, "0"), minutes: Math.round(minutes) });
+function usageTimeLabel(value: string) {
+  return new Date(value).toLocaleTimeString(locale.value === "en-US" ? "en-US" : "zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: usage.data.value?.timezone ?? "Asia/Shanghai",
+  });
+}
+function usageTooltip(point: DeviceUsagePoint) {
+  return t("device.usageTooltip", {
+    start: usageTimeLabel(point.startAt),
+    end: usageTimeLabel(point.endAt),
+    minutes: Math.round(point.minutes),
+  });
+}
+function usagePointStyle(point: DeviceUsagePoint, index: number) {
+  const position = usageChartPosition(index, usagePoints.value.length, point.minutes, maxUsage.value);
+  return { left: `${position.x}%`, top: `${position.y}%` };
 }
 function stateLabel(state: string) {
   return ["working", "away", "offline", "unknown"].includes(state) ? t(`device.state.${state}`) : state;
@@ -92,7 +112,37 @@ function stateLabel(state: string) {
       <aside class="split-scroll-column split-scroll-column--side">
         <div class="stack">
           <BaseCard :title="t('device.photo')"><template #actions><button class="button button--primary" :disabled="requestPhoto.isPending.value || Boolean(activeRequestId)" @click="requestPhoto.mutate()">{{ activeRequestId ? t('device.waiting') : t('device.requestPhoto') }}</button></template><div class="camera-frame"><img v-if="photoUrl" :src="photoUrl" :alt="t('device.photoAlt')" /><div v-else class="camera-placeholder"><EmptyState :text="activeRequestId ? t('device.waitingForReturn') : t('device.readyForPhoto')" /></div></div><p class="camera-meta">{{ photoMeta(activePhoto ?? displayedPhoto) }}</p></BaseCard>
-          <BaseCard :title="t('device.usage')"><div class="usage-summary"><div><span>{{ t("device.total") }}</span><strong>{{ t("device.minutesValue", { value: Math.round(usage.data.value?.totalMinutes ?? 0) }) }}</strong></div><div><span>{{ t("device.peak") }}</span><strong>{{ usage.data.value?.peakHour == null ? t('common.notSet') : `${String(usage.data.value.peakHour).padStart(2, '0')}:00–${String((usage.data.value.peakHour + 1) % 24).padStart(2, '0')}:00` }}</strong></div><div><span>{{ t("device.confidence") }}</span><strong>{{ usage.data.value?.averageConfidence == null ? t('common.notSet') : `${Math.round(usage.data.value.averageConfidence * 100)}%` }}</strong></div></div><div class="usage-chart-scroll" tabindex="0"><div class="bar-chart bar-chart--scrollable"><div v-for="(value, hour) in usage.data.value?.hourlyMinutes ?? []" :key="hour" class="bar-column bar-column--fixed" :data-tooltip="usageTooltip(hour, value)"><span :style="{ height: `${Math.max(2, (value / maxUsage) * 100)}%` }" /><small>{{ String(hour).padStart(2, '0') }}:00</small></div></div></div><p class="chart-hint">{{ t("device.scrollHint") }}</p></BaseCard>
+          <BaseCard :title="t('device.usage')">
+            <div class="usage-summary">
+              <div><span>{{ t("device.total") }}</span><strong>{{ t("device.minutesValue", { value: Math.round(usage.data.value?.totalMinutes ?? 0) }) }}</strong></div>
+              <div><span>{{ t("device.peak") }}</span><strong>{{ usage.data.value?.peakStartAt ? usageTimeLabel(usage.data.value.peakStartAt) : t('common.notSet') }}</strong></div>
+              <div><span>{{ t("device.confidence") }}</span><strong>{{ usage.data.value?.averageConfidence == null ? t('common.notSet') : `${Math.round(usage.data.value.averageConfidence * 100)}%` }}</strong></div>
+            </div>
+            <div class="usage-chart-scroll" tabindex="0">
+              <div class="usage-line-chart">
+                <div class="usage-line-canvas">
+                  <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" :aria-label="t('device.usage')">
+                    <line v-for="line in [8, 50, 92]" :key="line" class="usage-line-grid" x1="3" :y1="line" x2="97" :y2="line" />
+                    <polygon v-if="areaCoordinates" class="usage-line-area" :points="areaCoordinates" />
+                    <polyline v-if="lineCoordinates" class="usage-line-path" :points="lineCoordinates" />
+                  </svg>
+                  <button
+                    v-for="(point, index) in usagePoints"
+                    :key="point.startAt"
+                    class="usage-line-point"
+                    type="button"
+                    :style="usagePointStyle(point, index)"
+                    :aria-label="usageTooltip(point)"
+                    :data-tooltip="usageTooltip(point)"
+                  />
+                </div>
+                <div class="usage-line-labels">
+                  <span v-for="point in usagePoints" :key="`label-${point.startAt}`">{{ usageTimeLabel(point.startAt) }}</span>
+                </div>
+              </div>
+            </div>
+            <p class="chart-hint">{{ t("device.scrollHint") }}</p>
+          </BaseCard>
         </div>
       </aside>
     </section>

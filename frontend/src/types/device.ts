@@ -36,14 +36,22 @@ export interface DeviceStateView {
   meta: DeviceMeta;
 }
 
+export interface DeviceUsagePoint {
+  startAt: string;
+  endAt: string;
+  minutes: number;
+}
+
 export interface DeviceUsage {
   deviceId: string;
   timezone: string;
-  date: string;
+  windowStart: string;
+  windowEnd: string;
   generatedAt: string;
-  hourlyMinutes: number[];
+  points: DeviceUsagePoint[];
+  rangeHours: number;
   totalMinutes: number;
-  peakHour: number | null;
+  peakStartAt: string | null;
   averageConfidence: number | null;
   sampleCount: number;
 }
