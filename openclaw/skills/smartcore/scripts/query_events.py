@@ -11,6 +11,21 @@ from pathlib import Path
 from typing import Any, Sequence
 
 
+def runtime_config() -> dict[str, str]:
+    path = Path(__file__).resolve().parents[1] / "runtime.json"
+    if not path.is_file():
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return {
+        key: item
+        for key, item in value.items()
+        if key in {"base_url", "token_file"} and isinstance(item, str) and item
+    }
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="Query scoped SmartCore events.")
     result.add_argument("--scope", required=True)
@@ -57,16 +72,20 @@ def build_body(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def query_events(args: argparse.Namespace) -> dict[str, Any]:
+    runtime = runtime_config()
     token_file = Path(
         os.environ.get(
             "SMARTCORE_AGENT_TOKEN_FILE",
-            "/root/.openclaw/smartcore-agent-api-token",
+            runtime.get("token_file", "/root/.openclaw/smartcore-agent-api-token"),
         )
     )
     token = token_file.read_text(encoding="utf-8").strip()
     if not token:
         raise ValueError("SmartCore agent token is empty")
-    base_url = os.environ.get("SMARTCORE_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+    base_url = os.environ.get(
+        "SMARTCORE_BASE_URL",
+        runtime.get("base_url", "http://127.0.0.1:8000"),
+    ).rstrip("/")
     request = urllib.request.Request(
         f"{base_url}/agent/db/query_events",
         data=json.dumps(build_body(args), ensure_ascii=False).encode("utf-8"),

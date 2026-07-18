@@ -7,6 +7,7 @@
 - OpenClaw 直接读取 `data.items`、`data.count`、`data.total`，不得截断响应后自行过滤。
 - 每次 Adapter 镜像启动时，将镜像内同版本 SmartCore Skill 原子同步到 OpenClaw 工作目录。
 - OpenClaw 通过随 Skill 发布的查询助手调用接口，不再临时拼接令牌读取和 `curl`。
+- Adapter 写入不含密钥的 Skill 运行配置，使查询助手获得服务地址和令牌文件位置。
 - 2026-07-20 的线上只读查询应返回“实习 10:00–19:00”。
 
 ## API 契约

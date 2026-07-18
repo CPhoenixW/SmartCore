@@ -68,3 +68,26 @@ def test_query_helper_uses_token_scope_and_returns_api_json(tmp_path, monkeypatc
     assert request.headers["X-smartcore-agent-scope"] == "signed-scope"
     assert json.loads(request.data)["date"] == "2026-07-20"
     assert captured["timeout"] == 15
+
+
+def test_runtime_config_supplies_base_url_and_token_path(tmp_path, monkeypatch) -> None:
+    skill_root = tmp_path / "smartcore"
+    script = skill_root / "scripts" / "query_events.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("", encoding="utf-8")
+    runtime_file = skill_root / "runtime.json"
+    runtime_file.write_text(
+        json.dumps(
+            {
+                "base_url": "http://smartcore.runtime:8000",
+                "token_file": "/runtime/token",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(query_events, "__file__", str(script))
+
+    assert query_events.runtime_config() == {
+        "base_url": "http://smartcore.runtime:8000",
+        "token_file": "/runtime/token",
+    }
