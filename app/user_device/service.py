@@ -14,10 +14,10 @@ from app.new_core.models import (
     DeviceDispatch,
     DeviceKey,
     DevicePair,
-    LifeDevice,
-    LifeIdentity,
     FeishuBind,
     FeishuChatPair,
+    LifeDevice,
+    LifeIdentity,
     nowIso,
 )
 

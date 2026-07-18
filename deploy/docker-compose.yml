@@ -7,6 +7,7 @@
 
 services:
   app:
+    image: "smartcore:${SMARTCORE_IMAGE_TAG:-latest}"
     build:
       context: ..
       dockerfile: deploy/Dockerfile
@@ -21,6 +22,16 @@ services:
       # Bind localhost by default; override APP_BIND for Tailscale/private host access.
       - "${APP_BIND:-127.0.0.1}:8000:8000"
     restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
     networks:
       - smartcore
 

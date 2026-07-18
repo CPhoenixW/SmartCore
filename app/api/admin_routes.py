@@ -7,7 +7,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth.security import create_session_token, require_authenticated_actor_id, require_authenticated_user_id
+from app.auth.security import (
+    create_session_token,
+    require_authenticated_actor_id,
+    require_authenticated_user_id,
+)
 from app.config import get_settings
 from app.db.session import get_db
 from app.feishu.bot_service import botDict, open_sealed, seal
