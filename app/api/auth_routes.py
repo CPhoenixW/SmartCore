@@ -178,7 +178,7 @@ def login(
     user = _user_row(db, user_id)
     if user is None or not verify_password(body.password, str(user.get("passwd") or "")):
         raise HTTPException(status_code=401, detail="invalid user ID or password")
-    _set_session_cookie(response, user_id)
+    _set_session_cookie(response, str(user["userId"]))
     return {"ok": True, "data": _public_user(user)}
 
 

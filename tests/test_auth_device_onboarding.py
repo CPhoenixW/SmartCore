@@ -28,6 +28,51 @@ def test_register_creates_unprivileged_session(app_env) -> None:
     assert client.post("/api/auth/register", json={"loginName": "phoenix", "password": "correct-horse-battery-staple"}).status_code == 409
 
 
+def test_login_name_session_uses_internal_user_id(app_env) -> None:
+    client = TestClient(create_app())
+    registered = client.post(
+        "/api/auth/register",
+        json={
+            "loginName": "phoenix",
+            "displayName": "Phoenix",
+            "password": "correct-horse-battery-staple",
+        },
+    ).json()["data"]
+    assert client.post("/api/auth/logout").status_code == 200
+
+    logged_in = client.post(
+        "/api/auth/login",
+        json={"userId": "phoenix", "password": "correct-horse-battery-staple"},
+    )
+    assert logged_in.status_code == 200
+    assert logged_in.json()["data"]["userId"] == registered["userId"]
+    assert client.get("/api/auth/me").json()["data"]["userId"] == registered["userId"]
+
+    profile = client.get("/api/user/me")
+    assert profile.status_code == 200
+    assert profile.json()["data"]["userId"] == registered["userId"]
+    assert profile.json()["data"]["displayName"] == "Phoenix"
+
+    event = client.post(
+        "/api/planEvt",
+        json={
+            "title": "Normal user event",
+            "stTime": "2026-07-18T10:00:00+08:00",
+            "durationMin": 60,
+        },
+    )
+    assert event.status_code == 200
+    assert event.json()["data"]["userId"] == registered["userId"]
+
+    assert client.post("/api/auth/logout").status_code == 200
+    internal_id_login = client.post(
+        "/api/auth/login",
+        json={"userId": registered["userId"], "password": "correct-horse-battery-staple"},
+    )
+    assert internal_id_login.status_code == 200
+    assert client.get("/api/user/me").json()["data"]["displayName"] == "Phoenix"
+
+
 def test_paired_device_token_can_poll_photo_requests(app_env) -> None:
     client = _setup_client()
     activated = _paired_device(client, "pi")
