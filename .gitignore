@@ -21,6 +21,4 @@ dist/
 build/
 *.egg-info/
 *.tsbuildinfo
-frontend/playwright-report/
-frontend/test-results/
 .DS_Store

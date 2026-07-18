@@ -1,299 +1,97 @@
-# GitHub 推送与服务器部署手册
+# GitHub 分支与服务器发布手册
 
-本文档描述 SmartCore 从本地开发、推送 GitHub，到服务器拉取、重建和验证的完整流程。
+## 日常流程
 
-## 基本信息
+SmartCore 使用两个长期分支：
 
-- 本地仓库：`/Users/phoenixw/SmartCore`
-- 服务器 SSH 别名：`server`
-- 服务器仓库：`/opt/smartcore`
-- 生产 Compose 目录：`/opt/smartcore/deploy`
-- 生产 Compose 文件：`/opt/smartcore/deploy/docker-compose.yml`
-- 应用容器名：`deploy-app-1`
-- 当前生产端口：由 `deploy/.env` 的 `APP_BIND` 决定，例如 `100.65.243.93:8000`
-- 健康检查：`/healthz`
+- `dev`：接收日常修改并在服务器验证。
+- `main`：只保存已验证、正在发布或可以发布的版本。
 
-## 部署前检查
+服务器有两个隔离工作区：
 
-在本地仓库执行：
+- `/opt/smartcore-dev`：`dev` 分支和候选环境。
+- `/opt/smartcore`：`main` 分支和生产环境。
 
-```bash
-cd /Users/phoenixw/SmartCore
-git status --short
-```
+## 第一次建立 dev 工作区
 
-确认：
-
-- 只包含本次准备发布的代码、文档或测试修改。
-- 不要提交本地数据文件，例如 `timetable.csv`。
-- 不要提交真实密钥、`.env`、数据库文件或备份文件。
-
-运行测试和 lint：
-
-```bash
-.venv/bin/python -m pytest
-.venv/bin/python -m ruff check app tests
-```
-
-只有在测试和 lint 通过后再推送。
-
-## 本地提交与推送 GitHub
-
-查看当前分支：
-
-```bash
-git branch --show-current
-```
-
-SmartCore 当前默认发布分支是 `main`。如需发布到生产，通常应在 `main` 上操作。
-
-暂存指定文件，不要使用 `git add .`：
-
-```bash
-git add app/path/to/file.py tests/test_xxx.py doc/xxx.md
-```
-
-再次确认暂存内容：
-
-```bash
-git status --short
-git diff --cached --stat
-```
-
-提交：
-
-```bash
-git commit -m "简短说明本次修改"
-```
-
-推送到 GitHub：
-
-```bash
-git push origin main
-```
-
-推送后可以确认本地提交：
-
-```bash
-git rev-parse --short HEAD
-```
-
-记下输出的提交号，后面要和服务器确认一致。
-
-## 服务器拉取代码
-
-登录服务器：
-
-```bash
-ssh server
-```
-
-进入仓库：
+先确保 GitHub 已有与 `main` 同起点的 `dev` 分支，然后在服务器运行：
 
 ```bash
 cd /opt/smartcore
+./scripts/setup_server_dev.sh
 ```
 
-确认服务器工作区干净：
+该命令使用 Git worktree，不复制 Git 对象，也不读取或复制生产密钥。
+
+## 构建并验证 dev
+
+修改合入并推送 `dev` 后，在服务器运行：
 
 ```bash
-git status --short
+cd /opt/smartcore-dev
+./scripts/deploy_dev.sh
 ```
 
-如果服务器上出现未提交修改，先不要拉取。需要判断这些修改是否为生产配置、临时调试或误改代码。正常情况下，服务器代码工作区应保持干净。
+脚本依次完成：
 
-拉取最新 `main`：
+1. 快进拉取 `origin/dev`。
+2. 用 Docker 缓存运行 Ruff、pytest、前端类型检查、Vitest 和构建。
+3. 构建带提交 SHA 的 app 与 Adapter 镜像。
+4. 使用无外网、无生产数据的临时容器检查 app。
+5. 在 `127.0.0.1:18000` 启动独立 dev app。
+6. 记录候选 SHA 和不可替换的镜像 ID。
+
+可从本机建立 SSH 隧道查看 dev：
 
 ```bash
-git pull --ff-only origin main
+ssh -L 18000:127.0.0.1:18000 server
 ```
 
-确认服务器提交号与本地一致：
+然后访问 `http://127.0.0.1:18000/work/`。
 
-```bash
-git rev-parse --short HEAD
-```
+## 晋升到 main 和生产
 
-## 生产重建与启动
-
-注意：不要在 `/opt/smartcore` 根目录直接执行 `docker compose up`，因为 compose 文件在 `deploy/` 目录。
-
-进入生产 Compose 目录：
-
-```bash
-cd /opt/smartcore/deploy
-```
-
-重建并启动：
-
-```bash
-docker compose up -d --build
-```
-
-查看容器状态：
-
-```bash
-docker compose ps
-```
-
-期望看到：
-
-- `deploy-app-1` 状态为 `Up`
-- `deploy-caddy-1` 状态为 `Up`
-- `deploy-tunnel-boundary-1` 状态为 `Up`
-
-## 健康检查
-
-先查看端口绑定：
-
-```bash
-docker compose ps
-```
-
-如果 `app` 端口显示类似：
-
-```text
-100.65.243.93:8000->8000/tcp
-```
-
-则使用该地址检查：
-
-```bash
-curl -fsS http://100.65.243.93:8000/healthz
-```
-
-成功时应返回：
-
-```json
-{"status":"ok"}
-```
-
-也可以从容器日志确认启动完成：
-
-```bash
-docker logs --tail 80 deploy-app-1
-```
-
-期望看到：
-
-```text
-Application startup complete.
-Uvicorn running on http://0.0.0.0:8000
-GET /healthz HTTP/1.1" 200 OK
-```
-
-## 一条命令部署
-
-确认本地已经推送后，可以从本地执行：
-
-```bash
-ssh server 'cd /opt/smartcore && git pull --ff-only origin main && cd deploy && docker compose up -d --build && docker compose ps'
-```
-
-然后按实际 `APP_BIND` 地址执行健康检查：
-
-```bash
-ssh server 'curl -fsS http://100.65.243.93:8000/healthz'
-```
-
-如果服务器的 Tailscale IP 变化，先在服务器查看 `deploy/.env` 中的 `APP_BIND`：
-
-```bash
-ssh server 'cd /opt/smartcore/deploy && grep "^APP_BIND=" .env'
-```
-
-## 回滚流程
-
-如果部署后发现问题，先查看最近提交：
+人工确认 dev 后：
 
 ```bash
 cd /opt/smartcore
-git log --oneline -5
+./scripts/promote_prod.sh
 ```
 
-回到上一个已知可用提交：
+晋升脚本要求：
+
+- 候选仍然等于 `origin/dev`；
+- `origin/main` 可以快进到候选；
+- app 和 Adapter 镜像 ID 与验证记录一致；
+- 两个镜像的 revision 标签等于候选 SHA。
+
+通过后脚本把同一个 SHA 快进到 `main`，直接切换已经验证的镜像，不运行
+`docker build`。生产健康检查失败会自动恢复上一组镜像。
+
+## 回滚
 
 ```bash
-git checkout <good_commit_sha>
-cd deploy
-docker compose up -d --build
+cd /opt/smartcore
+./scripts/deploy_prod.sh --rollback
 ```
 
-验证健康检查通过后，再决定是否在本地创建 revert 提交：
+也可指定保留的历史 SHA：
 
 ```bash
-cd /Users/phoenixw/SmartCore
-git revert <bad_commit_sha>
-git push origin main
+./scripts/deploy_prod.sh --rollback <SHA>
 ```
 
-生产环境临时 `git checkout <sha>` 只用于止血。最终仍应通过 `main` 上的 revert 或修复提交恢复一致状态。
+回滚只切换镜像，不回滚 SQLite。每次晋升前都会创建数据库快照。
 
-## 常见问题
+## GitHub CI 的职责
 
-### `no configuration file provided: not found`
+GitHub Actions 只运行快速结构检查：Shell/Python 语法和 Compose
+配置。完整测试在服务器候选流程中运行，借此复用 Docker、pip 和 npm 层缓存。
 
-原因：在 `/opt/smartcore` 根目录执行了 `docker compose`。
+## 约束
 
-解决：
-
-```bash
-cd /opt/smartcore/deploy
-docker compose up -d --build
-```
-
-### `curl 127.0.0.1:8000/healthz` 失败
-
-原因：生产端口可能没有绑定到 loopback，而是绑定到 Tailscale IP，例如 `100.65.243.93`。
-
-解决：
-
-```bash
-cd /opt/smartcore/deploy
-docker compose ps
-curl -fsS http://<APP_BIND>:8000/healthz
-```
-
-### `git pull --ff-only` 失败
-
-原因：服务器工作区有本地提交或本地修改，无法快进。
-
-处理原则：
-
-- 不要直接 `git reset --hard`，避免误删服务器上的重要修改。
-- 先执行 `git status --short` 和 `git diff` 看清楚改动。
-- 如果确认是无用临时改动，再手动清理。
-- 如果是生产配置，应移到 `deploy/.env`，不要放进代码文件。
-
-### 容器启动后接口不通
-
-检查容器状态：
-
-```bash
-cd /opt/smartcore/deploy
-docker compose ps
-docker logs --tail 120 deploy-app-1
-```
-
-常见原因：
-
-- `deploy/.env` 缺少必要环境变量。
-- 数据库路径或 volume 配置错误。
-- 飞书或 LLM 密钥配置错误。
-- 代码启动时报 import 或配置异常。
-
-## 发布检查清单
-
-每次发布前后按下面顺序走：
-
-1. 本地 `git status --short` 干净或只有本次改动。
-2. 本地 `pytest` 通过。
-3. 本地 `ruff check app tests` 通过。
-4. `git add` 只暂存目标文件。
-5. `git commit`。
-6. `git push origin main`。
-7. 服务器 `git pull --ff-only origin main`。
-8. 服务器 `cd /opt/smartcore/deploy && docker compose up -d --build`。
-9. `docker compose ps` 确认容器 `Up`。
-10. `curl /healthz` 返回 `{"status":"ok"}`。
-11. `docker logs --tail 80 deploy-app-1` 无启动异常。
+- 不直接向 `main` 开发。
+- 不用普通 merge commit 合并 `dev -> main`；生产脚本执行 fast-forward。
+- dev 不挂载生产 SQLite volume，也不启动 Cloudflared、调度器或生产 Adapter。
+- 候选测试失败时不要手工给镜像重新打标签绕过验证。
+- 生产或 dev 工作区不干净时，先确认修改来源，不使用 `git reset --hard`。

@@ -1,0 +1,31 @@
+services:
+  app:
+    image: "smartcore:${SMARTCORE_IMAGE_TAG:?SMARTCORE_IMAGE_TAG is required}"
+    environment:
+      AUTH_SECRET: smartcore-dev-only-secret
+      AUTH_COOKIE_SECURE: "false"
+      DATABASE_URL: sqlite:////app/data/smartcore.sqlite
+      BACKUP_DIR: /app/backups
+      DEVICE_PHOTO_DIR: /app/data/device_photos
+      SCHEDULER_ENABLED: "false"
+      OPENCLAW_EVENTS_ENDPOINT: ""
+    volumes:
+      - smartcore-dev-data:/app/data
+      - smartcore-dev-backups:/app/backups
+    ports:
+      - "127.0.0.1:${SMARTCORE_DEV_PORT:-18000}:8000"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+volumes:
+  smartcore-dev-data:
+  smartcore-dev-backups:

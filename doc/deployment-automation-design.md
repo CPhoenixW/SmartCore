@@ -1,4 +1,7 @@
-# SmartCore 一键部署设计
+# SmartCore 旧版一键部署设计
+
+> 本文记录 2026-07-17 的直接构建生产方案，已由
+> [服务器候选镜像验证与生产晋升设计](./server-candidate-promotion-design.md) 替代。
 
 ## 目标
 
