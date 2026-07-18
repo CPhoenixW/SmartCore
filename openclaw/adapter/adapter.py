@@ -62,6 +62,38 @@ def sync_bundled_skill() -> bool:
     return changed
 
 
+def write_skill_runtime_config() -> bool:
+    workspace = Path(
+        os.environ.get(
+            "OPENCLAW_WORKSPACE",
+            "/root/.openclaw-smartcore-workspace",
+        )
+    )
+    target = workspace / "skills" / "smartcore" / "runtime.json"
+    content = (
+        json.dumps(
+            {
+                "base_url": os.environ.get("SMARTCORE_BASE_URL", "http://127.0.0.1:8000"),
+                "token_file": os.environ.get(
+                    "SMARTCORE_AGENT_TOKEN_FILE",
+                    "/root/.openclaw/smartcore-agent-api-token",
+                ),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode("utf-8")
+    if target.is_file() and target.read_bytes() == content:
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.tmp")
+    temporary.write_bytes(content)
+    temporary.chmod(0o600)
+    temporary.replace(target)
+    return True
+
+
 def log(log_message: str, **fields: Any) -> None:
     record = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "message": log_message, **fields}
     with LOG_PATH.open("a", encoding="utf-8") as fh:
@@ -345,6 +377,7 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     load_env(BASE_DIR / ".env")
     skill_changed = sync_bundled_skill()
+    runtime_config_changed = write_skill_runtime_config()
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "18790"))
     server = ThreadingHTTPServer((host, port), Handler)
@@ -355,6 +388,7 @@ def main() -> None:
         agent=os.environ.get("OPENCLAW_AGENT_ID", "smartcore"),
         thinking=os.environ.get("OPENCLAW_THINKING", "low"),
         skill_synchronized=skill_changed,
+        skill_runtime_configured=runtime_config_changed,
     )
     server.serve_forever()
 

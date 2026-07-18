@@ -141,3 +141,20 @@ def test_sync_bundled_skill_updates_workspace_atomically(tmp_path, monkeypatch) 
     assert (target.parent / "scripts" / "query_events.py").read_text(encoding="utf-8") == "print('query')\n"
     assert adapter.sync_bundled_skill() is False
     assert not (target.parent / ".SKILL.md.tmp").exists()
+
+
+def test_write_skill_runtime_config_contains_locations_not_secrets(tmp_path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    monkeypatch.setenv("OPENCLAW_WORKSPACE", str(workspace))
+    monkeypatch.setenv("SMARTCORE_BASE_URL", "http://smartcore.internal:8000")
+    monkeypatch.setenv("SMARTCORE_AGENT_TOKEN_FILE", "/tokens/agent-token")
+
+    assert adapter.write_skill_runtime_config() is True
+    runtime_file = workspace / "skills" / "smartcore" / "runtime.json"
+    payload = json.loads(runtime_file.read_text(encoding="utf-8"))
+    assert payload == {
+        "base_url": "http://smartcore.internal:8000",
+        "token_file": "/tokens/agent-token",
+    }
+    assert "agent-secret" not in runtime_file.read_text(encoding="utf-8")
+    assert adapter.write_skill_runtime_config() is False
