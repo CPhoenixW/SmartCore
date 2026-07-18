@@ -61,7 +61,15 @@ tag_running_image() {
     [[ -n "$container_id" ]] || return 0
     image_id="$(docker inspect --format '{{.Image}}' "$container_id")"
     [[ -n "$image_id" ]] || return 0
-    docker image tag "$image_id" "$image_repo:$tag"
+    if docker image inspect "$image_id" >/dev/null 2>&1; then
+        docker image tag "$image_id" "$image_repo:$tag"
+        return 0
+    fi
+    if docker image inspect "$image_repo:$tag" >/dev/null 2>&1; then
+        log "$service backing image metadata was pruned; keeping existing rollback tag $image_repo:$tag"
+        return 0
+    fi
+    die "$service backing image metadata was pruned and rollback image is missing: $image_repo:$tag"
 }
 
 running_revision() {
