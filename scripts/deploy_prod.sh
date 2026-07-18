@@ -58,6 +58,18 @@ tag_running_image() {
     docker image tag "$image_id" "$IMAGE_REPO:$tag"
 }
 
+running_revision() {
+    local container_id revision
+    container_id="$(compose ps --quiet app)"
+    [[ -n "$container_id" ]] || return 1
+    revision="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$container_id" 2>/dev/null || true)"
+    if [[ "$revision" =~ ^[0-9a-f]{7,40}$ ]]; then
+        printf '%s\n' "$revision"
+        return 0
+    fi
+    return 1
+}
+
 backup_database() {
     if [[ -z "$(compose ps --quiet app)" ]]; then
         log "app is not running; skipping pre-deploy database backup"
@@ -134,34 +146,47 @@ manual_rollback() {
 deploy() {
     verify_environment
 
-    local old_sha new_sha
-    old_sha="$(git -C "$ROOT" rev-parse HEAD)"
-    tag_running_image "$old_sha"
+    local checkout_sha deployed_sha new_sha
+    local deployed_revision_known=false
+    checkout_sha="$(git -C "$ROOT" rev-parse HEAD)"
+    if deployed_sha="$(running_revision)"; then
+        deployed_revision_known=true
+    else
+        deployed_sha="$checkout_sha"
+    fi
+    tag_running_image "$deployed_sha"
 
     log "fetching origin/main"
     git -C "$ROOT" fetch --prune origin main
-    git -C "$ROOT" merge-base --is-ancestor "$old_sha" origin/main \
+    git -C "$ROOT" merge-base --is-ancestor "$checkout_sha" origin/main \
         || die "origin/main cannot be fast-forwarded from the deployed revision"
     git -C "$ROOT" merge --ff-only origin/main
     new_sha="$(git -C "$ROOT" rev-parse HEAD)"
 
     compose config --quiet
+    if [[ "$deployed_revision_known" == true && "$new_sha" == "$deployed_sha" ]] \
+        && wait_for_health; then
+        log "revision $new_sha is already running and healthy"
+        return 0
+    fi
+
     backup_database
 
     log "building $IMAGE_REPO:$new_sha"
     docker build \
+        --build-arg "VCS_REF=$new_sha" \
         --file "$ROOT/deploy/Dockerfile" \
         --tag "$IMAGE_REPO:$new_sha" \
         "$ROOT"
 
     log "activating $IMAGE_REPO:$new_sha"
     if ! activate_image "$new_sha" || ! wait_for_health; then
-        log "new release failed; restoring $IMAGE_REPO:$old_sha"
-        rollback_to "$old_sha" "$new_sha"
+        log "new release failed; restoring $IMAGE_REPO:$deployed_sha"
+        rollback_to "$deployed_sha" "$new_sha"
         die "deployment failed and the previous image was restored"
     fi
 
-    write_state "$new_sha" "$old_sha"
+    write_state "$new_sha" "$deployed_sha"
     log "deployment complete"
     log "revision: $new_sha"
     compose ps

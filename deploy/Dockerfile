@@ -37,6 +37,9 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
+ARG VCS_REF=unknown
+LABEL org.opencontainers.image.revision="${VCS_REF}"
+
 COPY --from=python-deps /python-deps /usr/local
 COPY app ./app
 COPY --from=frontend-builder /frontend/dist ./app/web/dist
