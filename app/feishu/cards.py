@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from typing import Any
 
@@ -25,6 +26,135 @@ def _plain_text(content: Any) -> dict[str, str]:
 
 def _markdown(content: Any) -> dict[str, str]:
     return {"tag": "lark_md", "content": str(content or "")}
+
+
+_TABLE_SEPARATOR_CELL = re.compile(r"^:?-{3,}:?$")
+
+
+def _table_cells(line: str) -> list[str]:
+    """Split a Markdown table row while preserving escaped pipe characters."""
+
+    source = line.strip()
+    if source.startswith("|"):
+        source = source[1:]
+    if source.endswith("|") and not source.endswith(r"\|"):
+        source = source[:-1]
+
+    cells: list[str] = []
+    current: list[str] = []
+    escaped = False
+    for character in source:
+        if escaped:
+            current.append(character)
+            escaped = False
+        elif character == "\\":
+            escaped = True
+            current.append(character)
+        elif character == "|":
+            cells.append("".join(current).strip())
+            current = []
+        else:
+            current.append(character)
+    cells.append("".join(current).strip())
+    return cells
+
+
+def _is_table_separator(line: str, column_count: int) -> bool:
+    cells = _table_cells(line)
+    return len(cells) == column_count and all(
+        _TABLE_SEPARATOR_CELL.fullmatch(cell.replace(" ", "")) for cell in cells
+    )
+
+
+def _table_row(cells: list[str], weights: list[int], *, header: bool) -> dict[str, Any]:
+    columns = []
+    for index, cell in enumerate(cells):
+        content = f"**{cell}**" if header and cell else cell or " "
+        columns.append(
+            {
+                "tag": "column",
+                "width": "weighted",
+                "weight": weights[index],
+                "vertical_align": "top",
+                "elements": [{"tag": "div", "text": _markdown(content)}],
+            }
+        )
+    return {
+        "tag": "column_set",
+        "flex_mode": "none",
+        "background_style": "grey" if header else "default",
+        "horizontal_spacing": "default",
+        "columns": columns,
+    }
+
+
+def _table_elements(rows: list[list[str]]) -> list[dict[str, Any]]:
+    column_count = len(rows[0])
+    normalized = [
+        row[:column_count] + [""] * max(0, column_count - len(row))
+        for row in rows
+    ]
+    widths = [
+        max(len(row[index]) for row in normalized)
+        for index in range(column_count)
+    ]
+    smallest = max(1, min(widths))
+    weights = [max(1, min(4, round(width / smallest))) for width in widths]
+    return [
+        _table_row(row, weights, header=index == 0)
+        for index, row in enumerate(normalized)
+    ]
+
+
+def _message_elements(content: str) -> list[dict[str, Any]]:
+    """Convert GFM tables into card columns; keep other Markdown unchanged."""
+
+    lines = content.splitlines()
+    elements: list[dict[str, Any]] = []
+    markdown_lines: list[str] = []
+    in_code_block = False
+
+    def flush_markdown() -> None:
+        text = "\n".join(markdown_lines).strip("\n")
+        if text:
+            elements.append({"tag": "div", "text": _markdown(text)})
+        markdown_lines.clear()
+
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if line.lstrip().startswith("```"):
+            in_code_block = not in_code_block
+            markdown_lines.append(line)
+            index += 1
+            continue
+
+        header = _table_cells(line)
+        has_table = (
+            not in_code_block
+            and "|" in line
+            and len(header) >= 2
+            and index + 1 < len(lines)
+            and _is_table_separator(lines[index + 1], len(header))
+        )
+        if not has_table:
+            markdown_lines.append(line)
+            index += 1
+            continue
+
+        flush_markdown()
+        rows = [header]
+        index += 2
+        while index < len(lines) and "|" in lines[index]:
+            row = _table_cells(lines[index])
+            if len(row) < 2:
+                break
+            rows.append(row)
+            index += 1
+        elements.extend(_table_elements(rows))
+
+    flush_markdown()
+    return elements or [{"tag": "div", "text": _markdown("")}]
 
 
 def _header(title: str, template: str) -> dict[str, Any]:
@@ -225,5 +355,5 @@ def build_message_card(
     return _base_card(
         title=title,
         template=template,
-        elements=[{"tag": "div", "text": _markdown(content)}],
+        elements=_message_elements(content),
     )
