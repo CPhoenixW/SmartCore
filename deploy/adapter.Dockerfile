@@ -10,5 +10,6 @@ ARG VCS_REF=unknown
 LABEL org.opencontainers.image.revision="${VCS_REF}"
 
 COPY openclaw/adapter/adapter.py ./
+COPY openclaw/skills /adapter/skills
 
 CMD ["python", "/adapter/adapter.py"]

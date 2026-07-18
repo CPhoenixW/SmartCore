@@ -27,17 +27,36 @@ available only as compatibility aliases.
 
 ## Query Rules
 
-- For 今天、明天、今晚、本周等相对时间，always send an explicit `timeRange.start`
-  and `timeRange.end` using the `request.timezone` and `request.now` values from the
-  forwarded event.
+- For a single local day, including 今天、明天 or a specific calendar date, prefer
+  `date: YYYY-MM-DD`. Resolve relative dates from the forwarded
+  `request.timezone` and `request.now`.
+- For a multi-day or partial-day range, send exactly `timeRange.start` and
+  `timeRange.end` as absolute ISO-8601 date-times with offsets.
+- Never send `start_time`, `end_time`, `filter`, `filter.time_range`, or other
+  undocumented fields. If SmartCore returns `ok: false`, correct the request from
+  `errors`; never interpret a failed call as an empty schedule.
 - Set `includeLinkedPlans` to `true` for schedule queries. DDL-generated plan events
   are real schedule entries and include a `ddlLink` object identifying the parent DDL.
-- Read query results from `data.events`. Use `data.count`, `data.totalMatched`, and
-  `data.truncated` when deciding whether to summarize or ask the user to narrow the query.
+- Set `includeCourseTemplates` to `false` for calendar queries so a recurring course
+  template is not duplicated with its generated plan occurrence.
+- Read query results only from `data.items`. Use `data.count` and `data.total`.
+  Do not pipe a response through `head`, truncate it, or perform local date filtering.
 - Use `evtId` returned by SmartCore. Never invent ids.
 - Query candidates before modifying or cancelling an ambiguous event.
 
-Example query:
+Single-day query:
+
+```json
+{
+  "date": "2026-07-20",
+  "stat": "todo",
+  "includeLinkedPlans": true,
+  "includeCourseTemplates": false,
+  "limit": 100
+}
+```
+
+Range query:
 
 ```json
 {

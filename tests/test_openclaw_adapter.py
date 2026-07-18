@@ -119,3 +119,21 @@ def test_delivery_failure_is_logged_without_raising(monkeypatch) -> None:
             {"event_id": "evt-3", "error": "RuntimeError('rejected')"},
         )
     ]
+
+
+def test_sync_bundled_skill_updates_workspace_atomically(tmp_path, monkeypatch) -> None:
+    source = tmp_path / "bundled" / "SKILL.md"
+    source.parent.mkdir()
+    source.write_text("new contract\n", encoding="utf-8")
+    workspace = tmp_path / "workspace"
+    target = workspace / "skills" / "smartcore" / "SKILL.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("stale contract\n", encoding="utf-8")
+
+    monkeypatch.setenv("SMARTCORE_BUNDLED_SKILL", str(source))
+    monkeypatch.setenv("OPENCLAW_WORKSPACE", str(workspace))
+
+    assert adapter.sync_bundled_skill() is True
+    assert target.read_text(encoding="utf-8") == "new contract\n"
+    assert adapter.sync_bundled_skill() is False
+    assert not (target.parent / ".SKILL.md.tmp").exists()

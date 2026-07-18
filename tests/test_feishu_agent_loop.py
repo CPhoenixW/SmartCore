@@ -208,11 +208,36 @@ def test_scoped_create_ignores_caller_supplied_user_id(app_env) -> None:
     assert response.json()["data"]["userId"] == "default"
 
 
+def test_scoped_query_rejects_silent_full_scan_fields(app_env) -> None:
+    client = TestClient(create_app())
+    scope = _bind_default_chat("oc_bound")
+    headers = {"X-SmartCore-Agent-Token": "agent-secret", "X-SmartCore-Agent-Scope": scope}
+
+    response = client.post(
+        "/agent/db/query_events",
+        headers=headers,
+        json={
+            "start_time": "2026-07-20T00:00:00+08:00",
+            "end_time": "2026-07-20T23:59:59+08:00",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is False
+    assert "use date or timeRange.start/timeRange.end" in body["errors"][0]
+
+
 def test_openclaw_skill_delegates_feishu_reply_to_adapter() -> None:
     skill = Path("openclaw/skills/smartcore/SKILL.md").read_text(encoding="utf-8")
     assert "Adapter sends that text" in skill
     assert "X-SmartCore-Agent-Scope" in skill
     assert "Do not call `sendFeishuText`" in skill
+    assert "`date: YYYY-MM-DD`" in skill
+    assert "`timeRange.start`" in skill
+    assert "`data.items`" in skill
+    assert "`start_time`" in skill
+    assert "Do not pipe a response through `head`" in skill
 
 
 def test_openclaw_adapter_prompt_owns_feishu_reply() -> None:
@@ -220,3 +245,5 @@ def test_openclaw_adapter_prompt_owns_feishu_reply() -> None:
     assert "X-SmartCore-Agent-Scope" in adapter_source
     assert "the Adapter owns final delivery" in adapter_source
     assert "/agent/feedback/send_text" in adapter_source
+    assert "timeRange.start and timeRange.end" in adapter_source
+    assert "data.items" in adapter_source

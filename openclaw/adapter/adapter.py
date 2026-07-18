@@ -30,6 +30,33 @@ def load_env(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip())
 
 
+def sync_bundled_skill() -> bool:
+    source = Path(
+        os.environ.get(
+            "SMARTCORE_BUNDLED_SKILL",
+            "/adapter/skills/smartcore/SKILL.md",
+        )
+    )
+    if not source.is_file():
+        return False
+    workspace = Path(
+        os.environ.get(
+            "OPENCLAW_WORKSPACE",
+            "/root/.openclaw-smartcore-workspace",
+        )
+    )
+    target = workspace / "skills" / "smartcore" / "SKILL.md"
+    content = source.read_text(encoding="utf-8")
+    if target.is_file() and target.read_text(encoding="utf-8") == content:
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.tmp")
+    temporary.write_text(content, encoding="utf-8")
+    temporary.chmod(0o600)
+    temporary.replace(target)
+    return True
+
+
 def log(log_message: str, **fields: Any) -> None:
     record = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "message": log_message, **fields}
     with LOG_PATH.open("a", encoding="utf-8") as fh:
@@ -102,7 +129,10 @@ def build_prompt(event: dict[str, Any]) -> str:
         f"Read the SmartCore API token from {token_file} only inside the command that calls SmartCore. Never print it.\n"
         "Required SmartCore header name: X-SmartCore-Agent-Token.\n"
         f"For EVERY /agent database or feedback request, also send X-SmartCore-Agent-Scope: {scope}\n"
-        "For relative time queries, calculate explicit ISO-8601 start/end ranges from event.request.now and event.request.timezone.\n"
+        "For one local day, query with date: YYYY-MM-DD. For a wider range, use only "
+        "timeRange.start and timeRange.end with absolute ISO-8601 values.\n"
+        "Never send start_time, end_time, filter, or locally filter a truncated response. "
+        "Check ok/errors and read results from data.items before answering.\n"
         "Do not call Feishu feedback endpoints or sendFeishu tools; the Adapter owns final delivery.\n"
         "Return exactly one concise user-facing final answer in finalAssistantVisibleText.\n"
         "On failure or ambiguity, return one concise clarification or error message.\n"
@@ -307,6 +337,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     load_env(BASE_DIR / ".env")
+    skill_changed = sync_bundled_skill()
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "18790"))
     server = ThreadingHTTPServer((host, port), Handler)
@@ -316,6 +347,7 @@ def main() -> None:
         port=port,
         agent=os.environ.get("OPENCLAW_AGENT_ID", "smartcore"),
         thinking=os.environ.get("OPENCLAW_THINKING", "low"),
+        skill_synchronized=skill_changed,
     )
     server.serve_forever()
 
