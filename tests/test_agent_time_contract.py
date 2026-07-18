@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from app.agent.legacy_time_routes import createLegacyTimeRouter
-from app.agent.v2_routes import _resolved_iso, createAgentV2Router
+from app.agent.v2_routes import _normalize_query_body, _resolved_iso, createAgentV2Router
 
 
 def test_agent_normalizes_utc_and_naive_times_to_shanghai() -> None:
@@ -50,6 +50,47 @@ def test_agent_rejects_unresolved_relative_text() -> None:
             },
             "stTime",
         )
+
+
+def test_query_normalization_rejects_undocumented_range_fields() -> None:
+    with pytest.raises(ValueError, match=r"end_time, start_time.*timeRange"):
+        _normalize_query_body(
+            {
+                "start_time": "2026-07-20T00:00:00+08:00",
+                "end_time": "2026-07-20T23:59:59+08:00",
+            }
+        )
+
+    with pytest.raises(ValueError, match=r"filter.*timeRange"):
+        _normalize_query_body(
+            {
+                "filter": {
+                    "time_range": {
+                        "start": "2026-07-20T00:00:00+08:00",
+                        "end": "2026-07-20T23:59:59+08:00",
+                    }
+                }
+            }
+        )
+
+
+def test_query_normalization_accepts_only_start_and_end_inside_time_range() -> None:
+    normalized = _normalize_query_body(
+        {
+            "timeRange": {
+                "start": "2026-07-20T00:00:00+08:00",
+                "end": "2026-07-20T23:59:59+08:00",
+            },
+            "includeLinkedPlans": True,
+        }
+    )
+    assert normalized["timeRange"] == {
+        "start": "2026-07-20T00:00:00+08:00",
+        "end": "2026-07-20T23:59:59+08:00",
+    }
+
+    with pytest.raises(ValueError, match="unsupported timeRange field"):
+        _normalize_query_body({"timeRange": {"start_time": "2026-07-20"}})
 
 
 def test_modern_and_legacy_agent_paths_use_safe_routers() -> None:

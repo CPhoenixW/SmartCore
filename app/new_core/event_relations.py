@@ -904,7 +904,11 @@ def list_events(
     for base in rows:
         if base.evtType == "remind" and not include_reminders:
             continue
-        if base.evtType == "course" and date_value and not include_course_templates:
+        if (
+            base.evtType == "course"
+            and (date_value or start_dt is not None or end_dt is not None)
+            and not include_course_templates
+        ):
             continue
         if allowed_types and base.evtType not in allowed_types:
             continue

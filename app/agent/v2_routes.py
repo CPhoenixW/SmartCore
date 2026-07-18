@@ -28,6 +28,26 @@ from app.new_core.models import EvtBase
 
 _DEFAULT_TZ_NAME = "Asia/Shanghai"
 _TIME_ONLY_RE = re.compile(r"^(?P<hour>[01]?\d|2[0-3]):(?P<minute>[0-5]\d)(?::(?P<second>[0-5]\d))?$")
+_QUERY_FIELDS = {
+    "date",
+    "eventId",
+    "evtId",
+    "evtType",
+    "evtTypes",
+    "includeCourseTemplates",
+    "includeLinkedPlans",
+    "includePlans",
+    "includeReminders",
+    "keyword",
+    "limit",
+    "request",
+    "stat",
+    "stats",
+    "text",
+    "timeRange",
+    "time_range",
+    "timezone",
+}
 
 
 def _timezone_from_body(body: dict[str, Any]) -> ZoneInfo:
@@ -96,9 +116,23 @@ def _resolved_iso(value: Any, body: dict[str, Any], field_name: str) -> str:
 
 
 def _normalize_query_body(body: dict[str, Any]) -> dict[str, Any]:
+    unknown = sorted(set(body) - _QUERY_FIELDS)
+    if unknown:
+        hint = ""
+        if {"start_time", "end_time", "filter"} & set(unknown):
+            hint = "; use date or timeRange.start/timeRange.end"
+        raise ValueError(f"unsupported query field(s): {', '.join(unknown)}{hint}")
+
     normalized = dict(body)
     time_range = body.get("timeRange") or body.get("time_range")
+    if time_range is not None and not isinstance(time_range, dict):
+        raise ValueError("timeRange must be an object with start/end")
     if isinstance(time_range, dict):
+        unknown_range = sorted(set(time_range) - {"start", "end"})
+        if unknown_range:
+            raise ValueError(
+                f"unsupported timeRange field(s): {', '.join(unknown_range)}; use start/end"
+            )
         resolved_range = dict(time_range)
         if time_range.get("start") not in (None, ""):
             resolved_range["start"] = _resolved_iso(time_range["start"], body, "timeRange.start")
@@ -165,6 +199,7 @@ def _enhanced_tools() -> list[dict[str, Any]]:
         schema = tool.get("inputSchema") or {}
         properties = schema.get("properties") or {}
         if name == "evtQuery":
+            schema["additionalProperties"] = False
             properties.update(
                 {
                     "date": {"type": "string", "format": "date", "description": "Single local date to query."},
@@ -173,6 +208,9 @@ def _enhanced_tools() -> list[dict[str, Any]]:
                     "includeLinkedPlans": {"type": "boolean", "default": False},
                 }
             )
+            time_range = properties.get("timeRange")
+            if isinstance(time_range, dict):
+                time_range["additionalProperties"] = False
         if name in {"evtCreate", "evtUpdate"}:
             properties.update(
                 {
