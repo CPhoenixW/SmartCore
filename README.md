@@ -27,17 +27,26 @@ Cloudflare Tunnel boundary, Cloudflared, and the OpenClaw Adapter. The OpenClaw
 Gateway and DERP remain host infrastructure. The web panel is reached over
 Tailscale on the app port, not through the tunnel boundary.
 
-Normal production releases use the guarded deployment script:
+Normal changes are pushed to `dev`. The server builds and fully verifies a candidate
+while reusing Docker dependency layers:
 
 ```bash
 ssh server
-cd /opt/smartcore
-./scripts/deploy_prod.sh
+cd /opt/smartcore-dev
+./scripts/deploy_dev.sh
 ```
 
-The script fast-forwards `main`, backs up SQLite, builds an image tagged with the Git
-revision, switches the app container, checks `/healthz`, and restores the previous image
-automatically if the new release is unhealthy. To roll back the latest successful release:
+After checking the isolated dev app, promote the exact verified image to `main` and
+production without rebuilding:
+
+```bash
+cd /opt/smartcore
+./scripts/promote_prod.sh
+```
+
+Promotion fast-forwards `main`, backs up SQLite, switches the app and Adapter images,
+checks health, and restores the previous images automatically on failure. To roll back
+the latest successful release:
 
 ```bash
 ./scripts/deploy_prod.sh --rollback
@@ -70,7 +79,7 @@ dependency layers.
    docker compose -f deploy/docker-compose.yml config
    ```
 
-4. Build and start:
+4. For the initial installation only, build and start:
 
    ```bash
    docker compose -f deploy/docker-compose.yml up -d --build
