@@ -7,7 +7,12 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.api.device_state_routes import latest_device_state, today_device_usage
+from app.api import device_state_routes
+from app.api.device_state_routes import (
+    latest_device_state,
+    recent_device_usage,
+    today_device_usage,
+)
 from app.db.session import Base
 from app.new_core.models import AppUser, Device, DeviceStateLog
 
@@ -105,5 +110,60 @@ def test_hourly_usage_is_aggregated_server_side() -> None:
         assert data["totalMinutes"] == 1.0
         assert data["peakHour"] == start.hour
         assert data["averageConfidence"] == pytest.approx(0.7)
+    finally:
+        db.close()
+
+
+def test_recent_usage_returns_twelve_points_across_midnight(monkeypatch) -> None:
+    db = _session()
+    try:
+        tz = ZoneInfo("Asia/Shanghai")
+        fixed_now = datetime(2026, 7, 20, 1, 30, tzinfo=tz)
+
+        class FixedDatetime(datetime):
+            @classmethod
+            def now(cls, timezone=None):
+                return (
+                    fixed_now
+                    if timezone is None
+                    else fixed_now.astimezone(timezone)
+                )
+
+        monkeypatch.setattr(device_state_routes, "datetime", FixedDatetime)
+        working_at = datetime(2026, 7, 19, 23, 15, tzinfo=tz)
+        db.add_all(
+            [
+                DeviceStateLog(
+                    deviceId="pi",
+                    state="working",
+                    confidence=0.9,
+                    seenAt=working_at.isoformat(),
+                    meta={"present": True},
+                ),
+                DeviceStateLog(
+                    deviceId="pi",
+                    state="away",
+                    confidence=0.7,
+                    seenAt=(working_at + timedelta(minutes=1)).isoformat(),
+                    meta={"present": False},
+                ),
+            ]
+        )
+        db.commit()
+
+        payload = recent_device_usage(
+            devId="pi",
+            timezone="Asia/Shanghai",
+            hours=12,
+            db=db,
+        )
+        data = payload["data"]
+        assert data["rangeHours"] == 12
+        assert len(data["points"]) == 12
+        assert data["points"][0]["startAt"].startswith("2026-07-19T14:00:00")
+        assert data["points"][-1]["startAt"].startswith("2026-07-20T01:00:00")
+        assert data["points"][9]["minutes"] == 1.0
+        assert data["totalMinutes"] == 1.0
+        assert data["peakStartAt"].startswith("2026-07-19T23:00:00")
     finally:
         db.close()

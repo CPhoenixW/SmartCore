@@ -14,3 +14,17 @@
 .event-card--type-ddl:hover,.event-card--type-ddl.event-card--selected{background:#fff7ed}
 .event-card--type-course:hover,.event-card--type-course.event-card--selected{background:#ecfeff}
 .event-card--overdue{border-color:#fecaca;background:#fff7f7}
+
+/* Rolling 12-hour usage line chart. */
+.usage-chart-scroll{overflow-x:auto;overflow-y:hidden;padding:38px 2px 8px}
+.usage-line-chart{width:100%;min-width:700px}
+.usage-line-canvas{position:relative;height:190px}
+.usage-line-canvas svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.usage-line-grid{stroke:#e2e8f0;stroke-width:1;vector-effect:non-scaling-stroke}
+.usage-line-area{fill:rgb(59 130 246 / 10%)}
+.usage-line-path{fill:none;stroke:#2563eb;stroke-linecap:round;stroke-linejoin:round;stroke-width:3;vector-effect:non-scaling-stroke}
+.usage-line-point{position:absolute;z-index:2;width:14px;height:14px;padding:0;border:3px solid #fff;border-radius:50%;background:#2563eb;box-shadow:0 0 0 2px #93c5fd;transform:translate(-50%,-50%);transition:transform .15s}
+.usage-line-point::after{position:absolute;left:50%;bottom:22px;padding:6px 8px;border-radius:7px;background:#0f172a;color:#fff;content:attr(data-tooltip);font-size:11px;white-space:nowrap;opacity:0;pointer-events:none;transform:translate(-50%,6px);transition:.15s}
+.usage-line-point:hover,.usage-line-point:focus-visible{outline:none;transform:translate(-50%,-50%) scale(1.2)}
+.usage-line-point:hover::after,.usage-line-point:focus-visible::after{opacity:1;transform:translate(-50%,0)}
+.usage-line-labels{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));margin-top:10px;color:#64748b;font-size:10px;text-align:center}
