@@ -67,7 +67,7 @@ const deviceTitle = computed(() => {
 });
 const weather = computed(() => weatherQuery.data.value);
 const currentWeather = computed(() => weather.value?.hours?.[0] ?? null);
-const weatherPoints = computed(() => (weather.value?.hours ?? []).filter((_, index) => index % 4 === 0).slice(0, 6));
+const weatherPoints = computed(() => weather.value?.hours ?? []);
 function weatherTime(value: string) {
   const match = value.match(/T(\d{2}:\d{2})/);
   return match?.[1] ?? value;
@@ -128,7 +128,12 @@ function moveSelectedDate(days: number) {
           </div>
           <span class="weather-current__rain">{{ t("overview.rainChance", { value: Math.round(currentWeather.precipitationProbability) }) }}</span>
         </div>
-        <div v-if="weatherPoints.length" class="weather-hours">
+        <div
+          v-if="weatherPoints.length"
+          class="weather-hours"
+          tabindex="0"
+          :aria-label="t('overview.hourlyWeather')"
+        >
           <div v-for="point in weatherPoints" :key="point.time">
             <small>{{ weatherTime(point.time) }}</small>
             <span>{{ weatherSymbol(point.weatherCode) }}</span>
@@ -201,18 +206,25 @@ function moveSelectedDate(days: number) {
   font-size: 13px;
 }
 .weather-hours {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  display: flex;
   gap: 6px;
   margin-top: 16px;
+  padding-bottom: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-gutter: stable;
 }
 .weather-hours > div {
+  flex: 0 0 66px;
   display: grid;
   justify-items: center;
   gap: 4px;
   padding: 8px 3px;
   border-radius: 10px;
   background: var(--color-surface-muted);
+  scroll-snap-align: start;
 }
 .weather-hours span {
   font-size: 19px;
@@ -224,9 +236,6 @@ function moveSelectedDate(days: number) {
 @media (max-width: 760px) {
   .overview-date-toolbar {
     grid-template-columns: 1fr 1fr;
-  }
-  .weather-hours {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 </style>
