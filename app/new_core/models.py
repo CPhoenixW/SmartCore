@@ -82,6 +82,20 @@ class DailySummary(Base):
     updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
 
 
+class WeatherForecast(Base):
+    __tablename__ = "weatherForecast"
+
+    locationKey: Mapped[str] = mapped_column(String(80), primary_key=True)
+    locationName: Mapped[str] = mapped_column(String(100), nullable=False)
+    latitude: Mapped[float] = mapped_column(Float, nullable=False)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False)
+    forecast: Mapped[dict | None] = mapped_column(JSON)
+    fetchedAt: Mapped[str | None] = mapped_column(String(64))
+    lastAttemptAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    errorMessage: Mapped[str | None] = mapped_column(Text)
+
+
 class PlanEvt(Base):
     __tablename__ = "planEvt"
 

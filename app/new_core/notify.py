@@ -185,7 +185,7 @@ def _deliverFeishu(
 def sendReminder(
     db: Session,
     *,
-    evtId: str,
+    evtId: str | None,
     title: str,
     content: str,
     channel: str,

@@ -10,10 +10,12 @@ import { deviceApi } from "@/api/device";
 import { deviceRegistryApi } from "@/api/deviceRegistry";
 import { eventApi } from "@/api/event";
 import { ideaApi } from "@/api/idea";
+import { weatherApi } from "@/api/weather";
 import { useToast } from "@/composables/useToast";
 import type { SmartCoreEvent } from "@/types/event";
 import { addDays, eventDateKey, todayKey } from "@/utils/date";
 import { sortEvents } from "@/utils/event";
+import { weatherLabelKey, weatherSymbol } from "@/utils/weather";
 
 const { t } = useI18n();
 const queryClient = useQueryClient();
@@ -31,6 +33,7 @@ const deviceId = computed(() => {
   return devices.find((device) => device.deviceKind === "pi")?.deviceId ?? devices[0]?.deviceId ?? "";
 });
 const deviceQuery = useQuery({ queryKey: ["device", "latest", deviceId], queryFn: () => deviceApi.latest(deviceId.value), enabled: computed(() => Boolean(deviceId.value)), refetchInterval: 10_000 });
+const weatherQuery = useQuery({ queryKey: ["weather"], queryFn: weatherApi.latest, refetchInterval: 30 * 60_000 });
 
 const actionable = computed(() => sortEvents((eventsQuery.data.value ?? []).filter((event) => event.evtType !== "course" && event.stat !== "cancelled")));
 const todayEvents = computed(() => actionable.value.filter((event) => eventDateKey(event) === todayKey()));
@@ -62,6 +65,13 @@ const deviceTitle = computed(() => {
   const device = (registeredDevices.data.value ?? []).find((item) => item.deviceId === deviceId.value);
   return device?.deviceName || t("overview.device");
 });
+const weather = computed(() => weatherQuery.data.value);
+const currentWeather = computed(() => weather.value?.hours?.[0] ?? null);
+const weatherPoints = computed(() => (weather.value?.hours ?? []).filter((_, index) => index % 4 === 0).slice(0, 6));
+function weatherTime(value: string) {
+  const match = value.match(/T(\d{2}:\d{2})/);
+  return match?.[1] ?? value;
+}
 const statusMutation = useMutation({
   mutationFn: ({ event, stat }: { event: SmartCoreEvent; stat: "todo" | "done" }) => eventApi.update(event.evtId, { stat }),
   onSuccess: async () => {
@@ -109,6 +119,27 @@ function moveSelectedDate(days: number) {
     <BaseCard :title="t('overview.recentIdeas')"><div class="idea-list compact-list"><article v-for="idea in recentIdeas" :key="idea.ideaId"><button @click="$router.push({ name: 'ideas' })"><strong>{{ idea.content }}</strong><small>{{ idea.createdAt }}</small></button></article><EmptyState v-if="!recentIdeas.length" /></div></BaseCard>
     </div>
     <div class="stack">
+      <BaseCard :title="weather?.location.name ?? t('overview.weather')">
+        <div v-if="currentWeather" class="weather-current">
+          <span class="weather-current__symbol">{{ weatherSymbol(currentWeather.weatherCode) }}</span>
+          <div>
+            <strong>{{ Math.round(currentWeather.temperature) }}°C</strong>
+            <small>{{ t(`overview.weatherCode.${weatherLabelKey(currentWeather.weatherCode)}`) }} · {{ t("overview.feelsLike", { value: Math.round(currentWeather.apparentTemperature) }) }}</small>
+          </div>
+          <span class="weather-current__rain">{{ t("overview.rainChance", { value: Math.round(currentWeather.precipitationProbability) }) }}</span>
+        </div>
+        <div v-if="weatherPoints.length" class="weather-hours">
+          <div v-for="point in weatherPoints" :key="point.time">
+            <small>{{ weatherTime(point.time) }}</small>
+            <span>{{ weatherSymbol(point.weatherCode) }}</span>
+            <strong>{{ Math.round(point.temperature) }}°</strong>
+          </div>
+        </div>
+        <p v-if="weather?.stale" class="weather-note">{{ t("overview.weatherStale") }}</p>
+        <div v-else-if="weatherQuery.isPending.value" class="empty-state">{{ t("common.loading") }}</div>
+        <EmptyState v-else-if="weatherQuery.isError.value" :text="t('overview.weatherError')" />
+        <EmptyState v-else-if="!weather" :text="t('overview.weatherEmpty')" />
+      </BaseCard>
       <BaseCard :title="t('overview.upcoming')"><div class="event-list"><EventCard v-for="event in future72" :key="event.evtId" :event="event" @select="$router.push({ name: 'update', query: { date: eventDateKey(event), evtId: event.evtId } })" /><EmptyState v-if="!future72.length" class="overview-empty" :text="t('overview.emptyDeadline')" /></div></BaseCard>
       <BaseCard :title="deviceTitle">
         <div class="device-inline"><span class="state-dot" :class="`state-dot--${deviceState}`" /><div><strong>{{ t(`device.state.${deviceState}`) }}</strong><small>{{ deviceQuery.data.value?.seenAt ?? t('common.notSet') }}</small></div></div>
@@ -143,9 +174,59 @@ function moveSelectedDate(days: number) {
 .overview-event-row :deep(.event-card) {
   min-width: 0;
 }
+.weather-current {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+.weather-current__symbol {
+  font-size: 34px;
+  line-height: 1;
+}
+.weather-current strong,
+.weather-current small {
+  display: block;
+}
+.weather-current strong {
+  font-size: 24px;
+}
+.weather-current small,
+.weather-current__rain,
+.weather-hours small,
+.weather-note {
+  color: var(--color-text-muted);
+}
+.weather-current__rain {
+  font-size: 13px;
+}
+.weather-hours {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 16px;
+}
+.weather-hours > div {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 8px 3px;
+  border-radius: 10px;
+  background: var(--color-surface-muted);
+}
+.weather-hours span {
+  font-size: 19px;
+}
+.weather-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+}
 @media (max-width: 760px) {
   .overview-date-toolbar {
     grid-template-columns: 1fr 1fr;
+  }
+  .weather-hours {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 </style>

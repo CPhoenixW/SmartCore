@@ -12,6 +12,7 @@ from app.db.session import SessionLocal
 from app.new_core.scheduler import runReminderTick
 from app.scheduler.daily_summary import dispatch_daily_summaries
 from app.screen.manager import screenManager
+from app.weather.service import deliver_tomorrow_weather, refresh_weather
 
 
 def build_scheduler_service(
@@ -20,7 +21,11 @@ def build_scheduler_service(
     session_factory: Callable[[], Session] | None = None,
     scheduler: BackgroundScheduler | None = None,
 ) -> SchedulerService | None:
-    if not settings.scheduler_enabled and not settings.daily_summary_enabled:
+    if (
+        not settings.scheduler_enabled
+        and not settings.daily_summary_enabled
+        and not settings.weather_enabled
+    ):
         return None
     if session_factory is None:
         session_factory = SessionLocal
@@ -65,6 +70,25 @@ class SchedulerService:
         finally:
             db.close()
 
+    def _weather_refresh_tick(self) -> None:
+        db = self._session_factory()
+        try:
+            refresh_weather(db, settings=self._settings)
+        finally:
+            db.close()
+
+    def _weather_daily_tick(self) -> None:
+        db = self._session_factory()
+        try:
+            deliver_tomorrow_weather(
+                db,
+                settings=self._settings,
+                now=datetime.now(ZoneInfo(self._settings.weather_timezone)),
+                refresh=False,
+            )
+        finally:
+            db.close()
+
     def start(self) -> None:
         if self._settings.scheduler_enabled:
             self._scheduler.add_job(
@@ -77,14 +101,46 @@ class SchedulerService:
         if self._settings.daily_summary_enabled:
             if not 0 <= self._settings.daily_summary_hour <= 23:
                 raise ValueError("DAILY_SUMMARY_HOUR must be between 0 and 23")
+            if not 0 <= self._settings.daily_summary_minute <= 59:
+                raise ValueError("DAILY_SUMMARY_MINUTE must be between 0 and 59")
             ZoneInfo(self._settings.daily_summary_timezone)
             self._scheduler.add_job(
                 self._daily_summary_tick,
                 trigger="cron",
                 hour=self._settings.daily_summary_hour,
-                minute=0,
+                minute=self._settings.daily_summary_minute,
                 timezone=self._settings.daily_summary_timezone,
                 id="smartcore-daily-summary",
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=300,
+            )
+        if self._settings.weather_enabled:
+            if not 5 <= self._settings.weather_refresh_minutes <= 1440:
+                raise ValueError("WEATHER_REFRESH_MINUTES must be between 5 and 1440")
+            if not 0 <= self._settings.weather_daily_hour <= 23:
+                raise ValueError("WEATHER_DAILY_HOUR must be between 0 and 23")
+            if not 0 <= self._settings.weather_daily_minute <= 59:
+                raise ValueError("WEATHER_DAILY_MINUTE must be between 0 and 59")
+            weather_timezone = ZoneInfo(self._settings.weather_timezone)
+            self._scheduler.add_job(
+                self._weather_refresh_tick,
+                trigger="interval",
+                minutes=self._settings.weather_refresh_minutes,
+                next_run_time=datetime.now(weather_timezone),
+                id="smartcore-weather-refresh",
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+            )
+            self._scheduler.add_job(
+                self._weather_daily_tick,
+                trigger="cron",
+                hour=self._settings.weather_daily_hour,
+                minute=self._settings.weather_daily_minute,
+                timezone=self._settings.weather_timezone,
+                id="smartcore-weather-daily",
                 replace_existing=True,
                 coalesce=True,
                 max_instances=1,

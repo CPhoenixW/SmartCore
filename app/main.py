@@ -20,6 +20,7 @@ from app.api.daily_summary_routes import router as dailySummaryApiRouter
 from app.api.device_state_routes import router as deviceStateApiRouter
 from app.api.event_view_routes import router as eventViewApiRouter
 from app.api.routes import router as apiRouter
+from app.api.weather_routes import router as weatherApiRouter
 from app.auth.security import session_user_id_from_request
 from app.auth.storage import ensure_auth_schema
 from app.config import get_settings
@@ -124,6 +125,7 @@ def create_app() -> FastAPI:
     app.include_router(deviceStateApiRouter)
     app.include_router(dailySummaryApiRouter)
     app.include_router(eventViewApiRouter)
+    app.include_router(weatherApiRouter)
     app.include_router(apiRouter)
     app.include_router(createDevRouter())
     app.include_router(deviceRouter)

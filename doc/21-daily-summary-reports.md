@@ -2,7 +2,7 @@
 
 ## Acceptance criteria
 
-- At 22:00 Asia/Shanghai every day, the server scheduler dispatches one OpenClaw
+- At 23:59 Asia/Shanghai every day, the server scheduler dispatches one OpenClaw
   daily-summary event for each active SmartCore user with an active primary
   Feishu binding.
 - OpenClaw queries that user's events for the report date without filtering by
@@ -40,15 +40,16 @@ generation status, error text, and timestamps. Startup uses
 ## Scheduler and delivery
 
 The existing in-process APScheduler remains the scheduling authority. A cron job
-at 22:00 Asia/Shanghai creates or reuses a queued report row and forwards a
+at 23:59 Asia/Shanghai creates or reuses a queued report row and forwards a
 synthetic, scoped event to the configured OpenClaw Adapter. The Adapter invokes
 OpenClaw, saves a successful result through SmartCore, then sends the same text
 to Feishu. Users without an active primary binding are skipped.
 
-The 22:00 job is controlled by:
+The 23:59 job is controlled by:
 
 - `DAILY_SUMMARY_ENABLED`
 - `DAILY_SUMMARY_HOUR`
+- `DAILY_SUMMARY_MINUTE`
 - `DAILY_SUMMARY_TIMEZONE`
 
 ## Security boundaries
@@ -72,7 +73,7 @@ new table is additive and may remain unused; no existing records need reversal.
 
 ## Test matrix
 
-- Scheduler registration, 22:00 timezone, per-user primary binding selection,
+- Scheduler registration, 23:59 timezone, per-user primary binding selection,
   deduplication, and dispatch failure.
 - Adapter success persists before Feishu delivery; Adapter failure marks the
   report failed.

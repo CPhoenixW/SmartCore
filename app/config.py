@@ -43,7 +43,18 @@ class Settings(BaseSettings):
     scheduler_interval_seconds: int = 60
     daily_summary_enabled: bool = False
     daily_summary_hour: int = 22
+    daily_summary_minute: int = 0
     daily_summary_timezone: str = "Asia/Shanghai"
+
+    weather_enabled: bool = False
+    weather_refresh_minutes: int = 30
+    weather_daily_hour: int = 22
+    weather_daily_minute: int = 0
+    weather_timezone: str = "Asia/Shanghai"
+    weather_location_name: str = "杭州市钱塘区"
+    weather_latitude: float = 30.284
+    weather_longitude: float = 120.493
+    weather_api_url: str = "https://api.open-meteo.com/v1/forecast"
 
     agent_api_token: str = ""
     device_api_token: str = ""

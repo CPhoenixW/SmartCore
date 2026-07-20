@@ -139,7 +139,23 @@
     "selectDate": "Select schedule date",
     "emptySelectedDate": "Nothing is scheduled for this date.",
     "emptyToday": "Nothing is scheduled today.",
-    "emptyDeadline": "No deadlines are due in the next 72 hours."
+    "emptyDeadline": "No deadlines are due in the next 72 hours.",
+    "weather": "Qiantang weather",
+    "feelsLike": "Feels {value}°",
+    "rainChance": "Rain {value}%",
+    "weatherStale": "Weather service is unavailable; showing the latest forecast.",
+    "weatherEmpty": "Weather forecast is being fetched.",
+    "weatherError": "Weather forecast is temporarily unavailable.",
+    "weatherCode": {
+      "clear": "Clear",
+      "cloudy": "Cloudy",
+      "fog": "Fog",
+      "drizzle": "Drizzle",
+      "rain": "Rain",
+      "snow": "Snow",
+      "storm": "Storm",
+      "changeable": "Changeable"
+    }
   },
   "dailySummary": {
     "title": "Daily summary",
