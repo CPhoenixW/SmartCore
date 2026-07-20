@@ -141,6 +141,7 @@
     "emptyToday": "今天没有安排，留一点空白给自己。",
     "emptyDeadline": "未来 72 小时没有临近截止事项。",
     "weather": "钱塘区天气",
+    "hourlyWeather": "未来 24 小时天气，可左右滑动查看",
     "feelsLike": "体感 {value}°",
     "rainChance": "降水 {value}%",
     "weatherStale": "天气服务暂时不可用，当前显示最近一次预报。",

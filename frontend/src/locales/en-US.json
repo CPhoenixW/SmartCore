@@ -141,6 +141,7 @@
     "emptyToday": "Nothing is scheduled today.",
     "emptyDeadline": "No deadlines are due in the next 72 hours.",
     "weather": "Qiantang weather",
+    "hourlyWeather": "Next 24 hours, scroll horizontally to explore",
     "feelsLike": "Feels {value}°",
     "rainChance": "Rain {value}%",
     "weatherStale": "Weather service is unavailable; showing the latest forecast.",
