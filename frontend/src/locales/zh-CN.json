@@ -139,7 +139,23 @@
     "selectDate": "选择事项日期",
     "emptySelectedDate": "这一天没有安排任何事项。",
     "emptyToday": "今天没有安排，留一点空白给自己。",
-    "emptyDeadline": "未来 72 小时没有临近截止事项。"
+    "emptyDeadline": "未来 72 小时没有临近截止事项。",
+    "weather": "钱塘区天气",
+    "feelsLike": "体感 {value}°",
+    "rainChance": "降水 {value}%",
+    "weatherStale": "天气服务暂时不可用，当前显示最近一次预报。",
+    "weatherEmpty": "天气预报正在获取。",
+    "weatherError": "天气预报暂时获取失败。",
+    "weatherCode": {
+      "clear": "晴",
+      "cloudy": "多云",
+      "fog": "有雾",
+      "drizzle": "毛毛雨",
+      "rain": "有雨",
+      "snow": "有雪",
+      "storm": "雷雨",
+      "changeable": "天气多变"
+    }
   },
   "dailySummary": {
     "title": "每日总结",
