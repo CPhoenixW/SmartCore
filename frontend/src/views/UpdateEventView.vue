@@ -10,7 +10,7 @@ import EventEditor from "@/components/events/EventEditor.vue";
 import EventPreviewCard from "@/components/events/EventPreviewCard.vue";
 import { eventApi } from "@/api/event";
 import { useToast } from "@/composables/useToast";
-import type { DdlPlan, EventStatus, SmartCoreEvent } from "@/types/event";
+import type { DdlPlan, SmartCoreEvent } from "@/types/event";
 import { addDays, eventDateKey, extractDateQuery, getEventPrimaryTime, todayKey } from "@/utils/date";
 import { matchesEventSearch, sortEvents } from "@/utils/event";
 
@@ -20,7 +20,6 @@ const router = useRouter();
 const toast = useToast();
 const queryClient = useQueryClient();
 const date = ref(String(route.query.date ?? todayKey()));
-const status = ref<EventStatus | "all">((String(route.query.stat ?? "todo") as EventStatus | "all"));
 const text = ref(String(route.query.q ?? ""));
 const selected = ref<SmartCoreEvent | null>(null);
 const directId = computed(() => String(route.query.evtId ?? route.query.event ?? ""));
@@ -31,7 +30,6 @@ const eventsQuery = useQuery({
 });
 
 const filtered = computed(() => sortEvents((eventsQuery.data.value ?? [])
-  .filter((event) => status.value === "all" || event.stat === status.value)
   .filter((event) => matchesEventSearch(event, text.value))));
 const selectedPlans = computed<DdlPlan[]>(() => selected.value?.evtType === "ddl" ? selected.value.plans ?? [] : []);
 const selectedDuration = computed(() => selected.value?.evtType === "plan" ? selected.value.durationMin : null);
@@ -47,13 +45,13 @@ watch(text, (value) => {
   if (found && found !== date.value) date.value = found;
 });
 
-watch([date, text, status], () => {
-  void router.replace({ query: { date: date.value, q: text.value || undefined, stat: status.value === "todo" ? undefined : status.value, evtId: selected.value?.evtId || undefined } });
+watch([date, text], () => {
+  void router.replace({ query: { date: date.value, q: text.value || undefined, evtId: selected.value?.evtId || undefined } });
 });
 
 watch(selected, (event) => {
   if (!event) return;
-  void router.replace({ query: { ...route.query, date: date.value, evtId: event.evtId, event: undefined } });
+  void router.replace({ query: { ...route.query, date: date.value, stat: undefined, evtId: event.evtId, event: undefined } });
 });
 
 async function openDirectEvent() {
@@ -98,7 +96,7 @@ function markDone() { if (selected.value) updateMutation.mutate({ id: selected.v
 <template>
   <div class="dual-scroll-page">
     <section class="page-heading"><div><h1>{{ t("update.title") }}</h1><p>{{ t("update.subtitle") }}</p></div></section>
-    <section class="date-toolbar"><button class="button" @click="move(-1)">{{ t("common.previous") }}</button><input v-model="date" type="date" /><button class="button" @click="date = todayKey()">{{ t("common.today") }}</button><button class="button" @click="move(1)">{{ t("common.next") }}</button><input v-model="text" :placeholder="t('common.search')" /><select v-model="status"><option value="all">{{ t("common.all") }}</option><option value="todo">{{ t("event.status.todo") }}</option><option value="done">{{ t("event.status.done") }}</option><option value="cancelled">{{ t("event.status.cancelled") }}</option></select></section>
+    <section class="date-toolbar"><button class="button" @click="move(-1)">{{ t("common.previous") }}</button><input v-model="date" type="date" /><button class="button" @click="date = todayKey()">{{ t("common.today") }}</button><button class="button" @click="move(1)">{{ t("common.next") }}</button><input v-model="text" :placeholder="t('common.search')" /></section>
     <section class="split-scroll-layout">
       <div class="split-scroll-column split-scroll-column--main">
         <BaseCard :title="`${t('update.events')} · ${filtered.length}`"><div class="event-list"><EventCard v-for="event in filtered" :key="event.evtId" :event="event" :selected="selected?.evtId === event.evtId" @select="selectEvent" /><div v-if="eventsQuery.isPending.value" class="empty-state">{{ t("common.loading") }}</div><EmptyState v-else-if="!filtered.length" /></div></BaseCard>
