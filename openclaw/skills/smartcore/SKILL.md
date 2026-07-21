@@ -97,13 +97,24 @@ The helper sends this range contract internally:
 - Do not mutate events and do not call the daily-summary persistence endpoint.
   The Adapter saves the final answer before delivering it.
 
+## Formatting Output
+
+All final answers are rendered inside a Feishu interactive card via `lark_md`.
+Use these freely — the Adapter handles the conversion:
+
+- `#` / `##` headings
+- `**bold**` and `*italic*`
+- `-` unordered lists
+- GFM tables (auto-converted to card column layouts)
+
 ## Reply Rules
 
 - Do not call `sendFeishuText`, `sendFeishuCard`, or `/agent/feedback/*` while handling
   a forwarded event.
+- Open the reply with a `#` heading that doubles as the card title.
 - Return exactly one concise user-facing final answer. The Adapter sends that text
   through SmartCore using the signed scope.
-- Use concise Feishu-compatible Markdown when structure helps: short paragraphs,
-  `**bold**`, and `-` lists. Do not use Markdown tables, raw HTML, or nested lists.
+- Use structured Markdown whenever it improves readability: headings, short
+  paragraphs, bold, lists, and GFM tables.
 - Never include internal reasoning, tool output, tokens, IDs, or delivery instructions
   in the final answer.

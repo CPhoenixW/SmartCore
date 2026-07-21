@@ -254,6 +254,18 @@ def extract_final_text(stdout: str) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
+def _extract_title(text: str) -> str:
+    lines = text.strip().splitlines()
+    if not lines:
+        return "SmartCore"
+    first = lines[0].strip()
+    if first.startswith("# "):
+        return first[2:].strip()[:60]
+    if first.startswith("## "):
+        return first[3:].strip()[:60]
+    return first[:60]
+
+
 def send_final_reply(event: dict[str, Any], text: str) -> None:
     scope = str(event.get("agentScope") or "").strip()
     if not scope:
@@ -270,9 +282,10 @@ def send_final_reply(event: dict[str, Any], text: str) -> None:
         raise ValueError("empty SmartCore agent token")
 
     base_url = os.environ.get("SMARTCORE_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+    title = _extract_title(text)
     request = urllib.request.Request(
         f"{base_url}/agent/feedback/send_text",
-        data=json.dumps({"text": text}, ensure_ascii=False).encode("utf-8"),
+        data=json.dumps({"text": text, "title": title}, ensure_ascii=False).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
             "X-SmartCore-Agent-Token": token,

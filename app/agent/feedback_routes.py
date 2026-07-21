@@ -197,7 +197,10 @@ def _send_text(body: dict[str, Any], db: Session, scope: AgentScope) -> dict[str
     text = body.get("text")
     if not isinstance(text, str) or not text.strip():
         return _failed(["text required"])
-    card = build_message_card(content=text.strip())
+    title = body.get("title")
+    if not isinstance(title, str) or not title.strip():
+        title = "SmartCore"
+    card = build_message_card(title=title.strip(), content=text.strip())
     return _send_card(body, card, db, scope)
 
 
