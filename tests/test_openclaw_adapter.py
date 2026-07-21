@@ -39,7 +39,7 @@ def test_send_final_reply_uses_token_and_scope_without_target_ids(tmp_path, monk
 
     request = captured["request"]
     assert request.full_url == "http://smartcore.local/agent/feedback/send_text"
-    assert json.loads(request.data) == {"text": "最终答案"}
+    assert json.loads(request.data) == {"text": "最终答案", "title": "最终答案"}
     assert request.headers["X-smartcore-agent-token"] == "agent-secret"
     assert request.headers["X-smartcore-agent-scope"] == "signed-scope"
     assert b"must-not-be-sent" not in request.data
