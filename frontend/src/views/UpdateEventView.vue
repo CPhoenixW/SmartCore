@@ -21,6 +21,7 @@ const toast = useToast();
 const queryClient = useQueryClient();
 const date = ref(String(route.query.date ?? todayKey()));
 const text = ref(String(route.query.q ?? ""));
+const status = ref<"all" | "active" | "cancelled">((String(route.query.stat ?? "active") as "all" | "active" | "cancelled"));
 const selected = ref<SmartCoreEvent | null>(null);
 const directId = computed(() => String(route.query.evtId ?? route.query.event ?? ""));
 
@@ -30,6 +31,11 @@ const eventsQuery = useQuery({
 });
 
 const filtered = computed(() => sortEvents((eventsQuery.data.value ?? [])
+  .filter((event) => {
+    if (status.value === "all") return true;
+    if (status.value === "active") return event.stat === "todo" || event.stat === "done";
+    return event.stat === "cancelled";
+  })
   .filter((event) => matchesEventSearch(event, text.value))));
 const selectedPlans = computed<DdlPlan[]>(() => selected.value?.evtType === "ddl" ? selected.value.plans ?? [] : []);
 const selectedDuration = computed(() => selected.value?.evtType === "plan" ? selected.value.durationMin : null);
@@ -45,8 +51,8 @@ watch(text, (value) => {
   if (found && found !== date.value) date.value = found;
 });
 
-watch([date, text], () => {
-  void router.replace({ query: { date: date.value, q: text.value || undefined, evtId: selected.value?.evtId || undefined } });
+watch([date, text, status], () => {
+  void router.replace({ query: { date: date.value, q: text.value || undefined, stat: status.value === "active" ? undefined : status.value, evtId: selected.value?.evtId || undefined } });
 });
 
 watch(selected, (event) => {
@@ -96,7 +102,7 @@ function markDone() { if (selected.value) updateMutation.mutate({ id: selected.v
 <template>
   <div class="dual-scroll-page">
     <section class="page-heading"><div><h1>{{ t("update.title") }}</h1><p>{{ t("update.subtitle") }}</p></div></section>
-    <section class="date-toolbar"><button class="button" @click="move(-1)">{{ t("common.previous") }}</button><input v-model="date" type="date" /><button class="button" @click="date = todayKey()">{{ t("common.today") }}</button><button class="button" @click="move(1)">{{ t("common.next") }}</button><input v-model="text" :placeholder="t('common.search')" /></section>
+    <section class="date-toolbar"><button class="button" @click="move(-1)">{{ t("common.previous") }}</button><input v-model="date" type="date" /><button class="button" @click="date = todayKey()">{{ t("common.today") }}</button><button class="button" @click="move(1)">{{ t("common.next") }}</button><input v-model="text" :placeholder="t('common.search')" /><select v-model="status"><option value="all">{{ t("common.all") }}</option><option value="active">{{ t("event.status.active") }}</option><option value="cancelled">{{ t("event.status.cancelled") }}</option></select></section>
     <section class="split-scroll-layout">
       <div class="split-scroll-column split-scroll-column--main">
         <BaseCard :title="`${t('update.events')} · ${filtered.length}`"><div class="event-list"><EventCard v-for="event in filtered" :key="event.evtId" :event="event" :selected="selected?.evtId === event.evtId" @select="selectEvent" /><div v-if="eventsQuery.isPending.value" class="empty-state">{{ t("common.loading") }}</div><EmptyState v-else-if="!filtered.length" /></div></BaseCard>
