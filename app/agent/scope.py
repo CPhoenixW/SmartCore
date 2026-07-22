@@ -21,6 +21,45 @@ class AgentScope:
     chatId: str | None = None
 
 
+def issue_ocr_evidence(*, userId: str, uploadId: str, ttl_seconds: int = 600) -> str:
+    """Issue short-lived proof that an owned upload completed OCR."""
+    if not userId or not uploadId:
+        raise ValueError("invalid OCR evidence fields")
+    payload = {
+        "v": 1,
+        "purpose": "idea-image-ocr",
+        "userId": userId,
+        "uploadId": uploadId,
+        "exp": int(time.time()) + ttl_seconds,
+    }
+    encoded = _b64encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+    signature = _b64encode(
+        hmac.new(auth_secret(), encoded.encode("ascii"), hashlib.sha256).digest()
+    )
+    return f"{encoded}.{signature}"
+
+
+def verify_ocr_evidence(token: str, *, userId: str, uploadId: str) -> bool:
+    """Validate owner/upload-bound OCR proof without exposing its contents."""
+    try:
+        encoded, signature = token.split(".", 1)
+        expected = _b64encode(
+            hmac.new(auth_secret(), encoded.encode("ascii"), hashlib.sha256).digest()
+        )
+        if not hmac.compare_digest(signature, expected):
+            return False
+        payload = json.loads(_b64decode(encoded))
+        return bool(
+            payload.get("v") == 1
+            and payload.get("purpose") == "idea-image-ocr"
+            and payload.get("userId") == userId
+            and payload.get("uploadId") == uploadId
+            and int(payload.get("exp", 0)) >= int(time.time())
+        )
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return False
+
+
 def issue_agent_scope(
     *,
     userId: str,

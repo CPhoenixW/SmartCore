@@ -400,13 +400,27 @@ def list_idea(userId: str = Depends(require_authenticated_user_id), db: Session 
 
 @router.post("/idea")
 def create_idea(body: IdeaBody, userId: str = Depends(require_authenticated_user_id), db: Session = Depends(get_db)) -> dict[str, Any]:
+    upload_ids = list(dict.fromkeys(item.strip() for item in body.uploadIds if item.strip()))
+    if upload_ids:
+        uploads = db.scalars(
+            select(IdeaUpload).where(
+                IdeaUpload.uploadId.in_(upload_ids), IdeaUpload.userId == userId
+            )
+        ).all()
+        if len(uploads) != len(upload_ids):
+            raise HTTPException(status_code=404, detail="one or more attachments are unavailable")
+        if any(upload.mimeType.startswith("image/") for upload in uploads):
+            raise HTTPException(
+                status_code=409,
+                detail="image attachments must use /api/idea/media-process so OCR cannot be skipped",
+            )
     return ok(
         crud.createIdea(
             db,
             title=body.title,
             description=body.description,
             srcType=body.srcType,
-            uploadIds=body.uploadIds,
+            uploadIds=upload_ids,
             userId=userId,
         )
     )

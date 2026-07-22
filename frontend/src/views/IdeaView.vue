@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
@@ -7,7 +7,7 @@ import EmptyState from "@/components/base/EmptyState.vue";
 import MarkdownContent from "@/components/base/MarkdownContent.vue";
 import { ideaApi } from "@/api/idea";
 import { useToast } from "@/composables/useToast";
-import type { Idea, IdeaUpload } from "@/types/idea";
+import type { Idea, IdeaAttachment, IdeaUpload } from "@/types/idea";
 
 const { t } = useI18n();
 const toast = useToast();
@@ -18,13 +18,17 @@ const description = ref("");
 const uploads = ref<IdeaUpload[]>([]);
 const dragging = ref(false);
 const processing = ref(false);
-const lightbox = ref<string | null>(null);
+const lightbox = ref<IdeaAttachment | null>(null);
 const query = useQuery({ queryKey: ["ideas"], queryFn: ideaApi.list });
 const items = computed(() => [...(query.data.value ?? [])].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))));
 const hasMedia = computed(() => uploads.value.length > 0);
 
 function choose(idea: Idea) { selected.value = idea; title.value = idea.title; description.value = idea.description; uploads.value = []; }
-function reset() { selected.value = null; title.value = ""; description.value = ""; uploads.value = []; processing.value = false; }
+function reset() { selected.value = null; title.value = ""; description.value = ""; uploads.value = []; processing.value = false; lightbox.value = null; }
+function closeLightbox() { lightbox.value = null; }
+function handleKeydown(event: KeyboardEvent) { if (event.key === "Escape") closeLightbox(); }
+onMounted(() => window.addEventListener("keydown", handleKeydown));
+onBeforeUnmount(() => window.removeEventListener("keydown", handleKeydown));
 function attachmentLabel(idea: Idea) {
   const images = idea.attachments.filter((item) => item.mimeType.startsWith("image/")).length;
   return images ? `🖼️ ${images} ${t("ideas.images")}` : `📎 ${idea.attachments.length} ${t("ideas.attachments")}`;
@@ -67,7 +71,7 @@ const remove = useMutation({ mutationFn: (id: string) => ideaApi.remove(id), onS
       </div></BaseCard></div>
       <aside class="idea-detail"><div class="stack">
         <BaseCard :title="t('ideas.detail')"><template v-if="selected"><h2>{{ selected.title }}</h2><time class="idea-time">{{ selected.createdAt }}</time><MarkdownContent :content="selected.description" />
-          <div class="attachment-grid"><template v-for="file in selected.attachments" :key="file.attachmentId"><button v-if="file.mimeType.startsWith('image/')" class="image-thumb" @click="lightbox = file.url"><img :src="file.url" :alt="file.fileName" /></button><a v-else :href="file.url" class="document-file" download>📄 {{ file.fileName }}</a></template></div>
+          <div class="attachment-grid"><template v-for="file in selected.attachments" :key="file.attachmentId"><div v-if="file.mimeType.startsWith('image/')" class="image-file"><button class="image-thumb" :aria-label="t('ideas.enlargeImage', { name: file.fileName })" @click="lightbox = file"><img :src="file.url" :alt="file.fileName" /></button><a :href="file.url" class="attachment-download" download>{{ t("ideas.download") }}</a></div><a v-else :href="file.url" class="document-file" download>📄 {{ file.fileName }} · {{ t("ideas.download") }}</a></template></div>
           <div class="form-actions"><button class="button button--danger" @click="remove.mutate(selected.ideaId)">{{ t("common.delete") }}</button></div>
         </template><EmptyState v-else :text="t('ideas.select')" /></BaseCard>
         <BaseCard :title="selected ? t('ideas.edit') : t('ideas.new')"><form class="form-grid" @submit.prevent="save.mutate()">
@@ -78,6 +82,6 @@ const remove = useMutation({ mutationFn: (id: string) => ideaApi.remove(id), onS
         </form></BaseCard>
       </div></aside>
     </section>
-    <div v-if="lightbox" class="lightbox" @click="lightbox = null"><img :src="lightbox" :alt="t('ideas.imagePreview')" /></div>
+    <div v-if="lightbox" class="lightbox" role="dialog" aria-modal="true" :aria-label="t('ideas.imagePreview')" @click="closeLightbox"><div class="lightbox-panel" @click.stop><img :src="lightbox.url" :alt="lightbox.fileName" /><div class="lightbox-actions"><span>{{ lightbox.fileName }}</span><a :href="lightbox.url" class="button button--primary" download>{{ t("ideas.download") }}</a><button class="button" type="button" @click="closeLightbox">{{ t("ideas.closePreview") }}</button></div></div></div>
   </div>
 </template>

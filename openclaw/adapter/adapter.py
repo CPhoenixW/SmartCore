@@ -18,6 +18,12 @@ LOG_PATH = Path(os.environ.get("ADAPTER_LOG_PATH", str(BASE_DIR / "adapter.log")
 MAX_FINAL_TEXT = 800
 MAX_STDERR = 800
 FAILURE_REPLY = "抱歉，这次处理没有成功，请稍后再试。"
+DAILY_HEADINGS = (
+    "### 📝 本日工作概述",
+    "### 🚀 今日主要成果与技术进展",
+    "### ⚠️ 遇到问题与阻碍 (Blockers)",
+    "### 📅 明日规划",
+)
 
 
 def load_env(path: Path) -> None:
@@ -61,6 +67,21 @@ def sync_bundled_skill() -> bool:
         temporary.replace(target)
         changed = True
     return changed
+
+
+def bundled_skill_ready() -> bool:
+    skill_file = Path(
+        os.environ.get("SMARTCORE_BUNDLED_SKILL", "/adapter/skills/smartcore/SKILL.md")
+    )
+    workspace = Path(
+        os.environ.get("OPENCLAW_WORKSPACE", "/root/.openclaw-smartcore-workspace")
+    )
+    target = workspace / "skills" / "smartcore" / "SKILL.md"
+    return bool(
+        skill_file.is_file()
+        and target.is_file()
+        and target.read_bytes() == skill_file.read_bytes()
+    )
 
 
 def write_skill_runtime_config() -> bool:
@@ -188,37 +209,30 @@ def build_prompt(event: dict[str, Any], *, scope_file: str | None = None) -> str
     if event.get("event_type") == "daily_summary":
         report_date = str(event.get("reportDate") or "").strip()
         daily_summary_instructions = (
-            "This is a scheduled daily-summary task generating a professional daily work report.\n"
-            f"Report date: {report_date}\n"
-            "===== FILTERING RULES (critical) =====\n"
-            "- Ignore auxiliary events: skip commute reminders, punch-card alerts, transit notifications, "
-            "and other life/logistics events with no substantive work output.\n"
-            "- Merge linked DDL+plan pairs: if a DDL is cancelled but its linked plan is done, "
-            "the task completed on time. Do NOT report the cancelled DDL — it is system-level noise.\n"
-            "- Focus on business outcomes and duration, not on rigid time billing like '15:30-19:00'.\n\n"
-            "===== CONTENT EXTRACTION =====\n"
-            "- For completed tasks: extract core technical highlights (scripts, commands, features) "
-            "and pitfalls/troubleshooting notes from descriptions.\n"
-            "- For unfinished or problematic tasks: extract the specific blocking reason "
-            "and turn it into next-day action input.\n\n"
-            "===== OUTPUT STRUCTURE (use precisely this Markdown template) =====\n"
-            "📅 [YYYY年MM月DD日] 工作日报\n\n"
+            "这是定时日报任务。最终答案必须是中文成品，且只能包含日报本身。\n"
+            f"日报日期：{report_date}\n"
+            "禁止输出分析过程、筛选清单、工具说明、英文前言、事件原始行或 ID。\n"
+            "只能引用本次查询所得标题、状态和描述；禁止沿用其他日期或会话中的项目、阻碍和计划。\n"
+            "过滤通勤、打卡、出发、交通、抢票等无工作产出的生活事项。\n"
+            "同一事项若 DDL 为 cancelled 且关联 plan 为 done，只汇报已完成的业务事项，不汇报 DDL 取消。\n"
+            "按项目/模块归纳成果，不按时间流水账排列。不要在标题中罗列时间段。\n"
+            "完成事项只从描述提取脚本、命令、版本、封装功能和踩坑；记录缺失时写“记录中未提供技术细节”，严禁猜测。\n"
+            "未完成事项提炼明确阻碍并转入明日规划；没有阻碍时写“今日记录中未发现明确阻碍”。\n\n"
+            "必须逐字使用以下 Markdown 结构，不得增加前言、后记或其他章节：\n"
+            "📅 **[YYYY年MM月DD日] 工作日报**\n\n"
             "### 📝 本日工作概述\n"
-            "> [1-2 sentences summarizing today's core work and status changes]\n\n"
+            "> [用 1-2 句话概括核心工作和状态变化]\n\n"
             "### 🚀 今日主要成果与技术进展\n"
-            "[Grouped by project/module, NOT by time. Each item: progress + technical details/pitfalls]\n"
-            "- **{module name}**\n"
-            "  - **进展**: [what was accomplished]\n"
-            "  - **技术要点/避坑**: [code, versions, features, pitfalls from descriptions]\n\n"
+            "- **[模块名称]**\n"
+            "  - **进展**：[实际完成内容]\n"
+            "  - **技术要点/避坑**：[仅写记录中存在的技术事实]\n\n"
             "### ⚠️ 遇到问题与阻碍 (Blockers)\n"
-            "- **{issue name}**: [specific problem and symptoms]\n\n"
+            "- **[问题名称]**：[具体阻碍与现象]\n\n"
             "### 📅 明日规划\n"
-            "- [next actions based on today's blockers]\n"
-            "- [other planned items]\n\n"
-            "Query exactly the report date with no status filter, includeLinkedPlans=true. "
-            "Do not create, update, complete, or delete any event. "
-            "Do not call the daily-summary persistence API; "
-            "the Adapter saves your final answer deterministically.\n"
+            "- [针对阻碍的下一步行动]\n"
+            "- [记录中已有的其他计划]\n\n"
+            "查询日期必须等于日报日期，不加状态过滤，includeLinkedPlans=true。"
+            "禁止创建、更新、完成或删除事件，也不要调用日报保存接口；Adapter 负责保存。\n"
         )
     return (
         "You are SmartCore Agent handling one forwarded SmartCore event.\n"
@@ -239,8 +253,9 @@ def build_prompt(event: dict[str, Any], *, scope_file: str | None = None) -> str
         "Return exactly one concise user-facing final answer in finalAssistantVisibleText.\n"
         "When an event includes attachments, follow the Media Ideas rules in the SmartCore skill exactly. "
         "This is a mandatory attachment task: do not reply NO_REPLY, do not expose IDs, and do not claim an "
-        "attachment is missing when the compact event JSON lists it. Use mediaImageOcr only for image attachments "
-        "with meaningful user text. Documents must be stored without reading them. If the text explicitly asks to "
+        "attachment is missing when the compact event JSON lists it. Call mediaImageOcr exactly once for every image, "
+        "even without user text, and pass every returned ocrEvidence to ideaCapture. Documents must be stored without "
+        "reading or OCR. If the text explicitly asks to "
         "create a schedule, reminder, or DDL, follow that explicit instruction instead.\n"
         "On failure or ambiguity, return one concise clarification or error message.\n"
         f"{daily_summary_instructions}"
@@ -301,6 +316,65 @@ def extract_final_text(stdout: str) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
+def daily_report_title(report_date: str) -> str:
+    try:
+        year, month, day = (int(part) for part in report_date.split("-"))
+    except (TypeError, ValueError):
+        return ""
+    return f"📅 **{year:04d}年{month:02d}月{day:02d}日 工作日报**"
+
+
+def normalize_daily_report(text: str, report_date: str) -> tuple[str, str | None]:
+    """Extract and validate the only report shape allowed to reach persistence."""
+    title = daily_report_title(report_date)
+    if not title:
+        return "", "invalid report date"
+    start = text.find(title)
+    if start < 0:
+        return "", "missing exact report title"
+    report = text[start:].strip()
+    if report.count(title) != 1:
+        return "", "report title must appear exactly once"
+    positions: list[int] = []
+    for heading in DAILY_HEADINGS:
+        if report.count(heading) != 1:
+            return "", f"heading count invalid: {heading}"
+        positions.append(report.index(heading))
+    if positions != sorted(positions) or positions[0] <= 0:
+        return "", "daily report headings are out of order"
+    leaked_markers = (
+        "now let me",
+        "analysis of ",
+        "skip (auxiliary",
+        "keep (substantive",
+        "tool output",
+        "finalassistantvisibletext",
+    )
+    lowered = report.lower()
+    if any(marker in lowered for marker in leaked_markers):
+        return "", "analysis or tool narration leaked into report"
+    overview_start = positions[0] + len(DAILY_HEADINGS[0])
+    overview = report[overview_start:positions[1]]
+    if not re.search(r"[\u4e00-\u9fff]", overview):
+        return "", "overview is not Chinese"
+    return report, None
+
+
+def build_daily_retry_prompt(event: dict[str, Any], *, scope_file: str) -> str:
+    return (
+        build_prompt(event, scope_file=scope_file)
+        + "\n\n上一次输出因格式或语言不合格已被 Adapter 拒绝。"
+        "请重新查询并直接输出最终中文日报。第一个字符必须是 📅，"
+        "四个规定章节各出现一次；不要输出任何分析、筛选过程、英文前言或后记。"
+    )
+
+
+def normalize_media_reply(text: str) -> str:
+    """Drop model/tool narration before the required card-title heading."""
+    match = re.search(r"(?m)^#{1,2} +\S.*$", text)
+    return text[match.start():].strip() if match else text.strip()
+
+
 def split_reply_card(text: str) -> tuple[str, str]:
     """Keep a leading Markdown heading in the card header only."""
     lines = text.strip().splitlines()
@@ -310,6 +384,9 @@ def split_reply_card(text: str) -> tuple[str, str]:
     if first.startswith("# ") or first.startswith("## "):
         title = first.lstrip("#").strip()[:60] or "SmartCore"
         return title, "\n".join(lines[1:]).lstrip() or "已处理。"
+    if first.startswith("📅 **") and first.endswith("**"):
+        title = first.replace("**", "")[:60]
+        return title, "\n".join(lines[1:]).lstrip() or "已生成日报。"
     return first[:60] or "SmartCore", text.strip()
 
 
@@ -447,10 +524,12 @@ def run_openclaw(event: dict[str, Any]) -> None:
     target = event.get("chat_id") or chat.get("chat_id") or user.get("user_id") or event.get("event_id") or "unknown"
     agent_id = os.environ.get("OPENCLAW_AGENT_ID", "smartcore")
     session_prefix = os.environ.get("OPENCLAW_SESSION_PREFIX", f"agent:{agent_id}:smartcore-feishu")
-    # Media messages are independent tasks.  Reusing a chat session lets an earlier
-    # text-only turn leak into attachment handling and can suppress the required OCR.
+    # Media and scheduled reports are independent tasks. Reusing a conversational
+    # session can leak old facts into either workflow.
     if isinstance(event.get("attachments"), list):
         target = f"{target}-{event.get('message_id') or event.get('event_id') or time.time_ns()}"
+    elif event.get("event_type") == "daily_summary":
+        target = f"{target}-daily-{event.get('reportDate') or event.get('event_id')}"
     session_key = f"{session_prefix}-{safe_session_part(str(target))}"
     workspace = os.environ.get("OPENCLAW_WORKSPACE", "/root/.openclaw-smartcore-workspace")
     env = os.environ.copy()
@@ -491,9 +570,43 @@ def run_openclaw(event: dict[str, Any]) -> None:
             capture_output=True,
             timeout=int(os.environ.get("OPENCLAW_TIMEOUT_SECONDS", "600")),
         )
-        duration_ms = int((time.monotonic() - started) * 1000)
         final_text = extract_final_text(result.stdout)
         succeeded = result.returncode == 0 and bool(final_text)
+        daily_validation_error: str | None = None
+        if succeeded and isinstance(event.get("attachments"), list):
+            final_text = normalize_media_reply(final_text)
+        if succeeded and event.get("event_type") == "daily_summary":
+            final_text, daily_validation_error = normalize_daily_report(
+                final_text,
+                str(event.get("reportDate") or ""),
+            )
+            if daily_validation_error:
+                log(
+                    "daily summary rejected before persistence",
+                    event_id=event.get("event_id"),
+                    reason=daily_validation_error,
+                )
+                retry_cmd = list(cmd)
+                retry_cmd[retry_cmd.index("--session-key") + 1] = f"{session_key}-format-retry"
+                retry_cmd[retry_cmd.index("--message") + 1] = build_daily_retry_prompt(
+                    event,
+                    scope_file=relative_scope_file,
+                )
+                result = subprocess.run(
+                    retry_cmd,
+                    env=env,
+                    cwd=workspace,
+                    text=True,
+                    capture_output=True,
+                    timeout=int(os.environ.get("OPENCLAW_TIMEOUT_SECONDS", "600")),
+                )
+                retry_text = extract_final_text(result.stdout)
+                final_text, daily_validation_error = normalize_daily_report(
+                    retry_text,
+                    str(event.get("reportDate") or ""),
+                )
+            succeeded = result.returncode == 0 and bool(final_text) and not daily_validation_error
+        duration_ms = int((time.monotonic() - started) * 1000)
         if succeeded and event.get("event_type") == "daily_summary":
             try:
                 save_daily_summary(event, stat="complete", content=final_text)
@@ -508,7 +621,8 @@ def run_openclaw(event: dict[str, Any]) -> None:
         elif not succeeded:
             mark_daily_summary_failed(
                 event,
-                f"OpenClaw returned code {result.returncode} without a final report",
+                daily_validation_error
+                or f"OpenClaw returned code {result.returncode} without a valid final report",
             )
         reply_text = final_text if succeeded else FAILURE_REPLY
         reply_delivered = False
@@ -593,8 +707,9 @@ def main() -> None:
         port=port,
         agent=os.environ.get("OPENCLAW_AGENT_ID", "smartcore"),
         thinking=os.environ.get("OPENCLAW_THINKING", "low"),
-        skill_synchronized=skill_changed,
-        skill_runtime_configured=runtime_config_changed,
+        skill_updated=skill_changed,
+        skill_ready=bundled_skill_ready(),
+        skill_runtime_updated=runtime_config_changed,
     )
     server.serve_forever()
 

@@ -283,8 +283,16 @@ def test_scheduler_registers_daily_cron_at_configured_hour(app_env) -> None:
 
 def test_adapter_saves_daily_report_before_delivering(tmp_path, monkeypatch) -> None:
     calls: list[tuple[str, str]] = []
+    report = (
+        "内部分析不应发送\n"
+        "📅 **2026年07月19日 工作日报**\n\n"
+        "### 📝 本日工作概述\n> 完成核心工作。\n\n"
+        "### 🚀 今日主要成果与技术进展\n- **项目**\n  - **进展**：完成工作。\n  - **技术要点/避坑**：记录中未提供技术细节。\n\n"
+        "### ⚠️ 遇到问题与阻碍 (Blockers)\n- 今日记录中未发现明确阻碍。\n\n"
+        "### 📅 明日规划\n- 继续已记录事项。"
+    )
     payload = json.dumps(
-        {"result": {"finalAssistantVisibleText": "**Today**\n- Completed work"}}
+        {"result": {"finalAssistantVisibleText": report}}
     )
     monkeypatch.setattr(
         adapter.subprocess,
@@ -318,9 +326,56 @@ def test_adapter_saves_daily_report_before_delivering(tmp_path, monkeypatch) -> 
     adapter.run_openclaw(event)
 
     assert calls == [
-        ("save", "**Today**\n- Completed work"),
-        ("deliver", "**Today**\n- Completed work"),
+        ("save", report[report.index("📅"):]),
+        ("deliver", report[report.index("📅"):]),
     ]
     prompt = adapter.build_prompt(event)
-    assert "no status filter" in prompt
-    assert "description" in prompt
+    assert "不加状态过滤" in prompt
+    assert "禁止输出分析过程" in prompt
+
+
+def test_adapter_retries_invalid_daily_report_in_isolated_session(tmp_path, monkeypatch) -> None:
+    report = (
+        "📅 **2026年07月19日 工作日报**\n\n"
+        "### 📝 本日工作概述\n> 完成核心工作。\n\n"
+        "### 🚀 今日主要成果与技术进展\n- **项目**\n  - **进展**：完成工作。\n  - **技术要点/避坑**：记录中未提供技术细节。\n\n"
+        "### ⚠️ 遇到问题与阻碍 (Blockers)\n- 今日记录中未发现明确阻碍。\n\n"
+        "### 📅 明日规划\n- 继续已记录事项。"
+    )
+    outputs = iter(
+        [
+            json.dumps({"result": {"finalAssistantVisibleText": "Analysis only"}}),
+            json.dumps({"result": {"finalAssistantVisibleText": report}}),
+        ]
+    )
+    sessions: list[str] = []
+
+    def fake_run(args, **_kwargs):
+        sessions.append(args[args.index("--session-key") + 1])
+        return SimpleNamespace(returncode=0, stdout=next(outputs), stderr="")
+
+    saved: list[str] = []
+    monkeypatch.setattr(adapter.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        adapter,
+        "save_daily_summary",
+        lambda _event, **kwargs: saved.append(str(kwargs["content"])),
+    )
+    monkeypatch.setattr(adapter, "deliver_reply", lambda *_args: True)
+    monkeypatch.setattr(adapter, "log", lambda *_args, **_kwargs: None)
+    monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
+
+    adapter.run_openclaw(
+        {
+            "event_id": "daily-summary:owner:2026-07-19",
+            "event_type": "daily_summary",
+            "reportDate": "2026-07-19",
+            "agentScope": "signed",
+            "chat_id": "chat-owner",
+        }
+    )
+
+    assert saved == [report]
+    assert len(sessions) == 2
+    assert sessions[0] != sessions[1]
+    assert sessions[1].endswith("-format-retry")

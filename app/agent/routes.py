@@ -11,7 +11,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.agent.scope import AgentScope, require_agent_scope
+from app.agent.scope import (
+    AgentScope,
+    issue_ocr_evidence,
+    require_agent_scope,
+    verify_ocr_evidence,
+)
 from app.config import Settings, get_settings
 from app.db.session import get_db
 from app.feishu.client import FeishuAPIError, FeishuClient
@@ -170,6 +175,11 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
                 "description": {"type": "string", "maxLength": 4000},
                 "srcType": {"type": "string", "enum": ["text", "voice", "media"]},
                 "uploadIds": {"type": "array", "items": {"type": "string"}},
+                "ocrEvidence": {
+                    "type": "object",
+                    "description": "Map each image uploadId to the evidence returned by mediaImageOcr.",
+                    "additionalProperties": {"type": "string"},
+                },
             },
             ["title"],
         ),
@@ -622,6 +632,28 @@ def createAgentRouter() -> APIRouter:
         title = str(body.get("title") or "").strip()
         if not title:
             return _failed(["title required"])
+        upload_ids = [str(item) for item in body.get("uploadIds", []) if str(item)]
+        if upload_ids:
+            uploads = db.scalars(
+                select(IdeaUpload).where(
+                    IdeaUpload.uploadId.in_(upload_ids), IdeaUpload.userId == scope.userId
+                )
+            ).all()
+            if len(uploads) != len(set(upload_ids)):
+                return _failed(["one or more attachments are unavailable"])
+            evidence = body.get("ocrEvidence") if isinstance(body.get("ocrEvidence"), dict) else {}
+            missing = [
+                upload.uploadId
+                for upload in uploads
+                if upload.mimeType.startswith("image/")
+                and not verify_ocr_evidence(
+                    str(evidence.get(upload.uploadId) or ""),
+                    userId=scope.userId,
+                    uploadId=upload.uploadId,
+                )
+            ]
+            if missing:
+                return _failed(["valid mediaImageOcr evidence required for every image"])
         return _run_write(
             db,
             lambda: crud.createIdea(
@@ -629,7 +661,7 @@ def createAgentRouter() -> APIRouter:
                 title=title,
                 description=str(body.get("description") or ""),
                 srcType=str(body.get("srcType") or "text"),
-                uploadIds=[str(item) for item in body.get("uploadIds", []) if str(item)],
+                uploadIds=upload_ids,
                 userId=scope.userId,
             ),
         )
@@ -666,7 +698,16 @@ def createAgentRouter() -> APIRouter:
             )
         except (LLMConfigurationError, LLMGatewayError) as exc:
             return _failed([f"OCR unavailable: {exc}"])
-        return _done({"uploadId": upload_id, "text": extracted[:6000]})
+        return _done(
+            {
+                "uploadId": upload_id,
+                "text": extracted[:6000],
+                "ocrEvidence": issue_ocr_evidence(
+                    userId=scope.userId,
+                    uploadId=upload_id,
+                ),
+            }
+        )
 
     @router.post("/ideaToEvt", dependencies=protected)
     @router.post("/idea/to_event", dependencies=protected)

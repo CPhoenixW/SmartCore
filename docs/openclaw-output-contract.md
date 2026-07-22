@@ -1,0 +1,54 @@
+# OpenClaw output and media contract
+
+## Acceptance criteria
+
+### Daily report
+
+- The scheduled report is always a Chinese finished report. Internal analysis, tool output,
+  English planning text, event IDs, and delivery instructions are never persisted or sent.
+- The first line is exactly `📅 **YYYY年MM月DD日 工作日报**` for the requested date.
+- The four required sections appear exactly once and in order: overview, outcomes,
+  blockers, and tomorrow plan.
+- Commute, punch-card, departure, ticket-grabbing, and equivalent life/logistics records
+  are excluded. A cancelled DDL linked to a done plan is excluded as database noise.
+- Claims must come from the queried event title, status, and description. Missing technical
+  details are stated as unavailable; the agent must not reuse facts from another day/session.
+- The adapter extracts only the valid report portion and validates it before persistence.
+  One isolated retry is allowed; an invalid second result is marked failed and is not sent as
+  a successful report.
+
+### Image and document ideas
+
+- Every image is stored and passed once through `mediaImageOcr` (DeepSeek OCR 2), whether
+  or not accompanying text exists. User text is optional context for the final summary.
+- OpenClaw uses DeepSeek V4 Pro to combine the OCR result and user text into one factual
+  Markdown description of at most 100 Chinese characters.
+- `mediaImageOcr` returns short-lived, owner-bound evidence. Agent-side `ideaCapture`
+  rejects an image upload without valid OCR evidence, so prompt drift cannot silently skip OCR.
+- PDF/TXT/ZIP files are storage-only. They are never read or sent to OCR and need no OCR
+  evidence. Their filename is used when no meaningful title is supplied.
+- Plain text remains the normal schedule, reminder, query, and Idea workflow.
+
+### Idea attachment preview
+
+- Image thumbnails open a full-screen preview; the preview closes by backdrop, close button,
+  or Escape.
+- Every image can be downloaded from both the attachment row and the enlarged preview.
+- Document attachments remain one-click downloads through the authenticated attachment URL.
+
+## Security and rollback
+
+- OCR evidence is HMAC-signed with the existing server auth secret, contains only user ID,
+  upload ID, and expiry, and is never persisted in the browser.
+- Attachment reads and OCR remain owner-scoped. Documents cannot be submitted to OCR.
+- There is no schema or historical-data migration. Rollback is a deployment of the previous
+  application revision; existing Idea and attachment rows remain valid.
+
+## Test matrix
+
+- Daily report: valid Chinese output, leaked analysis before a valid report, wrong headings,
+  wrong date, and invalid retry.
+- Media: image with text, image without text, multiple images, document-only, forged/expired/
+  cross-user OCR evidence, and document OCR rejection.
+- UI: thumbnail enlargement, close controls, authenticated image download, document download,
+  Markdown detail rendering, and Chinese/English labels.

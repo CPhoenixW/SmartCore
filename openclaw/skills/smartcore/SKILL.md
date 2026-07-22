@@ -29,17 +29,19 @@ Use this skill when the user asks about schedules, reminders, ideas, or SmartCor
 - Inspect attachment metadata first. Never read a document or its task-local file path.
   For a document-only message, call `ideaCapture` once per attachment with the filename
   (without its extension) as title, `srcType=media`, and that attachment's `uploadId`.
-  Preserve any user text as a short note, but do not call a model.
-- If there are image attachments but the user supplied no meaningful text, handle each
-  image exactly like a document: use its filename as the title and do not call OCR.
-- If there is at least one image and meaningful user text, call `mediaImageOcr` once for
-  every image upload. Use only those OCR results and the user text to decide the idea.
-  Then call `ideaCapture` with a factual Chinese title, every attachment `uploadId`,
-  `srcType=media`, and a valid Markdown description of at most 100 Chinese characters.
-  Do not invent facts and do not place raw OCR output in the description.
-- When an image and a document occur in one meaningful-text message, capture one Idea
-  containing every attachment; OCR only the images. An explicit schedule, reminder, or
-  DDL request takes precedence over media capture.
+  Preserve meaningful user text as a short note. Do not call OCR for documents.
+- Every image must call `mediaImageOcr` exactly once, including an image with no user text.
+  Save the returned `ocrEvidence` for that upload. Use only the OCR results and optional
+  user text to decide the Idea. Do not inspect `agentPath` directly.
+- After all image OCR calls succeed, call `ideaCapture` with a factual Chinese title,
+  every attachment `uploadId`, `srcType=media`, a valid Markdown description of at most
+  100 Chinese characters, and an `ocrEvidence` object mapping every image uploadId to the
+  evidence returned by its OCR call. Image capture without evidence is invalid and must
+  be corrected, never bypassed.
+- When images and documents occur together, capture one Idea containing every attachment;
+  OCR every image and never read a document. An explicit schedule, reminder, or DDL request
+  takes precedence, but image OCR still runs before the requested event operation.
+- Do not invent facts, paste raw OCR output, mention internal IDs, or narrate tool use.
 - Start the final reply with `# <summary title>`. Keep the body concise; the adapter
   uses that heading only as the Feishu card title and removes it from the card body.
 
@@ -112,6 +114,12 @@ The helper sends this range contract internally:
   with no status filter, `includeLinkedPlans=true`, and course templates hidden.
 - Read every returned event's title, status, and description. Descriptions are
   the primary source for completion outcomes and reflections.
+- This task always produces a Chinese report, regardless of the model's default language.
+- Return only the finished report. Never output analysis, filtering lists, tool narration,
+  English planning text, raw event rows, IDs, or preambles such as “Now let me”.
+- Use only facts from this task's query result. Never reuse a project, blocker, outcome, or
+  tomorrow plan remembered from another conversation or date. If a technical detail is not
+  recorded, write `记录中未提供技术细节` instead of guessing.
 
 ### Filtering & Anti-Noise Rules
 
@@ -132,24 +140,27 @@ The helper sends this range contract internally:
 
 Report in this exact structure using rich Markdown:
 
-📅 [YYYY年MM月DD日] 工作日报
+📅 **[YYYY年MM月DD日] 工作日报**
 
 ### 📝 本日工作概述
-> [1-2 sentence high-level summary]
+> [用 1-2 句话高度概括核心工作内容与状态切换]
 
 ### 🚀 今日主要成果与技术进展
-- **{module}**
-  - **进展**: [accomplishment]
-  - **技术要点/避坑**: [technical details]
+- **[模块名称]**
+  - **进展**：[具体做成了什么]
+  - **技术要点/避坑**：[数据库描述中存在的代码、版本、功能包或踩坑]
 
 ### ⚠️ 遇到问题与阻碍 (Blockers)
-- **{issue}**: [description]
+- **[问题名称]**：[具体阻碍及现象]
 
 ### 📅 明日规划
-- [next actions]
+- [针对今日阻碍的下一步行动]
+- [记录中已有的其他计划事项]
 
 - Do not mutate events and do not call the daily-summary persistence endpoint.
   The Adapter saves the final answer before delivering it.
+- The first character of the final answer must be `📅`. The four `###` headings above must
+  each appear exactly once and in the same order. The adapter rejects any other structure.
 
 ## Formatting Output
 

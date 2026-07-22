@@ -92,11 +92,16 @@ def dispatch_daily_summaries(
             "sourceBindId": binding.bindId,
             "chat_id": binding.chatId,
             "chat": {"chat_id": binding.chatId, "chat_type": binding.chatType},
-            "user": {"user_id": user.userId, "display_name": user.displayName},
+            "user": {
+                "user_id": user.userId,
+                "display_name": user.displayName,
+                "language": user.language,
+            },
             "agentScope": scope,
             "request": {
                 "timezone": settings.daily_summary_timezone,
                 "now": local_now.replace(microsecond=0).isoformat(),
+                "outputLanguage": "zh-CN",
             },
         }
         try:

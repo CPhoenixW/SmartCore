@@ -29,3 +29,15 @@
 .usage-line-point:hover,.usage-line-point:focus-visible{outline:none;transform:translate(-50%,-50%) scale(1.2)}
 .usage-line-point:hover::after,.usage-line-point:focus-visible::after{opacity:1;transform:translate(-50%,0)}
 .usage-line-labels{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));margin-top:10px;color:#64748b;font-size:10px;text-align:center}
+
+/* Idea attachment preview and download controls. */
+.image-file{display:grid;gap:6px}
+.image-thumb{cursor:zoom-in}
+.attachment-download{color:#2563eb;font-size:12px;text-align:center;text-decoration:none}
+.attachment-download:hover{text-decoration:underline}
+.lightbox{background:rgb(15 23 42 / 86%)}
+.lightbox-panel{display:grid;max-width:96vw;max-height:94vh;gap:12px}
+.lightbox-panel img{max-width:96vw;max-height:82vh;border-radius:10px;object-fit:contain}
+.lightbox-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;color:#fff}
+.lightbox-actions span{min-width:0;margin-right:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:900px){.lightbox{padding:12px}.lightbox-actions{flex-wrap:wrap}}

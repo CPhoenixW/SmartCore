@@ -54,6 +54,43 @@ def test_reply_heading_is_card_title_not_card_body() -> None:
     )
 
 
+def test_media_reply_drops_internal_narration_before_card_title() -> None:
+    raw = "Idea captured successfully. Now reply.\n\n# 面试聊天记录\n\n已完成 OCR 并保存。"
+    assert adapter.normalize_media_reply(raw) == "# 面试聊天记录\n\n已完成 OCR 并保存。"
+
+
+def test_daily_title_is_removed_from_card_body() -> None:
+    text = "📅 **2026年07月22日 工作日报**\n\n### 📝 本日工作概述\n> 完成工作。"
+    assert adapter.split_reply_card(text) == (
+        "📅 2026年07月22日 工作日报",
+        "### 📝 本日工作概述\n> 完成工作。",
+    )
+
+
+def test_daily_report_extraction_drops_reasoning_preamble() -> None:
+    report = (
+        "Now let me analyze the data.\n\n"
+        "📅 **2026年07月22日 工作日报**\n\n"
+        "### 📝 本日工作概述\n> 完成核心工作。\n\n"
+        "### 🚀 今日主要成果与技术进展\n- **模块**\n  - **进展**：完成。\n  - **技术要点/避坑**：记录中未提供技术细节。\n\n"
+        "### ⚠️ 遇到问题与阻碍 (Blockers)\n- 今日记录中未发现明确阻碍。\n\n"
+        "### 📅 明日规划\n- 延续已记录工作。"
+    )
+    normalized, error = adapter.normalize_daily_report(report, "2026-07-22")
+    assert error is None
+    assert normalized.startswith("📅")
+    assert "Now let me" not in normalized
+
+
+def test_daily_report_rejects_wrong_structure() -> None:
+    normalized, error = adapter.normalize_daily_report(
+        "📅 **2026年07月22日 工作日报**\n\n只有正文",
+        "2026-07-22",
+    )
+    assert normalized == ""
+    assert error == "heading count invalid: ### 📝 本日工作概述"
+
+
 def test_media_event_uses_an_isolated_openclaw_session(tmp_path, monkeypatch) -> None:
     captured = {}
 
@@ -181,6 +218,7 @@ def test_sync_bundled_skill_updates_workspace_atomically(tmp_path, monkeypatch) 
     assert target.read_text(encoding="utf-8") == "new contract\n"
     assert (target.parent / "scripts" / "query_events.py").read_text(encoding="utf-8") == "print('query')\n"
     assert adapter.sync_bundled_skill() is False
+    assert adapter.bundled_skill_ready() is True
     assert not (target.parent / ".SKILL.md.tmp").exists()
 
 
