@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 
 from openclaw.adapter import adapter
@@ -46,21 +47,26 @@ def test_send_final_reply_uses_token_and_scope_without_target_ids(tmp_path, monk
     assert captured["timeout"] == 15
 
 
-def test_run_openclaw_delivers_generated_final_text(monkeypatch) -> None:
+def test_run_openclaw_delivers_generated_final_text(tmp_path, monkeypatch) -> None:
     delivered = []
     logs = []
     captured = {}
     payload = {"result": {"finalAssistantVisibleText": "昨天没有安排。"}}
 
+    def fake_run(args, **kwargs):
+        prompt = args[args.index("--message") + 1]
+        scope_file = re.search(r"cat ([^)]*)", prompt).group(1)
+        path = kwargs["cwd"] + "/" + scope_file
+        captured["scope"] = open(path, encoding="utf-8").read()
+        captured["env"] = kwargs["env"]
+        return subprocess.CompletedProcess(
+            args=["openclaw"], returncode=0, stdout=json.dumps(payload, ensure_ascii=False), stderr=""
+        )
+
     monkeypatch.setattr(
         adapter.subprocess,
         "run",
-        lambda *_args, **kwargs: captured.update(env=kwargs["env"]) or subprocess.CompletedProcess(
-            args=["openclaw"],
-            returncode=0,
-            stdout=json.dumps(payload, ensure_ascii=False),
-            stderr="",
-        ),
+        fake_run,
     )
     monkeypatch.setattr(
         adapter,
@@ -68,25 +74,27 @@ def test_run_openclaw_delivers_generated_final_text(monkeypatch) -> None:
         lambda event, text: delivered.append((event, text)),
     )
     monkeypatch.setattr(adapter, "log", lambda message, **fields: logs.append((message, fields)))
+    monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
 
     event = {"event_id": "evt-1", "agentScope": "scope"}
     adapter.run_openclaw(event)
 
     assert delivered == [(event, "昨天没有安排。")]
-    assert captured["env"]["SMARTCORE_AGENT_SCOPE"] == "scope"
+    assert captured["scope"] == "scope"
+    assert "SMARTCORE_AGENT_SCOPE" not in captured["env"]
     assert any(message == "final reply delivered" for message, _fields in logs)
     finished = next(fields for message, fields in logs if message == "openclaw finished")
     assert finished["reply_delivered"] is True
 
 
 def test_prompt_does_not_embed_signed_scope() -> None:
-    prompt = adapter.build_prompt({"agentScope": "signed-scope"})
+    prompt = adapter.build_prompt({"agentScope": "signed-scope"}, scope_file=".scope/task")
 
     assert "signed-scope" not in prompt
-    assert "$SMARTCORE_AGENT_SCOPE" in prompt
+    assert ".scope/task" in prompt
 
 
-def test_run_openclaw_failure_sends_failure_reply(monkeypatch) -> None:
+def test_run_openclaw_failure_sends_failure_reply(tmp_path, monkeypatch) -> None:
     delivered = []
 
     monkeypatch.setattr(
@@ -105,6 +113,7 @@ def test_run_openclaw_failure_sends_failure_reply(monkeypatch) -> None:
         lambda event, text: delivered.append((event, text)),
     )
     monkeypatch.setattr(adapter, "log", lambda *_args, **_kwargs: None)
+    monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
 
     event = {"event_id": "evt-2", "agentScope": "scope"}
     adapter.run_openclaw(event)

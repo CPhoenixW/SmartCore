@@ -10,7 +10,7 @@ Use this skill when the user asks about schedules, reminders, ideas, or SmartCor
 ## Boundaries
 
 - Call `GET /agent/tools` first when tool shape is uncertain.
-- Use only authenticated `/agent/*` endpoints with `X-SmartCore-Agent-Token` and `X-SmartCore-Agent-Scope: $SMARTCORE_AGENT_SCOPE`. The scope is injected for this task; never print, copy, or paste it.
+- Before the first authenticated `/agent/*` command, load the task scope file path supplied in the prompt: `export SMARTCORE_AGENT_SCOPE="$(cat <task-scope-file>)"`. Then use `X-SmartCore-Agent-Scope: $SMARTCORE_AGENT_SCOPE`. Never print, copy, or paste its value.
 - Treat `/agent/tools` as the source of truth for tool names, paths, schemas, and aliases.
 - Never read SQLite, backups, Docker volumes, or `.env` directly.
 

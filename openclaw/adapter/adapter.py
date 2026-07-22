@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
 import subprocess
 import threading
 import time
@@ -154,7 +155,7 @@ def sanitize_event(event: dict[str, Any]) -> dict[str, Any]:
     return sanitized
 
 
-def build_prompt(event: dict[str, Any]) -> str:
+def build_prompt(event: dict[str, Any], *, scope_file: str | None = None) -> str:
     base_url = os.environ.get("SMARTCORE_BASE_URL", "http://127.0.0.1:8000")
     token_file = os.environ.get(
         "SMARTCORE_AGENT_TOKEN_FILE",
@@ -163,6 +164,16 @@ def build_prompt(event: dict[str, Any]) -> str:
     chat = event.get("chat") if isinstance(event.get("chat"), dict) else {}
     user = event.get("user") if isinstance(event.get("user"), dict) else {}
     reply_chat_id = event.get("chat_id") or chat.get("chat_id")
+    scope_instruction = (
+        f'Before the first such command, run: export SMARTCORE_AGENT_SCOPE="$(cat {scope_file})". '
+        "The task scope file is the only authorized source; never print, copy, or paste its value.\n"
+        if scope_file
+        else "The task scope is unavailable; do not attempt SmartCore API calls.\n"
+    )
+    auth_instructions = (
+        "For EVERY /agent database or feedback request, send X-SmartCore-Agent-Scope. "
+        + scope_instruction
+    )
     daily_summary_instructions = ""
     if event.get("event_type") == "daily_summary":
         report_date = str(event.get("reportDate") or "").strip()
@@ -207,9 +218,7 @@ def build_prompt(event: dict[str, Any]) -> str:
         f"SmartCore base URL: {base_url}\n"
         f"Read the SmartCore API token from {token_file} only inside the command that calls SmartCore. Never print it.\n"
         "Required SmartCore header name: X-SmartCore-Agent-Token.\n"
-        "For EVERY /agent database or feedback request, also send the scope from "
-        "the current process environment: X-SmartCore-Agent-Scope: $SMARTCORE_AGENT_SCOPE. "
-        "Never print, copy, or paste its value.\n"
+        f"{auth_instructions}"
         "For one local day, query with date: YYYY-MM-DD. For a wider range, use only "
         "timeRange.start and timeRange.end with absolute ISO-8601 values.\n"
         "Never send start_time, end_time, filter, or locally filter a truncated response. "
@@ -405,6 +414,20 @@ def deliver_reply(event: dict[str, Any], text: str) -> bool:
         return False
 
 
+def create_task_scope_file(workspace: Path, event: dict[str, Any], scope: str) -> Path:
+    """Create a short-lived, task-isolated scope file for the OpenClaw gateway."""
+    scope_dir = workspace / ".smartcore-task-scopes"
+    scope_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    task_id = safe_session_part(
+        str(event.get("message_id") or event.get("event_id") or "task")
+    )
+    path = scope_dir / f"{task_id}-{secrets.token_urlsafe(12)}"
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(scope)
+    return path
+
+
 def run_openclaw(event: dict[str, Any]) -> None:
     started = time.monotonic()
     chat = event.get("chat") if isinstance(event.get("chat"), dict) else {}
@@ -414,17 +437,12 @@ def run_openclaw(event: dict[str, Any]) -> None:
     session_prefix = os.environ.get("OPENCLAW_SESSION_PREFIX", f"agent:{agent_id}:smartcore-feishu")
     session_key = f"{session_prefix}-{safe_session_part(str(target))}"
     workspace = os.environ.get("OPENCLAW_WORKSPACE", "/root/.openclaw-smartcore-workspace")
-    cmd = [
-        os.environ.get("OPENCLAW_BIN", "/root/.openclaw/bin/openclaw"),
-        "agent",
-        "--agent", agent_id,
-        "--session-key", session_key,
-        "--thinking", os.environ.get("OPENCLAW_THINKING", "low"),
-        "--message", build_prompt(event),
-        "--json",
-    ]
     env = os.environ.copy()
     env["PATH"] = f"/root/.openclaw/bin:{env.get('PATH', '')}"
+    # Gateway tool processes do not reliably inherit adapter environment
+    # variables.  Deliberately remove any ambient scope and use a task-local
+    # file that the gateway's workspace can read.
+    env.pop("SMARTCORE_AGENT_SCOPE", None)
     scope = str(event.get("agentScope") or "").strip()
     if not scope:
         reply_delivered = deliver_reply(event, FAILURE_REPLY)
@@ -434,10 +452,17 @@ def run_openclaw(event: dict[str, Any]) -> None:
             reply_delivered=reply_delivered,
         )
         return
-    # Keep the per-event credential out of the LLM prompt and workspace.  The
-    # OpenClaw subprocess (and its commands) can reference the environment
-    # variable without transcribing a signed token into a shell command.
-    env["SMARTCORE_AGENT_SCOPE"] = scope
+    scope_file = create_task_scope_file(Path(workspace), event, scope)
+    relative_scope_file = scope_file.relative_to(workspace).as_posix()
+    cmd = [
+        os.environ.get("OPENCLAW_BIN", "/root/.openclaw/bin/openclaw"),
+        "agent",
+        "--agent", agent_id,
+        "--session-key", session_key,
+        "--thinking", os.environ.get("OPENCLAW_THINKING", "low"),
+        "--message", build_prompt(event, scope_file=relative_scope_file),
+        "--json",
+    ]
     try:
         result = subprocess.run(
             cmd,
@@ -487,6 +512,8 @@ def run_openclaw(event: dict[str, Any]) -> None:
             reply_delivered=reply_delivered,
             error=repr(exc),
         )
+    finally:
+        scope_file.unlink(missing_ok=True)
 
 
 class Handler(BaseHTTPRequestHandler):

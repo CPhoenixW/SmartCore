@@ -281,7 +281,7 @@ def test_scheduler_registers_daily_cron_at_configured_hour(app_env) -> None:
     }
 
 
-def test_adapter_saves_daily_report_before_delivering(monkeypatch) -> None:
+def test_adapter_saves_daily_report_before_delivering(tmp_path, monkeypatch) -> None:
     calls: list[tuple[str, str]] = []
     payload = json.dumps(
         {"result": {"finalAssistantVisibleText": "**Today**\n- Completed work"}}
@@ -306,6 +306,7 @@ def test_adapter_saves_daily_report_before_delivering(monkeypatch) -> None:
         lambda event, text: calls.append(("deliver", text)) or True,
     )
     monkeypatch.setattr(adapter, "log", lambda *args, **kwargs: None)
+    monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
 
     event = {
         "event_id": "daily-summary:owner:2026-07-19",

@@ -320,6 +320,7 @@ class FeishuEventHandler:
         now: float | None,
     ) -> tuple[int, dict[str, Any]]:
         message_id, text = extract_message_text(payload)
+        image_caption = text
         image_message_id, image_key = extract_image_key(payload)
         if image_message_id:
             message_id = image_message_id
@@ -360,6 +361,26 @@ class FeishuEventHandler:
         if binding is None:
             self._reply(payload, "请先在 SmartCore 工作台生成配对码，并发送“绑定 配对码”。", bot, action="unbound")
             return 200, {"code": 0, "msg": "unbound chat"}
+        if image_analysis is not None and not self._imageNeedsAgent(image_caption):
+            crud.createIdea(
+                db,
+                content=image_analysis,
+                srcType="image",
+                userId=binding.userId,
+            )
+            self._reply(payload, "图片灵感已保存。", bot, action="image_idea_saved")
+            if message_id:
+                crud.createMsgLog(
+                    db,
+                    src="feishu",
+                    externalId=message_id,
+                    rawText=text,
+                    intent="image_idea_capture",
+                    stat="image_idea_saved",
+                    userId=binding.userId,
+                    sourceDeviceId=None,
+                )
+            return 200, {"code": 0, "msg": "image idea saved"}
         self._reply(payload, "已收到，正在处理…", bot, action="processing_ack")
 
         normalized = self._normalizeMessage(
@@ -395,6 +416,18 @@ class FeishuEventHandler:
                 sourceDeviceId=None,
             )
         return 200, {"code": 0, "msg": "ok"}
+
+    @staticmethod
+    def _imageNeedsAgent(caption: str | None) -> bool:
+        """Only explicit schedule-like captions override default image-idea capture."""
+        return bool(
+            caption
+            and re.search(
+                r"(?:日程|提醒|截止|DDL|待办|安排|计划|schedule|reminder)",
+                caption,
+                re.IGNORECASE,
+            )
+        )
 
     def _forwardCardAction(
         self,

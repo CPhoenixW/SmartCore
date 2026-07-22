@@ -7,7 +7,7 @@ from app.agent.scope import issue_agent_scope
 from app.db.session import SessionLocal
 from app.feishu.client import FeishuClient
 from app.main import create_app
-from app.new_core.models import FeishuBind, FeishuBot, LifeIdentity
+from app.new_core.models import FeishuBind, FeishuBot, Idea, LifeIdentity
 
 
 def _message_event(text: str, *, chat_id: str = "oc_user_chat", message_id: str = "om_1") -> dict:
@@ -156,7 +156,7 @@ def test_feishu_processing_ack_failure_does_not_block_openclaw_forward(app_env, 
     assert forwarded["json"]["message_id"] == "om_ack_failure"
 
 
-def test_feishu_image_is_analyzed_by_vision_model_then_forwarded(app_env, monkeypatch) -> None:
+def test_feishu_image_is_saved_as_idea_without_openclaw(app_env, monkeypatch) -> None:
     forwarded: dict = {}
 
     def fake_post(_url, **kwargs):
@@ -186,13 +186,17 @@ def test_feishu_image_is_analyzed_by_vision_model_then_forwarded(app_env, monkey
     response = client.post("/feishu/event", json=_image_event())
 
     assert response.status_code == 200
-    event = forwarded["json"]
-    assert event["imageAnalysis"] == "OCR：课程作业，明晚 20:00 前提交。"
-    assert "图像解析结果" in event["text"]
-    assert event["message"]["image_analysis"] == event["imageAnalysis"]
+    assert forwarded == {}
+    db = SessionLocal()
+    try:
+        idea = db.query(Idea).one()
+        assert idea.content == "OCR：课程作业，明晚 20:00 前提交。"
+        assert idea.srcType == "image"
+    finally:
+        db.close()
 
 
-def test_feishu_post_with_image_is_analyzed_and_keeps_its_text(app_env, monkeypatch) -> None:
+def test_feishu_post_with_image_is_saved_as_idea(app_env, monkeypatch) -> None:
     forwarded: dict = {}
 
     def fake_post(_url, **kwargs):
@@ -213,8 +217,14 @@ def test_feishu_post_with_image_is_analyzed_and_keeps_its_text(app_env, monkeypa
     _bind_default_chat("oc_user_chat")
 
     assert client.post("/feishu/event", json=_post_image_event()).status_code == 200
-    assert "这个想法记一下：" in forwarded["json"]["text"]
-    assert forwarded["json"]["imageAnalysis"] == "一张产品草图"
+    assert forwarded == {}
+    db = SessionLocal()
+    try:
+        idea = db.query(Idea).one()
+        assert idea.content == "一张产品草图"
+        assert idea.srcType == "image"
+    finally:
+        db.close()
 
 
 def test_scoped_send_text_uses_bound_chat_only(app_env, monkeypatch) -> None:
