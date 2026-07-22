@@ -15,6 +15,9 @@ def test_default_natural_language_gateway_config() -> None:
     assert settings.llm_provider == "tokendance"
     assert settings.llm_base_url == "https://tokendance.space/gateway/v1"
     assert settings.llm_model == "deepseek-v4-flash"
+    assert settings.vision_model == "deepseek-ocr-2"
+    assert settings.vision_max_output_tokens == 128
+    assert settings.vision_timeout_seconds == 60
 
 
 def test_gateway_client_has_bounded_http_timeout(monkeypatch: pytest.MonkeyPatch) -> None:

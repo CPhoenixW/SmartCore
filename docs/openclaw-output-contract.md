@@ -21,6 +21,8 @@
 
 - Every image is stored and passed once through `mediaImageOcr` (DeepSeek OCR 2), whether
   or not accompanying text exists. User text is optional context for the final summary.
+- OCR generation is capped at 128 tokens with a 60-second hard timeout. This keeps the
+  extraction focused on the facts needed for the final summary and prevents unbounded waits.
 - OpenClaw uses DeepSeek V4 Pro to combine the OCR result and user text into one factual
   Markdown description of at most 100 Chinese characters.
 - `mediaImageOcr` returns short-lived, owner-bound evidence. Agent-side `ideaCapture`

@@ -38,8 +38,8 @@ class Settings(BaseSettings):
     # text-first SmartCore agent workflow.
     vision_model: str = "deepseek-ocr-2"
     vision_max_image_bytes: int = 10 * 1024 * 1024
-    vision_max_output_tokens: int = 2048
-    vision_timeout_seconds: int = 120
+    vision_max_output_tokens: int = 128
+    vision_timeout_seconds: int = 60
     idea_media_dir: str = str(PROJECT_ROOT / "data" / "idea_media")
     idea_media_max_bytes: int = 20 * 1024 * 1024
 
