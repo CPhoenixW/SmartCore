@@ -33,10 +33,13 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://tokendance.space/gateway/v1"
     llm_model: str = "deepseek-v4-flash"
     llm_max_retries: int = 2
+    llm_timeout_seconds: int = 120
     # Images are analyzed separately before the resulting text is handed to the
     # text-first SmartCore agent workflow.
     vision_model: str = "deepseek-ocr-2"
     vision_max_image_bytes: int = 10 * 1024 * 1024
+    vision_max_output_tokens: int = 2048
+    vision_timeout_seconds: int = 120
     idea_media_dir: str = str(PROJECT_ROOT / "data" / "idea_media")
     idea_media_max_bytes: int = 20 * 1024 * 1024
 

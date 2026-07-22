@@ -24,11 +24,12 @@ def _build_client(
     api_key: str,
     base_url: str,
     max_retries: int,
+    timeout_seconds: int,
 ) -> OpenAI:
     return OpenAI(
         api_key=api_key,
         base_url=base_url.rstrip("/"),
-        timeout=httpx.Timeout(None),
+        timeout=httpx.Timeout(float(timeout_seconds)),
         max_retries=max_retries,
     )
 
@@ -57,6 +58,7 @@ def complete_chat(
         api_key,
         active_settings.llm_base_url,
         active_settings.llm_max_retries,
+        active_settings.llm_timeout_seconds,
     )
     request: dict[str, Any] = {
         "model": active_settings.llm_model,
@@ -106,6 +108,7 @@ def analyze_image(
         api_key,
         active_settings.llm_base_url,
         active_settings.llm_max_retries,
+        active_settings.vision_timeout_seconds,
     )
     try:
         response = client.chat.completions.create(
@@ -123,6 +126,7 @@ def analyze_image(
                 }
             ],
             temperature=0,
+            max_tokens=active_settings.vision_max_output_tokens,
         )
     except openai.APIStatusError as exc:
         request_id = f"，request_id={exc.request_id}" if exc.request_id else ""

@@ -17,7 +17,7 @@ def test_default_natural_language_gateway_config() -> None:
     assert settings.llm_model == "deepseek-v4-flash"
 
 
-def test_gateway_client_has_no_http_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gateway_client_has_bounded_http_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
     class FakeCompletions:
@@ -51,13 +51,54 @@ def test_gateway_client_has_no_http_timeout(monkeypatch: pytest.MonkeyPatch) -> 
     assert client_options["base_url"] == "https://tokendance.space/gateway/v1"
     timeout = client_options["timeout"]
     assert isinstance(timeout, httpx.Timeout)
-    assert timeout.connect is None
-    assert timeout.read is None
-    assert timeout.write is None
-    assert timeout.pool is None
+    assert timeout.connect == 120
+    assert timeout.read == 120
+    assert timeout.write == 120
+    assert timeout.pool == 120
     request = captured["request"]
     assert isinstance(request, dict)
     assert request["model"] == "deepseek-v4-flash"
+
+
+def test_image_gateway_bounds_ocr_output_and_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            captured["request"] = kwargs
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="识别结果"))]
+            )
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            captured["client"] = kwargs
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    monkeypatch.setattr(gateway, "OpenAI", FakeOpenAI)
+    gateway._build_client.cache_clear()
+    settings = Settings(
+        llm_api_key="test-key",
+        vision_model="deepseek-ocr-2",
+        vision_max_output_tokens=64,
+        vision_timeout_seconds=30,
+    )
+
+    assert gateway.analyze_image(
+        b"image",
+        mime_type="image/png",
+        prompt="Free OCR.",
+        settings=settings,
+    ) == "识别结果"
+    client_options = captured["client"]
+    assert isinstance(client_options, dict)
+    timeout = client_options["timeout"]
+    assert isinstance(timeout, httpx.Timeout)
+    assert timeout.read == 30
+    request = captured["request"]
+    assert isinstance(request, dict)
+    assert request["model"] == "deepseek-ocr-2"
+    assert request["max_tokens"] == 64
 
 
 def test_existing_deepseek_key_is_only_an_api_key_fallback(
