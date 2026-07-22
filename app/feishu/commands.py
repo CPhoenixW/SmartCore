@@ -104,54 +104,93 @@ def extract_message_text(event_payload: dict) -> tuple[str | None, str | None]:
     return message.get("message_id"), normalize_message_text(text)
 
 
-def extract_image_key(event_payload: dict) -> tuple[str | None, str | None]:
+def _message(event_payload: dict) -> dict:
     event = event_payload.get("event")
     if not isinstance(event, dict):
-        return None, None
+        return {}
     message = event.get("message")
-    if not isinstance(message, dict):
-        return None, None
+    return message if isinstance(message, dict) else {}
+
+
+def _decoded_message_content(message: dict) -> dict:
     raw_content = message.get("content")
     if not isinstance(raw_content, str):
-        return message.get("message_id"), None
+        return {}
     try:
         content = json.loads(raw_content)
     except json.JSONDecodeError:
-        return message.get("message_id"), None
-    if message.get("message_type") == "image":
-        image_key = content.get("image_key")
-    elif message.get("message_type") == "post":
-        image_key = None
-        post = content.get("post")
-        if isinstance(post, dict):
-            for locale in post.values():
-                if not isinstance(locale, dict):
-                    continue
-                for row in locale.get("content", []):
-                    if not isinstance(row, list):
-                        continue
-                    for node in row:
-                        if isinstance(node, dict) and isinstance(node.get("image_key"), str):
-                            image_key = node["image_key"]
-                            break
-                    if image_key:
-                        break
-                if image_key:
-                    break
+        return {}
+    return content if isinstance(content, dict) else {}
+
+
+def _post_nodes(content: dict) -> list[dict]:
+    post = content.get("post")
+    if not isinstance(post, dict):
+        return []
+    nodes: list[dict] = []
+    for locale in post.values():
+        if not isinstance(locale, dict):
+            continue
+        for row in locale.get("content", []):
+            if isinstance(row, list):
+                nodes.extend(node for node in row if isinstance(node, dict))
+        if nodes:
+            break
+    return nodes
+
+
+def _unique_strings(values: list[object]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        if isinstance(value, str) and value and value not in result:
+            result.append(value)
+    return result
+
+
+def extract_image_keys(event_payload: dict) -> tuple[str | None, list[str]]:
+    """Return every image attachment in an image or rich-text Feishu message."""
+    message = _message(event_payload)
+    content = _decoded_message_content(message)
+    message_type = message.get("message_type")
+    if message_type == "image":
+        values = [content.get("image_key")]
+    elif message_type == "post":
+        values = [node.get("image_key") for node in _post_nodes(content)]
     else:
-        return message.get("message_id"), None
-    return message.get("message_id"), image_key if isinstance(image_key, str) and image_key else None
+        values = []
+    return message.get("message_id"), _unique_strings(values)
+
+
+def extract_image_key(event_payload: dict) -> tuple[str | None, str | None]:
+    """Compatibility wrapper for callers that only need the first image."""
+    message_id, image_keys = extract_image_keys(event_payload)
+    return message_id, image_keys[0] if image_keys else None
+
+
+def extract_file_keys(event_payload: dict) -> tuple[str | None, list[tuple[str, str | None]]]:
+    """Return every file attachment, including files embedded in rich text."""
+    message = _message(event_payload)
+    content = _decoded_message_content(message)
+    message_type = message.get("message_type")
+    if message_type == "file":
+        nodes = [content]
+    elif message_type == "post":
+        nodes = _post_nodes(content)
+    else:
+        nodes = []
+    files: list[tuple[str, str | None]] = []
+    for node in nodes:
+        key = node.get("file_key")
+        if not isinstance(key, str) or not key or any(key == prior[0] for prior in files):
+            continue
+        name = node.get("file_name")
+        files.append((key, name if isinstance(name, str) and name else None))
+    return message.get("message_id"), files
 
 
 def extract_file_key(event_payload: dict) -> tuple[str | None, str | None, str | None]:
-    event = event_payload.get("event") if isinstance(event_payload.get("event"), dict) else {}
-    message = event.get("message") if isinstance(event.get("message"), dict) else {}
-    if message.get("message_type") != "file":
-        return message.get("message_id"), None, None
-    try:
-        content = json.loads(message.get("content") or "{}")
-    except json.JSONDecodeError:
-        return message.get("message_id"), None, None
-    key = content.get("file_key")
-    name = content.get("file_name")
-    return message.get("message_id"), key if isinstance(key, str) else None, name if isinstance(name, str) else None
+    """Compatibility wrapper for callers that only need the first file."""
+    message_id, files = extract_file_keys(event_payload)
+    if not files:
+        return message_id, None, None
+    return message_id, files[0][0], files[0][1]

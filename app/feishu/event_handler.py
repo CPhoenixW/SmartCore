@@ -19,8 +19,8 @@ from app.config import Settings, get_settings
 from app.db.session import SessionLocal
 from app.feishu.bot_service import BotRuntime, enabledRuntimes
 from app.feishu.commands import (
-    extract_file_key,
-    extract_image_key,
+    extract_file_keys,
+    extract_image_keys,
     extract_message_text,
     extract_routing_context,
 )
@@ -331,8 +331,8 @@ class FeishuEventHandler:
         if binding is None:
             self._reply(payload, "请先在 SmartCore 工作台生成配对码，并发送“绑定 配对码”。", bot, action="unbound")
             return 200, {"code": 0, "msg": "unbound chat"}
-        image_message_id, image_key = extract_image_key(payload)
-        file_message_id, file_key, file_name = extract_file_key(payload)
+        image_message_id, image_keys = extract_image_keys(payload)
+        file_message_id, files = extract_file_keys(payload)
         if image_message_id:
             message_id = image_message_id
         if file_message_id:
@@ -340,23 +340,25 @@ class FeishuEventHandler:
         if message_id and crud.msgLogExists(db, src="feishu", externalId=message_id):
             return 200, {"code": 0, "msg": "duplicate message ignored"}
         media_uploads: list[dict[str, Any]] = []
-        if image_key and message_id:
+        for index, image_key in enumerate(image_keys, start=1):
             try:
                 image, mime_type = bot.client().download_message_resource(message_id, image_key)
-                if len(image) > self.settings.vision_max_image_bytes:
+                if len(image) > self.settings.idea_media_max_bytes:
                     self._reply(payload, "图片过大，暂不支持解析。", bot, action="image_too_large")
                     return 200, {"code": 0, "msg": "image too large"}
                 suffix = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}.get(mime_type, ".bin")
                 destination = self.settings.idea_media_path / f"{uuid4().hex}{suffix}"
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_bytes(image)
-                media_uploads.append(crud.createIdeaUpload(db, userId=binding.userId, fileName=f"feishu-image{suffix}", mimeType=mime_type, storagePath=str(destination), sizeBytes=len(image)))
-                text = (text or "") + "\n[用户发送了图片附件，请使用 kimi-k3 提炼并保存为灵感。]"
+                display_name = f"feishu-image{suffix}" if index == 1 else f"feishu-image-{index}{suffix}"
+                media_uploads.append(crud.createIdeaUpload(db, userId=binding.userId, fileName=display_name, mimeType=mime_type, storagePath=str(destination), sizeBytes=len(image)))
             except Exception as exc:
-                logger.warning("failed to analyze Feishu image: message_id=%s error=%s", message_id, type(exc).__name__)
-                self._reply(payload, "图片解析失败，请稍后重试或直接发送文字。", bot, action="image_failed")
-                return 200, {"code": 0, "msg": "image analysis failed"}
-        if file_key and message_id:
+                logger.warning("failed to download Feishu image: message_id=%s index=%s error=%s", message_id, index, type(exc).__name__)
+                self._reply(payload, "图片读取失败，请稍后重试或直接发送文字。", bot, action="image_failed")
+                return 200, {"code": 0, "msg": "image download failed"}
+        if image_keys:
+            text = (text or "") + "\n[用户发送了图片附件，请使用 kimi-k3 提炼并保存为灵感。]"
+        for file_key, file_name in files:
             try:
                 content, mime_type = bot.client().download_message_resource(
                     message_id, file_key, resource_type="file"
@@ -385,6 +387,24 @@ class FeishuEventHandler:
                 self._reply(payload, "文件读取失败，请稍后重试。", bot, action="file_failed")
                 return 200, {"code": 0, "msg": "file download failed"}
         if not text:
+            event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+            message = event.get("message") if isinstance(event.get("message"), dict) else {}
+            content_keys: list[str] = []
+            raw_content = message.get("content")
+            if isinstance(raw_content, str):
+                try:
+                    decoded_content = json.loads(raw_content)
+                except json.JSONDecodeError:
+                    decoded_content = {}
+                if isinstance(decoded_content, dict):
+                    content_keys = sorted(key for key in decoded_content if isinstance(key, str))
+            logger.info(
+                "unsupported Feishu message: message_id=%s message_type=%s content_keys=%s",
+                message_id,
+                message.get("message_type"),
+                content_keys,
+            )
+            self._reply(payload, "暂不支持该消息类型。请直接发送图片、PDF/TXT/ZIP，或将图片与文字放在同一条富文本消息中。", bot, action="unsupported_message")
             return 200, {"code": 0, "msg": "unsupported message type"}
 
         self._reply(payload, "已收到，正在处理…", bot, action="processing_ack")

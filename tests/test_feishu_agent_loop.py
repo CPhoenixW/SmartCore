@@ -56,6 +56,28 @@ def _post_image_event(*, chat_id: str = "oc_user_chat", message_id: str = "om_po
     return event
 
 
+def _post_media_event(*, chat_id: str = "oc_user_chat", message_id: str = "om_post_media") -> dict:
+    event = _message_event("", chat_id=chat_id, message_id=message_id)
+    event["event"]["message"] = {
+        "message_id": message_id, "chat_id": chat_id, "chat_type": "p2p", "message_type": "post",
+        "content": json.dumps({"post": {"zh_cn": {"title": "", "content": [[
+            {"tag": "text", "text": "把这两张图记成灵感"},
+            {"tag": "img", "image_key": "img_one"},
+            {"tag": "img", "image_key": "img_two"},
+        ]]}}}),
+    }
+    return event
+
+
+def _file_event(*, chat_id: str = "oc_user_chat", message_id: str = "om_file") -> dict:
+    event = _message_event("", chat_id=chat_id, message_id=message_id)
+    event["event"]["message"] = {
+        "message_id": message_id, "chat_id": chat_id, "chat_type": "p2p", "message_type": "file",
+        "content": json.dumps({"file_key": "file_test", "file_name": "notes.pdf"}),
+    }
+    return event
+
+
 class FakeFeishuClient:
     def __init__(self) -> None:
         self.text_calls: list[tuple[str, str]] = []
@@ -207,6 +229,58 @@ def test_feishu_post_with_image_is_forwarded(app_env, monkeypatch) -> None:
 
     assert client.post("/feishu/event", json=_post_image_event()).status_code == 200
     assert forwarded["json"]["attachments"][0]["fileName"] == "feishu-image.png"
+
+
+def test_feishu_post_with_multiple_images_and_text_is_forwarded(app_env, monkeypatch) -> None:
+    forwarded: dict = {}
+
+    def fake_post(_url, **kwargs):
+        forwarded["json"] = kwargs["json"]
+
+        class Resp:
+            is_error = False
+            status_code = 200
+
+        return Resp()
+
+    monkeypatch.setenv("OPENCLAW_EVENTS_ENDPOINT", "http://openclaw.local/events")
+    monkeypatch.setattr("httpx.post", fake_post)
+    monkeypatch.setattr(FeishuClient, "download_message_resource", lambda *_args, **_kwargs: (b"image", "image/png"))
+    monkeypatch.setattr(FeishuClient, "send_text", lambda *_args, **_kwargs: {"code": 0})
+    client = TestClient(create_app())
+    _bind_default_chat("oc_user_chat")
+
+    assert client.post("/feishu/event", json=_post_media_event()).status_code == 200
+    assert forwarded["json"]["text"].startswith("把这两张图记成灵感")
+    assert len(forwarded["json"]["attachments"]) == 2
+
+
+def test_feishu_file_is_forwarded_with_private_attachment(app_env, monkeypatch) -> None:
+    forwarded: dict = {}
+
+    def fake_post(_url, **kwargs):
+        forwarded["json"] = kwargs["json"]
+
+        class Resp:
+            is_error = False
+            status_code = 200
+
+        return Resp()
+
+    monkeypatch.setenv("OPENCLAW_EVENTS_ENDPOINT", "http://openclaw.local/events")
+    monkeypatch.setattr("httpx.post", fake_post)
+    monkeypatch.setattr(
+        FeishuClient,
+        "download_message_resource",
+        lambda *_args, **_kwargs: (b"pdf", "application/pdf"),
+    )
+    monkeypatch.setattr(FeishuClient, "send_text", lambda *_args, **_kwargs: {"code": 0})
+    client = TestClient(create_app())
+    _bind_default_chat("oc_user_chat")
+
+    assert client.post("/feishu/event", json=_file_event()).status_code == 200
+    assert forwarded["json"]["attachments"][0]["fileName"] == "notes.pdf"
+    assert forwarded["json"]["attachments"][0]["mimeType"] == "application/pdf"
 
 
 def test_scoped_send_text_uses_bound_chat_only(app_env, monkeypatch) -> None:
