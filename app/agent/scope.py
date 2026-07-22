@@ -16,16 +16,26 @@ SCOPE_HEADER = "X-SmartCore-Agent-Scope"
 @dataclass(frozen=True)
 class AgentScope:
     userId: str
-    botId: str
-    chatId: str
+    purpose: str
+    botId: str | None = None
+    chatId: str | None = None
 
 
-def issue_agent_scope(*, userId: str, botId: str | None, chatId: str, ttl_seconds: int = 600) -> str:
-    if not userId or not botId or not chatId:
-        raise ValueError("Feishu scope requires user, bot, and chat")
+def issue_agent_scope(
+    *,
+    userId: str,
+    botId: str | None = None,
+    chatId: str = "",
+    purpose: str = "feishu",
+    ttl_seconds: int = 600,
+) -> str:
+    if purpose not in {"feishu", "web"}:
+        raise ValueError("unsupported agent scope purpose")
+    if not userId or (purpose == "feishu" and (not botId or not chatId)):
+        raise ValueError("invalid agent scope routing")
     payload = {
         "v": 1,
-        "purpose": "feishu",
+        "purpose": purpose,
         "userId": userId,
         "botId": botId,
         "chatId": chatId,
@@ -47,13 +57,14 @@ def require_agent_scope(
         if not hmac.compare_digest(signature, expected):
             raise ValueError("signature")
         payload = json.loads(_b64decode(encoded))
-        if payload.get("v") != 1 or payload.get("purpose") != "feishu" or int(payload.get("exp", 0)) < int(time.time()):
+        purpose = str(payload.get("purpose") or "")
+        if payload.get("v") != 1 or purpose not in {"feishu", "web"} or int(payload.get("exp", 0)) < int(time.time()):
             raise ValueError("expired")
         user_id = str(payload.get("userId") or "").strip()
         bot_id = str(payload.get("botId") or "").strip()
         chat_id = str(payload.get("chatId") or "").strip()
-        if not user_id or not bot_id or not chat_id:
+        if not user_id or (purpose == "feishu" and (not bot_id or not chat_id)):
             raise ValueError("fields")
-        return AgentScope(userId=user_id, botId=bot_id, chatId=chat_id)
+        return AgentScope(userId=user_id, purpose=purpose, botId=bot_id or None, chatId=chat_id or None)
     except (ValueError, TypeError, json.JSONDecodeError):
         raise HTTPException(status_code=401, detail="invalid agent scope") from None

@@ -47,6 +47,13 @@ def test_send_final_reply_uses_token_and_scope_without_target_ids(tmp_path, monk
     assert captured["timeout"] == 15
 
 
+def test_reply_heading_is_card_title_not_card_body() -> None:
+    assert adapter.split_reply_card("# 图片灵感总结\n\n- 已保存图片\n- 已完成 OCR") == (
+        "图片灵感总结",
+        "- 已保存图片\n- 已完成 OCR",
+    )
+
+
 def test_run_openclaw_delivers_generated_final_text(tmp_path, monkeypatch) -> None:
     delivered = []
     logs = []

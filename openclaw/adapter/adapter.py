@@ -229,10 +229,10 @@ def build_prompt(event: dict[str, Any], *, scope_file: str | None = None) -> str
         "instead of constructing curl commands.\n"
         "Do not call Feishu feedback endpoints or sendFeishu tools; the Adapter owns final delivery.\n"
         "Return exactly one concise user-facing final answer in finalAssistantVisibleText.\n"
-        "When an event includes attachments, use the attached files and the user's text to produce a concise "
-        "Chinese title and Markdown description, then call ideaCapture with title, description, srcType=media, "
-        "and every attachment uploadId. Do not call OCR services yourself or invent facts. If the text explicitly "
-        "asks to create a schedule, reminder, or DDL, follow that explicit instruction instead.\n"
+        "When an event includes attachments, follow the Media Ideas rules in the SmartCore skill exactly. "
+        "Use mediaImageOcr only for image attachments with meaningful user text. Documents must be stored "
+        "without reading them. If the text explicitly asks to create a schedule, reminder, or DDL, follow that "
+        "explicit instruction instead.\n"
         "On failure or ambiguity, return one concise clarification or error message.\n"
         f"{daily_summary_instructions}"
         f"Bound reply chat_id: {reply_chat_id or 'missing'}\n"
@@ -292,16 +292,16 @@ def extract_final_text(stdout: str) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
-def _extract_title(text: str) -> str:
+def split_reply_card(text: str) -> tuple[str, str]:
+    """Keep a leading Markdown heading in the card header only."""
     lines = text.strip().splitlines()
     if not lines:
-        return "SmartCore"
+        return "SmartCore", ""
     first = lines[0].strip()
-    if first.startswith("# "):
-        return first[2:].strip()[:60]
-    if first.startswith("## "):
-        return first[3:].strip()[:60]
-    return first[:60]
+    if first.startswith("# ") or first.startswith("## "):
+        title = first.lstrip("#").strip()[:60] or "SmartCore"
+        return title, "\n".join(lines[1:]).lstrip() or "已处理。"
+    return first[:60] or "SmartCore", text.strip()
 
 
 def send_final_reply(event: dict[str, Any], text: str) -> None:
@@ -320,10 +320,10 @@ def send_final_reply(event: dict[str, Any], text: str) -> None:
         raise ValueError("empty SmartCore agent token")
 
     base_url = os.environ.get("SMARTCORE_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
-    title = _extract_title(text)
+    title, content = split_reply_card(text)
     request = urllib.request.Request(
         f"{base_url}/agent/feedback/send_text",
-        data=json.dumps({"text": text, "title": title}, ensure_ascii=False).encode("utf-8"),
+        data=json.dumps({"text": content, "title": title}, ensure_ascii=False).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
             "X-SmartCore-Agent-Token": token,
@@ -467,7 +467,7 @@ def run_openclaw(event: dict[str, Any]) -> None:
         "--json",
     ]
     if isinstance(event.get("attachments"), list):
-        cmd[cmd.index("--thinking"):cmd.index("--thinking")] = ["--model", os.environ.get("OPENCLAW_MEDIA_MODEL", "kimi-k3")]
+        cmd[cmd.index("--thinking"):cmd.index("--thinking")] = ["--model", os.environ.get("OPENCLAW_MEDIA_MODEL", "deepseek-v4-pro")]
     try:
         result = subprocess.run(
             cmd,
@@ -497,7 +497,9 @@ def run_openclaw(event: dict[str, Any]) -> None:
                 f"OpenClaw returned code {result.returncode} without a final report",
             )
         reply_text = final_text if succeeded else FAILURE_REPLY
-        reply_delivered = deliver_reply(event, reply_text)
+        reply_delivered = False
+        if event.get("source") != "web":
+            reply_delivered = deliver_reply(event, reply_text)
         log(
             "openclaw finished",
             event_id=event.get("event_id"),

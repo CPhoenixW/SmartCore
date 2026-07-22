@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
@@ -14,8 +15,9 @@ from app.agent.scope import AgentScope, require_agent_scope
 from app.config import Settings, get_settings
 from app.db.session import get_db
 from app.feishu.client import FeishuAPIError, FeishuClient
+from app.llm.gateway import LLMConfigurationError, LLMGatewayError, analyze_image
 from app.new_core import crud
-from app.new_core.models import DdlPlan, EvtBase, Idea
+from app.new_core.models import DdlPlan, EvtBase, Idea, IdeaUpload
 from app.screen.manager import screenManager
 
 AGENT_TOKEN_HEADER = "X-SmartCore-Agent-Token"
@@ -170,6 +172,18 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
                 "uploadIds": {"type": "array", "items": {"type": "string"}},
             },
             ["title"],
+        ),
+    },
+    {
+        "name": "mediaImageOcr",
+        "method": "POST",
+        "path": "/agent/media/ocr",
+        "riskLevel": "read",
+        "confirmationRequired": False,
+        "description": "Run DeepSeek OCR 2 on one owned image upload. Documents are never accepted.",
+        "inputSchema": _schema_object(
+            {"uploadId": {"type": "string", "minLength": 1}},
+            ["uploadId"],
         ),
     },
     {
@@ -619,6 +633,40 @@ def createAgentRouter() -> APIRouter:
                 userId=scope.userId,
             ),
         )
+
+    @router.post("/media/ocr", dependencies=protected)
+    def mediaImageOcr(
+        body: dict[str, Any],
+        db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
+        settings: Settings = Depends(get_settings),
+    ) -> dict[str, Any]:
+        upload_id = str(body.get("uploadId") or "").strip()
+        if not upload_id:
+            return _failed(["uploadId required"])
+        upload = db.get(IdeaUpload, upload_id)
+        if upload is None or upload.userId != scope.userId:
+            return _failed(["attachment not found"])
+        if not upload.mimeType.startswith("image/"):
+            return _failed(["only image attachments can be OCRed"])
+        path = Path(upload.storagePath)
+        if not path.is_file():
+            return _failed(["attachment file not found"])
+        if upload.sizeBytes > settings.vision_max_image_bytes:
+            return _failed(["image exceeds OCR size limit"])
+        try:
+            extracted = analyze_image(
+                path.read_bytes(),
+                mime_type=upload.mimeType,
+                prompt=(
+                    "提取图片中可见的文字、表格和必要的版面语义。"
+                    "只描述能从图片直接确认的信息；不要推测或生成 Markdown。"
+                ),
+                settings=settings,
+            )
+        except (LLMConfigurationError, LLMGatewayError) as exc:
+            return _failed([f"OCR unavailable: {exc}"])
+        return _done({"uploadId": upload_id, "text": extracted[:6000]})
 
     @router.post("/ideaToEvt", dependencies=protected)
     @router.post("/idea/to_event", dependencies=protected)

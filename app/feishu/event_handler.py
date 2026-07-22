@@ -356,8 +356,6 @@ class FeishuEventHandler:
                 logger.warning("failed to download Feishu image: message_id=%s index=%s error=%s", message_id, index, type(exc).__name__)
                 self._reply(payload, "图片读取失败，请稍后重试或直接发送文字。", bot, action="image_failed")
                 return 200, {"code": 0, "msg": "image download failed"}
-        if image_keys:
-            text = (text or "") + "\n[用户发送了图片附件，请使用 kimi-k3 提炼并保存为灵感。]"
         for file_key, file_name in files:
             try:
                 content, mime_type = bot.client().download_message_resource(
@@ -381,12 +379,11 @@ class FeishuEventHandler:
                         storagePath=str(destination), sizeBytes=len(content),
                     )
                 )
-                text = (text or "") + "\n[用户发送了文档附件，请使用 kimi-k3 提炼并保存为灵感。]"
             except Exception as exc:
                 logger.warning("failed to download Feishu file: message_id=%s error=%s", message_id, type(exc).__name__)
                 self._reply(payload, "文件读取失败，请稍后重试。", bot, action="file_failed")
                 return 200, {"code": 0, "msg": "file download failed"}
-        if not text:
+        if not text and not media_uploads:
             event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
             message = event.get("message") if isinstance(event.get("message"), dict) else {}
             content_keys: list[str] = []

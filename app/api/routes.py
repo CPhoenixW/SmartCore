@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Literal
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.agent.scope import issue_agent_scope
 from app.auth.security import require_authenticated_user_id
+from app.config import Settings, get_settings
 from app.db.session import get_db
 from app.new_core import crud
 from app.new_core.ddl_service import create_ddl_event, replace_ddl_plans, replace_ddl_reminders
@@ -22,7 +26,15 @@ from app.new_core.event_relations import (
     sync_course_plans,
     update_event,
 )
-from app.new_core.models import ActLog, DeviceStateLog, EvtBase, MsgLog, NotifyLog, nowIso
+from app.new_core.models import (
+    ActLog,
+    DeviceStateLog,
+    EvtBase,
+    IdeaUpload,
+    MsgLog,
+    NotifyLog,
+    nowIso,
+)
 from app.new_core.preferences import get_user_preferences, update_user_preferences
 from app.new_core.reminder_service import (
     create_reminder_event,
@@ -376,6 +388,11 @@ class IdeaPatchBody(BaseModel):
     handled: bool | None = None
 
 
+class IdeaMediaProcessBody(BaseModel):
+    uploadIds: list[str] = Field(min_length=1, max_length=10)
+    text: str = Field(default="", max_length=4000)
+
+
 @router.get("/idea")
 def list_idea(userId: str = Depends(require_authenticated_user_id), db: Session = Depends(get_db)) -> dict[str, Any]:
     return ok(crud.listIdeas(db, userId=userId))
@@ -393,6 +410,54 @@ def create_idea(body: IdeaBody, userId: str = Depends(require_authenticated_user
             userId=userId,
         )
     )
+
+
+@router.post("/idea/media-process")
+def process_idea_media(
+    body: IdeaMediaProcessBody,
+    userId: str = Depends(require_authenticated_user_id),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    upload_ids = list(dict.fromkeys(item.strip() for item in body.uploadIds if item.strip()))
+    uploads = db.scalars(
+        select(IdeaUpload).where(IdeaUpload.uploadId.in_(upload_ids), IdeaUpload.userId == userId)
+    ).all()
+    if len(uploads) != len(upload_ids):
+        raise HTTPException(status_code=404, detail="one or more attachments are unavailable")
+    if not settings.openclaw_events_endpoint or not settings.openclaw_events_token:
+        raise HTTPException(status_code=503, detail="media processing is unavailable")
+    attachments = [
+        {
+            "uploadId": row.uploadId,
+            "fileName": row.fileName,
+            "mimeType": row.mimeType,
+            "sizeBytes": row.sizeBytes,
+            "agentPath": f"/attachments/{Path(row.storagePath).name}",
+        }
+        for row in uploads
+    ]
+    event = {
+        "event_id": f"web-media-{nowIso()}",
+        "source": "web",
+        "event_type": "idea_media",
+        "userId": userId,
+        "text": body.text.strip(),
+        "message": {"text": body.text.strip(), "attachments": attachments},
+        "attachments": attachments,
+        "agentScope": issue_agent_scope(userId=userId, purpose="web", ttl_seconds=900),
+    }
+    try:
+        response = httpx.post(
+            settings.openclaw_events_endpoint,
+            json=event,
+            headers={"Authorization": f"Bearer {settings.openclaw_events_token}"},
+            timeout=10.0,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="media processing queue is unavailable") from exc
+    return ok({"queued": True, "uploadIds": upload_ids})
 
 
 @router.patch("/idea/{ideaId}")

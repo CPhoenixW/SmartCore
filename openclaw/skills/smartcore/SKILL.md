@@ -24,12 +24,24 @@ Use this skill when the user asks about schedules, reminders, ideas, or SmartCor
 
 ## Media Ideas
 
-- A forwarded message may contain `attachments`, each with an `uploadId`, file name,
-  MIME type and task-local path. For these events use the `kimi-k3` media model to
-  inspect the supplied attachments and the user's text.
-- Return a short factual title and Markdown description, then call `ideaCapture`
-  with `srcType=media` and every supplied `uploadId`. Do not use OCR gateway APIs,
-  inspect unrelated paths, or invent details. An explicit schedule request takes precedence.
+- These rules apply only when the forwarded event contains `attachments`. A plain-text
+  request keeps the normal schedule, reminder, query, and daily-report behaviour.
+- Inspect attachment metadata first. Never read a document or its task-local file path.
+  For a document-only message, call `ideaCapture` once per attachment with the filename
+  (without its extension) as title, `srcType=media`, and that attachment's `uploadId`.
+  Preserve any user text as a short note, but do not call a model.
+- If there are image attachments but the user supplied no meaningful text, handle each
+  image exactly like a document: use its filename as the title and do not call OCR.
+- If there is at least one image and meaningful user text, call `mediaImageOcr` once for
+  every image upload. Use only those OCR results and the user text to decide the idea.
+  Then call `ideaCapture` with a factual Chinese title, every attachment `uploadId`,
+  `srcType=media`, and a valid Markdown description of at most 100 Chinese characters.
+  Do not invent facts and do not place raw OCR output in the description.
+- When an image and a document occur in one meaningful-text message, capture one Idea
+  containing every attachment; OCR only the images. An explicit schedule, reminder, or
+  DDL request takes precedence over media capture.
+- Start the final reply with `# <summary title>`. Keep the body concise; the adapter
+  uses that heading only as the Feishu card title and removes it from the card body.
 
 The preferred DB paths are `/agent/db/query_events`, `/agent/db/create_event`,
 `/agent/db/update_event`, and `/agent/db/delete_event`. The old short paths remain
