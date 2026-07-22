@@ -18,7 +18,12 @@ from app.agent.scope import issue_agent_scope
 from app.config import Settings, get_settings
 from app.db.session import SessionLocal
 from app.feishu.bot_service import BotRuntime, enabledRuntimes
-from app.feishu.commands import extract_file_key, extract_image_key, extract_message_text, extract_routing_context
+from app.feishu.commands import (
+    extract_file_key,
+    extract_image_key,
+    extract_message_text,
+    extract_routing_context,
+)
 from app.feishu.security import FeishuSecurityError, parse_event_payload, validate_request_headers
 from app.new_core import crud
 from app.new_core.models import EvtBase
