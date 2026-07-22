@@ -92,8 +92,42 @@ The helper sends this range contract internally:
   with no status filter, `includeLinkedPlans=true`, and course templates hidden.
 - Read every returned event's title, status, and description. Descriptions are
   the primary source for completion outcomes and reflections.
-- Summarize completed work, unfinished work, useful reflections, and concise
-  next actions in Feishu-compatible Markdown.
+
+### Filtering & Anti-Noise Rules
+
+- Skip auxiliary life/logistics events (commute, punch-card, transit) with no
+  substantive work output.
+- If a DDL is cancelled but its linked plan is done, the task completed on time.
+  Do not report the cancelled DDL — it is database-level noise.
+- Focus on business outcomes and duration, not rigid time billing.
+
+### Content Extraction
+
+- For completed tasks: extract core technical highlights (scripts, commands,
+  features) and pitfalls/troubleshooting notes from descriptions.
+- For unfinished/blocked tasks: extract the specific blocking reason and turn
+  it into next-day action input.
+
+### Output Template
+
+Report in this exact structure using rich Markdown:
+
+📅 [YYYY年MM月DD日] 工作日报
+
+### 📝 本日工作概述
+> [1-2 sentence high-level summary]
+
+### 🚀 今日主要成果与技术进展
+- **{module}**
+  - **进展**: [accomplishment]
+  - **技术要点/避坑**: [technical details]
+
+### ⚠️ 遇到问题与阻碍 (Blockers)
+- **{issue}**: [description]
+
+### 📅 明日规划
+- [next actions]
+
 - Do not mutate events and do not call the daily-summary persistence endpoint.
   The Adapter saves the final answer before delivering it.
 
