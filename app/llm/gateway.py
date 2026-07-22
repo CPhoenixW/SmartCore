@@ -107,7 +107,7 @@ def analyze_image(
     client = _build_client(
         api_key,
         active_settings.llm_base_url,
-        active_settings.llm_max_retries,
+        active_settings.vision_max_retries,
         active_settings.vision_timeout_seconds,
     )
     try:

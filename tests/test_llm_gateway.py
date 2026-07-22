@@ -17,6 +17,7 @@ def test_default_natural_language_gateway_config() -> None:
     assert settings.llm_model == "deepseek-v4-flash"
     assert settings.vision_model == "deepseek-ocr-2"
     assert settings.vision_max_output_tokens == 128
+    assert settings.vision_max_retries == 0
     assert settings.vision_timeout_seconds == 60
 
 
@@ -84,6 +85,7 @@ def test_image_gateway_bounds_ocr_output_and_timeout(monkeypatch: pytest.MonkeyP
         llm_api_key="test-key",
         vision_model="deepseek-ocr-2",
         vision_max_output_tokens=64,
+        vision_max_retries=0,
         vision_timeout_seconds=30,
     )
 
@@ -98,6 +100,7 @@ def test_image_gateway_bounds_ocr_output_and_timeout(monkeypatch: pytest.MonkeyP
     timeout = client_options["timeout"]
     assert isinstance(timeout, httpx.Timeout)
     assert timeout.read == 30
+    assert client_options["max_retries"] == 0
     request = captured["request"]
     assert isinstance(request, dict)
     assert request["model"] == "deepseek-ocr-2"
