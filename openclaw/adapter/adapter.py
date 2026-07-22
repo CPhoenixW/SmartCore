@@ -111,6 +111,14 @@ def compact(value: Any, limit: int) -> str:
     return text if len(text) <= limit else text[:limit] + "..."
 
 
+def openclaw_node_bin() -> str:
+    configured = os.environ.get("OPENCLAW_NODE_BIN", "").strip()
+    if configured:
+        return configured
+    candidates = sorted(Path("/root/.openclaw/tools").glob("node-*/bin"), reverse=True)
+    return str(candidates[0]) if candidates else ""
+
+
 def sanitize_event(event: dict[str, Any]) -> dict[str, Any]:
     sanitized: dict[str, Any] = {
         "event_id": event.get("event_id"),
@@ -441,7 +449,8 @@ def run_openclaw(event: dict[str, Any]) -> None:
     session_key = f"{session_prefix}-{safe_session_part(str(target))}"
     workspace = os.environ.get("OPENCLAW_WORKSPACE", "/root/.openclaw-smartcore-workspace")
     env = os.environ.copy()
-    env["PATH"] = f"/root/.openclaw/bin:{env.get('PATH', '')}"
+    path_entries = [openclaw_node_bin(), "/root/.openclaw/bin", env.get("PATH", "")]
+    env["PATH"] = ":".join(entry for entry in path_entries if entry)
     # Gateway tool processes do not reliably inherit adapter environment
     # variables.  Deliberately remove any ambient scope and use a task-local
     # file that the gateway's workspace can read.

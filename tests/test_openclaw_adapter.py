@@ -89,6 +89,7 @@ def test_run_openclaw_delivers_generated_final_text(tmp_path, monkeypatch) -> No
     assert delivered == [(event, "昨天没有安排。")]
     assert captured["scope"] == "scope"
     assert "SMARTCORE_AGENT_SCOPE" not in captured["env"]
+    assert "/root/.openclaw/bin" in captured["env"]["PATH"]
     assert any(message == "final reply delivered" for message, _fields in logs)
     finished = next(fields for message, fields in logs if message == "openclaw finished")
     assert finished["reply_delivered"] is True
