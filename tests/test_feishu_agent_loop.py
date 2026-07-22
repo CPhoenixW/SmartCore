@@ -45,6 +45,17 @@ def _image_event(*, chat_id: str = "oc_user_chat", message_id: str = "om_image")
     return event
 
 
+def _post_image_event(*, chat_id: str = "oc_user_chat", message_id: str = "om_post_image") -> dict:
+    event = _message_event("", chat_id=chat_id, message_id=message_id)
+    event["event"]["message"] = {
+        "message_id": message_id, "chat_id": chat_id, "chat_type": "p2p", "message_type": "post",
+        "content": json.dumps({"post": {"zh_cn": {"title": "", "content": [[
+            {"tag": "text", "text": "这个想法记一下："}, {"tag": "img", "image_key": "img_post"}
+        ]]}}}),
+    }
+    return event
+
+
 class FakeFeishuClient:
     def __init__(self) -> None:
         self.text_calls: list[tuple[str, str]] = []
@@ -179,6 +190,31 @@ def test_feishu_image_is_analyzed_by_vision_model_then_forwarded(app_env, monkey
     assert event["imageAnalysis"] == "OCR：课程作业，明晚 20:00 前提交。"
     assert "图像解析结果" in event["text"]
     assert event["message"]["image_analysis"] == event["imageAnalysis"]
+
+
+def test_feishu_post_with_image_is_analyzed_and_keeps_its_text(app_env, monkeypatch) -> None:
+    forwarded: dict = {}
+
+    def fake_post(_url, **kwargs):
+        forwarded["json"] = kwargs["json"]
+
+        class Resp:
+            is_error = False
+            status_code = 200
+
+        return Resp()
+
+    monkeypatch.setenv("OPENCLAW_EVENTS_ENDPOINT", "http://openclaw.local/events")
+    monkeypatch.setattr("httpx.post", fake_post)
+    monkeypatch.setattr(FeishuClient, "download_message_resource", lambda *_args: (b"image", "image/png"))
+    monkeypatch.setattr("app.feishu.event_handler.analyze_image", lambda *_args, **_kwargs: "一张产品草图")
+    monkeypatch.setattr(FeishuClient, "send_text", lambda *_args, **_kwargs: {"code": 0})
+    client = TestClient(create_app())
+    _bind_default_chat("oc_user_chat")
+
+    assert client.post("/feishu/event", json=_post_image_event()).status_code == 200
+    assert "这个想法记一下：" in forwarded["json"]["text"]
+    assert forwarded["json"]["imageAnalysis"] == "一张产品草图"
 
 
 def test_scoped_send_text_uses_bound_chat_only(app_env, monkeypatch) -> None:

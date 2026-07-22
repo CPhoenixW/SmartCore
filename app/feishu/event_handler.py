@@ -337,7 +337,11 @@ class FeishuEventHandler:
                         "只输出简洁中文描述，不要编造信息。"
                     ),
                 )
-                text = f"用户发送了一张图片。图像解析结果：\n{image_analysis}"
+                image_prefix = "用户发送了一张图片。"
+                if not text:
+                    image_prefix += "这是一个图片灵感输入，请保存为灵感。"
+                caption = f"\n用户附言：{text}" if text else ""
+                text = f"{image_prefix}{caption}\n图像解析结果：\n{image_analysis}"
             except Exception as exc:
                 logger.warning("failed to analyze Feishu image: message_id=%s error=%s", message_id, type(exc).__name__)
                 self._reply(payload, "图片解析失败，请稍后重试或直接发送文字。", bot, action="image_failed")

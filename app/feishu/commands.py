@@ -64,7 +64,32 @@ def extract_message_text(event_payload: dict) -> tuple[str | None, str | None]:
     message = event.get("message")
     if not isinstance(message, dict):
         return None, None
-    if message.get("message_type") != "text":
+    message_type = message.get("message_type")
+    if message_type == "post":
+        raw_content = message.get("content")
+        if not isinstance(raw_content, str):
+            return message.get("message_id"), None
+        try:
+            post = json.loads(raw_content).get("post", {})
+        except json.JSONDecodeError:
+            return message.get("message_id"), None
+        texts: list[str] = []
+        if isinstance(post, dict):
+            for locale in post.values():
+                if not isinstance(locale, dict):
+                    continue
+                for row in locale.get("content", []):
+                    if not isinstance(row, list):
+                        continue
+                    texts.extend(
+                        node["text"] for node in row
+                        if isinstance(node, dict) and isinstance(node.get("text"), str)
+                    )
+                if texts:
+                    break
+        text = normalize_message_text("".join(texts))
+        return message.get("message_id"), text or None
+    if message_type != "text":
         return message.get("message_id"), None
     raw_content = message.get("content")
     if not isinstance(raw_content, str):
@@ -84,7 +109,7 @@ def extract_image_key(event_payload: dict) -> tuple[str | None, str | None]:
     if not isinstance(event, dict):
         return None, None
     message = event.get("message")
-    if not isinstance(message, dict) or message.get("message_type") != "image":
+    if not isinstance(message, dict):
         return None, None
     raw_content = message.get("content")
     if not isinstance(raw_content, str):
@@ -93,5 +118,26 @@ def extract_image_key(event_payload: dict) -> tuple[str | None, str | None]:
         content = json.loads(raw_content)
     except json.JSONDecodeError:
         return message.get("message_id"), None
-    image_key = content.get("image_key")
+    if message.get("message_type") == "image":
+        image_key = content.get("image_key")
+    elif message.get("message_type") == "post":
+        image_key = None
+        post = content.get("post")
+        if isinstance(post, dict):
+            for locale in post.values():
+                if not isinstance(locale, dict):
+                    continue
+                for row in locale.get("content", []):
+                    if not isinstance(row, list):
+                        continue
+                    for node in row:
+                        if isinstance(node, dict) and isinstance(node.get("image_key"), str):
+                            image_key = node["image_key"]
+                            break
+                    if image_key:
+                        break
+                if image_key:
+                    break
+    else:
+        return message.get("message_id"), None
     return message.get("message_id"), image_key if isinstance(image_key, str) and image_key else None

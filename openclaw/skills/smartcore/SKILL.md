@@ -22,6 +22,13 @@ Use this skill when the user asks about schedules, reminders, ideas, or SmartCor
    `ideaCapture`, `ideaToEvt`
 4. Return one concise user-facing final answer; the Adapter delivers it to Feishu.
 
+## Image Ideas
+
+- A forwarded message may contain `imageAnalysis`, produced from a Feishu image.
+- When it is labelled `图片灵感输入`, save the analysis with `ideaCapture`, using
+  `srcType=image`. An explicit request to create a plan, reminder, or DDL takes
+  precedence over capturing an idea.
+
 The preferred DB paths are `/agent/db/query_events`, `/agent/db/create_event`,
 `/agent/db/update_event`, and `/agent/db/delete_event`. The old short paths remain
 available only as compatibility aliases.
