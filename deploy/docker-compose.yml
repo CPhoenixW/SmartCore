@@ -16,6 +16,7 @@ services:
     volumes:
       - smartcore-data:/app/data
       - smartcore-backups:/app/backups
+      - smartcore-idea-media:/app/data/idea_media
     expose:
       - "8000"
     ports:
@@ -90,6 +91,7 @@ services:
       - "${OPENCLAW_HOME:-/root/.openclaw}:/root/.openclaw"
       - "${OPENCLAW_WORKSPACE_DIR:-/root/.openclaw-smartcore-workspace}:/root/.openclaw-smartcore-workspace"
       - smartcore-adapter-logs:/data
+      - smartcore-idea-media:/attachments:ro
     network_mode: host
     restart: unless-stopped
     healthcheck:
@@ -113,3 +115,4 @@ volumes:
   caddy-data:
   caddy-config:
   smartcore-adapter-logs:
+  smartcore-idea-media:

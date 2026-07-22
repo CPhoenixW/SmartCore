@@ -364,13 +364,15 @@ def sync_all_event_relations(db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 class IdeaBody(BaseModel):
-    content: str
+    title: str = Field(min_length=1, max_length=300)
+    description: str = ""
     srcType: str = "text"
-    mediaPath: str | None = None
+    uploadIds: list[str] = Field(default_factory=list)
 
 
 class IdeaPatchBody(BaseModel):
-    content: str | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+    description: str | None = None
     handled: bool | None = None
 
 
@@ -384,9 +386,10 @@ def create_idea(body: IdeaBody, userId: str = Depends(require_authenticated_user
     return ok(
         crud.createIdea(
             db,
-            content=body.content,
+            title=body.title,
+            description=body.description,
             srcType=body.srcType,
-            mediaPath=body.mediaPath,
+            uploadIds=body.uploadIds,
             userId=userId,
         )
     )
@@ -403,7 +406,8 @@ def patch_idea(
             crud.updateIdea(
                 db,
                 ideaId,
-                content=body.content,
+                title=body.title,
+                description=body.description,
                 handled=body.handled,
             )
         )

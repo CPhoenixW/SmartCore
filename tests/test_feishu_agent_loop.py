@@ -156,7 +156,7 @@ def test_feishu_processing_ack_failure_does_not_block_openclaw_forward(app_env, 
     assert forwarded["json"]["message_id"] == "om_ack_failure"
 
 
-def test_feishu_image_is_saved_as_idea_without_openclaw(app_env, monkeypatch) -> None:
+def test_feishu_image_is_forwarded_with_private_attachment(app_env, monkeypatch) -> None:
     forwarded: dict = {}
 
     def fake_post(_url, **kwargs):
@@ -175,10 +175,6 @@ def test_feishu_image_is_saved_as_idea_without_openclaw(app_env, monkeypatch) ->
         "download_message_resource",
         lambda _self, message_id, resource_key: (b"test-image", "image/png"),
     )
-    monkeypatch.setattr(
-        "app.feishu.event_handler.analyze_image",
-        lambda image, **kwargs: "OCR：课程作业，明晚 20:00 前提交。",
-    )
     monkeypatch.setattr(FeishuClient, "send_text", lambda *_args, **_kwargs: {"code": 0})
     client = TestClient(create_app())
     _bind_default_chat("oc_user_chat")
@@ -186,17 +182,11 @@ def test_feishu_image_is_saved_as_idea_without_openclaw(app_env, monkeypatch) ->
     response = client.post("/feishu/event", json=_image_event())
 
     assert response.status_code == 200
-    assert forwarded == {}
-    db = SessionLocal()
-    try:
-        idea = db.query(Idea).one()
-        assert idea.content == "OCR：课程作业，明晚 20:00 前提交。"
-        assert idea.srcType == "image"
-    finally:
-        db.close()
+    assert forwarded["json"]["attachments"][0]["mimeType"] == "image/png"
+    assert forwarded["json"]["attachments"][0]["agentPath"].startswith("/attachments/")
 
 
-def test_feishu_post_with_image_is_saved_as_idea(app_env, monkeypatch) -> None:
+def test_feishu_post_with_image_is_forwarded(app_env, monkeypatch) -> None:
     forwarded: dict = {}
 
     def fake_post(_url, **kwargs):
@@ -211,20 +201,12 @@ def test_feishu_post_with_image_is_saved_as_idea(app_env, monkeypatch) -> None:
     monkeypatch.setenv("OPENCLAW_EVENTS_ENDPOINT", "http://openclaw.local/events")
     monkeypatch.setattr("httpx.post", fake_post)
     monkeypatch.setattr(FeishuClient, "download_message_resource", lambda *_args: (b"image", "image/png"))
-    monkeypatch.setattr("app.feishu.event_handler.analyze_image", lambda *_args, **_kwargs: "一张产品草图")
     monkeypatch.setattr(FeishuClient, "send_text", lambda *_args, **_kwargs: {"code": 0})
     client = TestClient(create_app())
     _bind_default_chat("oc_user_chat")
 
     assert client.post("/feishu/event", json=_post_image_event()).status_code == 200
-    assert forwarded == {}
-    db = SessionLocal()
-    try:
-        idea = db.query(Idea).one()
-        assert idea.content == "一张产品草图"
-        assert idea.srcType == "image"
-    finally:
-        db.close()
+    assert forwarded["json"]["attachments"][0]["fileName"] == "feishu-image.png"
 
 
 def test_scoped_send_text_uses_bound_chat_only(app_env, monkeypatch) -> None:

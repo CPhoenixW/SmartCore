@@ -17,6 +17,8 @@ from app.new_core.models import (
     DeviceStateLog,
     EvtBase,
     Idea,
+    IdeaAttachment,
+    IdeaUpload,
     MsgLog,
     NotifyLog,
     PlanEvt,
@@ -165,15 +167,35 @@ def _courseDict(base: EvtBase, course: CourseEvt) -> dict[str, Any]:
 
 
 def _ideaDict(idea: Idea) -> dict[str, Any]:
+    attachments = idea.__dict__.get("_attachments")
+    if attachments is None:
+        attachments = []
     return {
         "ideaId": idea.ideaId,
         "userId": idea.userId,
-        "content": idea.content,
+        "title": idea.title,
+        "description": idea.description,
         "srcType": idea.srcType,
-        "mediaPath": idea.mediaPath,
         "handled": idea.handled,
         "createdAt": idea.createdAt,
+        "attachments": attachments,
     }
+
+
+def _attachmentDict(row: IdeaAttachment) -> dict[str, Any]:
+    return {"attachmentId": row.attachmentId, "fileName": row.fileName, "mimeType": row.mimeType,
+            "url": f"/api/idea/attachment/{row.attachmentId}", "sizeBytes": row.sizeBytes, "createdAt": row.createdAt}
+
+
+def _attachIdeaMedia(db: Session, ideas: list[Idea]) -> None:
+    if not ideas:
+        return
+    rows = db.scalars(select(IdeaAttachment).where(IdeaAttachment.ideaId.in_([idea.ideaId for idea in ideas])).order_by(IdeaAttachment.createdAt)).all()
+    by_idea: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_idea.setdefault(row.ideaId, []).append(_attachmentDict(row))
+    for idea in ideas:
+        idea.__dict__["_attachments"] = by_idea.get(idea.ideaId, [])
 
 
 def _devStateDict(row: DeviceStateLog) -> dict[str, Any]:
@@ -422,29 +444,44 @@ def createCourseEvt(
 def createIdea(
     db: Session,
     *,
-    content: str,
+    title: str,
+    description: str = "",
     srcType: str = "text",
-    mediaPath: str | None = None,
+    uploadIds: list[str] | None = None,
     userId: str = DEFAULT_USER_ID,
 ) -> dict[str, Any]:
     _ensure_user(db, userId)
-    idea = Idea(userId=userId, content=content, srcType=srcType, mediaPath=mediaPath)
+    idea_title = title.strip()[:300]
+    if not idea_title:
+        raise ValueError("title required")
+    idea = Idea(userId=userId, title=idea_title, description=description.strip(), srcType=srcType)
     db.add(idea)
     db.flush()
+    if uploadIds:
+        rows = db.scalars(select(IdeaUpload).where(IdeaUpload.uploadId.in_(uploadIds), IdeaUpload.userId == userId)).all()
+        if len(rows) != len(set(uploadIds)):
+            raise ValueError("one or more attachments are unavailable")
+        for row in rows:
+            db.add(IdeaAttachment(ideaId=idea.ideaId, fileName=row.fileName, mimeType=row.mimeType, storagePath=row.storagePath, sizeBytes=row.sizeBytes))
+            db.delete(row)
+    _attachIdeaMedia(db, [idea])
     result = _ideaDict(idea)
     _recordAct(db, userId=userId, src="api", action="create", targetKind="idea", targetId=idea.ideaId)
     db.commit()
     return result
 
 
-def updateIdea(db: Session, ideaId: str, *, content: str | None = None, handled: bool | None = None) -> dict[str, Any]:
+def updateIdea(db: Session, ideaId: str, *, title: str | None = None, description: str | None = None, handled: bool | None = None) -> dict[str, Any]:
     row = db.get(Idea, ideaId)
     if row is None:
         raise ValueError(f"idea not found: {ideaId}")
-    if content is not None:
-        row.content = content
+    if title is not None:
+        row.title = title.strip()[:300]
+    if description is not None:
+        row.description = description
     if handled is not None:
         row.handled = handled
+    _attachIdeaMedia(db, [row])
     result = _ideaDict(row)
     _recordAct(db, userId=row.userId, src="api", action="update", targetKind="idea", targetId=ideaId)
     db.commit()
@@ -495,7 +532,24 @@ def listCourseEvt(db: Session) -> list[dict[str, Any]]:
 
 def listIdeas(db: Session, *, userId: str = DEFAULT_USER_ID) -> list[dict[str, Any]]:
     rows = db.scalars(select(Idea).where(Idea.userId == userId).order_by(Idea.createdAt.asc())).all()
+    _attachIdeaMedia(db, rows)
     return [_ideaDict(row) for row in rows]
+
+
+def createIdeaUpload(db: Session, *, userId: str, fileName: str, mimeType: str, storagePath: str, sizeBytes: int) -> dict[str, Any]:
+    row = IdeaUpload(userId=userId, fileName=fileName, mimeType=mimeType, storagePath=storagePath, sizeBytes=sizeBytes)
+    db.add(row); db.commit(); db.refresh(row)
+    return {"uploadId": row.uploadId, "fileName": row.fileName, "mimeType": row.mimeType, "sizeBytes": row.sizeBytes, "storagePath": row.storagePath}
+
+
+def getIdeaAttachment(db: Session, attachmentId: str, *, userId: str) -> IdeaAttachment:
+    row = db.get(IdeaAttachment, attachmentId)
+    if row is None or not row.ideaId:
+        raise ValueError("attachment not found")
+    idea = db.get(Idea, row.ideaId)
+    if idea is None or idea.userId != userId:
+        raise ValueError("attachment not found")
+    return row
 
 
 def listDevState(db: Session) -> list[dict[str, Any]]:

@@ -194,10 +194,36 @@ class Idea(Base):
     userId: Mapped[str] = mapped_column(
         String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
     )
-    content: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     srcType: Mapped[str] = mapped_column(String(20), default="text", nullable=False)
-    mediaPath: Mapped[str | None] = mapped_column(String(500))
     handled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class IdeaAttachment(Base):
+    __tablename__ = "ideaAttachment"
+
+    attachmentId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    ideaId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("idea.ideaId", ondelete="CASCADE"), nullable=False
+    )
+    fileName: Mapped[str] = mapped_column(String(300), nullable=False)
+    mimeType: Mapped[str] = mapped_column(String(120), nullable=False)
+    storagePath: Mapped[str] = mapped_column(String(700), nullable=False)
+    sizeBytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class IdeaUpload(Base):
+    __tablename__ = "ideaUpload"
+
+    uploadId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    fileName: Mapped[str] = mapped_column(String(300), nullable=False)
+    mimeType: Mapped[str] = mapped_column(String(120), nullable=False)
+    storagePath: Mapped[str] = mapped_column(String(700), nullable=False)
+    sizeBytes: Mapped[int] = mapped_column(Integer, nullable=False)
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
 
 

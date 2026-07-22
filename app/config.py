@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     # text-first SmartCore agent workflow.
     vision_model: str = "deepseek-ocr-2"
     vision_max_image_bytes: int = 10 * 1024 * 1024
+    idea_media_dir: str = str(PROJECT_ROOT / "data" / "idea_media")
+    idea_media_max_bytes: int = 20 * 1024 * 1024
 
     deepseek_api_key: str = ""
     deepseek_base_url: str = ""
@@ -89,6 +91,10 @@ class Settings(BaseSettings):
     @property
     def device_photo_path(self) -> Path:
         return Path(self.device_photo_dir)
+
+    @property
+    def idea_media_path(self) -> Path:
+        return Path(self.idea_media_dir)
 
 
 @lru_cache

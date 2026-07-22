@@ -1,9 +1,11 @@
 export interface Idea {
   ideaId: string;
-  content: string;
+  title: string;
+  description: string;
   handled: boolean;
   srcType?: string;
-  mediaPath?: string | null;
+  attachments: IdeaAttachment[];
   createdAt?: string;
-  updatedAt?: string;
 }
+export interface IdeaAttachment { attachmentId: string; fileName: string; mimeType: string; url: string; sizeBytes: number; createdAt?: string }
+export interface IdeaUpload { uploadId: string; fileName: string; mimeType: string; sizeBytes: number }

@@ -199,13 +199,13 @@ class FeishuClient:
             raise FeishuAPIError(payload.get("msg", "failed to delete message"))
         return payload
 
-    def download_message_resource(self, message_id: str, resource_key: str) -> tuple[bytes, str]:
+    def download_message_resource(self, message_id: str, resource_key: str, *, resource_type: str = "image") -> tuple[bytes, str]:
         """Download an image or file attached to a received Feishu message."""
         token = self.get_tenant_access_token()
         with self._client() as client:
             response = client.get(
                 f"/im/v1/messages/{message_id}/resources/{resource_key}",
-                params={"type": "image"},
+                params={"type": resource_type},
                 headers={
                     "Authorization": f"Bearer {token}",
                     "Content-Type": "application/json; charset=utf-8",

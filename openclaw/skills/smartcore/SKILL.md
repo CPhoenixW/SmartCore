@@ -22,12 +22,14 @@ Use this skill when the user asks about schedules, reminders, ideas, or SmartCor
    `ideaCapture`, `ideaToEvt`
 4. Return one concise user-facing final answer; the Adapter delivers it to Feishu.
 
-## Image Ideas
+## Media Ideas
 
-- A forwarded message may contain `imageAnalysis`, produced from a Feishu image.
-- When it is labelled `图片灵感输入`, save the analysis with `ideaCapture`, using
-  `srcType=image`. An explicit request to create a plan, reminder, or DDL takes
-  precedence over capturing an idea.
+- A forwarded message may contain `attachments`, each with an `uploadId`, file name,
+  MIME type and task-local path. For these events use the `kimi-k3` media model to
+  inspect the supplied attachments and the user's text.
+- Return a short factual title and Markdown description, then call `ideaCapture`
+  with `srcType=media` and every supplied `uploadId`. Do not use OCR gateway APIs,
+  inspect unrelated paths, or invent details. An explicit schedule request takes precedence.
 
 The preferred DB paths are `/agent/db/query_events`, `/agent/db/create_event`,
 `/agent/db/update_event`, and `/agent/db/delete_event`. The old short paths remain

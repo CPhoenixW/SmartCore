@@ -127,10 +127,32 @@ CREATE TABLE IF NOT EXISTS remindEvt (
 CREATE TABLE IF NOT EXISTS idea (
     ideaId VARCHAR(32) PRIMARY KEY,
     userId VARCHAR(32) NOT NULL,
-    content TEXT NOT NULL,
+    title VARCHAR(300) NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
     srcType VARCHAR(20) NOT NULL DEFAULT 'text',
-    mediaPath VARCHAR(500),
     handled INTEGER NOT NULL DEFAULT 0,
+    createdAt VARCHAR(64) NOT NULL,
+    FOREIGN KEY (userId) REFERENCES appUser(userId) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS ideaAttachment (
+    attachmentId VARCHAR(32) PRIMARY KEY,
+    ideaId VARCHAR(32) NOT NULL,
+    fileName VARCHAR(300) NOT NULL,
+    mimeType VARCHAR(120) NOT NULL,
+    storagePath VARCHAR(700) NOT NULL,
+    sizeBytes INTEGER NOT NULL DEFAULT 0,
+    createdAt VARCHAR(64) NOT NULL,
+    FOREIGN KEY (ideaId) REFERENCES idea(ideaId) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS ideaUpload (
+    uploadId VARCHAR(32) PRIMARY KEY,
+    userId VARCHAR(32) NOT NULL,
+    fileName VARCHAR(300) NOT NULL,
+    mimeType VARCHAR(120) NOT NULL,
+    storagePath VARCHAR(700) NOT NULL,
+    sizeBytes INTEGER NOT NULL,
     createdAt VARCHAR(64) NOT NULL,
     FOREIGN KEY (userId) REFERENCES appUser(userId) ON DELETE CASCADE
 );
@@ -231,6 +253,8 @@ CREATE INDEX IF NOT EXISTS idx_remindEvt_plan ON remindEvt(planEvtId);
 CREATE INDEX IF NOT EXISTS idx_remindEvt_ddl_trigger ON remindEvt(ddlEvtId, triggerTime);
 CREATE INDEX IF NOT EXISTS idx_ddlPlan_ddl_order ON ddlPlan(ddlEvtId, sortOrder);
 CREATE INDEX IF NOT EXISTS idx_idea_user_created ON idea(userId, createdAt);
+CREATE INDEX IF NOT EXISTS idx_ideaAttachment_idea ON ideaAttachment(ideaId, createdAt);
+CREATE INDEX IF NOT EXISTS idx_ideaUpload_user_created ON ideaUpload(userId, createdAt);
 CREATE INDEX IF NOT EXISTS idx_device_user_kind ON device(userId, deviceKind);
 CREATE INDEX IF NOT EXISTS idx_deviceStateLog_device_seen ON deviceStateLog(deviceId, seenAt);
 CREATE INDEX IF NOT EXISTS idx_actLog_user_created ON actLog(userId, createdAt);

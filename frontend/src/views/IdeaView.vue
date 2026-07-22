@@ -1,65 +1,16 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
-import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
-import IdeaPreviewCard from "@/components/ideas/IdeaPreviewCard.vue";
 import { ideaApi } from "@/api/idea";
 import { useToast } from "@/composables/useToast";
-import type { Idea } from "@/types/idea";
-
-const { t } = useI18n();
-const toast = useToast();
-const queryClient = useQueryClient();
-const filter = ref<"open" | "handled" | "all">("open");
-const search = ref("");
-const selected = ref<Idea | null>(null);
-const content = ref("");
-const handled = ref(false);
-const query = useQuery({ queryKey: ["ideas"], queryFn: ideaApi.list });
-
-const items = computed(() => (query.data.value ?? [])
-  .filter((idea) => filter.value === "all" || (filter.value === "handled") === idea.handled)
-  .filter((idea) => !search.value.trim() || idea.content.toLowerCase().includes(search.value.trim().toLowerCase()))
-  .sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? ""))));
-
-watch(selected, (idea) => { content.value = idea?.content ?? ""; handled.value = Boolean(idea?.handled); });
-function reset() { selected.value = null; content.value = ""; handled.value = false; }
-
-const save = useMutation({
-  mutationFn: () => selected.value
-    ? ideaApi.update(selected.value.ideaId, { content: content.value.trim(), handled: handled.value })
-    : ideaApi.create(content.value.trim()),
-  onSuccess: async () => { toast.success(t("ideas.saved")); reset(); await queryClient.invalidateQueries({ queryKey: ["ideas"] }); },
-  onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
-});
-const toggle = useMutation({
-  mutationFn: (idea: Idea) => ideaApi.update(idea.ideaId, { handled: !idea.handled }),
-  onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ideas"] }),
-  onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
-});
-const remove = useMutation({
-  mutationFn: (id: string) => ideaApi.remove(id),
-  onSuccess: async () => { reset(); await queryClient.invalidateQueries({ queryKey: ["ideas"] }); },
-  onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
-});
-const busy = computed(() => save.isPending.value || toggle.isPending.value || remove.isPending.value);
+import type { Idea, IdeaUpload } from "@/types/idea";
+const toast=useToast(), queryClient=useQueryClient(), selected=ref<Idea|null>(null), title=ref(""), description=ref(""), uploads=ref<IdeaUpload[]>([]), dragging=ref(false), lightbox=ref<string|null>(null);
+const query=useQuery({queryKey:["ideas"],queryFn:ideaApi.list}); const items=computed(()=>[...(query.data.value??[])].sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))));
+function choose(idea:Idea){selected.value=idea;title.value=idea.title;description.value=idea.description;uploads.value=[]} function reset(){selected.value=null;title.value="";description.value="";uploads.value=[]}
+async function addFiles(files:FileList|File[]){try{uploads.value.push(...await ideaApi.upload(Array.from(files)))}catch(e){toast.error(e instanceof Error?e.message:"上传失败")}}
+const save=useMutation({mutationFn:()=>selected.value?ideaApi.update(selected.value.ideaId,{title:title.value,description:description.value}):ideaApi.create({title:title.value,description:description.value,uploadIds:uploads.value.map(x=>x.uploadId)}),onSuccess:async()=>{reset();await queryClient.invalidateQueries({queryKey:["ideas"]});toast.success("灵感已保存")}});
+const remove=useMutation({mutationFn:(id:string)=>ideaApi.remove(id),onSuccess:async()=>{reset();await queryClient.invalidateQueries({queryKey:["ideas"]})}});
 </script>
-
-<template>
-  <div class="dual-scroll-page">
-    <section class="page-heading"><div><h1>{{ t("ideas.title") }}</h1><p>{{ t("ideas.subtitle") }}</p></div><button class="button button--primary" @click="reset">{{ t("ideas.new") }}</button></section>
-    <section class="split-scroll-layout">
-      <div class="split-scroll-column split-scroll-column--main">
-        <BaseCard :title="`${t('ideas.title')} · ${items.length}`"><template #actions><div class="inline-filters"><input v-model="search" class="compact-search" :placeholder="t('ideas.searchPlaceholder')" /><select v-model="filter"><option value="open">{{ t("ideas.open") }}</option><option value="handled">{{ t("ideas.handled") }}</option><option value="all">{{ t("common.all") }}</option></select></div></template><div class="idea-list"><article v-for="idea in items" :key="idea.ideaId" :class="{ handled: idea.handled, selected: selected?.ideaId === idea.ideaId }"><button @click="selected = idea"><strong>{{ idea.content }}</strong><small>{{ idea.createdAt }}</small></button><button class="icon-button" :disabled="busy" :title="idea.handled ? t('ideas.markOpen') : t('ideas.markHandled')" @click="toggle.mutate(idea)">✓</button></article><EmptyState v-if="!items.length" /></div></BaseCard>
-      </div>
-      <aside class="split-scroll-column split-scroll-column--side">
-        <div class="stack">
-          <BaseCard :title="t('preview.title')"><IdeaPreviewCard :content="content" :handled="handled" :created-at="selected?.createdAt" /></BaseCard>
-          <BaseCard :title="selected ? t('common.edit') : t('ideas.new')"><form class="form-grid" @submit.prevent="save.mutate()"><label class="field field--wide"><span>{{ t("ideas.content") }}</span><textarea v-model="content" rows="10" :placeholder="t('ideas.contentPlaceholder')" required /></label><label v-if="selected" class="check-field field--wide"><input v-model="handled" type="checkbox" />{{ t("ideas.handled") }}</label><div class="form-actions field--wide"><button class="button button--primary" type="submit" :disabled="busy || !content.trim()">{{ busy ? t("common.saving") : t("common.save") }}</button><button v-if="selected" class="button button--danger" type="button" :disabled="busy" @click="remove.mutate(selected.ideaId)">{{ t("common.delete") }}</button></div></form></BaseCard>
-        </div>
-      </aside>
-    </section>
-  </div>
-</template>
+<template><div class="dual-scroll-page idea-workspace"><section class="page-heading"><div><h1>灵感</h1><p>保存文字、图片和文档；AI 会帮助你提炼重点。</p></div><button class="button button--primary" @click="reset">新建灵感</button></section><section class="idea-layout"><div class="idea-list-pane"><BaseCard :title="`灵感 · ${items.length}`"><div class="idea-cards"><button v-for="idea in items" :key="idea.ideaId" class="idea-card" :class="{selected:selected?.ideaId===idea.ideaId}" @click="choose(idea)"><strong>{{idea.title}}</strong><p>{{idea.description}}</p><footer><span v-if="idea.attachments.length">📎 {{idea.attachments.length}} 个附件</span><time>{{idea.createdAt}}</time></footer></button><EmptyState v-if="!items.length" /></div></BaseCard></div><aside class="idea-detail"><BaseCard title="详情预览"><template v-if="selected"><h2>{{selected.title}}</h2><time>{{selected.createdAt}}</time><p class="idea-markdown">{{selected.description}}</p><div class="attachment-grid"><template v-for="file in selected.attachments" :key="file.attachmentId"><button v-if="file.mimeType.startsWith('image/')" class="image-thumb" @click="lightbox=file.url"><img :src="file.url" :alt="file.fileName" /></button><a v-else :href="file.url" class="document-file" download>📄 {{file.fileName}}</a></template></div><div class="form-actions"><button class="button button--danger" @click="remove.mutate(selected.ideaId)">🗑️ 删除</button></div></template><EmptyState v-else /></BaseCard><BaseCard :title="selected?'编辑灵感':'新建灵感'"><form class="form-grid" @submit.prevent="save.mutate()"><label class="field field--wide"><span>标题</span><input v-model="title" placeholder="What's your spark of inspiration?" required /></label><label class="field field--wide"><span>详细说明（Markdown）</span><textarea v-model="description" rows="7" placeholder="记录背景、逻辑和代码…" /></label><div v-if="!selected" class="drop-zone field--wide" :class="{dragging}" @dragover.prevent="dragging=true" @dragleave="dragging=false" @drop.prevent="dragging=false;addFiles($event.dataTransfer?.files||[])"><input type="file" multiple accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,application/zip" @change="addFiles(($event.target as HTMLInputElement).files||[])" /><span>拖拽图片或 PDF/TXT/ZIP 到这里，或点击选择文件</span><small v-for="file in uploads" :key="file.uploadId">📎 {{file.fileName}}</small></div><div class="form-actions field--wide"><button class="button button--primary" :disabled="save.isPending.value||!title.trim()">保存</button></div></form></BaseCard></aside></section><div v-if="lightbox" class="lightbox" @click="lightbox=null"><img :src="lightbox" alt="预览" /></div></div></template>

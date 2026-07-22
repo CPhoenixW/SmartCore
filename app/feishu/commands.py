@@ -141,3 +141,17 @@ def extract_image_key(event_payload: dict) -> tuple[str | None, str | None]:
     else:
         return message.get("message_id"), None
     return message.get("message_id"), image_key if isinstance(image_key, str) and image_key else None
+
+
+def extract_file_key(event_payload: dict) -> tuple[str | None, str | None, str | None]:
+    event = event_payload.get("event") if isinstance(event_payload.get("event"), dict) else {}
+    message = event.get("message") if isinstance(event.get("message"), dict) else {}
+    if message.get("message_type") != "file":
+        return message.get("message_id"), None, None
+    try:
+        content = json.loads(message.get("content") or "{}")
+    except json.JSONDecodeError:
+        return message.get("message_id"), None, None
+    key = content.get("file_key")
+    name = content.get("file_name")
+    return message.get("message_id"), key if isinstance(key, str) else None, name if isinstance(name, str) else None

@@ -329,8 +329,12 @@ def _apply_sqlite_migrations(db_path: Path) -> None:
         if "ddlPlan" in tables:
             _rebuild_ddl_plan_for_multiple_links(conn)
         if "idea" in tables:
-            _add_sqlite_column(conn, "idea", "userId", "userId VARCHAR(32) NOT NULL DEFAULT 'default'")
-            conn.execute("UPDATE idea SET userId = COALESCE(userId, 'default')")
+            # Intentional breaking redesign authorised by product owner: legacy Ideas
+            # have no attachment ownership or title/description contract to preserve.
+            if "content" in _sqlite_columns(conn, "idea"):
+                conn.execute("DROP TABLE IF EXISTS ideaAttachment")
+                conn.execute("DROP TABLE IF EXISTS ideaUpload")
+                conn.execute("DROP TABLE idea")
         if "actLog" in tables:
             _rebuild_act_log_for_user_targets(conn)
             _rebuild_table_if_incompatible(

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
-import re
+from pathlib import Path
+from uuid import uuid4
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -18,7 +19,6 @@ from app.db.session import SessionLocal
 from app.feishu.bot_service import BotRuntime, enabledRuntimes
 from app.feishu.commands import extract_image_key, extract_message_text, extract_routing_context
 from app.feishu.security import FeishuSecurityError, parse_event_payload, validate_request_headers
-from app.llm.gateway import analyze_image
 from app.new_core import crud
 from app.new_core.models import EvtBase
 from app.user_device.service import claimFeishuChatPair, feishuBinding
@@ -320,32 +320,28 @@ class FeishuEventHandler:
         now: float | None,
     ) -> tuple[int, dict[str, Any]]:
         message_id, text = extract_message_text(payload)
-        image_caption = text
+        chat, user = extract_routing_context(payload)
+        binding = feishuBinding(db, botId=bot.botId, externalId=user.get("open_id") or user.get("user_id"), chatId=chat.get("chat_id"))
+        if binding is None:
+            self._reply(payload, "请先在 SmartCore 工作台生成配对码，并发送“绑定 配对码”。", bot, action="unbound")
+            return 200, {"code": 0, "msg": "unbound chat"}
         image_message_id, image_key = extract_image_key(payload)
         if image_message_id:
             message_id = image_message_id
-        image_analysis: str | None = None
+        if message_id and crud.msgLogExists(db, src="feishu", externalId=message_id):
+            return 200, {"code": 0, "msg": "duplicate message ignored"}
+        media_uploads: list[dict[str, Any]] = []
         if image_key and message_id:
             try:
                 image, mime_type = bot.client().download_message_resource(message_id, image_key)
                 if len(image) > self.settings.vision_max_image_bytes:
                     self._reply(payload, "图片过大，暂不支持解析。", bot, action="image_too_large")
                     return 200, {"code": 0, "msg": "image too large"}
-                image_analysis = analyze_image(
-                    image,
-                    mime_type=mime_type,
-                    settings=self.settings,
-                    prompt=(
-                        "你是 SmartCore 的图片输入解析器。请准确提取图片中的文字（OCR）、"
-                        "日期、时间、截止要求和待办事项；无法确认的内容要明确标注。"
-                        "只输出简洁中文描述，不要编造信息。"
-                    ),
-                )
-                image_prefix = "用户发送了一张图片。"
-                if not text:
-                    image_prefix += "这是一个图片灵感输入，请保存为灵感。"
-                caption = f"\n用户附言：{text}" if text else ""
-                text = f"{image_prefix}{caption}\n图像解析结果：\n{image_analysis}"
+                suffix = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}.get(mime_type, ".bin")
+                destination = self.settings.idea_media_path / f"{uuid4().hex}{suffix}"
+                destination.parent.mkdir(parents=True, exist_ok=True); destination.write_bytes(image)
+                media_uploads.append(crud.createIdeaUpload(db, userId=binding.userId, fileName=f"feishu-image{suffix}", mimeType=mime_type, storagePath=str(destination), sizeBytes=len(image)))
+                text = (text or "") + "\n[用户发送了图片附件，请使用 kimi-k3 提炼并保存为灵感。]"
             except Exception as exc:
                 logger.warning("failed to analyze Feishu image: message_id=%s error=%s", message_id, type(exc).__name__)
                 self._reply(payload, "图片解析失败，请稍后重试或直接发送文字。", bot, action="image_failed")
@@ -353,34 +349,6 @@ class FeishuEventHandler:
         if not text:
             return 200, {"code": 0, "msg": "unsupported message type"}
 
-        if message_id and crud.msgLogExists(db, src="feishu", externalId=message_id):
-            return 200, {"code": 0, "msg": "duplicate message ignored"}
-
-        chat, user = extract_routing_context(payload)
-        binding = feishuBinding(db, botId=bot.botId, externalId=user.get("open_id") or user.get("user_id"), chatId=chat.get("chat_id"))
-        if binding is None:
-            self._reply(payload, "请先在 SmartCore 工作台生成配对码，并发送“绑定 配对码”。", bot, action="unbound")
-            return 200, {"code": 0, "msg": "unbound chat"}
-        if image_analysis is not None and not self._imageNeedsAgent(image_caption):
-            crud.createIdea(
-                db,
-                content=image_analysis,
-                srcType="image",
-                userId=binding.userId,
-            )
-            self._reply(payload, "图片灵感已保存。", bot, action="image_idea_saved")
-            if message_id:
-                crud.createMsgLog(
-                    db,
-                    src="feishu",
-                    externalId=message_id,
-                    rawText=text,
-                    intent="image_idea_capture",
-                    stat="image_idea_saved",
-                    userId=binding.userId,
-                    sourceDeviceId=None,
-                )
-            return 200, {"code": 0, "msg": "image idea saved"}
         self._reply(payload, "已收到，正在处理…", bot, action="processing_ack")
 
         normalized = self._normalizeMessage(
@@ -391,9 +359,13 @@ class FeishuEventHandler:
             text=text,
             now=now,
         )
-        if image_analysis is not None:
-            normalized["imageAnalysis"] = image_analysis
-            normalized["message"]["image_analysis"] = image_analysis
+        if media_uploads:
+            agent_attachments = [
+                {**upload, "agentPath": f"/attachments/{Path(str(upload.get('storagePath', ''))).name}"}
+                for upload in media_uploads
+            ]
+            normalized["attachments"] = agent_attachments
+            normalized["message"]["attachments"] = agent_attachments
         stat = "forwarded"
         try:
             self._postOpenclaw(normalized)
@@ -416,18 +388,6 @@ class FeishuEventHandler:
                 sourceDeviceId=None,
             )
         return 200, {"code": 0, "msg": "ok"}
-
-    @staticmethod
-    def _imageNeedsAgent(caption: str | None) -> bool:
-        """Only explicit schedule-like captions override default image-idea capture."""
-        return bool(
-            caption
-            and re.search(
-                r"(?:日程|提醒|截止|DDL|待办|安排|计划|schedule|reminder)",
-                caption,
-                re.IGNORECASE,
-            )
-        )
 
     def _forwardCardAction(
         self,

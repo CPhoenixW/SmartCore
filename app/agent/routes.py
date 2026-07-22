@@ -164,11 +164,12 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         "confirmationRequired": False,
         "inputSchema": _schema_object(
             {
-                "content": {"type": "string", "minLength": 1},
-                "srcType": {"type": "string", "enum": ["text", "voice", "ocr"]},
-                "mediaPath": {"type": ["string", "null"]},
+                "title": {"type": "string", "minLength": 1, "maxLength": 300},
+                "description": {"type": "string", "maxLength": 4000},
+                "srcType": {"type": "string", "enum": ["text", "voice", "media"]},
+                "uploadIds": {"type": "array", "items": {"type": "string"}},
             },
-            ["content"],
+            ["title"],
         ),
     },
     {
@@ -604,16 +605,17 @@ def createAgentRouter() -> APIRouter:
     @router.post("/ideaCapture", dependencies=protected)
     @router.post("/idea/capture", dependencies=protected)
     def ideaCapture(body: dict[str, Any], db: Session = Depends(get_db), scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
-        content = str(body.get("content") or "").strip()
-        if not content:
-            return _failed(["content required"])
+        title = str(body.get("title") or "").strip()
+        if not title:
+            return _failed(["title required"])
         return _run_write(
             db,
             lambda: crud.createIdea(
                 db,
-                content=content,
+                title=title,
+                description=str(body.get("description") or ""),
                 srcType=str(body.get("srcType") or "text"),
-                mediaPath=body.get("mediaPath"),
+                uploadIds=[str(item) for item in body.get("uploadIds", []) if str(item)],
                 userId=scope.userId,
             ),
         )
@@ -634,7 +636,7 @@ def createAgentRouter() -> APIRouter:
                 evt_type = "plan"
             title = str(body.get("title") or "").strip()
             if not title:
-                title = str(idea.content)[:300]
+                title = str(idea.title)[:300]
             if evt_type == "ddl":
                 end_time = body.get("endTime") or body.get("ddlAt") or body.get("at")
                 if not end_time:

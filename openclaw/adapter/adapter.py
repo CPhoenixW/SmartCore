@@ -135,9 +135,11 @@ def sanitize_event(event: dict[str, Any]) -> dict[str, Any]:
     if isinstance(message, dict):
         sanitized["message"] = {
             key: message.get(key)
-            for key in ("message_id", "text")
+            for key in ("message_id", "text", "attachments")
             if message.get(key) is not None
         }
+    if isinstance(event.get("attachments"), list):
+        sanitized["attachments"] = event["attachments"]
 
     card_action = event.get("card_action")
     if isinstance(card_action, dict):
@@ -227,9 +229,10 @@ def build_prompt(event: dict[str, Any], *, scope_file: str | None = None) -> str
         "instead of constructing curl commands.\n"
         "Do not call Feishu feedback endpoints or sendFeishu tools; the Adapter owns final delivery.\n"
         "Return exactly one concise user-facing final answer in finalAssistantVisibleText.\n"
-        "When a forwarded message says it is a 图片灵感输入 and has imageAnalysis, call ideaCapture "
-        "with the image analysis as content and srcType=image. If the accompanying text explicitly asks "
-        "to create a schedule, reminder, or DDL, follow that explicit instruction instead.\n"
+        "When an event includes attachments, use the attached files and the user's text to produce a concise "
+        "Chinese title and Markdown description, then call ideaCapture with title, description, srcType=media, "
+        "and every attachment uploadId. Do not call OCR services yourself or invent facts. If the text explicitly "
+        "asks to create a schedule, reminder, or DDL, follow that explicit instruction instead.\n"
         "On failure or ambiguity, return one concise clarification or error message.\n"
         f"{daily_summary_instructions}"
         f"Bound reply chat_id: {reply_chat_id or 'missing'}\n"
@@ -463,6 +466,8 @@ def run_openclaw(event: dict[str, Any]) -> None:
         "--message", build_prompt(event, scope_file=relative_scope_file),
         "--json",
     ]
+    if isinstance(event.get("attachments"), list):
+        cmd[cmd.index("--thinking"):cmd.index("--thinking")] = ["--model", os.environ.get("OPENCLAW_MEDIA_MODEL", "kimi-k3")]
     try:
         result = subprocess.run(
             cmd,
