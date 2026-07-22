@@ -7,7 +7,7 @@ from app.agent.scope import issue_agent_scope
 from app.db.session import SessionLocal
 from app.feishu.client import FeishuClient
 from app.main import create_app
-from app.new_core.models import FeishuBind, FeishuBot, Idea, LifeIdentity
+from app.new_core.models import FeishuBind, FeishuBot, LifeIdentity
 
 
 def _message_event(text: str, *, chat_id: str = "oc_user_chat", message_id: str = "om_1") -> dict:

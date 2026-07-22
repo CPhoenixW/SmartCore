@@ -538,7 +538,9 @@ def listIdeas(db: Session, *, userId: str = DEFAULT_USER_ID) -> list[dict[str, A
 
 def createIdeaUpload(db: Session, *, userId: str, fileName: str, mimeType: str, storagePath: str, sizeBytes: int) -> dict[str, Any]:
     row = IdeaUpload(userId=userId, fileName=fileName, mimeType=mimeType, storagePath=storagePath, sizeBytes=sizeBytes)
-    db.add(row); db.commit(); db.refresh(row)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
     return {"uploadId": row.uploadId, "fileName": row.fileName, "mimeType": row.mimeType, "sizeBytes": row.sizeBytes, "storagePath": row.storagePath}
 
 

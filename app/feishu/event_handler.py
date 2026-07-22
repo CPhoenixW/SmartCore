@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
-from uuid import uuid4
+import re
 from datetime import datetime
+from pathlib import Path
 from typing import Any
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -339,7 +340,8 @@ class FeishuEventHandler:
                     return 200, {"code": 0, "msg": "image too large"}
                 suffix = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}.get(mime_type, ".bin")
                 destination = self.settings.idea_media_path / f"{uuid4().hex}{suffix}"
-                destination.parent.mkdir(parents=True, exist_ok=True); destination.write_bytes(image)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(image)
                 media_uploads.append(crud.createIdeaUpload(db, userId=binding.userId, fileName=f"feishu-image{suffix}", mimeType=mime_type, storagePath=str(destination), sizeBytes=len(image)))
                 text = (text or "") + "\n[用户发送了图片附件，请使用 kimi-k3 提炼并保存为灵感。]"
             except Exception as exc:
