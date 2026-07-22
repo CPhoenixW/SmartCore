@@ -184,7 +184,7 @@ def _ideaDict(idea: Idea) -> dict[str, Any]:
 
 def _attachmentDict(row: IdeaAttachment) -> dict[str, Any]:
     return {"attachmentId": row.attachmentId, "fileName": row.fileName, "mimeType": row.mimeType,
-            "url": f"/api/idea/attachment/{row.attachmentId}", "sizeBytes": row.sizeBytes, "createdAt": row.createdAt}
+            "url": f"/api/idea/attachments/{row.attachmentId}", "sizeBytes": row.sizeBytes, "createdAt": row.createdAt}
 
 
 def _attachIdeaMedia(db: Session, ideas: list[Idea]) -> None:

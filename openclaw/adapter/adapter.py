@@ -238,9 +238,10 @@ def build_prompt(event: dict[str, Any], *, scope_file: str | None = None) -> str
         "Do not call Feishu feedback endpoints or sendFeishu tools; the Adapter owns final delivery.\n"
         "Return exactly one concise user-facing final answer in finalAssistantVisibleText.\n"
         "When an event includes attachments, follow the Media Ideas rules in the SmartCore skill exactly. "
-        "Use mediaImageOcr only for image attachments with meaningful user text. Documents must be stored "
-        "without reading them. If the text explicitly asks to create a schedule, reminder, or DDL, follow that "
-        "explicit instruction instead.\n"
+        "This is a mandatory attachment task: do not reply NO_REPLY, do not expose IDs, and do not claim an "
+        "attachment is missing when the compact event JSON lists it. Use mediaImageOcr only for image attachments "
+        "with meaningful user text. Documents must be stored without reading them. If the text explicitly asks to "
+        "create a schedule, reminder, or DDL, follow that explicit instruction instead.\n"
         "On failure or ambiguity, return one concise clarification or error message.\n"
         f"{daily_summary_instructions}"
         f"Bound reply chat_id: {reply_chat_id or 'missing'}\n"
@@ -446,6 +447,10 @@ def run_openclaw(event: dict[str, Any]) -> None:
     target = event.get("chat_id") or chat.get("chat_id") or user.get("user_id") or event.get("event_id") or "unknown"
     agent_id = os.environ.get("OPENCLAW_AGENT_ID", "smartcore")
     session_prefix = os.environ.get("OPENCLAW_SESSION_PREFIX", f"agent:{agent_id}:smartcore-feishu")
+    # Media messages are independent tasks.  Reusing a chat session lets an earlier
+    # text-only turn leak into attachment handling and can suppress the required OCR.
+    if isinstance(event.get("attachments"), list):
+        target = f"{target}-{event.get('message_id') or event.get('event_id') or time.time_ns()}"
     session_key = f"{session_prefix}-{safe_session_part(str(target))}"
     workspace = os.environ.get("OPENCLAW_WORKSPACE", "/root/.openclaw-smartcore-workspace")
     env = os.environ.copy()

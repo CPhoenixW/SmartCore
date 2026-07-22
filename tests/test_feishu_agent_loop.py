@@ -208,6 +208,34 @@ def test_feishu_image_is_forwarded_with_private_attachment(app_env, monkeypatch)
     assert forwarded["json"]["attachments"][0]["agentPath"].startswith("/attachments/")
 
 
+def test_feishu_image_pairs_recent_text_from_the_same_user(app_env, monkeypatch) -> None:
+    forwarded: list[dict] = []
+
+    def fake_post(_url, **kwargs):
+        forwarded.append(kwargs["json"])
+
+        class Resp:
+            is_error = False
+            status_code = 200
+
+        return Resp()
+
+    monkeypatch.setenv("OPENCLAW_EVENTS_ENDPOINT", "http://openclaw.local/events")
+    monkeypatch.setattr("httpx.post", fake_post)
+    monkeypatch.setattr(
+        FeishuClient,
+        "download_message_resource",
+        lambda _self, _message_id, _resource_key: (b"test-image", "image/png"),
+    )
+    monkeypatch.setattr(FeishuClient, "send_text", lambda *_args, **_kwargs: {"code": 0})
+    client = TestClient(create_app())
+    _bind_default_chat("oc_user_chat")
+
+    assert client.post("/feishu/event", json=_message_event("重点是明天的面试", message_id="om_context")).status_code == 200
+    assert client.post("/feishu/event", json=_image_event(message_id="om_image_with_context")).status_code == 200
+    assert forwarded[-1]["text"] == "重点是明天的面试"
+
+
 def test_feishu_post_with_image_is_forwarded(app_env, monkeypatch) -> None:
     forwarded: dict = {}
 

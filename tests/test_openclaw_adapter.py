@@ -54,6 +54,21 @@ def test_reply_heading_is_card_title_not_card_body() -> None:
     )
 
 
+def test_media_event_uses_an_isolated_openclaw_session(tmp_path, monkeypatch) -> None:
+    captured = {}
+
+    def fake_run(args, **_kwargs):
+        captured["session"] = args[args.index("--session-key") + 1]
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout=json.dumps({"finalAssistantVisibleText": "# 已保存\n内容"}), stderr="")
+
+    monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
+    monkeypatch.setattr(adapter.subprocess, "run", fake_run)
+    monkeypatch.setattr(adapter, "send_final_reply", lambda *_args: None)
+    monkeypatch.setattr(adapter, "log", lambda *_args, **_kwargs: None)
+    adapter.run_openclaw({"event_id": "evt", "message_id": "om_media", "chat_id": "chat", "agentScope": "scope", "attachments": []})
+    assert captured["session"].endswith("chat-om_media")
+
+
 def test_run_openclaw_delivers_generated_final_text(tmp_path, monkeypatch) -> None:
     delivered = []
     logs = []

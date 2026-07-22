@@ -26,7 +26,7 @@ from app.feishu.commands import (
 )
 from app.feishu.security import FeishuSecurityError, parse_event_payload, validate_request_headers
 from app.new_core import crud
-from app.new_core.models import EvtBase
+from app.new_core.models import EvtBase, MsgLog
 from app.user_device.service import claimFeishuChatPair, feishuBinding
 
 logger = logging.getLogger(__name__)
@@ -383,6 +383,8 @@ class FeishuEventHandler:
                 logger.warning("failed to download Feishu file: message_id=%s error=%s", message_id, type(exc).__name__)
                 self._reply(payload, "文件读取失败，请稍后重试。", bot, action="file_failed")
                 return 200, {"code": 0, "msg": "file download failed"}
+        if media_uploads and not text:
+            text = self._recentMediaText(db, userId=binding.userId)
         if not text and not media_uploads:
             event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
             message = event.get("message") if isinstance(event.get("message"), dict) else {}
@@ -443,6 +445,28 @@ class FeishuEventHandler:
                 sourceDeviceId=None,
             )
         return 200, {"code": 0, "msg": "ok"}
+
+    @staticmethod
+    def _recentMediaText(db: Session, *, userId: str) -> str | None:
+        """Pair a client-split text/image send without crossing user boundaries."""
+        rows = db.query(MsgLog).filter(
+            MsgLog.userId == userId,
+            MsgLog.channel == "feishu",
+            MsgLog.rawText.is_not(None),
+        ).order_by(MsgLog.createdAt.desc()).limit(5).all()
+        now = datetime.now(_DEFAULT_TZ)
+        for row in rows:
+            value = str(row.rawText or "").strip()
+            if not value:
+                continue
+            try:
+                created = datetime.fromisoformat(str(row.createdAt))
+                created = created if created.tzinfo else created.replace(tzinfo=_DEFAULT_TZ)
+            except ValueError:
+                continue
+            if (now - created.astimezone(_DEFAULT_TZ)).total_seconds() <= 15:
+                return value
+        return None
 
     def _forwardCardAction(
         self,
