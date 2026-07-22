@@ -18,7 +18,7 @@ from app.agent.scope import issue_agent_scope
 from app.config import Settings, get_settings
 from app.db.session import SessionLocal
 from app.feishu.bot_service import BotRuntime, enabledRuntimes
-from app.feishu.commands import extract_image_key, extract_message_text, extract_routing_context
+from app.feishu.commands import extract_file_key, extract_image_key, extract_message_text, extract_routing_context
 from app.feishu.security import FeishuSecurityError, parse_event_payload, validate_request_headers
 from app.new_core import crud
 from app.new_core.models import EvtBase
@@ -327,8 +327,11 @@ class FeishuEventHandler:
             self._reply(payload, "请先在 SmartCore 工作台生成配对码，并发送“绑定 配对码”。", bot, action="unbound")
             return 200, {"code": 0, "msg": "unbound chat"}
         image_message_id, image_key = extract_image_key(payload)
+        file_message_id, file_key, file_name = extract_file_key(payload)
         if image_message_id:
             message_id = image_message_id
+        if file_message_id:
+            message_id = file_message_id
         if message_id and crud.msgLogExists(db, src="feishu", externalId=message_id):
             return 200, {"code": 0, "msg": "duplicate message ignored"}
         media_uploads: list[dict[str, Any]] = []
@@ -348,6 +351,34 @@ class FeishuEventHandler:
                 logger.warning("failed to analyze Feishu image: message_id=%s error=%s", message_id, type(exc).__name__)
                 self._reply(payload, "图片解析失败，请稍后重试或直接发送文字。", bot, action="image_failed")
                 return 200, {"code": 0, "msg": "image analysis failed"}
+        if file_key and message_id:
+            try:
+                content, mime_type = bot.client().download_message_resource(
+                    message_id, file_key, resource_type="file"
+                )
+                allowed = {
+                    "application/pdf", "text/plain", "application/zip",
+                    "application/x-zip-compressed",
+                }
+                if mime_type not in allowed or len(content) > self.settings.idea_media_max_bytes:
+                    self._reply(payload, "仅支持 20 MB 以内的 PDF、TXT 或 ZIP 附件。", bot, action="file_too_large")
+                    return 200, {"code": 0, "msg": "unsupported file"}
+                safe_name = Path(file_name or "feishu-file").name[:300]
+                suffix = Path(safe_name).suffix or ".bin"
+                destination = self.settings.idea_media_path / f"{uuid4().hex}{suffix}"
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(content)
+                media_uploads.append(
+                    crud.createIdeaUpload(
+                        db, userId=binding.userId, fileName=safe_name, mimeType=mime_type,
+                        storagePath=str(destination), sizeBytes=len(content),
+                    )
+                )
+                text = (text or "") + "\n[用户发送了文档附件，请使用 kimi-k3 提炼并保存为灵感。]"
+            except Exception as exc:
+                logger.warning("failed to download Feishu file: message_id=%s error=%s", message_id, type(exc).__name__)
+                self._reply(payload, "文件读取失败，请稍后重试。", bot, action="file_failed")
+                return 200, {"code": 0, "msg": "file download failed"}
         if not text:
             return 200, {"code": 0, "msg": "unsupported message type"}
 
