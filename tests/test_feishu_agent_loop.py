@@ -241,7 +241,7 @@ def test_openclaw_skill_delegates_feishu_reply_to_adapter() -> None:
     assert "`data.items`" in skill
     assert "`start_time`" in skill
     assert "Do not pipe a response through `head`" in skill
-    assert "Feishu-compatible Markdown" in skill
+    assert "Filtering & Anti-Noise Rules" in skill
     assert "scripts/query_events.py" in skill
 
 
