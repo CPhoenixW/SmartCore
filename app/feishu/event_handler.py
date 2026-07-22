@@ -8,12 +8,13 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.agent.scope import issue_agent_scope
 from app.config import Settings, get_settings
-from app.db.session import get_db
+from app.db.session import SessionLocal
 from app.feishu.bot_service import BotRuntime, enabledRuntimes
 from app.feishu.commands import extract_image_key, extract_message_text, extract_routing_context
 from app.feishu.security import FeishuSecurityError, parse_event_payload, validate_request_headers
@@ -422,13 +423,19 @@ def create_feishu_router(handler: FeishuEventHandler | None = None) -> APIRouter
         return cached_handler
 
     @router.post("/feishu/event")
-    async def feishu_event(
-        request: Request,
-        db: Session = Depends(get_db),
-    ) -> Response:
+    async def feishu_event(request: Request) -> Response:
         body = await request.body()
         event_handler = _handler()
-        status_code, payload = event_handler.handle(body, dict(request.headers), db)
+        headers = dict(request.headers)
+
+        def handle_in_worker() -> tuple[int, dict[str, Any]]:
+            db = SessionLocal()
+            try:
+                return event_handler.handle(body, headers, db)
+            finally:
+                db.close()
+
+        status_code, payload = await run_in_threadpool(handle_in_worker)
         return Response(
             content=json.dumps(payload, ensure_ascii=False),
             status_code=status_code,
