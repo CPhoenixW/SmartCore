@@ -49,12 +49,13 @@ def test_send_final_reply_uses_token_and_scope_without_target_ids(tmp_path, monk
 def test_run_openclaw_delivers_generated_final_text(monkeypatch) -> None:
     delivered = []
     logs = []
+    captured = {}
     payload = {"result": {"finalAssistantVisibleText": "昨天没有安排。"}}
 
     monkeypatch.setattr(
         adapter.subprocess,
         "run",
-        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+        lambda *_args, **kwargs: captured.update(env=kwargs["env"]) or subprocess.CompletedProcess(
             args=["openclaw"],
             returncode=0,
             stdout=json.dumps(payload, ensure_ascii=False),
@@ -72,9 +73,17 @@ def test_run_openclaw_delivers_generated_final_text(monkeypatch) -> None:
     adapter.run_openclaw(event)
 
     assert delivered == [(event, "昨天没有安排。")]
+    assert captured["env"]["SMARTCORE_AGENT_SCOPE"] == "scope"
     assert any(message == "final reply delivered" for message, _fields in logs)
     finished = next(fields for message, fields in logs if message == "openclaw finished")
     assert finished["reply_delivered"] is True
+
+
+def test_prompt_does_not_embed_signed_scope() -> None:
+    prompt = adapter.build_prompt({"agentScope": "signed-scope"})
+
+    assert "signed-scope" not in prompt
+    assert "$SMARTCORE_AGENT_SCOPE" in prompt
 
 
 def test_run_openclaw_failure_sends_failure_reply(monkeypatch) -> None:

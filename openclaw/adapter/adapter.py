@@ -163,7 +163,6 @@ def build_prompt(event: dict[str, Any]) -> str:
     chat = event.get("chat") if isinstance(event.get("chat"), dict) else {}
     user = event.get("user") if isinstance(event.get("user"), dict) else {}
     reply_chat_id = event.get("chat_id") or chat.get("chat_id")
-    scope = str(event.get("agentScope") or "").strip()
     daily_summary_instructions = ""
     if event.get("event_type") == "daily_summary":
         report_date = str(event.get("reportDate") or "").strip()
@@ -208,7 +207,9 @@ def build_prompt(event: dict[str, Any]) -> str:
         f"SmartCore base URL: {base_url}\n"
         f"Read the SmartCore API token from {token_file} only inside the command that calls SmartCore. Never print it.\n"
         "Required SmartCore header name: X-SmartCore-Agent-Token.\n"
-        f"For EVERY /agent database or feedback request, also send X-SmartCore-Agent-Scope: {scope}\n"
+        "For EVERY /agent database or feedback request, also send the scope from "
+        "the current process environment: X-SmartCore-Agent-Scope: $SMARTCORE_AGENT_SCOPE. "
+        "Never print, copy, or paste its value.\n"
         "For one local day, query with date: YYYY-MM-DD. For a wider range, use only "
         "timeRange.start and timeRange.end with absolute ISO-8601 values.\n"
         "Never send start_time, end_time, filter, or locally filter a truncated response. "
@@ -424,6 +425,19 @@ def run_openclaw(event: dict[str, Any]) -> None:
     ]
     env = os.environ.copy()
     env["PATH"] = f"/root/.openclaw/bin:{env.get('PATH', '')}"
+    scope = str(event.get("agentScope") or "").strip()
+    if not scope:
+        reply_delivered = deliver_reply(event, FAILURE_REPLY)
+        log(
+            "openclaw rejected event without scope",
+            event_id=event.get("event_id"),
+            reply_delivered=reply_delivered,
+        )
+        return
+    # Keep the per-event credential out of the LLM prompt and workspace.  The
+    # OpenClaw subprocess (and its commands) can reference the environment
+    # variable without transcribing a signed token into a shell command.
+    env["SMARTCORE_AGENT_SCOPE"] = scope
     try:
         result = subprocess.run(
             cmd,

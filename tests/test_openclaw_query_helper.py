@@ -12,7 +12,7 @@ def parse(*args: str):
 
 
 def test_single_day_query_body_uses_strict_contract() -> None:
-    body = query_events.build_body(parse("--scope", "scope", "--date", "2026-07-20"))
+    body = query_events.build_body(parse("--date", "2026-07-20"))
 
     assert body == {
         "date": "2026-07-20",
@@ -27,8 +27,6 @@ def test_range_query_requires_both_boundaries() -> None:
     with pytest.raises(ValueError, match="provided together"):
         query_events.build_body(
             parse(
-                "--scope",
-                "scope",
                 "--start",
                 "2026-07-20T00:00:00+08:00",
             )
@@ -68,6 +66,35 @@ def test_query_helper_uses_token_scope_and_returns_api_json(tmp_path, monkeypatc
     assert request.headers["X-smartcore-agent-scope"] == "signed-scope"
     assert json.loads(request.data)["date"] == "2026-07-20"
     assert captured["timeout"] == 15
+
+
+def test_query_helper_uses_task_scope_environment(tmp_path, monkeypatch) -> None:
+    token_file = tmp_path / "token"
+    token_file.write_text("agent-secret\n", encoding="utf-8")
+    captured = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self) -> bytes:
+            return b'{"ok":true}'
+
+    monkeypatch.setenv("SMARTCORE_AGENT_TOKEN_FILE", str(token_file))
+    monkeypatch.setenv("SMARTCORE_AGENT_SCOPE", "task-scope")
+    monkeypatch.setattr(
+        query_events.urllib.request,
+        "urlopen",
+        lambda request, timeout: captured.update(request=request) or Response(),
+    )
+
+    result = query_events.query_events(parse("--date", "2026-07-20"))
+
+    assert result["ok"] is True
+    assert captured["request"].headers["X-smartcore-agent-scope"] == "task-scope"
 
 
 def test_runtime_config_supplies_base_url_and_token_path(tmp_path, monkeypatch) -> None:

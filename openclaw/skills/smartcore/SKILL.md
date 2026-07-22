@@ -10,7 +10,7 @@ Use this skill when the user asks about schedules, reminders, ideas, or SmartCor
 ## Boundaries
 
 - Call `GET /agent/tools` first when tool shape is uncertain.
-- Use only authenticated `/agent/*` endpoints with `X-SmartCore-Agent-Token` and the per-message `X-SmartCore-Agent-Scope` supplied in the OpenClaw prompt.
+- Use only authenticated `/agent/*` endpoints with `X-SmartCore-Agent-Token` and `X-SmartCore-Agent-Scope: $SMARTCORE_AGENT_SCOPE`. The scope is injected for this task; never print, copy, or paste it.
 - Treat `/agent/tools` as the source of truth for tool names, paths, schemas, and aliases.
 - Never read SQLite, backups, Docker volumes, or `.env` directly.
 
@@ -36,7 +36,7 @@ available only as compatibility aliases.
 ## Query Rules
 
 - Run event queries with the bundled helper; do not construct `curl` commands:
-  `python3 skills/smartcore/scripts/query_events.py --scope '<signed scope>' ...`
+  `python3 skills/smartcore/scripts/query_events.py ...`
 - For a single local day, including 今天、明天 or a specific calendar date, prefer
   `--date YYYY-MM-DD`. Resolve relative dates from the forwarded
   `request.timezone` and `request.now`.
@@ -60,7 +60,6 @@ Single-day command:
 
 ```bash
 python3 skills/smartcore/scripts/query_events.py \
-  --scope '<signed scope from the current prompt>' \
   --date 2026-07-20
 ```
 

@@ -29,7 +29,11 @@ def runtime_config() -> dict[str, str]:
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="Query scoped SmartCore events.")
-    result.add_argument("--scope", required=True)
+    result.add_argument(
+        "--scope",
+        default=os.environ.get("SMARTCORE_AGENT_SCOPE", ""),
+        help="Optional override; normally inherited from SMARTCORE_AGENT_SCOPE.",
+    )
     result.add_argument("--date")
     result.add_argument("--start")
     result.add_argument("--end")
@@ -73,6 +77,9 @@ def build_body(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def query_events(args: argparse.Namespace) -> dict[str, Any]:
+    scope = str(args.scope or "").strip()
+    if not scope:
+        raise ValueError("SmartCore agent scope is unavailable in this task environment")
     runtime = runtime_config()
     token_file = Path(
         os.environ.get(
@@ -93,7 +100,7 @@ def query_events(args: argparse.Namespace) -> dict[str, Any]:
         headers={
             "Content-Type": "application/json",
             "X-SmartCore-Agent-Token": token,
-            "X-SmartCore-Agent-Scope": args.scope,
+            "X-SmartCore-Agent-Scope": scope,
         },
         method="POST",
     )
