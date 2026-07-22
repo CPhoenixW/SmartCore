@@ -33,6 +33,18 @@ def _message_event(text: str, *, chat_id: str = "oc_user_chat", message_id: str 
     }
 
 
+def _image_event(*, chat_id: str = "oc_user_chat", message_id: str = "om_image") -> dict:
+    event = _message_event("", chat_id=chat_id, message_id=message_id)
+    event["event"]["message"] = {
+        "message_id": message_id,
+        "chat_id": chat_id,
+        "chat_type": "p2p",
+        "message_type": "image",
+        "content": json.dumps({"image_key": "img_test"}),
+    }
+    return event
+
+
 class FakeFeishuClient:
     def __init__(self) -> None:
         self.text_calls: list[tuple[str, str]] = []
@@ -131,6 +143,42 @@ def test_feishu_processing_ack_failure_does_not_block_openclaw_forward(app_env, 
     assert response.status_code == 200
     assert response.json()["msg"] == "ok"
     assert forwarded["json"]["message_id"] == "om_ack_failure"
+
+
+def test_feishu_image_is_analyzed_by_vision_model_then_forwarded(app_env, monkeypatch) -> None:
+    forwarded: dict = {}
+
+    def fake_post(_url, **kwargs):
+        forwarded["json"] = kwargs["json"]
+
+        class Resp:
+            is_error = False
+            status_code = 200
+
+        return Resp()
+
+    monkeypatch.setenv("OPENCLAW_EVENTS_ENDPOINT", "http://openclaw.local/events")
+    monkeypatch.setattr("httpx.post", fake_post)
+    monkeypatch.setattr(
+        FeishuClient,
+        "download_message_resource",
+        lambda _self, message_id, resource_key: (b"test-image", "image/png"),
+    )
+    monkeypatch.setattr(
+        "app.feishu.event_handler.analyze_image",
+        lambda image, **kwargs: "OCR：课程作业，明晚 20:00 前提交。",
+    )
+    monkeypatch.setattr(FeishuClient, "send_text", lambda *_args, **_kwargs: {"code": 0})
+    client = TestClient(create_app())
+    _bind_default_chat("oc_user_chat")
+
+    response = client.post("/feishu/event", json=_image_event())
+
+    assert response.status_code == 200
+    event = forwarded["json"]
+    assert event["imageAnalysis"] == "OCR：课程作业，明晚 20:00 前提交。"
+    assert "图像解析结果" in event["text"]
+    assert event["message"]["image_analysis"] == event["imageAnalysis"]
 
 
 def test_scoped_send_text_uses_bound_chat_only(app_env, monkeypatch) -> None:

@@ -15,8 +15,9 @@ from app.agent.scope import issue_agent_scope
 from app.config import Settings, get_settings
 from app.db.session import get_db
 from app.feishu.bot_service import BotRuntime, enabledRuntimes
-from app.feishu.commands import extract_message_text, extract_routing_context
+from app.feishu.commands import extract_image_key, extract_message_text, extract_routing_context
 from app.feishu.security import FeishuSecurityError, parse_event_payload, validate_request_headers
+from app.llm.gateway import analyze_image
 from app.new_core import crud
 from app.new_core.models import EvtBase
 from app.user_device.service import claimFeishuChatPair, feishuBinding
@@ -93,7 +94,7 @@ class FeishuEventHandler:
 
         if event_type == "card.action.trigger":
             return self._forwardCardAction(payload, db, matched, now=now)
-        return self._forwardTextMessage(payload, db, matched, now=now)
+        return self._forwardMessage(payload, db, matched, now=now)
 
     def _reply(self, payload: dict[str, Any], text: str, bot: BotRuntime, *, action: str) -> None:
         chat, _ = extract_routing_context(payload)
@@ -307,7 +308,7 @@ class FeishuEventHandler:
             return True, {"toast": {"type": "error", "content": "事件不存在或无法更新"}}
         return True, {"toast": {"type": "success", "content": "已更新"}}
 
-    def _forwardTextMessage(
+    def _forwardMessage(
         self,
         payload: dict[str, Any],
         db: Session,
@@ -316,8 +317,33 @@ class FeishuEventHandler:
         now: float | None,
     ) -> tuple[int, dict[str, Any]]:
         message_id, text = extract_message_text(payload)
+        image_message_id, image_key = extract_image_key(payload)
+        if image_message_id:
+            message_id = image_message_id
+        image_analysis: str | None = None
+        if image_key and message_id:
+            try:
+                image, mime_type = bot.client().download_message_resource(message_id, image_key)
+                if len(image) > self.settings.vision_max_image_bytes:
+                    self._reply(payload, "图片过大，暂不支持解析。", bot, action="image_too_large")
+                    return 200, {"code": 0, "msg": "image too large"}
+                image_analysis = analyze_image(
+                    image,
+                    mime_type=mime_type,
+                    settings=self.settings,
+                    prompt=(
+                        "你是 SmartCore 的图片输入解析器。请准确提取图片中的文字（OCR）、"
+                        "日期、时间、截止要求和待办事项；无法确认的内容要明确标注。"
+                        "只输出简洁中文描述，不要编造信息。"
+                    ),
+                )
+                text = f"用户发送了一张图片。图像解析结果：\n{image_analysis}"
+            except Exception as exc:
+                logger.warning("failed to analyze Feishu image: message_id=%s error=%s", message_id, type(exc).__name__)
+                self._reply(payload, "图片解析失败，请稍后重试或直接发送文字。", bot, action="image_failed")
+                return 200, {"code": 0, "msg": "image analysis failed"}
         if not text:
-            return 200, {"code": 0, "msg": "no text message"}
+            return 200, {"code": 0, "msg": "unsupported message type"}
 
         if message_id and crud.msgLogExists(db, src="feishu", externalId=message_id):
             return 200, {"code": 0, "msg": "duplicate message ignored"}
@@ -337,6 +363,9 @@ class FeishuEventHandler:
             text=text,
             now=now,
         )
+        if image_analysis is not None:
+            normalized["imageAnalysis"] = image_analysis
+            normalized["message"]["image_analysis"] = image_analysis
         stat = "forwarded"
         try:
             self._postOpenclaw(normalized)

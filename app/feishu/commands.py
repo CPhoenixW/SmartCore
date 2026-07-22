@@ -77,3 +77,21 @@ def extract_message_text(event_payload: dict) -> tuple[str | None, str | None]:
     if not isinstance(text, str):
         return message.get("message_id"), None
     return message.get("message_id"), normalize_message_text(text)
+
+
+def extract_image_key(event_payload: dict) -> tuple[str | None, str | None]:
+    event = event_payload.get("event")
+    if not isinstance(event, dict):
+        return None, None
+    message = event.get("message")
+    if not isinstance(message, dict) or message.get("message_type") != "image":
+        return None, None
+    raw_content = message.get("content")
+    if not isinstance(raw_content, str):
+        return message.get("message_id"), None
+    try:
+        content = json.loads(raw_content)
+    except json.JSONDecodeError:
+        return message.get("message_id"), None
+    image_key = content.get("image_key")
+    return message.get("message_id"), image_key if isinstance(image_key, str) and image_key else None
