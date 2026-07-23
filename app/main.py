@@ -44,6 +44,9 @@ def _sync_event_relations() -> None:
     try:
         ensure_missing_relations(db)
         close_past_course_occurrences(db)
+        from app.new_core import crud
+
+        crud.cleanupExpiredIdeaMedia(db)
     except Exception:
         db.rollback()
         raise

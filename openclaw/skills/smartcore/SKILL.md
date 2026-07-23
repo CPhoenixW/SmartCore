@@ -45,6 +45,16 @@ Use this skill when the user asks about schedules, reminders, ideas, or SmartCor
 - Start the final reply with `# <summary title>`. Keep the body concise; the adapter
   uses that heading only as the Feishu card title and removes it from the card body.
 
+### Existing Idea media jobs
+
+- An `idea_media_edit` event preprocesses one image for an existing Idea. It must never
+  call `ideaCapture`, query schedules, or mutate events.
+- Call `mediaImageOcr` once with both the supplied `uploadId` and `jobId`.
+- On success, create one factual Chinese Markdown summary of at most 100 characters and
+  call `ideaMediaJobComplete` once with `jobId`, `summary`, and the returned `ocrEvidence`.
+- On failure, call `ideaMediaJobFail` once with a concise error and stop. Never retry OCR.
+- The backend job state is authoritative and idempotent. Do not try to bypass or reset it.
+
 The preferred DB paths are `/agent/db/query_events`, `/agent/db/create_event`,
 `/agent/db/update_event`, and `/agent/db/delete_event`. The old short paths remain
 available only as compatibility aliases.

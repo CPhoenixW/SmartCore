@@ -131,6 +131,7 @@ CREATE TABLE IF NOT EXISTS idea (
     description TEXT NOT NULL DEFAULT '',
     srcType VARCHAR(20) NOT NULL DEFAULT 'text',
     handled INTEGER NOT NULL DEFAULT 0,
+    revision INTEGER NOT NULL DEFAULT 1,
     createdAt VARCHAR(64) NOT NULL,
     FOREIGN KEY (userId) REFERENCES appUser(userId) ON DELETE CASCADE
 );
@@ -155,6 +156,24 @@ CREATE TABLE IF NOT EXISTS ideaUpload (
     sizeBytes INTEGER NOT NULL,
     createdAt VARCHAR(64) NOT NULL,
     FOREIGN KEY (userId) REFERENCES appUser(userId) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS ideaMediaJob (
+    jobId VARCHAR(32) PRIMARY KEY,
+    userId VARCHAR(32) NOT NULL,
+    ideaId VARCHAR(32),
+    uploadId VARCHAR(32) NOT NULL UNIQUE,
+    stat VARCHAR(30) NOT NULL DEFAULT 'queued',
+    contextText TEXT NOT NULL DEFAULT '',
+    ocrText TEXT,
+    summary TEXT,
+    ocrEvidence TEXT,
+    errorMessage TEXT,
+    createdAt VARCHAR(64) NOT NULL,
+    updatedAt VARCHAR(64) NOT NULL,
+    expiresAt VARCHAR(64) NOT NULL,
+    FOREIGN KEY (userId) REFERENCES appUser(userId) ON DELETE CASCADE,
+    FOREIGN KEY (ideaId) REFERENCES idea(ideaId) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS device (
@@ -255,6 +274,7 @@ CREATE INDEX IF NOT EXISTS idx_ddlPlan_ddl_order ON ddlPlan(ddlEvtId, sortOrder)
 CREATE INDEX IF NOT EXISTS idx_idea_user_created ON idea(userId, createdAt);
 CREATE INDEX IF NOT EXISTS idx_ideaAttachment_idea ON ideaAttachment(ideaId, createdAt);
 CREATE INDEX IF NOT EXISTS idx_ideaUpload_user_created ON ideaUpload(userId, createdAt);
+CREATE INDEX IF NOT EXISTS idx_ideaMediaJob_user_created ON ideaMediaJob(userId, createdAt);
 CREATE INDEX IF NOT EXISTS idx_device_user_kind ON device(userId, deviceKind);
 CREATE INDEX IF NOT EXISTS idx_deviceStateLog_device_seen ON deviceStateLog(deviceId, seenAt);
 CREATE INDEX IF NOT EXISTS idx_actLog_user_created ON actLog(userId, createdAt);

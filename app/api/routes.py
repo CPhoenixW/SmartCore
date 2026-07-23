@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -30,6 +31,8 @@ from app.new_core.models import (
     ActLog,
     DeviceStateLog,
     EvtBase,
+    Idea,
+    IdeaMediaJob,
     IdeaUpload,
     MsgLog,
     NotifyLog,
@@ -386,11 +389,20 @@ class IdeaPatchBody(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=300)
     description: str | None = None
     handled: bool | None = None
+    expectedRevision: int | None = Field(default=None, ge=1)
+    addUploadIds: list[str] = Field(default_factory=list, max_length=10)
+    removeAttachmentIds: list[str] = Field(default_factory=list, max_length=10)
 
 
 class IdeaMediaProcessBody(BaseModel):
     uploadIds: list[str] = Field(min_length=1, max_length=10)
     text: str = Field(default="", max_length=4000)
+
+
+class IdeaMediaJobBody(BaseModel):
+    ideaId: str
+    uploadId: str
+    contextText: str = Field(default="", max_length=4000)
 
 
 @router.get("/idea")
@@ -474,10 +486,154 @@ def process_idea_media(
     return ok({"queued": True, "uploadIds": upload_ids})
 
 
+@router.post("/idea/media-jobs", status_code=202)
+def create_idea_media_job(
+    body: IdeaMediaJobBody,
+    userId: str = Depends(require_authenticated_user_id),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    idea = db.get(Idea, body.ideaId)
+    if idea is None or idea.userId != userId:
+        raise HTTPException(status_code=404, detail="idea not found")
+    upload = db.get(IdeaUpload, body.uploadId)
+    if upload is None or upload.userId != userId:
+        raise HTTPException(status_code=404, detail="upload not found")
+    if not upload.mimeType.startswith("image/"):
+        raise HTTPException(status_code=400, detail="only image uploads require media jobs")
+    existing = db.scalar(
+        select(IdeaMediaJob).where(
+            IdeaMediaJob.uploadId == upload.uploadId,
+            IdeaMediaJob.userId == userId,
+        )
+    )
+    if existing is not None:
+        if existing.ideaId != idea.ideaId:
+            raise HTTPException(status_code=409, detail="upload already belongs to another media job")
+        return ok(_media_job_dict(existing))
+    if not settings.openclaw_events_endpoint or not settings.openclaw_events_token:
+        raise HTTPException(status_code=503, detail="media processing is unavailable")
+
+    now = datetime.now().astimezone()
+    job = IdeaMediaJob(
+        userId=userId,
+        ideaId=idea.ideaId,
+        uploadId=upload.uploadId,
+        stat="queued",
+        contextText=body.contextText.strip(),
+        expiresAt=(now + timedelta(hours=24)).isoformat(),
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    try:
+        _dispatch_idea_media_job(job, upload, settings=settings)
+    except httpx.HTTPError as exc:
+        job.stat = "failed"
+        job.errorMessage = "media processing queue is unavailable"
+        job.updatedAt = nowIso()
+        db.commit()
+        raise HTTPException(status_code=503, detail=job.errorMessage) from exc
+    return ok(_media_job_dict(job))
+
+
+def _dispatch_idea_media_job(
+    job: IdeaMediaJob,
+    upload: IdeaUpload,
+    *,
+    settings: Settings,
+) -> None:
+    attachment = {
+        "uploadId": upload.uploadId,
+        "fileName": upload.fileName,
+        "mimeType": upload.mimeType,
+        "sizeBytes": upload.sizeBytes,
+        "agentPath": f"/attachments/{Path(upload.storagePath).name}",
+    }
+    event = {
+        "event_id": f"idea-media-job:{job.jobId}",
+        "source": "web",
+        "event_type": "idea_media_edit",
+        "userId": job.userId,
+        "jobId": job.jobId,
+        "targetIdeaId": job.ideaId,
+        "text": job.contextText,
+        "message": {"text": job.contextText, "attachments": [attachment]},
+        "attachments": [attachment],
+        "agentScope": issue_agent_scope(userId=job.userId, purpose="web", ttl_seconds=900),
+    }
+    response = httpx.post(
+        settings.openclaw_events_endpoint,
+        json=event,
+        headers={"Authorization": f"Bearer {settings.openclaw_events_token}"},
+        timeout=10.0,
+    )
+    response.raise_for_status()
+
+
+def _media_job_dict(job: IdeaMediaJob) -> dict[str, Any]:
+    return {
+        "jobId": job.jobId,
+        "ideaId": job.ideaId,
+        "uploadId": job.uploadId,
+        "stat": job.stat,
+        "summary": job.summary,
+        "errorMessage": job.errorMessage,
+        "createdAt": job.createdAt,
+        "updatedAt": job.updatedAt,
+    }
+
+
+@router.get("/idea/media-jobs/{jobId}")
+def get_idea_media_job(
+    jobId: str,
+    userId: str = Depends(require_authenticated_user_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    job = db.get(IdeaMediaJob, jobId)
+    if job is None or job.userId != userId:
+        raise HTTPException(status_code=404, detail="media job not found")
+    return ok(_media_job_dict(job))
+
+
+@router.post("/idea/media-jobs/{jobId}/retry", status_code=202)
+def retry_idea_media_job(
+    jobId: str,
+    userId: str = Depends(require_authenticated_user_id),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    job = db.get(IdeaMediaJob, jobId)
+    if job is None or job.userId != userId:
+        raise HTTPException(status_code=404, detail="media job not found")
+    if job.stat != "failed":
+        raise HTTPException(status_code=409, detail="only failed media jobs can be retried")
+    upload = db.get(IdeaUpload, job.uploadId)
+    if upload is None or upload.userId != userId:
+        raise HTTPException(status_code=404, detail="upload not found")
+    job.stat = "queued"
+    job.ocrText = None
+    job.summary = None
+    job.ocrEvidence = None
+    job.errorMessage = None
+    job.updatedAt = nowIso()
+    db.commit()
+    try:
+        _dispatch_idea_media_job(job, upload, settings=settings)
+    except httpx.HTTPError as exc:
+        job.stat = "failed"
+        job.errorMessage = "media processing queue is unavailable"
+        job.updatedAt = nowIso()
+        db.commit()
+        raise HTTPException(status_code=503, detail=job.errorMessage) from exc
+    return ok(_media_job_dict(job))
+
+
 @router.patch("/idea/{ideaId}")
 def patch_idea(
     ideaId: str,
     body: IdeaPatchBody,
+    userId: str = Depends(require_authenticated_user_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
@@ -485,19 +641,29 @@ def patch_idea(
             crud.updateIdea(
                 db,
                 ideaId,
+                userId=userId,
                 title=body.title,
                 description=body.description,
                 handled=body.handled,
+                expectedRevision=body.expectedRevision,
+                addUploadIds=body.addUploadIds,
+                removeAttachmentIds=body.removeAttachmentIds,
             )
         )
     except ValueError as exc:
+        if str(exc) in {"stale idea revision", "image media job is not ready"}:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         raise _http_error(exc) from exc
 
 
 @router.delete("/idea/{ideaId}")
-def delete_idea(ideaId: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+def delete_idea(
+    ideaId: str,
+    userId: str = Depends(require_authenticated_user_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
     try:
-        return ok(crud.deleteIdea(db, ideaId))
+        return ok(crud.deleteIdea(db, ideaId, userId=userId))
     except ValueError as exc:
         raise _http_error(exc) from exc
 

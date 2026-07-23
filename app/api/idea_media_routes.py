@@ -6,12 +6,14 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.security import require_authenticated_user_id
 from app.config import Settings, get_settings
 from app.db.session import get_db
 from app.new_core import crud
+from app.new_core.models import IdeaMediaJob, IdeaUpload, nowIso
 
 router = APIRouter(prefix="/api/idea", tags=["idea-media"])
 _ALLOWED = {"image/jpeg", "image/png", "image/webp", "application/pdf", "text/plain", "application/zip", "application/x-zip-compressed"}
@@ -20,6 +22,7 @@ _EXT = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "appli
 
 @router.post("/uploads")
 async def upload_idea_files(files: list[UploadFile] = File(...), userId: str = Depends(require_authenticated_user_id), db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> dict:
+    crud.cleanupExpiredIdeaMedia(db)
     if not files or len(files) > 10:
         raise HTTPException(status_code=400, detail="upload 1 to 10 files")
     results = []
@@ -54,3 +57,28 @@ def download_idea_attachment(attachmentId: str, userId: str = Depends(require_au
         raise HTTPException(status_code=404, detail="attachment file not found")
     disposition = "inline" if row.mimeType.startswith("image/") else "attachment"
     return FileResponse(path, media_type=row.mimeType or mimetypes.guess_type(row.fileName)[0], filename=row.fileName, content_disposition_type=disposition)
+
+
+@router.delete("/uploads/{uploadId}")
+def delete_idea_upload(
+    uploadId: str,
+    userId: str = Depends(require_authenticated_user_id),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = db.get(IdeaUpload, uploadId)
+    if row is None or row.userId != userId:
+        raise HTTPException(status_code=404, detail="upload not found")
+    path = Path(row.storagePath)
+    job = db.scalar(
+        select(IdeaMediaJob).where(
+            IdeaMediaJob.uploadId == uploadId, IdeaMediaJob.userId == userId
+        )
+    )
+    if job is not None and job.stat not in {"ready", "consumed"}:
+        job.stat = "failed"
+        job.errorMessage = "upload removed by user"
+        job.updatedAt = nowIso()
+    db.delete(row)
+    db.commit()
+    path.unlink(missing_ok=True)
+    return {"ok": True, "data": {"uploadId": uploadId}}

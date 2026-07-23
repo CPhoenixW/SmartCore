@@ -198,6 +198,7 @@ class Idea(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     srcType: Mapped[str] = mapped_column(String(20), default="text", nullable=False)
     handled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
 
 
@@ -225,6 +226,28 @@ class IdeaUpload(Base):
     storagePath: Mapped[str] = mapped_column(String(700), nullable=False)
     sizeBytes: Mapped[int] = mapped_column(Integer, nullable=False)
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class IdeaMediaJob(Base):
+    __tablename__ = "ideaMediaJob"
+
+    jobId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    ideaId: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("idea.ideaId", ondelete="CASCADE")
+    )
+    uploadId: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    stat: Mapped[str] = mapped_column(String(30), default="queued", nullable=False)
+    contextText: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    ocrText: Mapped[str | None] = mapped_column(Text)
+    summary: Mapped[str | None] = mapped_column(Text)
+    ocrEvidence: Mapped[str | None] = mapped_column(Text)
+    errorMessage: Mapped[str | None] = mapped_column(Text)
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    expiresAt: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
 class Device(Base):

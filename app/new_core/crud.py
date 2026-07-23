@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -18,6 +20,7 @@ from app.new_core.models import (
     EvtBase,
     Idea,
     IdeaAttachment,
+    IdeaMediaJob,
     IdeaUpload,
     MsgLog,
     NotifyLog,
@@ -30,6 +33,7 @@ _DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
 DEFAULT_USER_ID = "default"
 _ALLOWED_MSG_CHANNELS = {"web", "feishu", "llm", "system"}
 _ALLOWED_LANGUAGES = {"zh", "en"}
+logger = logging.getLogger(__name__)
 
 
 def _parseNow(now: str) -> datetime:
@@ -177,6 +181,7 @@ def _ideaDict(idea: Idea) -> dict[str, Any]:
         "description": idea.description,
         "srcType": idea.srcType,
         "handled": idea.handled,
+        "revision": idea.revision,
         "createdAt": idea.createdAt,
         "attachments": attachments,
     }
@@ -471,31 +476,179 @@ def createIdea(
     return result
 
 
-def updateIdea(db: Session, ideaId: str, *, title: str | None = None, description: str | None = None, handled: bool | None = None) -> dict[str, Any]:
+def updateIdea(
+    db: Session,
+    ideaId: str,
+    *,
+    userId: str,
+    title: str | None = None,
+    description: str | None = None,
+    handled: bool | None = None,
+    expectedRevision: int | None = None,
+    addUploadIds: list[str] | None = None,
+    removeAttachmentIds: list[str] | None = None,
+) -> dict[str, Any]:
     row = db.get(Idea, ideaId)
-    if row is None:
+    if row is None or row.userId != userId:
         raise ValueError(f"idea not found: {ideaId}")
+    if expectedRevision is not None and row.revision != expectedRevision:
+        raise ValueError("stale idea revision")
     if title is not None:
-        row.title = title.strip()[:300]
+        final_title = title.strip()[:300]
+        if not final_title:
+            raise ValueError("title required")
+        row.title = final_title
     if description is not None:
         row.description = description
     if handled is not None:
         row.handled = handled
+
+    add_ids = list(dict.fromkeys(addUploadIds or []))
+    remove_ids = list(dict.fromkeys(removeAttachmentIds or []))
+    existing = db.scalars(
+        select(IdeaAttachment).where(IdeaAttachment.ideaId == ideaId)
+    ).all()
+    existing_by_id = {item.attachmentId: item for item in existing}
+    if any(item_id not in existing_by_id for item_id in remove_ids):
+        raise ValueError("one or more attachments are unavailable")
+
+    uploads = db.scalars(
+        select(IdeaUpload).where(
+            IdeaUpload.uploadId.in_(add_ids), IdeaUpload.userId == userId
+        )
+    ).all() if add_ids else []
+    if len(uploads) != len(add_ids):
+        raise ValueError("one or more uploads are unavailable")
+    upload_by_id = {item.uploadId: item for item in uploads}
+    for upload_id in add_ids:
+        upload = upload_by_id[upload_id]
+        if upload.mimeType.startswith("image/"):
+            job = db.scalar(
+                select(IdeaMediaJob).where(
+                    IdeaMediaJob.uploadId == upload_id,
+                    IdeaMediaJob.userId == userId,
+                    IdeaMediaJob.ideaId == ideaId,
+                )
+            )
+            if job is None or job.stat != "ready":
+                raise ValueError("image media job is not ready")
+
+    final_count = len(existing) - len(remove_ids) + len(add_ids)
+    if final_count > 10:
+        raise ValueError("an idea supports at most 10 attachments")
+
+    removed_paths = [existing_by_id[item_id].storagePath for item_id in remove_ids]
+    for item_id in remove_ids:
+        db.delete(existing_by_id[item_id])
+    for upload_id in add_ids:
+        upload = upload_by_id[upload_id]
+        db.add(
+            IdeaAttachment(
+                ideaId=ideaId,
+                fileName=upload.fileName,
+                mimeType=upload.mimeType,
+                storagePath=upload.storagePath,
+                sizeBytes=upload.sizeBytes,
+            )
+        )
+        job = db.scalar(
+            select(IdeaMediaJob).where(IdeaMediaJob.uploadId == upload_id)
+        )
+        if job is not None:
+            job.stat = "consumed"
+            job.updatedAt = nowIso()
+        db.delete(upload)
+
+    row.revision += 1
+    db.flush()
     _attachIdeaMedia(db, [row])
     result = _ideaDict(row)
     _recordAct(db, userId=row.userId, src="api", action="update", targetKind="idea", targetId=ideaId)
     db.commit()
+    _unlink_media(removed_paths)
     return result
 
 
-def deleteIdea(db: Session, ideaId: str) -> dict[str, Any]:
+def _unlink_media(paths: list[str]) -> None:
+    for raw_path in paths:
+        try:
+            Path(raw_path).unlink(missing_ok=True)
+        except OSError:
+            logger.exception("failed to remove idea attachment file: path=%s", raw_path)
+
+
+def cleanupExpiredIdeaMedia(
+    db: Session,
+    *,
+    now: str | None = None,
+    maxAgeHours: int = 24,
+) -> dict[str, int]:
+    current = _parseNow(now or nowIso())
+    cutoff = current - timedelta(hours=maxAgeHours)
+    jobs = db.scalars(select(IdeaMediaJob)).all()
+    expired_jobs: list[IdeaMediaJob] = []
+    protected_upload_ids: set[str] = set()
+    for job in jobs:
+        try:
+            expired = _parseNow(job.expiresAt) <= current
+        except ValueError:
+            expired = False
+        if expired:
+            expired_jobs.append(job)
+        else:
+            protected_upload_ids.add(job.uploadId)
+
+    expired_job_upload_ids = {job.uploadId for job in expired_jobs}
+    uploads = db.scalars(select(IdeaUpload)).all()
+    expired_uploads: list[IdeaUpload] = []
+    for upload in uploads:
+        try:
+            old_enough = _parseNow(upload.createdAt) <= cutoff
+        except ValueError:
+            old_enough = False
+        if upload.uploadId in expired_job_upload_ids or (
+            old_enough and upload.uploadId not in protected_upload_ids
+        ):
+            expired_uploads.append(upload)
+
+    paths = [upload.storagePath for upload in expired_uploads]
+    for job in expired_jobs:
+        db.delete(job)
+    for upload in expired_uploads:
+        db.delete(upload)
+    db.commit()
+    _unlink_media(paths)
+    return {"jobs": len(expired_jobs), "uploads": len(expired_uploads)}
+
+
+def deleteIdea(db: Session, ideaId: str, *, userId: str) -> dict[str, Any]:
     row = db.get(Idea, ideaId)
-    if row is None:
+    if row is None or row.userId != userId:
         raise ValueError(f"idea not found: {ideaId}")
+    attachments = db.scalars(
+        select(IdeaAttachment).where(IdeaAttachment.ideaId == ideaId)
+    ).all()
+    paths = [item.storagePath for item in attachments]
+    jobs = db.scalars(
+        select(IdeaMediaJob).where(IdeaMediaJob.ideaId == ideaId)
+    ).all()
+    job_upload_ids = [item.uploadId for item in jobs]
+    pending_uploads = db.scalars(
+        select(IdeaUpload).where(
+            IdeaUpload.uploadId.in_(job_upload_ids), IdeaUpload.userId == userId
+        )
+    ).all() if job_upload_ids else []
+    paths.extend(item.storagePath for item in pending_uploads)
+    for upload in pending_uploads:
+        db.delete(upload)
+    for job in jobs:
+        db.delete(job)
+    _attachIdeaMedia(db, [row])
     result = _ideaDict(row)
     _recordAct(db, userId=row.userId, src="api", action="delete", targetKind="idea", targetId=ideaId)
     db.delete(row)
     db.commit()
+    _unlink_media(paths)
     return result
 
 

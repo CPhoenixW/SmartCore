@@ -154,6 +154,25 @@ def test_prompt_does_not_embed_signed_scope() -> None:
     assert ".scope/task" in prompt
 
 
+def test_media_edit_prompt_forbids_ocr_retries_and_idea_creation() -> None:
+    prompt = adapter.build_prompt(
+        {
+            "event_type": "idea_media_edit",
+            "jobId": "job-1",
+            "targetIdeaId": "idea-1",
+            "attachments": [{"uploadId": "upload-1", "mimeType": "image/png"}],
+        },
+        scope_file=".scope/task",
+    )
+
+    assert "Media Job ID：job-1" in prompt
+    assert "调用一次 mediaImageOcr" in prompt
+    assert "严禁重试 OCR" in prompt
+    assert "禁止调用 ideaCapture" in prompt
+    assert "pass every returned ocrEvidence to ideaCapture" not in prompt
+    assert '"jobId": "job-1"' in prompt
+
+
 def test_run_openclaw_failure_sends_failure_reply(tmp_path, monkeypatch) -> None:
     delivered = []
 

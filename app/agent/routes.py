@@ -22,7 +22,7 @@ from app.db.session import get_db
 from app.feishu.client import FeishuAPIError, FeishuClient
 from app.llm.gateway import LLMConfigurationError, LLMGatewayError, analyze_image
 from app.new_core import crud
-from app.new_core.models import DdlPlan, EvtBase, Idea, IdeaUpload
+from app.new_core.models import DdlPlan, EvtBase, Idea, IdeaMediaJob, IdeaUpload, nowIso
 from app.screen.manager import screenManager
 
 AGENT_TOKEN_HEADER = "X-SmartCore-Agent-Token"
@@ -192,8 +192,40 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         "confirmationRequired": False,
         "description": "Run DeepSeek OCR 2 on one owned image upload. Documents are never accepted.",
         "inputSchema": _schema_object(
-            {"uploadId": {"type": "string", "minLength": 1}},
+            {
+                "uploadId": {"type": "string", "minLength": 1},
+                "jobId": {"type": "string", "minLength": 1},
+            },
             ["uploadId"],
+        ),
+    },
+    {
+        "name": "ideaMediaJobComplete",
+        "method": "POST",
+        "path": "/agent/idea/media-job/complete",
+        "riskLevel": "write",
+        "confirmationRequired": False,
+        "inputSchema": _schema_object(
+            {
+                "jobId": {"type": "string", "minLength": 1},
+                "summary": {"type": "string", "minLength": 1, "maxLength": 100},
+                "ocrEvidence": {"type": "string", "minLength": 1},
+            },
+            ["jobId", "summary", "ocrEvidence"],
+        ),
+    },
+    {
+        "name": "ideaMediaJobFail",
+        "method": "POST",
+        "path": "/agent/idea/media-job/fail",
+        "riskLevel": "write",
+        "confirmationRequired": False,
+        "inputSchema": _schema_object(
+            {
+                "jobId": {"type": "string", "minLength": 1},
+                "errorMessage": {"type": "string", "minLength": 1, "maxLength": 300},
+            },
+            ["jobId", "errorMessage"],
         ),
     },
     {
@@ -674,6 +706,7 @@ def createAgentRouter() -> APIRouter:
         settings: Settings = Depends(get_settings),
     ) -> dict[str, Any]:
         upload_id = str(body.get("uploadId") or "").strip()
+        job_id = str(body.get("jobId") or "").strip()
         if not upload_id:
             return _failed(["uploadId required"])
         upload = db.get(IdeaUpload, upload_id)
@@ -686,6 +719,35 @@ def createAgentRouter() -> APIRouter:
             return _failed(["attachment file not found"])
         if upload.sizeBytes > settings.vision_max_image_bytes:
             return _failed(["image exceeds OCR size limit"])
+        job: IdeaMediaJob | None = None
+        if job_id:
+            job = db.get(IdeaMediaJob, job_id)
+            if (
+                job is None
+                or job.userId != scope.userId
+                or job.uploadId != upload_id
+            ):
+                return _failed(["media job not found"])
+            if job.stat in {"ocr_ready", "ready", "consumed"} and job.ocrText:
+                return _done(
+                    {
+                        "uploadId": upload_id,
+                        "jobId": job.jobId,
+                        "text": job.ocrText,
+                        "ocrEvidence": job.ocrEvidence
+                        or issue_ocr_evidence(userId=scope.userId, uploadId=upload_id),
+                        "cached": True,
+                    }
+                )
+            if job.stat == "processing":
+                return _failed(["media job OCR is already in progress"])
+            if job.stat == "failed":
+                return _failed([job.errorMessage or "media job failed"])
+            if job.stat != "queued":
+                return _failed([f"media job cannot be OCRed from state {job.stat}"])
+            job.stat = "processing"
+            job.updatedAt = nowIso()
+            db.commit()
         try:
             extracted = analyze_image(
                 path.read_bytes(),
@@ -697,17 +759,80 @@ def createAgentRouter() -> APIRouter:
                 settings=settings,
             )
         except (LLMConfigurationError, LLMGatewayError) as exc:
+            if job is not None:
+                job.stat = "failed"
+                job.errorMessage = f"OCR unavailable: {exc}"[:300]
+                job.updatedAt = nowIso()
+                db.commit()
             return _failed([f"OCR unavailable: {exc}"])
+        evidence = issue_ocr_evidence(userId=scope.userId, uploadId=upload_id)
+        if job is not None:
+            job.stat = "ocr_ready"
+            job.ocrText = extracted[:6000]
+            job.ocrEvidence = evidence
+            job.errorMessage = None
+            job.updatedAt = nowIso()
+            db.commit()
         return _done(
             {
                 "uploadId": upload_id,
+                **({"jobId": job.jobId} if job is not None else {}),
                 "text": extracted[:6000],
-                "ocrEvidence": issue_ocr_evidence(
-                    userId=scope.userId,
-                    uploadId=upload_id,
-                ),
+                "ocrEvidence": evidence,
+                "cached": False,
             }
         )
+
+    @router.post("/idea/media-job/complete", dependencies=protected)
+    def ideaMediaJobComplete(
+        body: dict[str, Any],
+        db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
+    ) -> dict[str, Any]:
+        job_id = str(body.get("jobId") or "").strip()
+        summary = str(body.get("summary") or "").strip()
+        evidence = str(body.get("ocrEvidence") or "").strip()
+        if not job_id or not summary:
+            return _failed(["jobId and summary required"])
+        if len(summary) > 100:
+            return _failed(["summary must be at most 100 characters"])
+        job = db.get(IdeaMediaJob, job_id)
+        if job is None or job.userId != scope.userId:
+            return _failed(["media job not found"])
+        if job.stat in {"ready", "consumed"}:
+            return _done({"jobId": job.jobId, "stat": job.stat, "summary": job.summary})
+        if job.stat != "ocr_ready":
+            return _failed([f"media job cannot complete from state {job.stat}"])
+        if not verify_ocr_evidence(
+            evidence,
+            userId=scope.userId,
+            uploadId=job.uploadId,
+        ):
+            return _failed(["valid mediaImageOcr evidence required"])
+        job.stat = "ready"
+        job.summary = summary
+        job.ocrEvidence = evidence
+        job.errorMessage = None
+        job.updatedAt = nowIso()
+        db.commit()
+        return _done({"jobId": job.jobId, "stat": job.stat, "summary": job.summary})
+
+    @router.post("/idea/media-job/fail", dependencies=protected)
+    def ideaMediaJobFail(
+        body: dict[str, Any],
+        db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
+    ) -> dict[str, Any]:
+        job_id = str(body.get("jobId") or "").strip()
+        job = db.get(IdeaMediaJob, job_id)
+        if job is None or job.userId != scope.userId:
+            return _failed(["media job not found"])
+        if job.stat not in {"ready", "consumed"}:
+            job.stat = "failed"
+            job.errorMessage = str(body.get("errorMessage") or "media processing failed")[:300]
+            job.updatedAt = nowIso()
+            db.commit()
+        return _done({"jobId": job.jobId, "stat": job.stat})
 
     @router.post("/ideaToEvt", dependencies=protected)
     @router.post("/idea/to_event", dependencies=protected)
@@ -754,7 +879,12 @@ def createAgentRouter() -> APIRouter:
                     userId=scope.userId,
                     src="openclaw",
                 )
-            crud.updateIdea(db, str(idea_id), handled=True)
+            crud.updateIdea(
+                db,
+                str(idea_id),
+                userId=scope.userId,
+                handled=True,
+            )
             return {"event": event, "ideaId": idea_id, "handled": True}
 
         return _run_write(db, operation)

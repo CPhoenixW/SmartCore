@@ -153,6 +153,8 @@ def sanitize_event(event: dict[str, Any]) -> dict[str, Any]:
         "userId",
         "sourceBindId",
         "reportDate",
+        "jobId",
+        "targetIdeaId",
     ):
         if event.get(key) is not None:
             sanitized[key] = event.get(key)
@@ -234,6 +236,29 @@ def build_prompt(event: dict[str, Any], *, scope_file: str | None = None) -> str
             "查询日期必须等于日报日期，不加状态过滤，includeLinkedPlans=true。"
             "禁止创建、更新、完成或删除事件，也不要调用日报保存接口；Adapter 负责保存。\n"
         )
+    media_edit_instructions = ""
+    if event.get("event_type") == "idea_media_edit":
+        media_edit_instructions = (
+            "这是已有 Idea 的图片附件预处理任务，不是新建 Idea，也不是日程任务。\n"
+            f"Media Job ID：{event.get('jobId')}\n"
+            f"目标 Idea ID：{event.get('targetIdeaId')}\n"
+            "只允许按以下顺序操作：\n"
+            "1. 对唯一图片调用一次 mediaImageOcr，同时传 uploadId 和 jobId。\n"
+            "2. OCR 成功后，根据 OCR 与用户上下文生成不超过 100 个字符的中文摘要，"
+            "调用一次 ideaMediaJobComplete，传 jobId、summary、ocrEvidence。\n"
+            "3. OCR 返回失败时调用一次 ideaMediaJobFail，然后停止。严禁重试 OCR。\n"
+            "禁止调用 ideaCapture、evtQuery 或任何事件写接口。\n"
+        )
+    attachment_instructions = ""
+    if event.get("event_type") != "idea_media_edit":
+        attachment_instructions = (
+            "When an event includes attachments, follow the Media Ideas rules in the SmartCore skill exactly. "
+            "This is a mandatory attachment task: do not reply NO_REPLY, do not expose IDs, and do not claim an "
+            "attachment is missing when the compact event JSON lists it. Call mediaImageOcr exactly once for every image, "
+            "even without user text, and pass every returned ocrEvidence to ideaCapture. Documents must be stored without "
+            "reading or OCR. If the text explicitly asks to "
+            "create a schedule, reminder, or DDL, follow that explicit instruction instead.\n"
+        )
     return (
         "You are SmartCore Agent handling one forwarded SmartCore event.\n"
         "Do not run onboarding, identity setup, or general assistant bootstrap flows.\n"
@@ -251,13 +276,9 @@ def build_prompt(event: dict[str, Any], *, scope_file: str | None = None) -> str
         "instead of constructing curl commands.\n"
         "Do not call Feishu feedback endpoints or sendFeishu tools; the Adapter owns final delivery.\n"
         "Return exactly one concise user-facing final answer in finalAssistantVisibleText.\n"
-        "When an event includes attachments, follow the Media Ideas rules in the SmartCore skill exactly. "
-        "This is a mandatory attachment task: do not reply NO_REPLY, do not expose IDs, and do not claim an "
-        "attachment is missing when the compact event JSON lists it. Call mediaImageOcr exactly once for every image, "
-        "even without user text, and pass every returned ocrEvidence to ideaCapture. Documents must be stored without "
-        "reading or OCR. If the text explicitly asks to "
-        "create a schedule, reminder, or DDL, follow that explicit instruction instead.\n"
+        f"{attachment_instructions}"
         "On failure or ambiguity, return one concise clarification or error message.\n"
+        f"{media_edit_instructions}"
         f"{daily_summary_instructions}"
         f"Bound reply chat_id: {reply_chat_id or 'missing'}\n"
         f"User routing context: {json.dumps(user, ensure_ascii=False) if user else '{}'}\n"

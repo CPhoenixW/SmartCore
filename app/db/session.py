@@ -335,6 +335,13 @@ def _apply_sqlite_migrations(db_path: Path) -> None:
                 conn.execute("DROP TABLE IF EXISTS ideaAttachment")
                 conn.execute("DROP TABLE IF EXISTS ideaUpload")
                 conn.execute("DROP TABLE idea")
+            else:
+                _add_sqlite_column(
+                    conn,
+                    "idea",
+                    "revision",
+                    "revision INTEGER NOT NULL DEFAULT 1",
+                )
         if "actLog" in tables:
             _rebuild_act_log_for_user_targets(conn)
             _rebuild_table_if_incompatible(
