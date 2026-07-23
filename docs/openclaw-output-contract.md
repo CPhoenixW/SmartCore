@@ -1,5 +1,18 @@
 # OpenClaw output and media contract
 
+## Feishu ingress contract
+
+- `im.message.receive_v1` rich-text (`message_type=post`) input is accepted in
+  the receive-event shape `{"title": ..., "content": [[...]], "content_v2": [[...]]}`.
+- The locale-wrapped send shape `{"post": {"zh_cn": ...}}` remains accepted for
+  compatibility, but is not assumed to be the receive-event shape.
+- Text, every image key, and every supported file key are extracted before the
+  event is forwarded to OpenClaw. Images are downloaded privately by SmartCore.
+- Ingress parsing logs `event_id`, `message_id`, message type, and only media/text
+  counts; it never logs attachment bytes or credentials.
+- Unsupported messages are persisted to `msgLog` with an `unsupported:*` status
+  so a callback that returned HTTP 200 remains diagnosable and deduplicated.
+
 ## Acceptance criteria
 
 ### Daily report

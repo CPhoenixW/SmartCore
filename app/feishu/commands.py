@@ -66,28 +66,19 @@ def extract_message_text(event_payload: dict) -> tuple[str | None, str | None]:
         return None, None
     message_type = message.get("message_type")
     if message_type == "post":
-        raw_content = message.get("content")
-        if not isinstance(raw_content, str):
-            return message.get("message_id"), None
-        try:
-            post = json.loads(raw_content).get("post", {})
-        except json.JSONDecodeError:
-            return message.get("message_id"), None
+        content = _decoded_message_content(message)
         texts: list[str] = []
-        if isinstance(post, dict):
-            for locale in post.values():
-                if not isinstance(locale, dict):
-                    continue
-                for row in locale.get("content", []):
-                    if not isinstance(row, list):
-                        continue
-                    texts.extend(
-                        node["text"] for node in row
-                        if isinstance(node, dict) and isinstance(node.get("text"), str)
-                    )
-                if texts:
-                    break
-        text = normalize_message_text("".join(texts))
+        bodies = _post_bodies(content)
+        if bodies:
+            title = bodies[0].get("title")
+            if isinstance(title, str) and title.strip():
+                texts.append(title.strip())
+        texts.extend(
+            node["text"]
+            for node in _post_nodes(content)
+            if isinstance(node.get("text"), str)
+        )
+        text = normalize_message_text("\n".join(value for value in texts if value))
         return message.get("message_id"), text or None
     if message_type != "text":
         return message.get("message_id"), None
@@ -123,15 +114,26 @@ def _decoded_message_content(message: dict) -> dict:
     return content if isinstance(content, dict) else {}
 
 
-def _post_nodes(content: dict) -> list[dict]:
+def _post_bodies(content: dict) -> list[dict]:
+    """Return rich-text bodies from Feishu receive and legacy send schemas."""
+    if isinstance(content.get("content"), list) or isinstance(content.get("content_v2"), list):
+        return [content]
+
     post = content.get("post")
     if not isinstance(post, dict):
         return []
+    return [value for value in post.values() if isinstance(value, dict)]
+
+
+def _post_nodes(content: dict) -> list[dict]:
     nodes: list[dict] = []
-    for locale in post.values():
-        if not isinstance(locale, dict):
+    for body in _post_bodies(content):
+        rows = body.get("content")
+        if not isinstance(rows, list):
+            rows = body.get("content_v2")
+        if not isinstance(rows, list):
             continue
-        for row in locale.get("content", []):
+        for row in rows:
             if isinstance(row, list):
                 nodes.extend(node for node in row if isinstance(node, dict))
         if nodes:

@@ -326,6 +326,11 @@ class FeishuEventHandler:
         now: float | None,
     ) -> tuple[int, dict[str, Any]]:
         message_id, text = extract_message_text(payload)
+        header = payload.get("header") if isinstance(payload.get("header"), dict) else {}
+        event_id = header.get("event_id")
+        event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+        message = event.get("message") if isinstance(event.get("message"), dict) else {}
+        message_type = message.get("message_type")
         chat, user = extract_routing_context(payload)
         binding = feishuBinding(db, botId=bot.botId, externalId=user.get("open_id") or user.get("user_id"), chatId=chat.get("chat_id"))
         if binding is None:
@@ -333,6 +338,15 @@ class FeishuEventHandler:
             return 200, {"code": 0, "msg": "unbound chat"}
         image_message_id, image_keys = extract_image_keys(payload)
         file_message_id, files = extract_file_keys(payload)
+        logger.info(
+            "feishu message parsed: event_id=%s message_id=%s message_type=%s text=%s images=%s files=%s",
+            event_id,
+            message_id,
+            message_type,
+            bool(text),
+            len(image_keys),
+            len(files),
+        )
         if image_message_id:
             message_id = image_message_id
         if file_message_id:
@@ -386,8 +400,6 @@ class FeishuEventHandler:
         if media_uploads and not text:
             text = self._recentMediaText(db, userId=binding.userId)
         if not text and not media_uploads:
-            event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
-            message = event.get("message") if isinstance(event.get("message"), dict) else {}
             content_keys: list[str] = []
             raw_content = message.get("content")
             if isinstance(raw_content, str):
@@ -398,11 +410,23 @@ class FeishuEventHandler:
                 if isinstance(decoded_content, dict):
                     content_keys = sorted(key for key in decoded_content if isinstance(key, str))
             logger.info(
-                "unsupported Feishu message: message_id=%s message_type=%s content_keys=%s",
+                "unsupported Feishu message: event_id=%s message_id=%s message_type=%s content_keys=%s",
+                event_id,
                 message_id,
-                message.get("message_type"),
+                message_type,
                 content_keys,
             )
+            if message_id:
+                crud.createMsgLog(
+                    db,
+                    src="feishu",
+                    externalId=message_id,
+                    rawText=None,
+                    intent="unsupported_message",
+                    stat=f"unsupported:{message_type or 'unknown'}",
+                    userId=binding.userId,
+                    sourceDeviceId=None,
+                )
             self._reply(payload, "暂不支持该消息类型。请直接发送图片、PDF/TXT/ZIP，或将图片与文字放在同一条富文本消息中。", bot, action="unsupported_message")
             return 200, {"code": 0, "msg": "unsupported message type"}
 

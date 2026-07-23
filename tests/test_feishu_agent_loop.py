@@ -7,7 +7,7 @@ from app.agent.scope import issue_agent_scope
 from app.db.session import SessionLocal
 from app.feishu.client import FeishuClient
 from app.main import create_app
-from app.new_core.models import FeishuBind, FeishuBot, LifeIdentity
+from app.new_core.models import FeishuBind, FeishuBot, LifeIdentity, MsgLog
 
 
 def _message_event(text: str, *, chat_id: str = "oc_user_chat", message_id: str = "om_1") -> dict:
@@ -65,6 +65,28 @@ def _post_media_event(*, chat_id: str = "oc_user_chat", message_id: str = "om_po
             {"tag": "img", "image_key": "img_one"},
             {"tag": "img", "image_key": "img_two"},
         ]]}}}),
+    }
+    return event
+
+
+def _received_post_media_event(
+    *, chat_id: str = "oc_user_chat", message_id: str = "om_received_post_media"
+) -> dict:
+    """Match the content shape emitted by im.message.receive_v1 for a post."""
+    event = _message_event("", chat_id=chat_id, message_id=message_id)
+    event["header"]["event_id"] = "evt_received_post_media"
+    rows = [
+        [{"tag": "text", "text": "这张图重点是今天的面试，给我安排好", "style": []}],
+        [{"tag": "img", "image_key": "img_received", "width": 1084, "height": 2412}],
+    ]
+    event["event"]["message"] = {
+        "message_id": message_id,
+        "chat_id": chat_id,
+        "chat_type": "p2p",
+        "message_type": "post",
+        "content": json.dumps(
+            {"title": "", "content": rows, "content_v2": rows}, ensure_ascii=False
+        ),
     }
     return event
 
@@ -281,6 +303,68 @@ def test_feishu_post_with_multiple_images_and_text_is_forwarded(app_env, monkeyp
     assert client.post("/feishu/event", json=_post_media_event()).status_code == 200
     assert forwarded["json"]["text"].startswith("把这两张图记成灵感")
     assert len(forwarded["json"]["attachments"]) == 2
+
+
+def test_feishu_received_post_with_image_and_text_is_forwarded(app_env, monkeypatch) -> None:
+    forwarded: dict = {}
+
+    def fake_post(_url, **kwargs):
+        forwarded["json"] = kwargs["json"]
+
+        class Resp:
+            is_error = False
+            status_code = 200
+
+        return Resp()
+
+    monkeypatch.setenv("OPENCLAW_EVENTS_ENDPOINT", "http://openclaw.local/events")
+    monkeypatch.setattr("httpx.post", fake_post)
+    monkeypatch.setattr(
+        FeishuClient,
+        "download_message_resource",
+        lambda *_args, **_kwargs: (b"image", "image/jpeg"),
+    )
+    monkeypatch.setattr(FeishuClient, "send_text", lambda *_args, **_kwargs: {"code": 0})
+    client = TestClient(create_app())
+    _bind_default_chat("oc_user_chat")
+
+    response = client.post("/feishu/event", json=_received_post_media_event())
+
+    assert response.status_code == 200
+    assert forwarded["json"]["text"] == "这张图重点是今天的面试，给我安排好"
+    assert forwarded["json"]["attachments"][0]["fileName"] == "feishu-image.jpg"
+    assert forwarded["json"]["feishu_payload"]["header"]["event_id"] == "evt_received_post_media"
+
+
+def test_unsupported_feishu_message_is_logged_and_deduplicated(app_env, monkeypatch) -> None:
+    replies: list[str] = []
+    monkeypatch.setenv("OPENCLAW_EVENTS_ENDPOINT", "http://openclaw.local/events")
+    event = _message_event("", message_id="om_sticker")
+    event["header"]["event_id"] = "evt_sticker"
+    event["event"]["message"]["message_type"] = "sticker"
+    event["event"]["message"]["content"] = json.dumps({"file_key": "sticker_key"})
+    monkeypatch.setattr(
+        FeishuClient,
+        "send_text",
+        lambda _self, _chat_id, text, **_kwargs: replies.append(text) or {"code": 0},
+    )
+    client = TestClient(create_app())
+    _bind_default_chat("oc_user_chat")
+
+    first = client.post("/feishu/event", json=event)
+    second = client.post("/feishu/event", json=event)
+
+    assert first.status_code == 200
+    assert first.json()["msg"] == "unsupported message type"
+    assert second.json()["msg"] == "duplicate message ignored"
+    assert len(replies) == 1
+    db = SessionLocal()
+    try:
+        row = db.query(MsgLog).filter(MsgLog.externalId == "om_sticker").one()
+        assert row.intent == "unsupported_message"
+        assert row.stat == "unsupported:sticker"
+    finally:
+        db.close()
 
 
 def test_feishu_file_is_forwarded_with_private_attachment(app_env, monkeypatch) -> None:
