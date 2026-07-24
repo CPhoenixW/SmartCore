@@ -1,0 +1,117 @@
+from __future__ import annotations
+
+import sqlite3
+
+import pytest
+
+from app.server.db.session import _apply_sqlite_migrations, init_db
+
+pytestmark = pytest.mark.migration
+
+
+def test_existing_evt_base_is_rebuilt_for_reminder_type(tmp_path) -> None:
+    database = tmp_path / "legacy.sqlite"
+    conn = sqlite3.connect(database)
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE appUser (
+                userId VARCHAR(32) PRIMARY KEY,
+                displayName VARCHAR(100) NOT NULL,
+                createdAt VARCHAR(64) NOT NULL
+            );
+            INSERT INTO appUser(userId, displayName, createdAt)
+            VALUES ('default', 'Default', '2026-07-09T00:00:00+08:00');
+
+            CREATE TABLE evtBase (
+                evtId VARCHAR(32) PRIMARY KEY,
+                userId VARCHAR(32) NOT NULL,
+                title VARCHAR(300) NOT NULL,
+                desc TEXT,
+                evtType VARCHAR(20) NOT NULL,
+                prio VARCHAR(10) NOT NULL DEFAULT 'mid',
+                stat VARCHAR(20) NOT NULL DEFAULT 'todo',
+                createdAt VARCHAR(64) NOT NULL,
+                updatedAt VARCHAR(64) NOT NULL,
+                CHECK (evtType IN ('plan', 'ddl', 'course'))
+            );
+            INSERT INTO evtBase(
+                evtId, userId, title, evtType, prio, stat, createdAt, updatedAt
+            ) VALUES (
+                'plan-1', 'default', 'Plan', 'plan', 'mid', 'todo',
+                '2026-07-09T00:00:00+08:00', '2026-07-09T00:00:00+08:00'
+            );
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    _apply_sqlite_migrations(database)
+
+    conn = sqlite3.connect(database)
+    try:
+        conn.execute(
+            """
+            INSERT INTO evtBase(
+                evtId, userId, title, evtType, prio, stat, createdAt, updatedAt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "remind-1",
+                "default",
+                "Reminder",
+                "remind",
+                "mid",
+                "todo",
+                "2026-07-09T00:00:00+08:00",
+                "2026-07-09T00:00:00+08:00",
+            ),
+        )
+        conn.commit()
+        rows = conn.execute("SELECT evtType FROM evtBase ORDER BY evtId").fetchall()
+        assert rows == [("plan",), ("remind",)]
+    finally:
+        conn.close()
+
+
+def test_sqlite_revision_migration_preserves_idea_and_attachment(app_env, tmp_path) -> None:
+    init_db()
+    attachment_path = tmp_path / "kept.txt"
+    attachment_path.write_text("keep me", encoding="utf-8")
+    with sqlite3.connect(app_env) as conn:
+        conn.execute("ALTER TABLE idea DROP COLUMN revision")
+        conn.execute(
+            """
+            INSERT INTO idea (ideaId, userId, title, description, srcType, handled, createdAt)
+            VALUES ('idea-kept', 'default', 'Keep', 'Existing description', 'text', 0, 'now')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO ideaAttachment
+                (attachmentId, ideaId, fileName, mimeType, storagePath, sizeBytes, createdAt)
+            VALUES (?, 'idea-kept', 'kept.txt', 'text/plain', ?, 7, 'now')
+            """,
+            ("attachment-kept", str(attachment_path)),
+        )
+        conn.commit()
+
+    init_db()
+
+    with sqlite3.connect(app_env) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(idea)")}
+        idea_row = conn.execute(
+            "SELECT title, description, revision FROM idea WHERE ideaId = 'idea-kept'"
+        ).fetchone()
+        attachment_row = conn.execute(
+            "SELECT fileName, storagePath FROM ideaAttachment WHERE attachmentId = 'attachment-kept'"
+        ).fetchone()
+        media_job_table = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ideaMediaJob'"
+        ).fetchone()
+
+    assert "revision" in columns
+    assert idea_row == ("Keep", "Existing description", 1)
+    assert attachment_row == ("kept.txt", str(attachment_path))
+    assert media_job_table == ("ideaMediaJob",)

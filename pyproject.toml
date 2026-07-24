@@ -28,6 +28,7 @@ dev = [
     "pytest-asyncio",
     "ruff",
     "httpx",
+    "httpx2",
 ]
 
 [tool.setuptools.packages.find]
@@ -47,6 +48,14 @@ include = ["app", "app.server*"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+addopts = ["--strict-markers"]
+markers = [
+    "unit: isolated domain and pure-function tests",
+    "api: FastAPI request and ownership tests",
+    "contract: external and compatibility contract tests",
+    "migration: SQLite schema and data-preservation tests",
+    "smoke: application assembly and health tests",
+]
 
 [tool.ruff]
 line-length = 100
@@ -61,4 +70,3 @@ known-first-party = ["app"]
 
 [tool.ruff.lint.per-file-ignores]
 "app/server/agent/routes.py" = ["E501", "UP035"]
-"tests/test_agent_contract.py" = ["E501"]

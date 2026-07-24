@@ -1,0 +1,105 @@
+# 飞书与 OpenClaw
+
+SmartCore 拥有鉴权、数据、提醒、卡片和审计；OpenClaw 只负责自然语言理解与工具
+编排。二者之间通过 Adapter 和受限 Agent API 连接。
+
+```text
+Feishu -> SmartCore 验签/去重 -> Adapter -> OpenClaw
+OpenClaw -> SmartCore /agent/* -> 数据或反馈 -> Feishu
+```
+
+## 飞书入口
+
+公网只暴露 `POST /feishu/event`。处理顺序固定为：
+
+1. 根据 verification token、签名/加密信息匹配启用的机器人。
+2. 校验时间戳并按 event/message ID 去重。
+3. 解析绑定的用户、身份和聊天；未知身份不能回退到 `default` 用户。
+4. 配对命令由 SmartCore 直接处理；普通非空消息先回复“已收到，正在处理…”。
+5. 规范化文字和附件，签发短期 scope，再转发 Adapter。
+6. 最终回复使用同一个入站机器人回到同一个绑定聊天。
+
+支持普通文本、图片、文件和飞书富文本 `post`。富文本会提取所有文本块、图片 key
+和受支持的文件 key；不支持的类型也会写入 `msgLog`，避免 HTTP 200 后无法诊断。
+日志只能记录 ID、类型和数量。
+
+## 机器人与聊天配对
+
+- 管理员在 `/api/admin/feishuBots` 管理机器人配置；密钥经服务端加密，任何读取
+  接口都不返回明文。
+- 普通用户通过 `/api/feishu/pair/*` 绑定系统默认机器人。
+- 用户在目标聊天发送 `绑定 <code>` 完成认领，随后必须在工作台确认。
+- 同一用户可绑定多个聊天，但主动提醒只选择有效的 primary binding。
+- 回调验证、回复、测试和配对必须始终使用匹配到的 bot runtime，不能切换到全局
+  默认机器人。
+
+## OpenClaw 边界
+
+Adapter 由 SmartCore Compose 管理；OpenClaw Gateway 是服务器上的独立 user service。
+OpenClaw 不读取 SQLite、Docker volume、备份、`.env` 或生产密钥。
+
+每个业务任务至少包含：
+
+- 稳定事件 ID，用于端到端幂等；
+- 用户、bot 和 chat 上下文；
+- Server 签发、HMAC 保护且短期有效的 `X-SmartCore-Agent-Scope`；
+- 独立的 `X-SmartCore-Agent-Token`。
+
+组装应用中 `/agent/tools` 的首个匹配路由也要求有效 scope；`/agent/context` 等少量
+后注册只读实现只要求 Agent token。不要从单个 router 文件推断最终鉴权，具体见
+[API 与鉴权契约](./api-contracts.md)。
+
+scope 分 `feishu` 与 `web` 用途。Web scope 不携带 bot/chat，不能调用飞书投递接口。
+调用者提交的 user/chat 字段不能覆盖 scope。
+
+## Agent 工具
+
+`GET /agent/tools` 是工具名、输入 schema、风险信息和版本的唯一权威来源。
+当前能力覆盖：
+
+- 查询、创建、更新和删除事项；
+- 维护 Course、DDL、Plan 和 Reminder 关系；
+- 捕获 Idea、把 Idea 转为事项、处理媒体任务；
+- 发送飞书文本/卡片和推送副屏；
+- 持久化日报、完成事项并追加完成总结。
+
+新调用的查询、创建和更新优先使用 `/agent/db/*`，反馈使用 `/agent/feedback/*`。
+仓库仍有 `evtQuery` 等兼容别名；唯一临时例外是删除应使用带 scope 的
+`/agent/evtDelete`，直到 canonical delete 完成加固。具体见 API 契约中的已知安全债。
+
+工具结果使用稳定 envelope：
+
+```json
+{
+  "ok": true,
+  "stat": "applied",
+  "data": {},
+  "errors": []
+}
+```
+
+明确、已授权的请求直接执行。歧义、未找到、校验失败或需要额外输入时返回稳定
+状态，不让模型根据自由文本猜测数据库 ID。查询候选应使用后端产生的短期引用。
+
+## 输出契约
+
+普通最终回复通过飞书 `lark_md` 卡片发送；快速处理确认仍是普通文本。Adapter 必须
+只发送最终答案，不泄露分析、工具输出、内部 ID 或投递指令。
+
+日报另有严格约束：
+
+- 首行为 `📅 **YYYY年MM月DD日 工作日报**`，日期必须等于任务日期；
+- 总览、成果、阻塞和明日计划四部分各出现一次且顺序固定；
+- 内容只来自该用户当天查询结果，不复用其他会话事实；
+- 通勤、打卡等生活记录和已抵消的噪声关系不进入日报；
+- Adapter 提取并验证最终报告，最多进行一次隔离重试；再次失败则标记失败，不按
+  成功报告保存或发送。
+
+## 幂等与失败
+
+- 飞书事件、通知、日报、设备分发和媒体任务分别使用稳定 ID/唯一键去重。
+- 处理确认发送失败只记录错误，不能阻止 OpenClaw 转发。
+- OpenClaw 或 Adapter 失败返回简短通用错误，不伪造业务成功。
+- scheduler 独立于 OpenClaw；模型不可用时，确定性提醒和设备状态仍工作。
+- 具体运行参数以 `deploy/env.example`、`deploy/adapter.env.example` 和
+  `openclaw/skills/smartcore/SKILL.md` 为准。

@@ -1,26 +1,24 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ideaApi } from "@/api/idea";
+import {
+  expectFetch,
+  jsonResponse,
+  mockJsonFetch,
+  restoreHttpMocks,
+} from "./helpers/http";
 
-afterEach(() => vi.restoreAllMocks());
-
-function response(data: unknown, status = 200) {
-  return new Response(JSON.stringify({ ok: true, data }), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
+afterEach(restoreHttpMocks);
 
 describe("idea attachment editing API", () => {
   it("sends an atomic attachment delta with the expected revision", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(response({
+    const fetchMock = mockJsonFetch({
       ideaId: "idea-1",
       title: "Updated",
       description: "",
       handled: false,
       revision: 4,
       attachments: [],
-    }));
-    vi.stubGlobal("fetch", fetchMock);
+    });
 
     await ideaApi.update("idea-1", {
       expectedRevision: 3,
@@ -29,17 +27,18 @@ describe("idea attachment editing API", () => {
       removeAttachmentIds: ["attachment-1"],
     });
 
-    expect(fetchMock).toHaveBeenCalledWith(
+    expectFetch(
+      fetchMock,
       "/api/idea/idea-1",
-      expect.objectContaining({
-        method: "PATCH",
+      "PATCH",
+      {
         body: JSON.stringify({
           expectedRevision: 3,
           title: "Updated",
           addUploadIds: ["upload-1"],
           removeAttachmentIds: ["attachment-1"],
         }),
-      }),
+      },
     );
   });
 
@@ -53,7 +52,9 @@ describe("idea attachment editing API", () => {
       createdAt: "now",
       updatedAt: "now",
     };
-    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(response(job, 202)));
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(job, 202)));
     vi.stubGlobal("fetch", fetchMock);
 
     await ideaApi.createMediaJob({

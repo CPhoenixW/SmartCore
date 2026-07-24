@@ -55,9 +55,9 @@ Use this skill when the user asks about schedules, reminders, ideas, or SmartCor
 - On failure, call `ideaMediaJobFail` once with a concise error and stop. Never retry OCR.
 - The backend job state is authoritative and idempotent. Do not try to bypass or reset it.
 
-The preferred DB paths are `/agent/db/query_events`, `/agent/db/create_event`,
-`/agent/db/update_event`, and `/agent/db/delete_event`. The old short paths remain
-available only as compatibility aliases.
+The preferred DB paths are `/agent/db/query_events`, `/agent/db/create_event`, and
+`/agent/db/update_event`. Until canonical delete enforces user scope, use `/agent/evtDelete`
+with both the agent token and signed scope; do not call `/agent/db/delete_event`.
 
 ## Query Rules
 

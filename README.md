@@ -60,5 +60,6 @@ ssh server 'cd /opt/smartcore && ./scripts/deploy_prod.sh --rollback'
 - 密钥只存放在服务器或设备本地 `.env`；数据库、备份、人脸样本和模型权重不进 Git。
 - Python 与前端依赖分别锁定在 `requirements*.lock` 和 `frontend/package-lock.json`。
 
-当前架构见 [doc/25-multi-device-project-layout.md](./doc/25-multi-device-project-layout.md)，
-部署细节见 [deploy.md](./deploy.md)，文档索引见 [doc/README.md](./doc/README.md)。
+当前架构见 [docs/architecture.md](./docs/architecture.md)，部署细节见
+[deploy.md](./deploy.md)，文档索引见 [docs/README.md](./docs/README.md)。参与开发的
+模型和维护者先阅读 [AGENTS.md](./AGENTS.md)。
