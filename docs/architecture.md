@@ -18,7 +18,7 @@ Server scheduler -------------------------------> Screen or Feishu
 | Raspberry Pi | 本地识别、状态上报、按需照片、本地日志 | 直接写库、决定提醒 |
 | Vue 工作台 | 查询和编辑当前用户数据 | 客户端指定数据所有者 |
 | Phone Screen | 展示状态和提醒、回传提醒操作 | 保存主数据 |
-| Computer | 未来常驻监视器；当前仅保留代码边界 | 导入 Server 内部模块 |
+| Computer | 采集客观使用状态，离线排队后批量上传 | 导入 Server 模块、判断效率或任务内容 |
 | OpenClaw | 自然语言理解和多步工具编排 | 访问 SQLite、卷、备份或密钥 |
 
 端侧依赖方向固定为 `client -> versioned Server API/WebSocket`。Server 不导入端侧
@@ -29,7 +29,7 @@ Server scheduler -------------------------------> Screen or Feishu
 ```text
 app/server/             FastAPI 与全部权威业务
 app/raspberryPi/yolo/   Pi 识别和状态客户端
-app/computer/           电脑监视器边界（待实现）
+app/computer/macos/     Swift/AppKit 菜单栏监视器与本地 SQLite 队列
 frontend/               Vue 工作台，构建后由 Server 托管
 openclaw/               Adapter 与 SmartCore skill
 deploy/                 Compose、Caddy 和设备配置
@@ -44,6 +44,7 @@ Server 内部按领域组织：
 - `agent/`：受 token 和短期 scope 保护的 OpenClaw 工具。
 - `feishu/`：回调验证、机器人、会话绑定、消息和卡片。
 - `user_device/`、`device/`：通用配对/分发与 Pi 状态/照片。
+- `computer/`：电脑活动写入、心跳、统计、Plan 时间重叠与明细清理。
 - `scheduler/`：提醒、日报和天气任务。
 - `screen/`：手机副屏及 WebSocket。
 
@@ -80,5 +81,6 @@ APScheduler 运行在 Server 内：
 - 天气从 Open-Meteo 定时刷新；临时失败保留最后一次成功缓存。
 - 日报由 Server 创建有用户 scope 的任务，OpenClaw 生成内容，Adapter 验证后持久化
   并投递。
+- 电脑活动明细与标题每日清理，日汇总不随明细过期。
 
 外部模型、OpenClaw 或飞书失败不能阻断数据库、设备状态和核心提醒扫描。

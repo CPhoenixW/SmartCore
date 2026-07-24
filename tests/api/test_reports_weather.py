@@ -271,7 +271,7 @@ def test_scheduler_registers_daily_cron_at_configured_hour(app_env) -> None:
     )
     service.start()
     assert fake.started is True
-    assert len(fake.jobs) == 1
+    assert len(fake.jobs) == 2
     assert fake.jobs[0][1] == {
         "trigger": "cron",
         "hour": 22,
@@ -283,6 +283,9 @@ def test_scheduler_registers_daily_cron_at_configured_hour(app_env) -> None:
         "max_instances": 1,
         "misfire_grace_time": 300,
     }
+    assert fake.jobs[1][1]["id"] == "smartcore-computer-activity-cleanup"
+    assert fake.jobs[1][1]["hour"] == 3
+    assert fake.jobs[1][1]["minute"] == 20
 
 
 def test_adapter_saves_daily_report_before_delivering(tmp_path, monkeypatch) -> None:

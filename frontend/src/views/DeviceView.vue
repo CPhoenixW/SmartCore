@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import DevicePairPanel from "@/components/device/DevicePairPanel.vue";
+import ComputerUsagePanel from "@/components/device/ComputerUsagePanel.vue";
 import BaseCard from "@/components/base/BaseCard.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
 import { deviceApi } from "@/api/device";
@@ -17,12 +18,13 @@ const { t, locale } = useI18n();
 const toast = useToast();
 const queryClient = useQueryClient();
 const search = ref("");
+const activeSurface = ref<"pi" | "computer">("pi");
 const activeRequestId = ref<string | null>(null);
 const displayedPhoto = ref<PhotoRequest | null>(null);
 const registeredDevices = useQuery({ queryKey: ["lifeDevices"], queryFn: deviceRegistryApi.list, refetchInterval: 15_000 });
 const activeDeviceId = computed(() => {
   const devices = registeredDevices.data.value ?? [];
-  return devices.find((device) => device.deviceKind === "pi")?.deviceId ?? devices[0]?.deviceId ?? "";
+  return devices.find((device) => device.deviceKind === "pi")?.deviceId ?? "";
 });
 const latest = useQuery({ queryKey: ["device", "latest", activeDeviceId], queryFn: () => deviceApi.latest(activeDeviceId.value), enabled: computed(() => Boolean(activeDeviceId.value)), refetchInterval: 10_000 });
 const recent = useQuery({ queryKey: ["device", "recent", activeDeviceId], queryFn: () => deviceApi.recent(activeDeviceId.value, 240), enabled: computed(() => Boolean(activeDeviceId.value)), refetchInterval: 60_000 });
@@ -68,7 +70,13 @@ onBeforeUnmount(() => {
   displayedPhoto.value = null;
   activeRequestId.value = null;
 });
-async function refreshAll() { await Promise.all([registeredDevices.refetch(), latest.refetch(), recent.refetch(), usage.refetch(), photos.refetch()]); }
+async function refreshAll() {
+  if (activeSurface.value === "computer") {
+    await Promise.all([registeredDevices.refetch(), queryClient.refetchQueries({ queryKey: ["computer"] })]);
+    return;
+  }
+  await Promise.all([registeredDevices.refetch(), latest.refetch(), recent.refetch(), usage.refetch(), photos.refetch()]);
+}
 function photoMeta(item: PhotoRequest | null | undefined) {
   if (!item) return t("device.noPhotoRequest");
   const knownStatuses = new Set(["pending", "uploaded", "failed", "expired", "cancelled"]);
@@ -102,7 +110,9 @@ function stateLabel(state: string) {
 <template>
   <div class="dual-scroll-page">
     <section class="page-heading"><div><h1>{{ t("device.title") }}</h1><p>{{ t("device.subtitle") }}</p></div><button class="button" @click="refreshAll">{{ t("common.refresh") }}</button></section>
-    <section class="split-scroll-layout">
+    <div class="tabs device-surface-tabs"><button class="tab" :class="{ 'tab--active': activeSurface === 'pi' }" type="button" @click="activeSurface = 'pi'">{{ t("device.piTab") }}</button><button class="tab" :class="{ 'tab--active': activeSurface === 'computer' }" type="button" @click="activeSurface = 'computer'">{{ t("device.computerTab") }}</button></div>
+    <ComputerUsagePanel v-if="activeSurface === 'computer'" class="split-scroll-column" />
+    <section v-else class="split-scroll-layout">
       <div class="split-scroll-column split-scroll-column--main">
         <div class="stack"><DevicePairPanel />
           <BaseCard :title="t('device.latest')"><div class="device-status"><span class="state-dot large" :class="`state-dot--${currentView.state}`" /><div><strong>{{ stateLabel(currentView.state) }}</strong><small>{{ currentView.seenAt ? formatDateTime(currentView.seenAt) : t('common.notSet') }}{{ currentView.stale ? ` · ${t('device.offline')}` : '' }}</small></div></div><div class="kv-grid"><div><span>{{ t("device.present") }}</span><strong>{{ currentView.present ? t("device.presentYes") : t("device.presentNo") }}</strong></div><div><span>{{ t("device.persons") }}</span><strong>{{ names.join(t('common.listSeparator')) || t('device.unidentified') }}</strong></div><div><span>{{ t("device.stateConfidence") }}</span><strong>{{ currentView.confidence == null ? t('common.notSet') : `${Math.round(currentView.confidence * 100)}%` }}</strong></div><div><span>{{ t("device.clockSkew") }}</span><strong>{{ currentView.meta.clockSkewSeconds == null ? t('common.notSet') : t("device.seconds", { value: Number(currentView.meta.clockSkewSeconds).toFixed(2) }) }}</strong></div><div><span>{{ t("device.model") }}</span><strong>{{ currentView.meta.model || t('common.notSet') }}</strong></div><div><span>{{ t("device.camera") }}</span><strong>{{ currentView.meta.camera || t('common.notSet') }}</strong></div></div></BaseCard>

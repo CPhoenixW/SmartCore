@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     device_photo_request_ttl_seconds: int = 300
     device_photo_max_bytes: int = 10 * 1024 * 1024
     device_photo_dir: str = str(PROJECT_ROOT / "data" / "device_photos")
+    computer_activity_retention_days: int = 90
     openclaw_events_endpoint: str = ""
     openclaw_events_token: str = ""
 

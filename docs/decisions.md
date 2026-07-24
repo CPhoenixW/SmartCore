@@ -102,6 +102,17 @@ scope、审计、幂等和回滚，也会扩大密钥与生产数据暴露面。
 原因：旧方案和现行契约混放会误导模型。与此同时，不能只留下高层概述，所以根
 `AGENTS.md` 和 `api-contracts.md` 专门保存任务导航、兼容边界与状态机。
 
+## D011 电脑活动先保存客观事实
+
+状态：已采用。
+
+v1 只记录 active/idle/locked/sleeping/paused 与过滤后的应用上下文。Plan 关联只按
+时间区间并集求交，不从窗口标题推断任务，也不输出效率、分心、分类或建议。
+
+原因：先建立可核对的数据质量、隐私和离线同步基础。`sessionId`、`contextId`、
+`schemaVersion` 及空 inference/classification 保留扩展点；未来 AI 以 annotation
+追加结论，不修改原始活动事实。
+
 ## 当前兼容与技术债
 
 这些不是可直接删除的“冗余”：

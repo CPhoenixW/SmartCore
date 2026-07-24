@@ -115,3 +115,26 @@ def test_sqlite_revision_migration_preserves_idea_and_attachment(app_env, tmp_pa
     assert idea_row == ("Keep", "Existing description", 1)
     assert attachment_row == ("kept.txt", str(attachment_path))
     assert media_job_table == ("ideaMediaJob",)
+
+
+def test_computer_activity_schema_is_additive_and_idempotent(app_env) -> None:
+    init_db()
+    init_db()
+    expected_tables = {
+        "computerActivityContext",
+        "computerActivityBucket",
+        "computerActivitySlice",
+        "computerMonitorStatus",
+        "computerDailyUsage",
+        "computerDailyAppUsage",
+    }
+    with sqlite3.connect(app_env) as conn:
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        indexes = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+        quick_check = conn.execute("PRAGMA quick_check").fetchone()
+        foreign_keys = conn.execute("PRAGMA foreign_key_check").fetchall()
+
+    assert expected_tables <= tables
+    assert "idx_computer_bucket_device_start" in indexes
+    assert quick_check == ("ok",)
+    assert [row for row in foreign_keys if str(row[0]).startswith("computer")] == []

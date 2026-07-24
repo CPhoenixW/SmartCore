@@ -35,6 +35,7 @@
     "previous": "上一天",
     "next": "下一天",
     "retry": "重试",
+    "close": "关闭",
     "minutes": "分钟",
     "notSet": "未设置",
     "listSeparator": "、"
@@ -254,7 +255,9 @@
   },
   "device": {
     "title": "设备",
-    "subtitle": "查看树莓派状态、识别日志和使用分析",
+    "subtitle": "查看树莓派状态与电脑使用统计",
+    "piTab": "树莓派",
+    "computerTab": "电脑使用",
     "latest": "当前状态",
     "recent": "识别日志",
     "usage": "近 12 小时使用趋势",
@@ -295,6 +298,43 @@
       "cancelled": "已取消"
 
     }
+  },
+  "computer": {
+    "pairTitle": "Mac 监视器",
+    "device": "电脑",
+    "range": "统计范围",
+    "rangeOption": {"today": "今日", "7d": "7 天", "30d": "30 天"},
+    "state": {"active": "活跃", "idle": "空闲", "locked": "已锁屏", "sleeping": "休眠", "paused": "已暂停", "offline": "离线"},
+    "accessibilityMissing": "未授予辅助功能权限，窗口标题暂不可用。",
+    "paused": "采集已手动暂停。",
+    "offline": "监视器已离线，页面显示最后一次同步的数据。",
+    "syncDelayed": "仍有 {count} 个分钟桶等待同步。",
+    "current": "当前客观状态",
+    "context": "当前应用与窗口",
+    "lastSync": "最后同步",
+    "queue": "待同步 {count} 个",
+    "permission": "辅助功能权限",
+    "granted": "已授权",
+    "notGranted": "未授权",
+    "noTitle": "无窗口标题",
+    "waitingHeartbeat": "设备已配对，等待第一次心跳",
+    "activeTime": "活跃时间",
+    "plannedActive": "计划时段活跃时间",
+    "idleTime": "空闲时间",
+    "switches": "应用切换次数",
+    "timeline": "今日时间线",
+    "plans": "SmartCore Plan",
+    "statusLane": "电脑状态",
+    "appLane": "主要应用",
+    "sessions": "今日会话",
+    "sessionMeta": "切换 {switches} 次 · 计划重叠 {planned}",
+    "applications": "应用排行",
+    "dailyTrend": "每日活跃趋势",
+    "noUsage": "所选范围内暂无电脑活动",
+    "noSessions": "今日暂无完整会话",
+    "noDevice": "还没有已激活的电脑监视器，请先完成配对",
+    "sessionDetail": "会话详情",
+    "redactedTitle": "敏感应用标题已屏蔽"
   },
   "ideas": {
     "title": "灵感",
@@ -428,10 +468,12 @@
     "hint": "设备端先领取，再回到这里确认。",
     "feishuGuide": "在已由管理员接入的 SmartCore 飞书机器人私聊中发送：绑定 {code}。机器人回复已认领后，再回到这里确认。",
     "screenGuide": "将连接复制到副屏浏览器打开。副屏会自动认领，随后回到这里确认。",
+    "computerGuide": "在 Mac 菜单栏监视器中选择“Pair Device…”，粘贴下方配置；设备认领后再回到这里确认。",
     "step": "正在配对",
     "screenLinkReady": "副屏连接已生成，可直接复制到副屏浏览器。",
     "copyCommand": "复制绑定命令",
     "copyScreenLink": "复制副屏链接",
+    "copyComputerConfig": "复制 Mac 配置",
     "delete": "删除设备",
     "deleted": "设备已删除，原有访问凭据已失效",
     "deleteConfirm": "删除“{name}”？该设备将立即断开，需要重新配对才能使用。",
@@ -440,6 +482,6 @@
     "copyFailed": "复制失败，请手动选择复制",
     "openScreen": "复制副屏链接",
     "confirm": "确认此设备",
-    "kind": {"screen": "副屏", "pi": "树莓派", "browser": "电脑后台", "feishuBot": "飞书机器人"}
+    "kind": {"screen": "副屏", "pi": "树莓派", "computer": "Mac 监视器", "browser": "电脑后台", "feishuBot": "飞书机器人"}
   }
 }

@@ -505,3 +505,99 @@ class DeviceReceipt(Base):
     result: Mapped[str] = mapped_column(String(30), nullable=False)
     detail: Mapped[dict | None] = mapped_column(JSON)
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class ComputerActivityContext(Base):
+    __tablename__ = "computerActivityContext"
+    __table_args__ = (
+        UniqueConstraint("userId", "fingerprint", name="uq_computer_context_user_fingerprint"),
+    )
+
+    contextId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    bundleId: Mapped[str] = mapped_column(String(300), nullable=False)
+    appName: Mapped[str] = mapped_column(String(200), nullable=False)
+    windowTitle: Mapped[str | None] = mapped_column(String(300))
+    titleRedacted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    firstSeenAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    lastSeenAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class ComputerActivityBucket(Base):
+    __tablename__ = "computerActivityBucket"
+    __table_args__ = (
+        UniqueConstraint("deviceId", "bucketStart", name="uq_computer_bucket_device_start"),
+    )
+
+    bucketId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    deviceId: Mapped[str] = mapped_column(String(32), nullable=False)
+    sessionId: Mapped[str | None] = mapped_column(String(64))
+    bucketStart: Mapped[str] = mapped_column(String(64), nullable=False)
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False)
+    localDate: Mapped[str] = mapped_column(String(10), nullable=False)
+    coveredSeconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    switchCount: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    schemaVersion: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    receivedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class ComputerActivitySlice(Base):
+    __tablename__ = "computerActivitySlice"
+
+    sliceId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    bucketId: Mapped[str] = mapped_column(String(32), ForeignKey("computerActivityBucket.bucketId", ondelete="CASCADE"), nullable=False)
+    contextId: Mapped[str | None] = mapped_column(String(32), ForeignKey("computerActivityContext.contextId", ondelete="SET NULL"))
+    state: Mapped[str] = mapped_column(String(20), nullable=False)
+    seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class ComputerMonitorStatus(Base):
+    __tablename__ = "computerMonitorStatus"
+
+    deviceId: Mapped[str] = mapped_column(String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), primary_key=True)
+    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    currentState: Mapped[str] = mapped_column(String(20), default="offline", nullable=False)
+    currentAppName: Mapped[str | None] = mapped_column(String(200))
+    currentWindowTitle: Mapped[str | None] = mapped_column(String(300))
+    stateSince: Mapped[str | None] = mapped_column(String(64))
+    observedAt: Mapped[str | None] = mapped_column(String(64))
+    appVersion: Mapped[str | None] = mapped_column(String(50))
+    osVersion: Mapped[str | None] = mapped_column(String(100))
+    accessibilityGranted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    paused: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    queueDepth: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    lastHeartbeatAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class ComputerDailyUsage(Base):
+    __tablename__ = "computerDailyUsage"
+    __table_args__ = (
+        UniqueConstraint("deviceId", "usageDate", name="uq_computer_daily_device_date"),
+    )
+
+    dailyUsageId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    deviceId: Mapped[str] = mapped_column(String(32), nullable=False)
+    usageDate: Mapped[str] = mapped_column(String(10), nullable=False)
+    activeSeconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    idleSeconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    lockedSeconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    sleepingSeconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    pausedSeconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    switchCount: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class ComputerDailyAppUsage(Base):
+    __tablename__ = "computerDailyAppUsage"
+    __table_args__ = (
+        UniqueConstraint("dailyUsageId", "bundleId", name="uq_computer_daily_app_bundle"),
+    )
+
+    dailyAppUsageId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    dailyUsageId: Mapped[str] = mapped_column(String(32), ForeignKey("computerDailyUsage.dailyUsageId", ondelete="CASCADE"), nullable=False)
+    bundleId: Mapped[str] = mapped_column(String(300), nullable=False)
+    appName: Mapped[str] = mapped_column(String(200), nullable=False)
+    activeSeconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

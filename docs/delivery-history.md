@@ -83,3 +83,11 @@ OpenClaw 周期请求。
 
 后续交付只在这里增加高层里程碑；单个修复、字段或 UI 微调由 `CHANGELOG.md`、PR
 和测试保存。
+
+## 2026-07-24：macOS 客观使用统计 v1
+
+- 增加 Swift/AppKit 菜单栏监视器、Keychain 凭证和本地 SQLite 离线队列。
+- Server 增加 owner-scoped 分钟桶、心跳、90 天明细清理与永久日汇总。
+- 工作台增加 Pi/电脑标签、当前状态、Plan 时间交集、三轨时间线、会话和趋势。
+
+关键边界：v1 不做效率或任务推断；敏感应用标题屏蔽；未来 AI 只能追加 annotation。

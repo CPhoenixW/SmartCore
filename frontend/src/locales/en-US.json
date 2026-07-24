@@ -35,6 +35,7 @@
     "previous": "Previous day",
     "next": "Next day",
     "retry": "Retry",
+    "close": "Close",
     "minutes": "min",
     "notSet": "Not set",
     "listSeparator": ", "
@@ -254,7 +255,9 @@
   },
   "device": {
     "title": "Device",
-    "subtitle": "Raspberry Pi status, recognition logs and usage",
+    "subtitle": "Raspberry Pi status and computer usage statistics",
+    "piTab": "Raspberry Pi",
+    "computerTab": "Computer usage",
     "latest": "Current state",
     "recent": "Recognition logs",
     "usage": "Usage trend · last 12 hours",
@@ -295,6 +298,43 @@
       "cancelled": "Cancelled"
 
     }
+  },
+  "computer": {
+    "pairTitle": "Mac monitor",
+    "device": "Computer",
+    "range": "Range",
+    "rangeOption": {"today": "Today", "7d": "7 days", "30d": "30 days"},
+    "state": {"active": "Active", "idle": "Idle", "locked": "Locked", "sleeping": "Sleeping", "paused": "Paused", "offline": "Offline"},
+    "accessibilityMissing": "Accessibility permission is missing; window titles are unavailable.",
+    "paused": "Collection is manually paused.",
+    "offline": "The monitor is offline. Last synchronized data is shown.",
+    "syncDelayed": "{count} minute buckets are waiting to sync.",
+    "current": "Current objective state",
+    "context": "Current app and window",
+    "lastSync": "Last sync",
+    "queue": "{count} queued",
+    "permission": "Accessibility permission",
+    "granted": "Granted",
+    "notGranted": "Not granted",
+    "noTitle": "No window title",
+    "waitingHeartbeat": "Paired; waiting for the first heartbeat",
+    "activeTime": "Active time",
+    "plannedActive": "Active during plans",
+    "idleTime": "Idle time",
+    "switches": "App switches",
+    "timeline": "Today's timeline",
+    "plans": "SmartCore Plan",
+    "statusLane": "Computer state",
+    "appLane": "Primary app",
+    "sessions": "Today's sessions",
+    "sessionMeta": "{switches} switches · {planned} plan overlap",
+    "applications": "Applications",
+    "dailyTrend": "Daily active trend",
+    "noUsage": "No computer activity in this range",
+    "noSessions": "No complete sessions today",
+    "noDevice": "No active computer monitor. Pair one first.",
+    "sessionDetail": "Session details",
+    "redactedTitle": "Sensitive app title redacted"
   },
   "ideas": {
     "title": "Ideas",
@@ -428,10 +468,12 @@
     "hint": "Claim on the device, then confirm here.",
     "feishuGuide": "Send bind {code} to the administrator-configured SmartCore Feishu bot. Return here after it replies to confirm.",
     "screenGuide": "Copy the connection to the screen browser. The screen claims it automatically; then confirm here.",
+    "computerGuide": "Choose Pair Device… in the Mac menu-bar monitor, paste the configuration below, then return here to confirm its claim.",
     "step": "Pairing in progress",
     "screenLinkReady": "The screen connection is ready to copy into its browser.",
     "copyCommand": "Copy bind command",
     "copyScreenLink": "Copy screen link",
+    "copyComputerConfig": "Copy Mac configuration",
     "delete": "Delete device",
     "deleted": "Device deleted; its previous credential is no longer valid",
     "deleteConfirm": "Delete “{name}”? It will disconnect immediately and must be paired again.",
@@ -440,6 +482,6 @@
     "copyFailed": "Could not copy. Select the text and copy it manually.",
     "openScreen": "Copy screen link",
     "confirm": "Confirm device",
-    "kind": {"screen": "Screen", "pi": "Raspberry Pi", "browser": "Computer agent", "feishuBot": "Feishu bot"}
+    "kind": {"screen": "Screen", "pi": "Raspberry Pi", "computer": "Mac monitor", "browser": "Computer agent", "feishuBot": "Feishu bot"}
   }
 }

@@ -1,6 +1,13 @@
-# Computer monitor
+# Computer Monitor
 
-电脑端常驻监视器的独立边界，当前尚未实现。它应通过 Server HTTP/WebSocket 契约
-读取状态，不导入 `app.server`，并拥有独立的构建、测试和发布流程。
+`macos/` 是 Swift/AppKit 菜单栏开发版。它采集客观电脑状态，按分钟离线排队，并用
+computer 设备 token 上传到 SmartCore；不采集键盘内容、URL、剪贴板或截图。
 
-现有 `frontend/` 是由 Server 托管的 Web 工作台，不迁入这里。
+```bash
+swift test --package-path app/computer/macos
+swift run --package-path app/computer/macos SmartCoreMonitor
+```
+
+在 `/work` 的“设备 -> 电脑使用”创建配对，将 JSON 粘贴到菜单栏的
+`Pair Device...`，回到工作台确认，然后授予辅助功能权限。当前版本仅用于开发运行，
+没有安装器、登录项或签名发布。

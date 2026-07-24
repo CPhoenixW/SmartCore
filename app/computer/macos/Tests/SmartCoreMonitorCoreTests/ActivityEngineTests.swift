@@ -1,0 +1,74 @@
+import Foundation
+import Testing
+@testable import SmartCoreMonitorCore
+
+@Suite struct ActivityEngineTests {
+    private let utc = TimeZone(secondsFromGMT: 0)!
+
+    @Test func privacyFilterNormalizesAndRedactsSensitiveTitles() {
+        let filter = PrivacyFilter()
+        let normal = filter.context(bundleId: "com.apple.Safari", appName: "Safari", title: "  SmartCore\n  dashboard  ")
+        #expect(normal.windowTitle == "SmartCore dashboard")
+        #expect(!normal.titleRedacted)
+
+        let sensitive = filter.context(bundleId: "com.1password.1password", appName: "1Password", title: "Vault")
+        #expect(sensitive.windowTitle == nil)
+        #expect(sensitive.titleRedacted)
+
+        let otherManager = filter.context(bundleId: "com.lastpass.LastPass", appName: "LastPass", title: "Passwords")
+        #expect(otherManager.windowTitle == nil)
+        #expect(otherManager.titleRedacted)
+    }
+
+    @Test func sessionContinuesThroughShortIdleAndEndsAtBoundary() {
+        var tracker = SessionTracker()
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let first = tracker.update(state: .active, at: start)
+        #expect(first != nil)
+        #expect(tracker.update(state: .idle, at: start.addingTimeInterval(599)) == first)
+        #expect(tracker.update(state: .idle, at: start.addingTimeInterval(600)) == nil)
+
+        let second = tracker.update(state: .active, at: start.addingTimeInterval(601))
+        #expect(second != nil)
+        #expect(second != first)
+        #expect(tracker.update(state: .locked, at: start.addingTimeInterval(602)) == nil)
+    }
+
+    @Test func aggregatorSplitsMinutesAndCapsCoverage() throws {
+        var aggregator = ActivityAggregator(timeZone: utc)
+        let start = Date(timeIntervalSince1970: 1_704_067_258)
+        let context = ActivityContext(bundleId: "com.apple.Terminal", appName: "Terminal", windowTitle: "shell", titleRedacted: false)
+        let completed = aggregator.record(state: .active, context: context, from: start, to: start.addingTimeInterval(65))
+        #expect(completed.count == 2)
+        #expect(try #require(completed.first).coveredSeconds == 2)
+        #expect(try #require(completed.last).coveredSeconds == 60)
+
+        let flushed = aggregator.flush(before: start.addingTimeInterval(122))
+        #expect(flushed.count == 1)
+        let bucket = try #require(flushed.first)
+        #expect(bucket.coveredSeconds == 3)
+        #expect((completed + flushed).map(\.coveredSeconds).reduce(0, +) == 65)
+        #expect((completed + flushed).allSatisfy { $0.slices.map(\.seconds).reduce(0, +) <= 60 })
+    }
+
+    @Test func aggregatorCountsContextSwitches() throws {
+        var aggregator = ActivityAggregator(timeZone: utc)
+        let start = Date(timeIntervalSince1970: 1_704_067_200)
+        let first = ActivityContext(bundleId: "a", appName: "A", windowTitle: "First", titleRedacted: false)
+        let sameApp = ActivityContext(bundleId: "a", appName: "A", windowTitle: "Second", titleRedacted: false)
+        let second = ActivityContext(bundleId: "b", appName: "B", windowTitle: nil, titleRedacted: false)
+        #expect(aggregator.record(state: .active, context: first, from: start, to: start.addingTimeInterval(5)).isEmpty)
+        #expect(aggregator.record(state: .active, context: sameApp, from: start.addingTimeInterval(5), to: start.addingTimeInterval(10)).isEmpty)
+        #expect(aggregator.record(state: .active, context: second, from: start.addingTimeInterval(10), to: start.addingTimeInterval(15)).isEmpty)
+        let bucket = try #require(aggregator.flush(before: start.addingTimeInterval(61)).first)
+        #expect(bucket.switchCount == 1)
+    }
+
+    @Test func retryBackoffResetsAfterSuccess() {
+        var backoff = RetryBackoff()
+        #expect(backoff.failed() == 5)
+        #expect(backoff.failed() == 10)
+        backoff.succeeded()
+        #expect(backoff.failed() == 5)
+    }
+}

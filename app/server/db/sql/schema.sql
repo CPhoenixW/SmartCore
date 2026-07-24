@@ -377,3 +377,91 @@ CREATE TABLE IF NOT EXISTS deviceReceipt (
 CREATE INDEX IF NOT EXISTS idx_lifeDevice_user ON lifeDevice(userId, stat);
 CREATE INDEX IF NOT EXISTS idx_deviceDispatch_pending ON deviceDispatch(deviceId, stat, createdAt);
 CREATE INDEX IF NOT EXISTS idx_feishuBot_user_enabled ON feishuBot(userId, enabled);
+
+CREATE TABLE IF NOT EXISTS computerActivityContext (
+    contextId VARCHAR(32) PRIMARY KEY,
+    userId VARCHAR(32) NOT NULL REFERENCES appUser(userId) ON DELETE CASCADE,
+    fingerprint VARCHAR(64) NOT NULL,
+    bundleId VARCHAR(300) NOT NULL,
+    appName VARCHAR(200) NOT NULL,
+    windowTitle VARCHAR(300),
+    titleRedacted BOOLEAN NOT NULL DEFAULT 0,
+    firstSeenAt VARCHAR(64) NOT NULL,
+    lastSeenAt VARCHAR(64) NOT NULL,
+    UNIQUE (userId, fingerprint)
+);
+
+CREATE TABLE IF NOT EXISTS computerActivityBucket (
+    bucketId VARCHAR(32) PRIMARY KEY,
+    userId VARCHAR(32) NOT NULL REFERENCES appUser(userId) ON DELETE CASCADE,
+    deviceId VARCHAR(32) NOT NULL,
+    sessionId VARCHAR(64),
+    bucketStart VARCHAR(64) NOT NULL,
+    timezone VARCHAR(64) NOT NULL,
+    localDate VARCHAR(10) NOT NULL,
+    coveredSeconds INTEGER NOT NULL,
+    switchCount INTEGER NOT NULL DEFAULT 0,
+    schemaVersion INTEGER NOT NULL DEFAULT 1,
+    receivedAt VARCHAR(64) NOT NULL,
+    UNIQUE (deviceId, bucketStart),
+    CHECK (coveredSeconds BETWEEN 1 AND 60),
+    CHECK (switchCount >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS computerActivitySlice (
+    sliceId VARCHAR(32) PRIMARY KEY,
+    bucketId VARCHAR(32) NOT NULL REFERENCES computerActivityBucket(bucketId) ON DELETE CASCADE,
+    contextId VARCHAR(32) REFERENCES computerActivityContext(contextId) ON DELETE SET NULL,
+    state VARCHAR(20) NOT NULL,
+    seconds INTEGER NOT NULL,
+    CHECK (state IN ('active', 'idle', 'locked', 'sleeping', 'paused')),
+    CHECK (seconds BETWEEN 1 AND 60)
+);
+
+CREATE TABLE IF NOT EXISTS computerMonitorStatus (
+    deviceId VARCHAR(32) PRIMARY KEY REFERENCES lifeDevice(deviceId) ON DELETE CASCADE,
+    userId VARCHAR(32) NOT NULL REFERENCES appUser(userId) ON DELETE CASCADE,
+    currentState VARCHAR(20) NOT NULL DEFAULT 'offline',
+    currentAppName VARCHAR(200),
+    currentWindowTitle VARCHAR(300),
+    stateSince VARCHAR(64),
+    observedAt VARCHAR(64),
+    appVersion VARCHAR(50),
+    osVersion VARCHAR(100),
+    accessibilityGranted BOOLEAN NOT NULL DEFAULT 0,
+    paused BOOLEAN NOT NULL DEFAULT 0,
+    queueDepth INTEGER NOT NULL DEFAULT 0,
+    lastHeartbeatAt VARCHAR(64) NOT NULL,
+    CHECK (currentState IN ('active', 'idle', 'locked', 'sleeping', 'paused', 'offline')),
+    CHECK (queueDepth >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS computerDailyUsage (
+    dailyUsageId VARCHAR(32) PRIMARY KEY,
+    userId VARCHAR(32) NOT NULL REFERENCES appUser(userId) ON DELETE CASCADE,
+    deviceId VARCHAR(32) NOT NULL,
+    usageDate VARCHAR(10) NOT NULL,
+    activeSeconds INTEGER NOT NULL DEFAULT 0,
+    idleSeconds INTEGER NOT NULL DEFAULT 0,
+    lockedSeconds INTEGER NOT NULL DEFAULT 0,
+    sleepingSeconds INTEGER NOT NULL DEFAULT 0,
+    pausedSeconds INTEGER NOT NULL DEFAULT 0,
+    switchCount INTEGER NOT NULL DEFAULT 0,
+    updatedAt VARCHAR(64) NOT NULL,
+    UNIQUE (deviceId, usageDate)
+);
+
+CREATE TABLE IF NOT EXISTS computerDailyAppUsage (
+    dailyAppUsageId VARCHAR(32) PRIMARY KEY,
+    dailyUsageId VARCHAR(32) NOT NULL REFERENCES computerDailyUsage(dailyUsageId) ON DELETE CASCADE,
+    bundleId VARCHAR(300) NOT NULL,
+    appName VARCHAR(200) NOT NULL,
+    activeSeconds INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (dailyUsageId, bundleId)
+);
+
+CREATE INDEX IF NOT EXISTS idx_computer_context_user_last ON computerActivityContext(userId, lastSeenAt);
+CREATE INDEX IF NOT EXISTS idx_computer_bucket_device_start ON computerActivityBucket(deviceId, bucketStart);
+CREATE INDEX IF NOT EXISTS idx_computer_bucket_user_date ON computerActivityBucket(userId, localDate);
+CREATE INDEX IF NOT EXISTS idx_computer_slice_bucket_state ON computerActivitySlice(bucketId, state);
+CREATE INDEX IF NOT EXISTS idx_computer_daily_user_date ON computerDailyUsage(userId, usageDate);

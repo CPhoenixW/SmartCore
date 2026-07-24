@@ -24,6 +24,8 @@ from app.server.api.routes import router as apiRouter
 from app.server.api.weather_routes import router as weatherApiRouter
 from app.server.auth.security import session_user_id_from_request
 from app.server.auth.storage import ensure_auth_schema
+from app.server.computer.routes import router as computerRouter
+from app.server.computer.service import cleanup_activity
 from app.server.config import get_settings
 from app.server.db.session import SessionLocal, init_db
 from app.server.device.routes import router as deviceRouter
@@ -47,6 +49,7 @@ def _sync_event_relations() -> None:
         from app.server.new_core import crud
 
         crud.cleanupExpiredIdeaMedia(db)
+        cleanup_activity(db, retention_days=get_settings().computer_activity_retention_days)
     except Exception:
         db.rollback()
         raise
@@ -135,6 +138,7 @@ def create_app() -> FastAPI:
     app.include_router(createDevRouter())
     app.include_router(deviceRouter)
     app.include_router(userDeviceRouter)
+    app.include_router(computerRouter)
     app.include_router(feishuPairRouter)
     app.include_router(createRelationQueryRouter())
     app.include_router(createRelationWriteRouter())

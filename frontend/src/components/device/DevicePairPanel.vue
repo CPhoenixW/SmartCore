@@ -8,7 +8,7 @@ import { feishuPairApi, type FeishuPair } from "@/api/feishuPair";
 import { useToast } from "@/composables/useToast";
 import type { DevicePair } from "@/api/deviceRegistry";
 
-const props = withDefaults(defineProps<{ allowedKinds?: string[]; title?: string }>(), { allowedKinds: () => ["screen", "pi", "browser", "feishuBot"] });
+const props = withDefaults(defineProps<{ allowedKinds?: string[]; title?: string }>(), { allowedKinds: () => ["screen", "pi", "computer", "browser", "feishuBot"] });
 
 const toast = useToast();
 const { t } = useI18n();
@@ -65,10 +65,15 @@ const screenLink = computed(() => {
   url.searchParams.set("claimCode", currentPair.value.claimCode);
   return url.toString();
 });
+const computerPairingDocument = computed(() => {
+  if (currentPair.value?.deviceKind !== "computer") return "";
+  return JSON.stringify({ serverUrl: window.location.origin, pairId: currentPair.value.pairId, claimCode: currentPair.value.claimCode });
+});
 const guide = computed(() => {
   if (!currentPair.value) return "";
   if (currentPair.value.deviceKind === "feishuBot") return t("pair.feishuGuide", { code: currentPair.value.claimCode });
   if (currentPair.value.deviceKind === "screen") return t("pair.screenGuide");
+  if (currentPair.value.deviceKind === "computer") return t("pair.computerGuide");
   return t("pair.hint");
 });
 async function copy(value: string) {
@@ -105,11 +110,12 @@ function deleteDevice(deviceId: string, name: string) {
       </article>
       <p v-if="!visibleDevices.length && !(feishuBindings.data.value ?? []).length" class="muted">{{ t('pair.empty') }}</p>
     </div>
-    <form class="device-pair-form" :class="{ 'device-pair-form--single': allowedKinds.length === 1 || deviceKind === 'feishuBot' }" @submit.prevent="start.mutate()"><input v-if="deviceKind !== 'feishuBot'" v-model.trim="deviceName" required :placeholder="t('pair.namePlaceholder')" /><select v-if="allowedKinds.length > 1" v-model="deviceKind"><option v-if="allowedKinds.includes('screen')" value="screen">{{ t('pair.kind.screen') }}</option><option v-if="allowedKinds.includes('pi')" value="pi">{{ t('pair.kind.pi') }}</option><option v-if="allowedKinds.includes('browser')" value="browser">{{ t('pair.kind.browser') }}</option><option v-if="allowedKinds.includes('feishuBot')" value="feishuBot">{{ t('pair.kind.feishuBot') }}</option></select><button class="button button--primary" :disabled="start.isPending.value">{{ t('pair.start') }}</button></form>
+    <form class="device-pair-form" :class="{ 'device-pair-form--single': allowedKinds.length === 1 || deviceKind === 'feishuBot' }" @submit.prevent="start.mutate()"><input v-if="deviceKind !== 'feishuBot'" v-model.trim="deviceName" required :placeholder="t('pair.namePlaceholder')" /><select v-if="allowedKinds.length > 1" v-model="deviceKind"><option v-if="allowedKinds.includes('screen')" value="screen">{{ t('pair.kind.screen') }}</option><option v-if="allowedKinds.includes('pi')" value="pi">{{ t('pair.kind.pi') }}</option><option v-if="allowedKinds.includes('computer')" value="computer">{{ t('pair.kind.computer') }}</option><option v-if="allowedKinds.includes('browser')" value="browser">{{ t('pair.kind.browser') }}</option><option v-if="allowedKinds.includes('feishuBot')" value="feishuBot">{{ t('pair.kind.feishuBot') }}</option></select><button class="button button--primary" :disabled="start.isPending.value">{{ t('pair.start') }}</button></form>
     <section v-if="currentPair" class="pair-flow">
       <header><div><small>{{ t('pair.step') }}</small><strong>{{ currentPair.deviceName }}</strong></div><span class="pair-stat">{{ currentPair.stat }}</span></header>
       <p>{{ guide }}</p>
       <div v-if="currentPair.deviceKind === 'feishuBot'" class="pair-command"><code>绑定 {{ currentPair.claimCode }}</code><button class="button button--ghost" type="button" @click="copy(`绑定 ${currentPair.claimCode}`)">{{ t('pair.copyCommand') }}</button></div>
+      <div v-if="computerPairingDocument" class="pair-command"><code>{{ computerPairingDocument }}</code><button class="button button--ghost" type="button" @click="copy(computerPairingDocument)">{{ t('pair.copyComputerConfig') }}</button></div>
       <div v-if="screenLink" class="pair-link"><span>{{ t('pair.screenLinkReady') }}</span><button class="button button--primary" type="button" @click="copy(screenLink)">{{ t('pair.copyScreenLink') }}</button></div>
       <footer><button class="button button--ghost" type="button" @click="refreshPair">{{ t('common.refresh') }}</button><button v-if="currentPair.stat === 'claimed'" class="button button--primary" type="button" :disabled="confirm.isPending.value" @click="confirm.mutate()">{{ t('pair.confirm') }}</button></footer>
     </section>

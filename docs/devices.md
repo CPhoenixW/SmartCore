@@ -1,4 +1,4 @@
-# 设备与 Raspberry Pi
+# 设备、Raspberry Pi 与 Mac
 
 设备只有出站连接：客户端通过 Tailscale 调用 Server，Server 不主动连接 Pi，也不
 公开摄像头或识别服务。
@@ -82,3 +82,24 @@ Git。人脸样本属于生物特征数据，只能保留在设备本地。日�
 
 安装后至少验证：systemd user service 为 active、连续状态可见、过期状态显示为
 unknown/offline、照片请求只上传一次、其他设备 token 无法冒用该 `deviceId`。
+
+## Mac 使用监视器
+
+`app/computer/macos` 是 Swift/AppKit 菜单栏开发版。每 5 秒读取前台应用、过滤后的
+窗口标题和输入空闲时间，并监听锁屏、休眠、唤醒和手动暂停；每分钟生成一个桶。
+状态只有 `active`、`idle`、`locked`、`sleeping`、`paused`，`offline` 由 Server
+根据心跳超时派生。只有 active slice 携带应用上下文。
+
+会话从活跃开始，短暂空闲继续；空闲达到 10 分钟、锁屏、休眠或暂停即结束。未确认
+桶保存在本地 SQLite，每批最多上传 120 个，成功确认后删除，失败指数退避。队列按
+`deviceId` 隔离，重新配对不会把旧身份数据发给新用户；token 只存 Keychain。
+
+默认屏蔽密码管理器、Passwords 与 Keychain Access 标题。客户端不采集 URL、键盘
+内容、剪贴板或截图。启动开发版：
+
+```bash
+swift run --package-path app/computer/macos SmartCoreMonitor
+```
+
+在工作台“设备 -> 电脑使用”创建配对并复制 JSON 到菜单栏应用。当前版本不安装登录
+项、不签名发布，也不判断效率、分心或任务归属。

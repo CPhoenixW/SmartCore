@@ -60,6 +60,7 @@ Agent 接口使用机器稳定的结果：
 | `/api/device` | 设备列表、配对、分发、照片请求 |
 | `/api/feishu` | 普通用户绑定默认机器人 |
 | `/api/devState` | 状态、历史和滚动用量 |
+| `/api/computer` | 电脑活动上传、心跳、客观状态与使用统计 |
 | `/api/daily-summaries` | 当前用户日报 |
 | `/api/weather` | 登录用户读取共享天气缓存 |
 
@@ -141,6 +142,19 @@ Pi 状态与照片使用 `/dev/*`；通用设备列表/配对/分发使用 `/api
 注意：`app/server/device/routes.py` 中 Server/Web 照片创建、查询和读取路由目前没有
 逐个声明浏览器 session 依赖，依靠 Tailscale/反向代理边界。它们不得进入公网路由；
 若补 owner 鉴权，需要同步前端、测试和旧 Pi/Screen 调用方。
+
+## 电脑活动
+
+- `POST /api/computer/activity/batch`：computer 设备 token 上传 schema v1 分钟桶，
+  每批最多 120 个；Server 以 `(deviceId, bucketStart)` 替换并确认时间。
+- `POST /api/computer/heartbeat`：同一凭证上报状态、权限、暂停、版本和队列深度。
+- `GET /api/computer/status?deviceId=...`：登录 owner 读取当前状态；心跳超过 120 秒为
+  `offline`。
+- `GET /api/computer/usage?deviceId=...&range=today|7d|30d&timezone=...`：登录 owner
+  读取状态总量、Plan 区间并集交集、时间线、会话、应用与标题。
+
+上传不接受 `userId` 或其他 owner 字段。非 computer token 返回 403，跨用户浏览器
+查询返回 404。会话的 `inference` 和上下文的 `classification` 在 v1 恒为 null。
 
 ## Feishu 配对状态机
 

@@ -229,15 +229,16 @@ def activatePair(db: Session, pairId: str, claimCode: str) -> tuple[LifeDevice, 
     token = newDeviceToken()
     db.add(device)
     db.flush()
-    db.add(
-        Device(
-            deviceId=device.deviceId,
-            userId=device.userId,
-            deviceName=device.deviceName,
-            deviceKind=device.deviceKind if device.deviceKind in {"screen", "browser", "mobile", "bot", "server"} else "browser",
-            isActive=True,
+    if device.deviceKind != "computer":
+        db.add(
+            Device(
+                deviceId=device.deviceId,
+                userId=device.userId,
+                deviceName=device.deviceName,
+                deviceKind=device.deviceKind if device.deviceKind in {"screen", "browser", "mobile", "bot", "server"} else "browser",
+                isActive=True,
+            )
         )
-    )
     db.add(DeviceKey(deviceId=device.deviceId, tokenHash=tokenHash(token)))
     pair.deviceId = device.deviceId
     pair.stat = "paired"

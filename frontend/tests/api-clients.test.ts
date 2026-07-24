@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { aiApi } from "@/api/ai";
 import { dailySummaryApi } from "@/api/dailySummary";
+import { computerApi } from "@/api/computer";
 import { deviceApi } from "@/api/device";
 import { feishuPairApi } from "@/api/feishuPair";
 import { expectFetch, mockJsonFetch, restoreHttpMocks } from "./helpers/http";
@@ -70,6 +71,18 @@ describe("API clients", () => {
     expectFetch(
       fetchMock,
       "/api/devState/usage/recent?devId=pi&timezone=Asia%2FShanghai&hours=12",
+      "GET",
+    );
+  });
+
+  it("queries owner-scoped computer usage with an explicit range and timezone", async () => {
+    const fetchMock = mockJsonFetch({ deviceId: "mac-1", range: "7d", timezone: "Asia/Singapore" });
+
+    await computerApi.usage("mac-1", "7d", "Asia/Singapore");
+
+    expectFetch(
+      fetchMock,
+      "/api/computer/usage?deviceId=mac-1&range=7d&timezone=Asia%2FSingapore",
       "GET",
     );
   });

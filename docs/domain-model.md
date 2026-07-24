@@ -73,6 +73,14 @@ Web 主接口位于 `/api/evt`、`/api/planEvt`、`/api/ddlEvt`、`/api/courseEv
 
 协议见 [设备与 Pi](./devices.md)。
 
+电脑活动使用六张追加表：`computerActivityContext` 按用户去重应用与过滤标题；
+`computerActivityBucket` 以 `(deviceId, bucketStart)` 幂等；`computerActivitySlice` 保存
+状态秒数；`computerMonitorStatus` 保存最后心跳；`computerDailyUsage` 与
+`computerDailyAppUsage` 保存永久日汇总。所有 owner 都从设备 token 派生。
+
+明细、标题和无引用上下文保留 90 天，日汇总保留。稳定的 `sessionId`、`contextId`
+和 `schemaVersion` 属于采集事实；未来推断只能增加 annotation，不能覆盖原始记录。
+
 ## 飞书
 
 `feishuBot` 保存管理员配置的机器人及加密凭据；`lifeIdentity` 映射外部身份；
@@ -98,7 +106,8 @@ Web 主接口位于 `/api/evt`、`/api/planEvt`、`/api/ddlEvt`、`/api/courseEv
 ## 工作台行为
 
 `/work` 是 Vue 工作台，主要视图包括总览、事项、课程、Idea、设备、日报、日志和
-设置。总览提供日期切换、事项状态切换、天气和设备状态；事项编辑使用完整详情，
+设置。设备页分为 Pi 与电脑使用，电脑统计只展示客观状态、Plan 时间交集、会话、
+应用和过滤标题。总览提供日期切换、事项状态切换、天气和设备状态；事项编辑使用完整详情，
 不能用列表摘要覆盖 DDL 的计划/提醒关系。写操作必须显示成功或错误状态，API 失败
 不能让整个页面白屏。
 

@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy.orm import Session
 
+from app.server.computer.service import cleanup_activity
 from app.server.config import Settings
 from app.server.db.session import SessionLocal
 from app.server.new_core.scheduler import runReminderTick
@@ -25,6 +26,7 @@ def build_scheduler_service(
         not settings.scheduler_enabled
         and not settings.daily_summary_enabled
         and not settings.weather_enabled
+        and settings.computer_activity_retention_days < 1
     ):
         return None
     if session_factory is None:
@@ -89,6 +91,16 @@ class SchedulerService:
         finally:
             db.close()
 
+    def _computer_cleanup_tick(self) -> None:
+        db = self._session_factory()
+        try:
+            cleanup_activity(
+                db,
+                retention_days=self._settings.computer_activity_retention_days,
+            )
+        finally:
+            db.close()
+
     def start(self) -> None:
         if self._settings.scheduler_enabled:
             self._scheduler.add_job(
@@ -145,6 +157,19 @@ class SchedulerService:
                 coalesce=True,
                 max_instances=1,
                 misfire_grace_time=300,
+            )
+        if self._settings.computer_activity_retention_days > 0:
+            self._scheduler.add_job(
+                self._computer_cleanup_tick,
+                trigger="cron",
+                hour=3,
+                minute=20,
+                timezone=self._settings.daily_summary_timezone,
+                id="smartcore-computer-activity-cleanup",
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=3600,
             )
         self._scheduler.start()
 
