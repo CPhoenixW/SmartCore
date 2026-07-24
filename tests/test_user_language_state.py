@@ -3,9 +3,9 @@ from __future__ import annotations
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.db.session import Base
-from app.new_core import crud
-from app.new_core.models import AppUser  # noqa: F401
+from app.server.db.session import Base
+from app.server.new_core import crud
+from app.server.new_core.models import AppUser  # noqa: F401
 
 
 def _session() -> Session:

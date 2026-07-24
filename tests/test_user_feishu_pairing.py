@@ -2,14 +2,14 @@ import json
 
 from fastapi.testclient import TestClient
 
-from app.agent.scope import issue_agent_scope
-from app.auth.security import create_session_token
-from app.db.session import SessionLocal
-from app.feishu.client import FeishuClient
-from app.main import create_app
-from app.new_core.models import AppUser, FeishuBot
-from app.new_core.notify import routeNotify
-from app.new_core.preferences import update_user_preferences
+from app.server.agent.scope import issue_agent_scope
+from app.server.auth.security import create_session_token
+from app.server.db.session import SessionLocal
+from app.server.feishu.client import FeishuClient
+from app.server.main import create_app
+from app.server.new_core.models import AppUser, FeishuBot
+from app.server.new_core.notify import routeNotify
+from app.server.new_core.preferences import update_user_preferences
 
 
 def _message_event(text: str) -> dict:

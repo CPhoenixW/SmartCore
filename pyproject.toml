@@ -32,11 +32,12 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["app*"]
+include = ["app", "app.server*"]
 
 [tool.setuptools.package-data]
-"app" = [
+"app.server" = [
     "db/sql/*.sql",
+    "db/sql/migrations/*.sql",
     "web/dist/*",
     "web/dist/assets/*",
     "screen/static/*",
@@ -59,5 +60,5 @@ ignore = ["E501"]
 known-first-party = ["app"]
 
 [tool.ruff.lint.per-file-ignores]
-"app/agent/routes.py" = ["E501", "UP035"]
+"app/server/agent/routes.py" = ["E501", "UP035"]
 "tests/test_agent_contract.py" = ["E501"]

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from app.db.session import SessionLocal, init_db
-from app.new_core import crud
-from app.new_core.models import DeviceKey, LifeDevice
-from app.user_device.service import (
+from app.server.db.session import SessionLocal, init_db
+from app.server.new_core import crud
+from app.server.new_core.models import DeviceKey, LifeDevice
+from app.server.user_device.service import (
     activatePair,
     claimPair,
     confirmPair,
@@ -50,7 +50,7 @@ def test_dispatch_is_owned_by_authenticated_device_and_receipts_are_deduplicated
         rows = pendingDispatches(db, requireDevice(db, token))
         assert [row.dispatchId for row in rows] == [dispatch.dispatchId]
         assert pendingDispatches(db, requireDevice(db, token)) == []
-        from app.new_core.models import DeviceDispatch, DeviceReceipt
+        from app.server.new_core.models import DeviceDispatch, DeviceReceipt
 
         row = db.get(DeviceDispatch, dispatch.dispatchId)
         db.add(DeviceReceipt(dispatchId=row.dispatchId, deviceId=device.deviceId, result="shown"))

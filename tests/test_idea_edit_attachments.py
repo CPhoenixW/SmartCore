@@ -3,12 +3,12 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.agent.scope import issue_agent_scope
-from app.auth.security import create_session_token
-from app.db.session import SessionLocal, init_db
-from app.main import create_app
-from app.new_core import crud
-from app.new_core.models import AppUser, IdeaMediaJob, IdeaUpload, nowIso
+from app.server.agent.scope import issue_agent_scope
+from app.server.auth.security import create_session_token
+from app.server.db.session import SessionLocal, init_db
+from app.server.main import create_app
+from app.server.new_core import crud
+from app.server.new_core.models import AppUser, IdeaMediaJob, IdeaUpload, nowIso
 
 
 def _signed_client(user_id: str = "default") -> TestClient:
@@ -115,7 +115,7 @@ def test_image_media_job_is_idempotent_and_required_for_edit(
 
         return Response()
 
-    monkeypatch.setattr("app.api.routes.httpx.post", fake_post)
+    monkeypatch.setattr("app.server.api.routes.httpx.post", fake_post)
     calls = 0
 
     def fake_ocr(*_args, **_kwargs):
@@ -123,7 +123,7 @@ def test_image_media_job_is_idempotent_and_required_for_edit(
         calls += 1
         return "图中是一张流程图"
 
-    monkeypatch.setattr("app.agent.routes.analyze_image", fake_ocr)
+    monkeypatch.setattr("app.server.agent.routes.analyze_image", fake_ocr)
     client = _signed_client()
     db = SessionLocal()
     try:
@@ -200,7 +200,7 @@ def test_failed_media_job_requires_explicit_retry(app_env, monkeypatch, tmp_path
 
         return Response()
 
-    monkeypatch.setattr("app.api.routes.httpx.post", fake_post)
+    monkeypatch.setattr("app.server.api.routes.httpx.post", fake_post)
     client = _signed_client()
     db = SessionLocal()
     try:

@@ -3,11 +3,11 @@ from __future__ import annotations
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.agent.relation_query_routes import _relation_tools, createRelationQueryRouter
-from app.db.session import Base
-from app.new_core.event_relations import create_course_event, update_event
-from app.new_core.models import CoursePlan, PlanEvt, RemindEvt
-from app.new_core.relation_maintenance import ensure_missing_relations
+from app.server.agent.relation_query_routes import _relation_tools, createRelationQueryRouter
+from app.server.db.session import Base
+from app.server.new_core.event_relations import create_course_event, update_event
+from app.server.new_core.models import CoursePlan, PlanEvt, RemindEvt
+from app.server.new_core.relation_maintenance import ensure_missing_relations
 
 
 def _session() -> Session:

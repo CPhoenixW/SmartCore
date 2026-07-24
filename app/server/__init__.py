@@ -1,0 +1,1 @@
+"""SmartCore server application package."""

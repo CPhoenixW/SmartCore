@@ -1,5 +1,7 @@
 # OpenClaw output and media contract
 
+Status: active contract.
+
 ## Feishu ingress contract
 
 - `im.message.receive_v1` rich-text (`message_type=post`) input is accepted in

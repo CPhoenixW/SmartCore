@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from app.agent.feedback_routes import createFeedbackRouter, ensure_feedback_tools
-from app.agent.routes import _AGENT_TOOLS
-from app.feishu.cards import (
+from app.server.agent.feedback_routes import createFeedbackRouter, ensure_feedback_tools
+from app.server.agent.routes import _AGENT_TOOLS
+from app.server.feishu.cards import (
     build_message_card,
     build_operation_success_card,
     build_query_result_card,
     build_reminder_card,
     normalize_card,
 )
-from app.new_core.notify import buildReminderCard
+from app.server.new_core.notify import buildReminderCard
 
 
 def test_card_20_is_normalized_for_interactive_message_api() -> None:

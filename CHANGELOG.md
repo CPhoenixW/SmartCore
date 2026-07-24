@@ -1,12 +1,19 @@
 # SmartCore 更新日志
 
+## 2026-07-24
+
+- 按部署目标拆分为 `app/server`、`app/raspberryPi` 和 `app/computer`。
+- Server 入口调整为 `app.server.main:app`，Docker、测试和运维脚本同步更新。
+- Pi YOLO 源码纳入仓库；密钥、人脸样本、日志和模型权重仍为设备本地资产。
+- 文档收敛为当前架构、协议与发布入口，旧重构计划改为归档。
+
 ## 2026-07-03 至 2026-07-04
 
 ### 项目架构
 
 - 将旧版学生秘书式模块替换为新的 SmartCore 核心架构，删除旧的 `actions`、`secretary`、`operations`、`notifications` 等兼容层。
-- 新增 `app/new_core`，统一承载 `lifeEvt`、`ddlEvt`、`courseInst`、`idea` 等核心数据模型、CRUD、提醒调度和数据库重置逻辑。
-- 将数据库结构拆分为独立 SQL 脚本，新增 `app/db/sql/schema.sql`、`app/db/sql/drop.sql` 和 `scripts/reset_database.py`，便于生产端直接清空并重建数据库。
+- 新增现位于 `app/server/new_core` 的核心业务模块，统一承载数据模型、CRUD 和提醒调度。
+- 将数据库结构拆分到现位于 `app/server/db/sql` 的独立 SQL 脚本，并新增数据库重置入口。
 - 新增 `/api` 路由层，提供新架构数据表的增删改查接口。
 
 ### OpenClaw 与飞书链路

@@ -5,9 +5,9 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from app.api.ai_routes import _extract_json_object, _normalize_course
-from app.config import Settings
-from app.llm import gateway
+from app.server.api.ai_routes import _extract_json_object, _normalize_course
+from app.server.config import Settings
+from app.server.llm import gateway
 
 
 def test_default_natural_language_gateway_config() -> None:

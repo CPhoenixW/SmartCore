@@ -1,9 +1,13 @@
 from fastapi.testclient import TestClient
 
-from app.auth.security import create_session_token, decode_session_actor_id, decode_session_token
-from app.db.session import SessionLocal
-from app.main import create_app
-from app.new_core.models import AppUser
+from app.server.auth.security import (
+    create_session_token,
+    decode_session_actor_id,
+    decode_session_token,
+)
+from app.server.db.session import SessionLocal
+from app.server.main import create_app
+from app.server.new_core.models import AppUser
 
 
 def test_admin_switch_keeps_actor_identity(app_env) -> None:

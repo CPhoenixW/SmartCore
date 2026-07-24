@@ -1,7 +1,19 @@
+import os
+import tempfile
+from pathlib import Path
+
 import pytest
 
-from app.config import get_settings
-from app.db.session import reset_engine_for_tests
+# Application modules create the default FastAPI instance during import. Isolate
+# that collection-time initialization from developer and production data.
+_TEST_RUNTIME = tempfile.TemporaryDirectory(prefix="smartcore-pytest-")
+_TEST_RUNTIME_PATH = Path(_TEST_RUNTIME.name)
+os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_RUNTIME_PATH / 'collection.sqlite'}"
+os.environ["AUTH_SECRET_FILE"] = str(_TEST_RUNTIME_PATH / "auth_secret")
+os.environ["SCHEDULER_ENABLED"] = "false"
+
+from app.server.config import get_settings  # noqa: E402
+from app.server.db.session import reset_engine_for_tests  # noqa: E402
 
 
 @pytest.fixture

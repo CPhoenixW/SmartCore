@@ -92,7 +92,7 @@ backup_database() {
     fi
     log "creating pre-deploy SQLite snapshot"
     compose exec --no-TTY app python -c \
-        'from app.backup.snapshot import run_local_backup; print(run_local_backup())'
+        'from app.server.backup.snapshot import run_local_backup; print(run_local_backup())'
 }
 
 wait_for_health() {

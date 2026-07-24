@@ -1,5 +1,7 @@
 # Idea attachment editing design
 
+Status: implemented; this document records the accepted contract and test scope.
+
 ## Scope and acceptance criteria
 
 - The Idea edit form manages existing and newly uploaded attachments in one staged edit.
@@ -12,7 +14,7 @@
 - A repeated OpenClaw tool call for the same media job never creates another paid OCR request.
 - Existing Ideas and attachments remain readable throughout deployment.
 
-## Current gaps
+## Pre-implementation gaps (resolved)
 
 - `IdeaView.vue` hides the upload drop zone whenever an Idea is selected.
 - The edit mutation sends only `title` and `description`.

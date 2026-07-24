@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from app.main import create_app
+from app.server.main import create_app
 
 
 def test_healthz_returns_ok():

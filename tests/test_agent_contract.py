@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from app.agent import routes
+from app.server.agent import routes
 
 
 @dataclass

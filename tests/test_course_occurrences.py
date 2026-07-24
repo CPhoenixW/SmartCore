@@ -3,14 +3,14 @@ from __future__ import annotations
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.db.session import Base
-from app.new_core.event_relations import (
+from app.server.db.session import Base
+from app.server.new_core.event_relations import (
     create_course_event,
     expand_course_dates,
     list_events,
     update_course_event,
 )
-from app.new_core.models import CoursePlan, RemindEvt
+from app.server.new_core.models import CoursePlan, RemindEvt
 
 
 def _session() -> Session:

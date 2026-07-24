@@ -3,12 +3,16 @@ from __future__ import annotations
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.api.ai_routes import _important_date_fallback, _normalize_event
-from app.db.session import Base
-from app.new_core.ddl_service import create_ddl_event, replace_ddl_plans, replace_ddl_reminders
-from app.new_core.event_relations import cancel_event, create_plan_event, get_event
-from app.new_core.models import ActLog, EvtBase, RemindEvt
-from app.new_core.reminder_service import (
+from app.server.api.ai_routes import _important_date_fallback, _normalize_event
+from app.server.db.session import Base
+from app.server.new_core.ddl_service import (
+    create_ddl_event,
+    replace_ddl_plans,
+    replace_ddl_reminders,
+)
+from app.server.new_core.event_relations import cancel_event, create_plan_event, get_event
+from app.server.new_core.models import ActLog, EvtBase, RemindEvt
+from app.server.new_core.reminder_service import (
     create_reminder_event,
     list_reminder_events,
     update_reminder_event,

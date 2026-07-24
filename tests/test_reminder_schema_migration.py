@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from app.db.session import _apply_sqlite_migrations
+from app.server.db.session import _apply_sqlite_migrations
 
 
 def test_existing_evt_base_is_rebuilt_for_reminder_type(tmp_path) -> None:

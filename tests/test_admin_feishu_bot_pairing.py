@@ -3,13 +3,13 @@ import time
 
 from fastapi.testclient import TestClient
 
-from app.db.session import SessionLocal
-from app.feishu.client import FeishuClient
-from app.feishu.security import compute_signature
-from app.main import create_app
-from app.new_core.models import FeishuBot
-from app.new_core.notify import routeNotify
-from app.new_core.preferences import update_user_preferences
+from app.server.db.session import SessionLocal
+from app.server.feishu.client import FeishuClient
+from app.server.feishu.security import compute_signature
+from app.server.main import create_app
+from app.server.new_core.models import FeishuBot
+from app.server.new_core.notify import routeNotify
+from app.server.new_core.preferences import update_user_preferences
 
 
 def _event(text: str, token: str) -> dict:

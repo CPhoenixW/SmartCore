@@ -17,8 +17,8 @@ python - <<'PY'
 import os
 from pathlib import Path
 
-from app.backup.snapshot import restore_snapshot
-from app.config import get_settings
+from app.server.backup.snapshot import restore_snapshot
+from app.server.config import get_settings
 
 backup_file = Path(os.environ["BACKUP_FILE"])
 settings = get_settings()

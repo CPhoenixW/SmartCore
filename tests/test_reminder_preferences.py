@@ -3,11 +3,11 @@ from __future__ import annotations
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.db.session import Base
-from app.new_core import crud, scheduler
-from app.new_core.event_relations import create_plan_event
-from app.new_core.models import AppUser, EvtBase, PlanEvt, RemindEvt  # noqa: F401
-from app.new_core.preferences import (
+from app.server.db.session import Base
+from app.server.new_core import crud, scheduler
+from app.server.new_core.event_relations import create_plan_event
+from app.server.new_core.models import AppUser, EvtBase, PlanEvt, RemindEvt  # noqa: F401
+from app.server.new_core.preferences import (
     UserPreference,  # noqa: F401
     get_user_preferences,
     update_user_preferences,

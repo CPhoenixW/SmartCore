@@ -28,7 +28,7 @@ SmartCore 当前是一个以服务器为权威节点的单体 FastAPI 应用。�
   -> FastAPI app
 
 Tailscale 客户端
-  -> FastAPI app（100.65.243.93:8000）
+  -> FastAPI app（server-tailnet-name:8000）
   -> /work、/screen、/api、/agent 等内部功能
 
 FastAPI app
@@ -49,19 +49,19 @@ FastAPI app
 
 ### 有效核心
 
-- `app/main.py` 是唯一组装点：注册认证、管理、事件、设备、Feishu、Agent、副屏和前端静态路由。
-- `app/new_core/` 是业务和数据主干：SQLAlchemy 模型、CRUD、事项关系、DDL、课程、提醒、通知与维护任务。
-- `app/feishu/` 处理回调验签、消息、机器人配置、卡片和 Feishu API。
-- `app/device/`、`app/screen/` 实现设备状态、照片请求、副屏 WebSocket 与通知。
-- `app/scheduler/service.py` 使用 APScheduler 定时调用提醒扫描。
-- Vue 前端位于 `frontend/`，构建产物由 `app/web/dist` 提供 `/work`。
+- `app/server/main.py` 是唯一组装点：注册认证、管理、事件、设备、Feishu、Agent、副屏和前端静态路由。
+- `app/server/new_core/` 是业务和数据主干：SQLAlchemy 模型、CRUD、事项关系、DDL、课程、提醒、通知与维护任务。
+- `app/server/feishu/` 处理回调验签、消息、机器人配置、卡片和 Feishu API。
+- `app/server/device/`、`app/server/screen/` 实现设备状态、照片请求、副屏 WebSocket 与通知。
+- `app/server/scheduler/service.py` 使用 APScheduler 定时调用提醒扫描。
+- Vue 前端位于 `frontend/`，构建产物由 `app/server/web/dist` 提供 `/work`。
 
 ### 复杂度来源与待收敛点
 
-1. `app/agent/` 同时存在 `routes.py`、`v2_routes.py`、`legacy_time_routes.py`、关系读写与反馈路由；`main.py` 全部注册。这是最明确的“新旧并行”边界，应先列出实际调用方和 OpenAPI 使用情况，再移除 `legacy_time_routes.py` 及被新 Agent API 覆盖的端点。
-2. `app/api/`、`app/device/`、`app/user_device/`、`app/agent/routes.py` 都暴露设备相关能力，路由边界不清晰。建议按 `identity`、`device`、`event`、`agent`、`admin` 五个域收口，并建立端点清单。
-3. `app/new_core/event_relations.py`（约 1,032 行）、`app/agent/routes.py`（约 739 行）、`app/new_core/crud.py`（约 699 行）已成为高耦合模块。它们不是“可直接删”的冗余，而是应按事务边界拆分为事件、课程、提醒、审计等服务。
-4. `app/new_core/relation_compat.py` 表明仍有兼容层；而重构文档声明“不做旧表兼容”。应先验证数据库中是否仍存在旧表/旧客户端请求，再删除该层。
+1. `app/server/agent/` 同时存在 `routes.py`、`v2_routes.py`、`legacy_time_routes.py`、关系读写与反馈路由；`main.py` 全部注册。这是最明确的“新旧并行”边界，应先列出实际调用方和 OpenAPI 使用情况，再移除 `legacy_time_routes.py` 及被新 Agent API 覆盖的端点。
+2. `app/server/api/`、`app/server/device/`、`app/server/user_device/`、`app/server/agent/routes.py` 都暴露设备相关能力，路由边界不清晰。建议按 `identity`、`device`、`event`、`agent`、`admin` 五个域收口，并建立端点清单。
+3. `app/server/new_core/event_relations.py`（约 1,032 行）、`app/server/agent/routes.py`（约 739 行）、`app/server/new_core/crud.py`（约 699 行）已成为高耦合模块。它们不是“可直接删”的冗余，而是应按事务边界拆分为事件、课程、提醒、审计等服务。
+4. `app/server/new_core/relation_compat.py` 表明仍有兼容层；而重构文档声明“不做旧表兼容”。应先验证数据库中是否仍存在旧表/旧客户端请求，再删除该层。
 
 ## 文档与实现漂移
 

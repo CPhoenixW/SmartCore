@@ -6,13 +6,13 @@ from zoneinfo import ZoneInfo
 import httpx
 from fastapi.testclient import TestClient
 
-from app.auth.security import create_session_token
-from app.config import Settings
-from app.db.session import SessionLocal
-from app.main import create_app
-from app.new_core.models import AppUser, FeishuBind, FeishuBot, LifeIdentity
-from app.scheduler.service import SchedulerService
-from app.weather.service import deliver_tomorrow_weather, get_weather, refresh_weather
+from app.server.auth.security import create_session_token
+from app.server.config import Settings
+from app.server.db.session import SessionLocal
+from app.server.main import create_app
+from app.server.new_core.models import AppUser, FeishuBind, FeishuBot, LifeIdentity
+from app.server.scheduler.service import SchedulerService
+from app.server.weather.service import deliver_tomorrow_weather, get_weather, refresh_weather
 
 
 def _payload() -> dict:
@@ -139,7 +139,7 @@ def test_tomorrow_weather_is_sent_once_per_bound_user(app_env, monkeypatch) -> N
         )
 
         monkeypatch.setattr(
-            "app.new_core.notify._sendFeishu",
+            "app.server.new_core.notify._sendFeishu",
             lambda db, title, content, *, userId: (True, "chat-owner", None),
         )
         now = datetime(2026, 7, 20, 22, 0, tzinfo=ZoneInfo("Asia/Shanghai"))

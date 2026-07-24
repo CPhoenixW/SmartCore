@@ -6,14 +6,14 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.db.session import Base
-from app.new_core.course_semester import (
+from app.server.db.session import Base
+from app.server.new_core.course_semester import (
     create_course_event,
     expand_course_dates_from_semester,
     update_course_event,
 )
-from app.new_core.event_search import filter_events_by_text, normalize_search_query
-from app.new_core.models import CoursePlan, RemindEvt
+from app.server.new_core.event_search import filter_events_by_text, normalize_search_query
+from app.server.new_core.models import CoursePlan, RemindEvt
 
 
 def _session() -> Session:

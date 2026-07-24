@@ -1,132 +1,24 @@
-# OpenClaw SmartCore Bridge
+# OpenClaw 与 SmartCore
 
-## Goal
-
-SmartCore should become the deterministic system layer for OpenClaw. In the
-方案 B deployment SmartCore still owns the Feishu webhook. OpenClaw receives
-normalized events from SmartCore and calls SmartCore tools to operate data:
+SmartCore 拥有数据、权限、提醒、飞书卡片和审计；OpenClaw 只负责自然语言理解与
+多步编排。
 
 ```text
-Feishu messages and card callbacks
-  -> SmartCore Feishu Gateway
-  -> OpenClaw
-  -> SmartCore Agent APIs
-  -> SmartCore Feedback APIs
-  -> Feishu
+Feishu -> SmartCore 验签/去重 -> Adapter -> OpenClaw
+OpenClaw -> SmartCore Agent API -> 数据或反馈 -> Feishu
 ```
 
-SmartCore keeps ownership of data, reminders, Feishu card templates, audit logs,
-operation confirmation, and deployment. OpenClaw owns natural-language
-understanding, task decomposition, and multi-step orchestration.
+## 边界
 
-## Natural-language model route
+- Adapter 由 SmartCore Compose 管理；Gateway 是服务器 host user service。
+- OpenClaw 只能使用 Agent token 调用 `/agent/*`，不能读取 SQLite、卷、备份或 `.env`。
+- 转发事件携带稳定事件 ID、用户/聊天上下文、时间和短期 scope，不携带服务密钥。
+- SmartCore scheduler 独立运行；OpenClaw 不参与每分钟提醒扫描。
+- 转发失败必须记录并快速应答飞书，避免 webhook 重试风暴。
 
-All model calls implemented inside SmartCore use the centralized client in
-`app/llm/gateway.py` and the following OpenAI-compatible route:
+工具发现入口为 `GET /agent/tools`。具体工具名、输入和结果格式以该接口、
+`openclaw/skills/smartcore/SKILL.md` 和 [Action 结果协议](./action-result-protocol.md)
+为准，文档不重复硬编码列表。
 
-```text
-base_url = https://tokendance.space/gateway/v1
-model    = deepseek-v4-flash
-```
-
-The TokenDance key is loaded from `LLM_API_KEY` in SmartCore configuration and
-is never included in Feishu events, logs, cards, or OpenClaw tool responses.
-SmartCore disables the HTTP request timeout for these gateway calls.
-
-OpenClaw is a separately deployed runtime and does not execute inside the
-SmartCore process. Its own model provider must therefore also be configured with
-the same TokenDance base URL and model. SmartCore cannot safely transmit its
-LLM API key inside a forwarded event. The OpenClaw deployment must receive the
-key through its own secret/environment configuration.
-
-## Runtime Modes
-
-- With `OPENCLAW_EVENTS_ENDPOINT` configured, SmartCore forwards accepted Feishu
-  text messages and card callbacks to OpenClaw. SmartCore must not run local
-  natural-language parsing for those events.
-- Without `OPENCLAW_EVENTS_ENDPOINT`, SmartCore may use the legacy local parser
-  path for local development and emergency fallback only. New production
-  natural-language behavior belongs in OpenClaw.
-
-## Feishu Gateway
-
-When `OPENCLAW_EVENTS_ENDPOINT` is configured, SmartCore must forward every
-accepted Feishu text message and card callback to OpenClaw after verification and
-deduplication. SmartCore must not run its local natural-language parser for those
-events. The forwarded event must include:
-
-- stable event id and source (`feishu`)
-- event type (`message` or `card_action`)
-- user and chat identifiers
-- text or card action payload
-- original Feishu payload for debugging
-- SmartCore thread/context identifiers
-
-If forwarding fails, SmartCore should acknowledge Feishu to avoid retry storms,
-record the failure, and expose it in logs or the operation panel.
-
-OpenClaw event payloads must include a `request` object:
-
-```json
-{
-  "timezone": "Asia/Shanghai",
-  "now": "2026-06-12T10:00:00+08:00"
-}
-```
-
-Card buttons on reminder cards should carry an intent payload such as
-`complete_event` or `delay_event`. SmartCore forwards that card action to
-OpenClaw; OpenClaw decides which SmartCore tool to call next.
-
-## Agent API
-
-OpenClaw calls SmartCore through authenticated HTTP APIs. The first supported
-surface is:
-
-- `GET /agent/tools`
-- `POST /agent/db/query_events`
-- `POST /agent/db/create_event`
-- `POST /agent/db/update_event`
-- `POST /agent/db/delete_event`
-- `POST /agent/feedback/send_text`
-- `POST /agent/feedback/send_query_result_card`
-- `POST /agent/feedback/send_operation_success_card`
-- `POST /agent/feedback/send_reminder_card`
-
-`/agent/tools` is the contract OpenClaw uses to discover tool names, endpoints,
-input schemas, output schemas, risk levels, and confirmation requirements.
-
-Database write APIs must return SmartCore pending-operation results when the
-operation needs confirmation. Destructive or bulk actions must require
-confirmation. OpenClaw must never edit tests, fixtures, database files, Docker
-volumes, or backups directly.
-
-### OpenClaw Tool Rules
-
-OpenClaw should use SmartCore tools as follows:
-
-- Query: call `/agent/db/query_events` with explicit `time_range.start` and
-  `time_range.end` whenever the user gives relative dates such as 今天, 明天, 今晚.
-- Create/update/delete: call the matching `/agent/db/*` endpoint and present the
-  returned pending operation via SmartCore feedback cards.
-- Feedback: call `/agent/feedback/*`; do not construct Feishu card JSON inside
-  OpenClaw unless SmartCore adds a dedicated passthrough tool later.
-- Ambiguity: ask a clarifying question or query candidates first. Do not invent
-  event ids or schedule data.
-
-## Reminder Loop
-
-SmartCore keeps the automatic reminder loop. It scans the database on its own
-schedule and sends reminder cards itself. Reminder card buttons must return to
-the SmartCore Feishu Gateway, then be forwarded to OpenClaw as `card_action`
-events so OpenClaw can decide whether to snooze, complete, modify, cancel, or
-continue the task.
-
-OpenClaw must not be required for the minute-by-minute due-reminder scan.
-
-## Security
-
-OpenClaw must never access the SQLite database file, Docker volumes, or backup
-directories directly. It must only call SmartCore APIs with an agent token.
-SmartCore should log all OpenClaw-originated tool calls with actor, source event,
-request body, result status, and operation id when applicable.
+SmartCore 内部模型调用统一经过 `app/server/llm/gateway.py`；OpenClaw 的模型与密钥
+在其自身运行环境配置，不能从 SmartCore 事件透传。

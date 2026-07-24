@@ -1,5 +1,7 @@
 # OpenClaw media idea intake
 
+Status: implemented; this document records current behavior and security boundaries.
+
 ## Accepted behaviour
 
 1. Plain text continues through OpenClaw unchanged: schedules, reminders, queries, and daily reports still work.

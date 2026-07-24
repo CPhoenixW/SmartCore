@@ -1,0 +1,908 @@
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.server.new_core.models import (
+    ActLog,
+    AppUser,
+    CourseEvt,
+    DdlEvt,
+    DdlPlan,
+    Device,
+    DeviceStateLog,
+    EvtBase,
+    Idea,
+    IdeaAttachment,
+    IdeaMediaJob,
+    IdeaUpload,
+    MsgLog,
+    NotifyLog,
+    PlanEvt,
+    newId,
+    nowIso,
+)
+
+_DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
+DEFAULT_USER_ID = "default"
+_ALLOWED_MSG_CHANNELS = {"web", "feishu", "llm", "system"}
+_ALLOWED_LANGUAGES = {"zh", "en"}
+logger = logging.getLogger(__name__)
+
+
+def _parseNow(now: str) -> datetime:
+    parsed = datetime.fromisoformat(now)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=_DEFAULT_TZ)
+    return parsed
+
+
+def _ensure_user(db: Session, userId: str = DEFAULT_USER_ID) -> AppUser:
+    user = db.get(AppUser, userId)
+    if user is None:
+        if userId != DEFAULT_USER_ID:
+            raise ValueError("user is unavailable")
+        now = nowIso()
+        user = AppUser(userId=userId, loginName=userId, role="admin" if userId == DEFAULT_USER_ID else "user", displayName="默认用户", language="zh", avatarUrl=None, createdAt=now, updatedAt=now)
+        db.add(user)
+        db.flush()
+    return user
+
+
+def _userDict(user: AppUser) -> dict[str, Any]:
+    return {
+        "userId": user.userId,
+        "role": user.role,
+        "displayName": user.displayName,
+        "language": user.language,
+        "avatarUrl": user.avatarUrl,
+        "createdAt": user.createdAt,
+        "updatedAt": user.updatedAt,
+    }
+
+
+def getCurrentUser(db: Session, *, userId: str = DEFAULT_USER_ID) -> dict[str, Any]:
+    return _userDict(_ensure_user(db, userId))
+
+
+def updateCurrentUser(
+    db: Session,
+    *,
+    displayName: str | None = None,
+    language: str | None = None,
+    avatarUrl: str | None = None,
+    userId: str = DEFAULT_USER_ID,
+) -> dict[str, Any]:
+    user = _ensure_user(db, userId)
+    if displayName is not None:
+        finalName = displayName.strip()
+        if not finalName:
+            raise ValueError("displayName is required")
+        user.displayName = finalName
+    if language is not None:
+        if language not in _ALLOWED_LANGUAGES:
+            raise ValueError("language must be zh or en")
+        user.language = language
+    if avatarUrl is not None:
+        user.avatarUrl = avatarUrl.strip() or None
+    user.updatedAt = nowIso()
+    db.commit()
+    db.refresh(user)
+    return _userDict(user)
+
+
+def _actor_kind(src: str | None, actorKind: str | None) -> str:
+    if actorKind:
+        return actorKind
+    if src == "screen":
+        return "device"
+    if src in {"system", "scheduler"}:
+        return "system"
+    if src == "llm":
+        return "llm"
+    return "user"
+
+
+def _evtDict(base: EvtBase, **extra: Any) -> dict[str, Any]:
+    data = {
+        "evtId": base.evtId,
+        "userId": base.userId,
+        "title": base.title,
+        "desc": base.desc,
+        "evtType": base.evtType,
+        "prio": base.prio,
+        "stat": base.stat,
+        "createdAt": base.createdAt,
+        "updatedAt": base.updatedAt,
+    }
+    data.update(extra)
+    return data
+
+
+def _planDict(base: EvtBase, plan: PlanEvt) -> dict[str, Any]:
+    return _evtDict(base, stTime=plan.stTime, durationMin=plan.durationMin)
+
+
+def _ddl_links(db: Session, ddlEvtId: str) -> list[dict[str, Any]]:
+    links = db.scalars(
+        select(DdlPlan).where(DdlPlan.ddlEvtId == ddlEvtId).order_by(DdlPlan.sortOrder.asc())
+    ).all()
+    result: list[dict[str, Any]] = []
+    for link in links:
+        base = db.get(EvtBase, link.planEvtId)
+        plan = db.get(PlanEvt, link.planEvtId)
+        if base and plan:
+            item = _planDict(base, plan)
+            item.update({"planRole": link.planRole, "sortOrder": link.sortOrder})
+            result.append(item)
+    return result
+
+
+def _ddlDict(db: Session, base: EvtBase, ddl: DdlEvt) -> dict[str, Any]:
+    return _evtDict(
+        base,
+        endTime=ddl.endTime,
+        hardDdl=ddl.hardDdl,
+        plans=_ddl_links(db, base.evtId),
+    )
+
+
+def _courseDict(base: EvtBase, course: CourseEvt) -> dict[str, Any]:
+    return _evtDict(
+        base,
+        courseName=course.courseName,
+        teacher=course.teacher,
+        location=course.location,
+        stTime=course.stTime,
+        endTime=course.endTime,
+        stDate=course.stDate,
+        endDate=course.endDate,
+        weekDay=course.weekDay,
+        startWeek=course.startWeek,
+        endWeek=course.endWeek,
+        weekMode=course.weekMode,
+    )
+
+
+def _ideaDict(idea: Idea) -> dict[str, Any]:
+    attachments = idea.__dict__.get("_attachments")
+    if attachments is None:
+        attachments = []
+    return {
+        "ideaId": idea.ideaId,
+        "userId": idea.userId,
+        "title": idea.title,
+        "description": idea.description,
+        "srcType": idea.srcType,
+        "handled": idea.handled,
+        "revision": idea.revision,
+        "createdAt": idea.createdAt,
+        "attachments": attachments,
+    }
+
+
+def _attachmentDict(row: IdeaAttachment) -> dict[str, Any]:
+    return {"attachmentId": row.attachmentId, "fileName": row.fileName, "mimeType": row.mimeType,
+            "url": f"/api/idea/attachments/{row.attachmentId}", "sizeBytes": row.sizeBytes, "createdAt": row.createdAt}
+
+
+def _attachIdeaMedia(db: Session, ideas: list[Idea]) -> None:
+    if not ideas:
+        return
+    rows = db.scalars(select(IdeaAttachment).where(IdeaAttachment.ideaId.in_([idea.ideaId for idea in ideas])).order_by(IdeaAttachment.createdAt)).all()
+    by_idea: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_idea.setdefault(row.ideaId, []).append(_attachmentDict(row))
+    for idea in ideas:
+        idea.__dict__["_attachments"] = by_idea.get(idea.ideaId, [])
+
+
+def _devStateDict(row: DeviceStateLog) -> dict[str, Any]:
+    return {
+        "stateLogId": row.stateLogId,
+        "deviceId": row.deviceId,
+        "state": row.state,
+        "confidence": row.confidence,
+        "seenAt": row.seenAt,
+        "meta": row.meta,
+    }
+
+
+def _notifyLogDict(row: NotifyLog) -> dict[str, Any]:
+    return {
+        "notifyId": row.notifyId,
+        "userId": row.userId,
+        "evtId": row.evtId,
+        "channel": row.channel,
+        "receiver": row.receiver,
+        "sourceDeviceId": row.sourceDeviceId,
+        "routeReason": row.routeReason,
+        "title": row.title,
+        "content": row.content,
+        "scheduledAt": row.scheduledAt,
+        "sentAt": row.sentAt,
+        "stat": row.stat,
+        "failReason": row.failReason,
+        "dedupKey": row.dedupKey,
+    }
+
+
+def _msgLogDict(row: MsgLog) -> dict[str, Any]:
+    return {
+        "msgId": row.msgId,
+        "userId": row.userId,
+        "channel": row.channel,
+        "direction": row.direction,
+        "externalId": row.externalId,
+        "sourceDeviceId": row.sourceDeviceId,
+        "rawText": row.rawText,
+        "intent": row.intent,
+        "stat": row.stat,
+        "createdAt": row.createdAt,
+    }
+
+
+def _actLogDict(row: ActLog) -> dict[str, Any]:
+    return {
+        "actId": row.actId,
+        "userId": row.userId,
+        "actorKind": row.actorKind,
+        "actorId": row.actorId,
+        "action": row.action,
+        "targetKind": row.targetKind,
+        "targetId": row.targetId,
+        "sourceDeviceId": row.sourceDeviceId,
+        "result": row.result,
+        "errorMessage": row.errorMessage,
+        "createdAt": row.createdAt,
+    }
+
+
+def _recordAct(
+    db: Session,
+    *,
+    userId: str = DEFAULT_USER_ID,
+    actorKind: str | None = None,
+    actorId: str | None = None,
+    action: str,
+    targetKind: str,
+    targetId: str,
+    sourceDeviceId: str | None = None,
+    result: str = "ok",
+    errorMessage: str | None = None,
+    src: str | None = None,
+) -> ActLog:
+    _ensure_user(db, userId)
+    row = ActLog(
+        userId=userId,
+        actorKind=_actor_kind(src, actorKind),
+        actorId=actorId,
+        action=action,
+        targetKind=targetKind,
+        targetId=targetId,
+        sourceDeviceId=sourceDeviceId,
+        result=result,
+        errorMessage=errorMessage,
+    )
+    db.add(row)
+    return row
+
+
+def _base_event(
+    *,
+    userId: str,
+    title: str,
+    evtType: str,
+    desc: str | None,
+    prio: str,
+    stat: str = "todo",
+) -> EvtBase:
+    now = nowIso()
+    return EvtBase(
+        evtId=newId(),
+        userId=userId,
+        title=title,
+        desc=desc,
+        evtType=evtType,
+        prio=prio,
+        stat=stat,
+        createdAt=now,
+        updatedAt=now,
+    )
+
+
+def createPlanEvt(
+    db: Session,
+    *,
+    title: str,
+    stTime: str,
+    durationMin: int = 30,
+    src: str = "api",
+    desc: str | None = None,
+    prio: str = "mid",
+    userId: str = DEFAULT_USER_ID,
+) -> dict[str, Any]:
+    _ensure_user(db, userId)
+    base = _base_event(userId=userId, title=title, evtType="plan", desc=desc, prio=prio)
+    db.add(base)
+    db.flush()
+    plan = PlanEvt(evtId=base.evtId, stTime=stTime, durationMin=durationMin)
+    db.add(plan)
+    result = _planDict(base, plan)
+    _recordAct(db, userId=userId, src=src, action="create", targetKind="planEvt", targetId=base.evtId)
+    db.commit()
+    return result
+
+
+def _create_linked_plan(
+    db: Session,
+    *,
+    userId: str,
+    ddlEvtId: str,
+    title: str,
+    stTime: str,
+    durationMin: int,
+    planRole: str,
+    sortOrder: int,
+    prio: str,
+) -> None:
+    base = _base_event(userId=userId, title=title, evtType="plan", desc="DDL 自动生成计划", prio=prio)
+    db.add(base)
+    db.flush()
+    db.add(PlanEvt(evtId=base.evtId, stTime=stTime, durationMin=durationMin))
+    db.add(DdlPlan(ddlEvtId=ddlEvtId, planEvtId=base.evtId, planRole=planRole, sortOrder=sortOrder))
+    _recordAct(db, userId=userId, actorKind="system", action="auto_create", targetKind="planEvt", targetId=base.evtId)
+
+
+def createDdlEvt(
+    db: Session,
+    *,
+    title: str,
+    endTime: str,
+    hardDdl: bool = False,
+    src: str = "api",
+    desc: str | None = None,
+    prio: str = "high",
+    userId: str = DEFAULT_USER_ID,
+) -> dict[str, Any]:
+    _ensure_user(db, userId)
+    base = _base_event(userId=userId, title=title, evtType="ddl", desc=desc, prio=prio)
+    db.add(base)
+    db.flush()
+    ddl = DdlEvt(evtId=base.evtId, endTime=endTime, hardDdl=hardDdl)
+    db.add(ddl)
+    _recordAct(db, userId=userId, src=src, action="create", targetKind="ddlEvt", targetId=base.evtId)
+    try:
+        end_dt = _parseNow(endTime)
+        defaults = [
+            ("one_day_before", end_dt - timedelta(days=1)),
+            ("one_hour_before", end_dt - timedelta(hours=1)),
+        ]
+        for order, (role, st_dt) in enumerate(defaults):
+            _create_linked_plan(
+                db,
+                userId=userId,
+                ddlEvtId=base.evtId,
+                title=f"{title} · {'提前一天' if role == 'one_day_before' else '提前一小时'}",
+                stTime=st_dt.isoformat(),
+                durationMin=30,
+                planRole=role,
+                sortOrder=order,
+                prio=prio,
+            )
+    except ValueError:
+        pass
+    db.commit()
+    return _ddlDict(db, base, ddl)
+
+
+def createCourseEvt(
+    db: Session,
+    *,
+    courseName: str,
+    title: str | None = None,
+    teacher: str | None = None,
+    location: str | None = None,
+    stTime: str,
+    endTime: str,
+    stDate: str,
+    endDate: str,
+    weekDay: int,
+    startWeek: int | None = None,
+    endWeek: int | None = None,
+    weekMode: str = "all",
+    desc: str | None = None,
+    prio: str = "mid",
+    src: str = "api",
+    userId: str = DEFAULT_USER_ID,
+) -> dict[str, Any]:
+    _ensure_user(db, userId)
+    base = _base_event(userId=userId, title=title or courseName, evtType="course", desc=desc, prio=prio)
+    db.add(base)
+    db.flush()
+    course = CourseEvt(
+        evtId=base.evtId,
+        courseName=courseName,
+        teacher=teacher,
+        location=location,
+        stTime=stTime,
+        endTime=endTime,
+        stDate=stDate,
+        endDate=endDate,
+        weekDay=weekDay,
+        startWeek=startWeek,
+        endWeek=endWeek,
+        weekMode=weekMode,
+    )
+    db.add(course)
+    _recordAct(db, userId=userId, src=src, action="create", targetKind="courseEvt", targetId=base.evtId)
+    db.commit()
+    return _courseDict(base, course)
+
+
+def createIdea(
+    db: Session,
+    *,
+    title: str,
+    description: str = "",
+    srcType: str = "text",
+    uploadIds: list[str] | None = None,
+    userId: str = DEFAULT_USER_ID,
+) -> dict[str, Any]:
+    _ensure_user(db, userId)
+    idea_title = title.strip()[:300]
+    if not idea_title:
+        raise ValueError("title required")
+    idea = Idea(userId=userId, title=idea_title, description=description.strip(), srcType=srcType)
+    db.add(idea)
+    db.flush()
+    if uploadIds:
+        rows = db.scalars(select(IdeaUpload).where(IdeaUpload.uploadId.in_(uploadIds), IdeaUpload.userId == userId)).all()
+        if len(rows) != len(set(uploadIds)):
+            raise ValueError("one or more attachments are unavailable")
+        for row in rows:
+            db.add(IdeaAttachment(ideaId=idea.ideaId, fileName=row.fileName, mimeType=row.mimeType, storagePath=row.storagePath, sizeBytes=row.sizeBytes))
+            db.delete(row)
+    _attachIdeaMedia(db, [idea])
+    result = _ideaDict(idea)
+    _recordAct(db, userId=userId, src="api", action="create", targetKind="idea", targetId=idea.ideaId)
+    db.commit()
+    return result
+
+
+def updateIdea(
+    db: Session,
+    ideaId: str,
+    *,
+    userId: str,
+    title: str | None = None,
+    description: str | None = None,
+    handled: bool | None = None,
+    expectedRevision: int | None = None,
+    addUploadIds: list[str] | None = None,
+    removeAttachmentIds: list[str] | None = None,
+) -> dict[str, Any]:
+    row = db.get(Idea, ideaId)
+    if row is None or row.userId != userId:
+        raise ValueError(f"idea not found: {ideaId}")
+    if expectedRevision is not None and row.revision != expectedRevision:
+        raise ValueError("stale idea revision")
+    if title is not None:
+        final_title = title.strip()[:300]
+        if not final_title:
+            raise ValueError("title required")
+        row.title = final_title
+    if description is not None:
+        row.description = description
+    if handled is not None:
+        row.handled = handled
+
+    add_ids = list(dict.fromkeys(addUploadIds or []))
+    remove_ids = list(dict.fromkeys(removeAttachmentIds or []))
+    existing = db.scalars(
+        select(IdeaAttachment).where(IdeaAttachment.ideaId == ideaId)
+    ).all()
+    existing_by_id = {item.attachmentId: item for item in existing}
+    if any(item_id not in existing_by_id for item_id in remove_ids):
+        raise ValueError("one or more attachments are unavailable")
+
+    uploads = db.scalars(
+        select(IdeaUpload).where(
+            IdeaUpload.uploadId.in_(add_ids), IdeaUpload.userId == userId
+        )
+    ).all() if add_ids else []
+    if len(uploads) != len(add_ids):
+        raise ValueError("one or more uploads are unavailable")
+    upload_by_id = {item.uploadId: item for item in uploads}
+    for upload_id in add_ids:
+        upload = upload_by_id[upload_id]
+        if upload.mimeType.startswith("image/"):
+            job = db.scalar(
+                select(IdeaMediaJob).where(
+                    IdeaMediaJob.uploadId == upload_id,
+                    IdeaMediaJob.userId == userId,
+                    IdeaMediaJob.ideaId == ideaId,
+                )
+            )
+            if job is None or job.stat != "ready":
+                raise ValueError("image media job is not ready")
+
+    final_count = len(existing) - len(remove_ids) + len(add_ids)
+    if final_count > 10:
+        raise ValueError("an idea supports at most 10 attachments")
+
+    removed_paths = [existing_by_id[item_id].storagePath for item_id in remove_ids]
+    for item_id in remove_ids:
+        db.delete(existing_by_id[item_id])
+    for upload_id in add_ids:
+        upload = upload_by_id[upload_id]
+        db.add(
+            IdeaAttachment(
+                ideaId=ideaId,
+                fileName=upload.fileName,
+                mimeType=upload.mimeType,
+                storagePath=upload.storagePath,
+                sizeBytes=upload.sizeBytes,
+            )
+        )
+        job = db.scalar(
+            select(IdeaMediaJob).where(IdeaMediaJob.uploadId == upload_id)
+        )
+        if job is not None:
+            job.stat = "consumed"
+            job.updatedAt = nowIso()
+        db.delete(upload)
+
+    row.revision += 1
+    db.flush()
+    _attachIdeaMedia(db, [row])
+    result = _ideaDict(row)
+    _recordAct(db, userId=row.userId, src="api", action="update", targetKind="idea", targetId=ideaId)
+    db.commit()
+    _unlink_media(removed_paths)
+    return result
+
+
+def _unlink_media(paths: list[str]) -> None:
+    for raw_path in paths:
+        try:
+            Path(raw_path).unlink(missing_ok=True)
+        except OSError:
+            logger.exception("failed to remove idea attachment file: path=%s", raw_path)
+
+
+def cleanupExpiredIdeaMedia(
+    db: Session,
+    *,
+    now: str | None = None,
+    maxAgeHours: int = 24,
+) -> dict[str, int]:
+    current = _parseNow(now or nowIso())
+    cutoff = current - timedelta(hours=maxAgeHours)
+    jobs = db.scalars(select(IdeaMediaJob)).all()
+    expired_jobs: list[IdeaMediaJob] = []
+    protected_upload_ids: set[str] = set()
+    for job in jobs:
+        try:
+            expired = _parseNow(job.expiresAt) <= current
+        except ValueError:
+            expired = False
+        if expired:
+            expired_jobs.append(job)
+        else:
+            protected_upload_ids.add(job.uploadId)
+
+    expired_job_upload_ids = {job.uploadId for job in expired_jobs}
+    uploads = db.scalars(select(IdeaUpload)).all()
+    expired_uploads: list[IdeaUpload] = []
+    for upload in uploads:
+        try:
+            old_enough = _parseNow(upload.createdAt) <= cutoff
+        except ValueError:
+            old_enough = False
+        if upload.uploadId in expired_job_upload_ids or (
+            old_enough and upload.uploadId not in protected_upload_ids
+        ):
+            expired_uploads.append(upload)
+
+    paths = [upload.storagePath for upload in expired_uploads]
+    for job in expired_jobs:
+        db.delete(job)
+    for upload in expired_uploads:
+        db.delete(upload)
+    db.commit()
+    _unlink_media(paths)
+    return {"jobs": len(expired_jobs), "uploads": len(expired_uploads)}
+
+
+def deleteIdea(db: Session, ideaId: str, *, userId: str) -> dict[str, Any]:
+    row = db.get(Idea, ideaId)
+    if row is None or row.userId != userId:
+        raise ValueError(f"idea not found: {ideaId}")
+    attachments = db.scalars(
+        select(IdeaAttachment).where(IdeaAttachment.ideaId == ideaId)
+    ).all()
+    paths = [item.storagePath for item in attachments]
+    jobs = db.scalars(
+        select(IdeaMediaJob).where(IdeaMediaJob.ideaId == ideaId)
+    ).all()
+    job_upload_ids = [item.uploadId for item in jobs]
+    pending_uploads = db.scalars(
+        select(IdeaUpload).where(
+            IdeaUpload.uploadId.in_(job_upload_ids), IdeaUpload.userId == userId
+        )
+    ).all() if job_upload_ids else []
+    paths.extend(item.storagePath for item in pending_uploads)
+    for upload in pending_uploads:
+        db.delete(upload)
+    for job in jobs:
+        db.delete(job)
+    _attachIdeaMedia(db, [row])
+    result = _ideaDict(row)
+    _recordAct(db, userId=row.userId, src="api", action="delete", targetKind="idea", targetId=ideaId)
+    db.delete(row)
+    db.commit()
+    _unlink_media(paths)
+    return result
+
+
+def listEvt(db: Session, *, userId: str = DEFAULT_USER_ID) -> list[dict[str, Any]]:
+    rows = db.scalars(select(EvtBase).where(EvtBase.userId == userId).order_by(EvtBase.createdAt.asc())).all()
+    results: list[dict[str, Any]] = []
+    for base in rows:
+        if base.evtType == "plan":
+            plan = db.get(PlanEvt, base.evtId)
+            if plan:
+                results.append(_planDict(base, plan))
+        elif base.evtType == "ddl":
+            ddl = db.get(DdlEvt, base.evtId)
+            if ddl:
+                results.append(_ddlDict(db, base, ddl))
+        elif base.evtType == "course":
+            course = db.get(CourseEvt, base.evtId)
+            if course:
+                results.append(_courseDict(base, course))
+    return results
+
+
+def listPlanEvt(db: Session) -> list[dict[str, Any]]:
+    return [item for item in listEvt(db) if item["evtType"] == "plan"]
+
+
+def listDdlEvt(db: Session) -> list[dict[str, Any]]:
+    return [item for item in listEvt(db) if item["evtType"] == "ddl"]
+
+
+def listCourseEvt(db: Session) -> list[dict[str, Any]]:
+    return [item for item in listEvt(db) if item["evtType"] == "course"]
+
+
+def listIdeas(db: Session, *, userId: str = DEFAULT_USER_ID) -> list[dict[str, Any]]:
+    rows = db.scalars(select(Idea).where(Idea.userId == userId).order_by(Idea.createdAt.asc())).all()
+    _attachIdeaMedia(db, rows)
+    return [_ideaDict(row) for row in rows]
+
+
+def createIdeaUpload(db: Session, *, userId: str, fileName: str, mimeType: str, storagePath: str, sizeBytes: int) -> dict[str, Any]:
+    row = IdeaUpload(userId=userId, fileName=fileName, mimeType=mimeType, storagePath=storagePath, sizeBytes=sizeBytes)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"uploadId": row.uploadId, "fileName": row.fileName, "mimeType": row.mimeType, "sizeBytes": row.sizeBytes, "storagePath": row.storagePath}
+
+
+def getIdeaAttachment(db: Session, attachmentId: str, *, userId: str) -> IdeaAttachment:
+    row = db.get(IdeaAttachment, attachmentId)
+    if row is None or not row.ideaId:
+        raise ValueError("attachment not found")
+    idea = db.get(Idea, row.ideaId)
+    if idea is None or idea.userId != userId:
+        raise ValueError("attachment not found")
+    return row
+
+
+def listDevState(db: Session) -> list[dict[str, Any]]:
+    rows = db.scalars(select(DeviceStateLog).order_by(DeviceStateLog.seenAt.desc())).all()
+    return [_devStateDict(row) for row in rows]
+
+
+def listNotifyLog(db: Session) -> list[dict[str, Any]]:
+    rows = db.scalars(select(NotifyLog).order_by(NotifyLog.scheduledAt.asc())).all()
+    return [_notifyLogDict(row) for row in rows]
+
+
+def listMsgLog(db: Session) -> list[dict[str, Any]]:
+    rows = db.scalars(select(MsgLog).order_by(MsgLog.createdAt.asc())).all()
+    return [_msgLogDict(row) for row in rows]
+
+
+def listActLog(db: Session) -> list[dict[str, Any]]:
+    rows = db.scalars(select(ActLog).order_by(ActLog.createdAt.asc())).all()
+    return [_actLogDict(row) for row in rows]
+
+
+def getLatestDevState(db: Session, *, devId: str = "pi") -> dict[str, Any] | None:
+    row = db.scalars(
+        select(DeviceStateLog)
+        .where(DeviceStateLog.deviceId == devId)
+        .order_by(DeviceStateLog.seenAt.desc())
+        .limit(1)
+    ).first()
+    return _devStateDict(row) if row else None
+
+
+def upsertDevState(
+    db: Session,
+    *,
+    devId: str,
+    state: str,
+    confidence: float | None = None,
+    seenAt: str | None = None,
+    meta: dict | None = None,
+) -> dict[str, Any]:
+    _ensure_user(db)
+    device = db.get(Device, devId)
+    if device is None:
+        device = Device(deviceId=devId, userId=DEFAULT_USER_ID, deviceName=devId, deviceKind="screen")
+        db.add(device)
+        db.flush()
+    row = DeviceStateLog(deviceId=devId, state=state, confidence=confidence, seenAt=seenAt or nowIso(), meta=meta)
+    db.add(row)
+    _recordAct(db, actorKind="device", action="update", targetKind="device", targetId=devId)
+    db.commit()
+    db.refresh(row)
+    return _devStateDict(row)
+
+
+def updateEvt(db: Session, evtId: str, **fields: Any) -> dict[str, Any]:
+    base = db.get(EvtBase, evtId)
+    if base is None:
+        raise ValueError(f"evt not found: {evtId}")
+    for key in ("title", "desc", "prio", "stat"):
+        if key in fields and fields[key] is not None:
+            setattr(base, key, fields[key])
+    if base.evtType == "plan":
+        plan = db.get(PlanEvt, evtId)
+        if plan is not None:
+            if "stTime" in fields and fields["stTime"] is not None:
+                plan.stTime = fields["stTime"]
+            if "durationMin" in fields and fields["durationMin"] is not None:
+                plan.durationMin = int(fields["durationMin"])
+    elif base.evtType == "ddl":
+        ddl = db.get(DdlEvt, evtId)
+        if ddl is not None:
+            if "endTime" in fields and fields["endTime"] is not None:
+                ddl.endTime = fields["endTime"]
+            if "hardDdl" in fields and fields["hardDdl"] is not None:
+                ddl.hardDdl = bool(fields["hardDdl"])
+    elif base.evtType == "course":
+        course = db.get(CourseEvt, evtId)
+        if course is not None:
+            for key in (
+                "courseName",
+                "teacher",
+                "location",
+                "stTime",
+                "endTime",
+                "stDate",
+                "endDate",
+                "weekDay",
+                "startWeek",
+                "endWeek",
+                "weekMode",
+            ):
+                if key in fields and fields[key] is not None:
+                    setattr(course, key, fields[key])
+    base.updatedAt = nowIso()
+    _recordAct(db, userId=base.userId, src="api", action="update", targetKind="evt", targetId=evtId)
+    db.commit()
+    return next(item for item in listEvt(db, userId=base.userId) if item["evtId"] == evtId)
+
+
+def cancelEvt(db: Session, evtId: str, *, src: str = "api") -> dict[str, Any]:
+    base = db.get(EvtBase, evtId)
+    if base is None:
+        raise ValueError(f"evt not found: {evtId}")
+    base.stat = "cancelled"
+    base.updatedAt = nowIso()
+    _recordAct(db, userId=base.userId, src=src, action="cancel", targetKind="evt", targetId=evtId)
+    db.commit()
+    return next(item for item in listEvt(db, userId=base.userId) if item["evtId"] == evtId)
+
+
+def notifyDedupExists(db: Session, dedupKey: str) -> bool:
+    return db.scalars(select(NotifyLog).where(NotifyLog.dedupKey == dedupKey)).first() is not None
+
+
+def writeNotifyLog(
+    db: Session,
+    *,
+    dedupKey: str | None,
+    channel: str,
+    title: str,
+    content: str,
+    stat: str,
+    targetId: str | None = None,
+    evtId: str | None = None,
+    failReason: str | None = None,
+    userId: str = DEFAULT_USER_ID,
+) -> dict[str, Any]:
+    _ensure_user(db, userId)
+    row = NotifyLog(
+        userId=userId,
+        evtId=evtId,
+        channel=channel,
+        receiver=targetId,
+        title=title,
+        content=content,
+        scheduledAt=nowIso(),
+        sentAt=nowIso(),
+        stat=stat,
+        failReason=failReason,
+        dedupKey=dedupKey,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _notifyLogDict(row)
+
+
+def createMsgLog(
+    db: Session,
+    *,
+    src: str,
+    externalId: str | None,
+    rawText: str | None,
+    intent: str | None,
+    stat: str,
+    userId: str = DEFAULT_USER_ID,
+    sourceDeviceId: str | None = None,
+) -> dict[str, Any]:
+    _ensure_user(db, userId)
+    row = MsgLog(
+        userId=userId,
+        channel=src if src in _ALLOWED_MSG_CHANNELS else "system",
+        direction="in",
+        externalId=externalId,
+        sourceDeviceId=sourceDeviceId,
+        rawText=rawText,
+        intent=intent,
+        stat=stat,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _msgLogDict(row)
+
+
+def msgLogExists(db: Session, *, src: str, externalId: str) -> bool:
+    channel = src if src in _ALLOWED_MSG_CHANNELS else "system"
+    return db.scalars(select(MsgLog).where(MsgLog.channel == channel, MsgLog.externalId == externalId)).first() is not None
+
+
+def applyReminderAction(db: Session, *, evtId: str, action: str, now: str, src: str) -> dict[str, Any]:
+    base = db.get(EvtBase, evtId)
+    if base is None:
+        raise ValueError(f"evt not found: {evtId}")
+    if action == "done":
+        return updateEvt(db, evtId, stat="done")
+    if action == "snooze10":
+        newInstant = (_parseNow(now) + timedelta(minutes=10)).isoformat()
+        if base.evtType == "plan":
+            return updateEvt(db, evtId, stTime=newInstant)
+        if base.evtType == "ddl":
+            return updateEvt(db, evtId, endTime=newInstant)
+        raise ValueError(f"snooze not supported for evtType: {base.evtType}")
+    raise ValueError(f"unknown reminder action: {action}")
+
+
+def sendReminder(db: Session, **kwargs: Any) -> dict[str, Any]:
+    from app.server.new_core.notify import sendReminder as _sendReminder
+
+    return _sendReminder(db, **kwargs)

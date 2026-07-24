@@ -3,11 +3,11 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.agent.scope import issue_agent_scope
-from app.db.session import SessionLocal
-from app.feishu.client import FeishuClient
-from app.main import create_app
-from app.new_core.models import FeishuBind, FeishuBot, LifeIdentity, MsgLog
+from app.server.agent.scope import issue_agent_scope
+from app.server.db.session import SessionLocal
+from app.server.feishu.client import FeishuClient
+from app.server.main import create_app
+from app.server.new_core.models import FeishuBind, FeishuBot, LifeIdentity, MsgLog
 
 
 def _message_event(text: str, *, chat_id: str = "oc_user_chat", message_id: str = "om_1") -> dict:

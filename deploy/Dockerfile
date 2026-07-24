@@ -55,11 +55,12 @@ RUN pip install --no-cache-dir \
     -r requirements-dev.lock
 
 COPY pyproject.toml ./
-COPY app ./app
+COPY app/__init__.py ./app/__init__.py
+COPY app/server ./app/server
 COPY tests ./tests
 COPY openclaw ./openclaw
 
-RUN ruff check app tests \
+RUN ruff check app/server tests \
     && pytest -q \
     && touch /backend-check-passed
 
@@ -81,9 +82,10 @@ ARG VCS_REF=unknown
 LABEL org.opencontainers.image.revision="${VCS_REF}"
 
 COPY --from=python-deps /python-deps /usr/local
-COPY app ./app
-COPY --from=frontend-builder /frontend/dist ./app/web/dist
+COPY app/__init__.py ./app/__init__.py
+COPY app/server ./app/server
+COPY --from=frontend-builder /frontend/dist ./app/server/web/dist
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["uvicorn", "app.server.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

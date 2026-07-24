@@ -4,9 +4,9 @@
 
 仅修改 `/work` 浏览器端工作台：
 
-- `app/web/work_routes.py`
-- `app/web/static/work.css`
-- `app/web/static/work.js`
+- `app/server/web/work_routes.py`
+- `app/server/web/static/work.css`
+- `app/server/web/static/work.js`
 
 不修改 `/screen` 手机副屏，不改数据库结构，不要求新增后端接口。
 

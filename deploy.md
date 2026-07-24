@@ -1,143 +1,59 @@
-# Deploy
+# SmartCore 发布
 
-## Git
+## 环境
 
-remote: origin
-branch: main
+| 用途 | 位置 | 分支 |
+|---|---|---|
+| 候选构建 | `server:/opt/smartcore-dev` | `dev` |
+| 生产 | `server:/opt/smartcore` | `main` |
 
-## Validation
+生产配置、数据库和备份只保留在服务器，不进入 Git。
 
-test: `.venv/bin/python -m pytest`
-lint: `.venv/bin/python -m ruff check app tests`
+## 发布流程
 
-## Server
-
-ssh: server
-prod_repo: /opt/smartcore
-dev_repo: /opt/smartcore-dev
-deploy_dir: /opt/smartcore/deploy
-deploy_command: `docker compose up -d --build`
-healthcheck: `curl -fsS http://100.65.243.93:8000/healthz`
-status: `docker compose ps`
-logs: `docker logs --tail 80 deploy-app-1`
-
-## OpenClaw
-
-version: 2026.6.5
-install: user-local prefix under `/root/.openclaw`
-path: `/root/.openclaw/bin`
-gateway: `127.0.0.1:18789`
-gateway_service: `systemctl --user status openclaw-gateway.service`
-gateway_token_file: `/root/.openclaw/smartcore-gateway-token`
-smartcore_agent_token_file: `/root/.openclaw/smartcore-agent-api-token`
-verify: `openclaw --version`
-doctor: `openclaw doctor`
-gateway_status: `openclaw gateway status`
-feishu_setup: `openclaw channels login --channel feishu`
-gateway_restart: `openclaw gateway restart`
-
-OpenClaw is the natural-language and orchestration layer. SmartCore remains the
-data, reminder, card, audit, and deployment authority. OpenClaw may call only
-SmartCore Agent APIs and Feedback APIs; it must not connect directly to the
-SmartCore database file or Docker volumes.
-
-The OpenClaw Gateway remains a host user service. Its SmartCore Adapter is built
-from `deploy/adapter.Dockerfile` and managed by the SmartCore Compose project.
-Adapter secrets live only in `deploy/adapter.env`; the mounted OpenClaw home and
-workspace let the Adapter invoke the host-managed OpenClaw installation without
-granting it access to SmartCore data volumes.
-
-## Guardrails
-
-never_commit:
-- .env
-- deploy/.env
-- passwd.txt
-- *.sqlite
-- data/
-- backups/
-- timetable.csv
-- __pycache__/
-- .pytest_cache/
-- .ruff_cache/
-
-preserve_on_server:
-- /opt/smartcore/deploy/.env
-- /opt/smartcore/data
-- /opt/smartcore/backups
-- /opt/smartcore-dev
-- /root/.openclaw
-- docker volumes: smartcore-data, smartcore-backups, caddy-data, caddy-config
-
-## Server Development Workflow
-
-Use this workflow when Cursor or another coding agent edits code on the server:
-
-1. SSH to `server`.
-2. Work only in `dev_repo` (`/opt/smartcore-dev`), never directly in `prod_repo`.
-3. In `dev_repo`, keep `main` current with `git pull --ff-only origin main`.
-4. Run validation in `dev_repo`: `.venv/bin/python -m pytest` and `.venv/bin/python -m ruff check app tests`.
-5. Commit and push from `dev_repo`.
-6. In `prod_repo`, verify `git status --short` is clean.
-7. In `prod_repo`, pull fast-forward from `origin/main`.
-8. In `deploy_dir`, run `deploy_command`.
-9. Run `status`, `healthcheck`, and `logs`.
-
-`prod_repo` is production-only. Uncommitted experiments, Cursor worktrees, and
-temporary files belong in `dev_repo`.
-
-## Release Procedure
-
-1. Confirm `test` and `lint` pass locally.
-2. Confirm `git status --short` contains only intended files and none from `never_commit`.
-3. Commit intended files.
-4. Push to `remote` / `branch`.
-5. SSH to `server`.
-6. In `prod_repo`, verify the server worktree is safe with `git status --short`.
-7. Pull fast-forward: `git pull --ff-only origin main`.
-8. In `deploy_dir`, run `deploy_command`.
-9. Run `status`.
-10. Run `healthcheck`.
-11. Check `logs` for startup errors.
-
-## OpenClaw First SmartCore Loop
-
-Feishu text messages and card callbacks must flow through OpenClaw when
-`OPENCLAW_EVENTS_ENDPOINT` is configured:
-
-```text
-Feishu event
-  -> SmartCore Feishu Gateway validates and deduplicates
-  -> SmartCore forwards a normalized event to OpenClaw
-  -> OpenClaw calls SmartCore /agent/db/* APIs
-  -> OpenClaw calls SmartCore /agent/feedback/* APIs
-  -> SmartCore sends Feishu cards or text
-```
-
-SmartCore reminders stay local and reliable:
-
-```text
-SmartCore scheduler scans DB every minute
-  -> SmartCore sends reminder card
-  -> Feishu card action returns to SmartCore Feishu Gateway
-  -> SmartCore forwards the action to OpenClaw
-  -> OpenClaw decides whether to snooze, complete, modify, or continue the task
-```
-
-## Rollback
-
-If deployment fails after a new commit reaches the server:
-
-1. Do not delete Docker volumes or production data.
-2. Inspect the previous commit with `git log --oneline -5`.
-3. Temporarily return the server to the last known good commit if needed:
+1. 本地验证并推送 `dev`。
+2. 服务器构建候选镜像，运行后端、前端、容器和隔离健康检查。
+3. 提升脚本将已验证提交快进到 `main`，备份 SQLite，并切换 App 与 Adapter 镜像。
 
 ```bash
-cd /opt/smartcore
-git checkout <good_commit_sha>
-cd /opt/smartcore/deploy
-docker compose up -d --build
-curl -fsS http://100.65.243.93:8000/healthz
+.venv/bin/pytest -q
+.venv/bin/ruff check app/server tests
+cd frontend && npm test && npm run build
+git push origin dev
+
+ssh server 'cd /opt/smartcore-dev && ./scripts/deploy_dev.sh'
+ssh server 'cd /opt/smartcore && ./scripts/promote_prod.sh'
 ```
 
-4. Create a normal revert or fix commit on `main` from the local repository to restore branch consistency.
+不要直接在 `/opt/smartcore` 编辑文件，也不要用普通 `docker compose up --build`
+替代候选提升流程。
+
+## 验证
+
+```bash
+ssh server 'cd /opt/smartcore && docker compose -f deploy/docker-compose.yml ps'
+ssh server 'cd /opt/smartcore && docker compose -f deploy/docker-compose.yml exec -T app python -c "import urllib.request; print(urllib.request.urlopen('\''http://127.0.0.1:8000/healthz'\'', timeout=3).read().decode())"'
+```
+
+同时确认：
+
+- App 与 OpenClaw Adapter 的 revision label 等于发布提交。
+- 两个服务均为 `healthy`，Cloudflared 正在运行。
+- Tailscale `/healthz`、`/work` 和一个只读 API 正常。
+- 启动日志没有迁移、认证或调度错误。
+
+## 回滚
+
+```bash
+ssh server 'cd /opt/smartcore && ./scripts/deploy_prod.sh --rollback'
+```
+
+脚本使用上一个已记录镜像回滚，不删除 Docker 卷。若涉及数据迁移，先评估数据库
+兼容性；禁止直接覆盖或删除生产数据库。
+
+## 固定边界
+
+- 公网：仅 `/feishu/event`。
+- 内网：Tailscale 上的 `/work`、`/screen`、API 和健康检查。
+- OpenClaw Gateway：服务器 host user service；Adapter 由 Compose 管理。
+- Pi：通过 `deploy/pi/install_to_pi.sh` 从 `app/raspberryPi/yolo` 同步源码。

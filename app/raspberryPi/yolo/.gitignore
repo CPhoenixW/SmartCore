@@ -1,0 +1,11 @@
+.smartcore.env
+.venv/
+__pycache__/
+captures/
+known_faces/
+logs/
+output/
+models/*.onnx
+yolo*.pt
+*.bak
+*.bak-*

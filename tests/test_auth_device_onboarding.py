@@ -3,7 +3,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import create_app
+from app.server.main import create_app
 
 
 def _setup_client() -> TestClient:
@@ -125,7 +125,7 @@ def test_feishu_binding_claims_then_confirms_chat(app_env, monkeypatch) -> None:
 def test_same_feishu_identity_can_bind_two_chats_for_the_same_user(app_env, monkeypatch) -> None:
     client = _setup_client()
     bot = client.get("/api/admin/feishuBots").json()["data"][0]
-    monkeypatch.setattr("app.feishu.client.FeishuClient.send_text", lambda *_args, **_kwargs: {"code": 0})
+    monkeypatch.setattr("app.server.feishu.client.FeishuClient.send_text", lambda *_args, **_kwargs: {"code": 0})
 
     for index, chat_id in enumerate(("oc_first", "oc_second"), start=1):
         pair = client.post(f"/api/admin/feishuBots/{bot['botId']}/pair/start").json()["data"]
@@ -143,7 +143,7 @@ def test_same_feishu_identity_can_bind_two_chats_for_the_same_user(app_env, monk
 
 def test_important_date_natural_language_falls_back_to_a_ddl(app_env, monkeypatch) -> None:
     client = _setup_client()
-    monkeypatch.setattr("app.api.ai_routes.complete_chat", lambda *_args, **_kwargs: "模型没有按要求输出")
+    monkeypatch.setattr("app.server.api.ai_routes.complete_chat", lambda *_args, **_kwargs: "模型没有按要求输出")
     response = client.post("/api/llm/parse", json={
         "text": "依依宝宝2026年8月28号过生日，千万不能忘了给她准备礼物",
         "now": "2026-07-13T10:00:00+08:00",
@@ -168,7 +168,7 @@ def test_important_date_natural_language_falls_back_to_a_ddl(app_env, monkeypatc
 )
 def test_natural_language_event_shapes_are_loaded_into_the_form(app_env, monkeypatch, text, raw, expected_type, time_key) -> None:
     client = _setup_client()
-    monkeypatch.setattr("app.api.ai_routes.complete_chat", lambda *_args, **_kwargs: raw)
+    monkeypatch.setattr("app.server.api.ai_routes.complete_chat", lambda *_args, **_kwargs: raw)
     response = client.post("/api/llm/parse", json={"text": text, "now": "2026-07-13T10:00:00+08:00"})
     assert response.status_code == 200
     parsed = response.json()["data"]["parsed"]

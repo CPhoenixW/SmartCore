@@ -82,7 +82,7 @@ Required constraints and indexes:
 - `actLog` records both `actorUserId` and `activeUserId` for all administrator context switches and all writes made while impersonating a user.
 - `notifyLog`, `msgLog`, `deviceDispatch`, and device state/photo records must all be queryable by `userId` without a cross-user join.
 
-The source-of-truth DDL belongs in `app/db/sql/schema.sql`. This change must add a separate, idempotent SQL migration under `app/db/sql/migrations/`; Python migration code may run that SQL but must not embed a second schema definition. The migration preserves existing user events and maps existing devices to the current default user only as historical rows. It revokes all old global device credentials, so Pi, screen, and Feishu must pair again before communicating.
+The source-of-truth DDL belongs in `app/server/db/sql/schema.sql`. This change must add a separate, idempotent SQL migration under `app/server/db/sql/migrations/`; Python migration code may run that SQL but must not embed a second schema definition. The migration preserves existing user events and maps existing devices to the current default user only as historical rows. It revokes all old global device credentials, so Pi, screen, and Feishu must pair again before communicating.
 
 ## Authentication and Authorization
 
@@ -181,7 +181,7 @@ Required commands in the server worktree:
 
 ```bash
 .venv/bin/python -m pytest
-.venv/bin/python -m ruff check app tests
+.venv/bin/python -m ruff check app/server tests
 cd frontend && npm run build
 ```
 

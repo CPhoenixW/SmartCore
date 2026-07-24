@@ -3,10 +3,10 @@ from __future__ import annotations
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.db.session import Base
-from app.device import service
-from app.device.routes import router
-from app.new_core import models  # noqa: F401
+from app.server.db.session import Base
+from app.server.device import service
+from app.server.device.routes import router
+from app.server.new_core import models  # noqa: F401
 
 
 def _session() -> Session:

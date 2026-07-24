@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.agent.legacy_time_routes import createLegacyTimeRouter
-from app.agent.v2_routes import _normalize_query_body, _resolved_iso, createAgentV2Router
+from app.server.agent.legacy_time_routes import createLegacyTimeRouter
+from app.server.agent.v2_routes import _normalize_query_body, _resolved_iso, createAgentV2Router
 
 
 def test_agent_normalizes_utc_and_naive_times_to_shanghai() -> None:

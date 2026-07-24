@@ -8,22 +8,22 @@ from zoneinfo import ZoneInfo
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.agent.scope import issue_agent_scope
-from app.auth.security import create_session_token
-from app.config import Settings
-from app.db.session import SessionLocal
-from app.main import create_app
-from app.new_core.daily_summary_service import store_daily_summary
-from app.new_core.event_relations import create_plan_event
-from app.new_core.models import (
+from app.server.agent.scope import issue_agent_scope
+from app.server.auth.security import create_session_token
+from app.server.config import Settings
+from app.server.db.session import SessionLocal
+from app.server.main import create_app
+from app.server.new_core.daily_summary_service import store_daily_summary
+from app.server.new_core.event_relations import create_plan_event
+from app.server.new_core.models import (
     AppUser,
     DailySummary,
     FeishuBind,
     FeishuBot,
     LifeIdentity,
 )
-from app.scheduler.daily_summary import dispatch_daily_summaries
-from app.scheduler.service import SchedulerService
+from app.server.scheduler.daily_summary import dispatch_daily_summaries
+from app.server.scheduler.service import SchedulerService
 from openclaw.adapter import adapter
 
 

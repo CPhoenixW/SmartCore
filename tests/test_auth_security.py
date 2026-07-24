@@ -1,4 +1,4 @@
-from app.auth.security import (
+from app.server.auth.security import (
     create_session_token,
     decode_session_token,
     hash_password,

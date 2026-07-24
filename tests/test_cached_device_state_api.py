@@ -7,14 +7,14 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.api import device_state_routes
-from app.api.device_state_routes import (
+from app.server.api import device_state_routes
+from app.server.api.device_state_routes import (
     latest_device_state,
     recent_device_usage,
     today_device_usage,
 )
-from app.db.session import Base
-from app.new_core.models import AppUser, Device, DeviceStateLog
+from app.server.db.session import Base
+from app.server.new_core.models import AppUser, Device, DeviceStateLog
 
 
 def _session() -> Session:

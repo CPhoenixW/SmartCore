@@ -1,110 +1,22 @@
 # 总体架构
 
-## 目标定位
-
-SmartCore v1 是一个面向学生的个人秘书系统。它的核心任务不是做一个泛用聊天机器人，而是稳定地管理每天的课程、作业、DDL、生活事项和提醒。
-
-系统的第一阶段重点是：
-
-- 根据周循环课表生成每日计划。
-- 管理作业、DDL 和生活事项。
-- 通过飞书发送晨报、课前提醒、DDL 提醒和明日预告。
-- 允许用户通过飞书做简单查询和添加事项。
-- 通过 Tailscale 提供只对自己设备开放的内部 Web 面板。
-
-## 架构原则
-
-1. **服务器主控**
-
-   所有权威数据都保存在公网服务器上。手机、电脑和树莓派不保存主数据，避免多端同步冲突。
-
-2. **公网入口最小化**
-
-   公网只开放飞书事件回调路径，例如 `/feishu/event`。管理面板、内部 API、数据库和备份管理不暴露到公网。
-
-3. **Tailscale 负责内部访问**
-
-   手机、电脑、树莓派和服务器通过 Tailscale 组成虚拟局域网。内部 Web 面板、维护接口和备份同步都走 Tailnet。
-
-4. **规则优先**
-
-   课程提醒、DDL 提醒、晨报生成和冲突检测优先使用确定性规则。这样成本低、可预测、不会因为模型不可用而漏提醒。
-
-5. **LLM 可插拔**
-
-   后续可以用 LLM 做自然语言解析、日程摘要和复杂问答，但它不能成为核心提醒链路的必需组件。
-
-## 高层组件
+SmartCore 是服务器主控的个人事务系统。Server 是唯一权威节点；Pi、Web、手机副屏
+和未来电脑监视器都是客户端。
 
 ```text
-                 公网
-                  |
-                  v
-            飞书开放平台
-                  |
-                  | HTTPS event callback
-                  v
-              Caddy 反代
-                  |
-          只转发 /feishu/event
-                  |
-                  v
-            FastAPI App
-       ┌──────────┼──────────┐
-       v          v          v
-   SQLite DB   Scheduler   Web Panel
-       |
-       v
-  Backup Snapshot
-       |
-       | rsync over SSH via Tailscale
-       v
-    Raspberry Pi
+Feishu -> Cloudflare/Caddy -> Server /feishu/event -> OpenClaw Adapter
+Pi -----------------------> Server device API
+Vue / Computer / Screen --> Server HTTP/WebSocket
+Server scheduler ---------> Screen or Feishu
 ```
 
-## 主要运行链路
+## 原则
 
-### 飞书消息进入系统
+- 所有业务数据、规则、调度和审计归 Server。
+- 公网只开放飞书回调；其他入口只走 Tailscale。
+- Pi 本地识别 `working/away/unknown`，不访问数据库。
+- OpenClaw 负责自然语言与编排，只调用受限 Agent API。
+- 确定性提醒不依赖 LLM；外部服务失败不能阻断核心调度。
+- 数据库使用 SQLite，并在发布和定时任务中创建一致性快照。
 
-```text
-用户在飞书发消息
--> 飞书开放平台
--> 公网 HTTPS
--> Caddy
--> FastAPI /feishu/event
--> 校验飞书签名
--> 转换为内部命令
--> 读写 SQLite
--> 返回或主动发送飞书消息
-```
-
-### 系统主动提醒用户
-
-```text
-Scheduler 每分钟 tick
--> ReminderEngine 扫描课表/作业/生活事项 live 数据
--> 计算当前窗口内应发送的提醒
--> 构建飞书交互卡片
--> 调用飞书 API 发送
--> 写入 reminders 投递审计（dedup_key 去重）
-```
-
-### 用户访问内部面板
-
-```text
-手机/电脑
--> Tailscale
--> 服务器 Tailnet 地址
--> FastAPI Web Panel
--> 管理课表、作业、生活事项
-```
-
-## v1 不做的事情
-
-- 不做完整多用户系统。
-- 不让树莓派接管核心业务。
-- 不做复杂多端离线同步。
-- 不直接接入学校教务系统。
-- 不把所有操作都依赖 LLM。
-- 不把管理后台暴露到公网。
-
+代码边界见 [25-multi-device-project-layout.md](./25-multi-device-project-layout.md)。

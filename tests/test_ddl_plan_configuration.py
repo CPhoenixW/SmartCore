@@ -5,10 +5,10 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.db.session import Base
-from app.new_core import crud
-from app.new_core.ddl_service import create_ddl_event
-from app.new_core.models import DdlPlan, EvtBase  # noqa: F401
+from app.server.db.session import Base
+from app.server.new_core import crud
+from app.server.new_core.ddl_service import create_ddl_event
+from app.server.new_core.models import DdlPlan, EvtBase  # noqa: F401
 
 
 def _session() -> Session:
@@ -17,6 +17,7 @@ def _session() -> Session:
     script = (
         Path(__file__).resolve().parents[1]
         / "app"
+        / "server"
         / "db"
         / "sql"
         / "device_photo_request.sql"

@@ -1,0 +1,14 @@
+[Unit]
+Description=SmartCore YOLO device client (v2 heartbeat)
+After=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/home/phoenix/yolo/.smartcore.env
+WorkingDirectory=/home/phoenix/yolo
+ExecStart=/home/phoenix/yolo/.venv/bin/python /home/phoenix/yolo/detect_usb.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

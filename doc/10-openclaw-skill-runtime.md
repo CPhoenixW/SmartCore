@@ -17,7 +17,7 @@ SmartCore owns:
 - Feishu webhook validation, deduplication, and normalized event forwarding.
 - Database CRUD authority through `/agent/db/*` APIs.
 - The scheduler reminder loop and proactive Feishu reminder cards.
-- The internal `/dashboard/*` web panel.
+- The internal `/work/*` web panel.
 - Feishu card templates, confirmation flow, audit logs, backups, and deployment.
 
 OpenClaw owns:

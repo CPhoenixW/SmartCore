@@ -1,36 +1,21 @@
 # SmartCore 文档
 
-本文档集分为两部分：
+## 当前文档
 
-- `doc/refactor/`：当前准备执行的新架构重构文档，是后续实现和验收的依据。
-- 本目录下编号文档：旧版 SmartCore 学生秘书架构记录，仅作为历史参考，不再作为新架构开发目标。
+- [多端项目结构](./25-multi-device-project-layout.md)：Server、Pi、Computer 的代码与依赖边界。
+- [部署与回滚](../deploy.md)：候选构建、生产提升、验证和回滚。
+- [网络安全](./04-network-security.md)：公网、Tailscale、设备和密钥边界。
+- [备份恢复](./05-backup-restore.md)：SQLite 快照、保留和恢复。
+- [Pi 通信协议](./10-pi-server-communication-v2.md)：心跳、状态和按需照片。
+- [OpenClaw 桥接](./09-openclaw-smartcore-bridge.md)：Agent API 与 Adapter 边界。
+- [Action 结果协议](./action-result-protocol.md)：工具执行结果与反馈格式。
 
-重构时优先阅读 [refactor/README.md](./refactor/README.md)。
+`docs/` 保存仍在演进的专题设计；编号文档记录已交付功能的设计或验收背景。
+`doc/refactor/` 是 2026-07 重构归档，不再作为待执行计划。
 
-## 新架构重构文档
+## 文档规则
 
-- [重构入口](./refactor/README.md)
-- [目标架构](./refactor/target-arch.md)
-- [实施计划](./refactor/build-plan.md)
-- [验收计划](./refactor/acceptance.md)
-- [树莓派与服务器通信架构 v2](./10-pi-server-communication-v2.md)
-
-## 历史文档索引
-
-- [01-总体架构](./01-overall-architecture.md)
-- [02-设备职责与部署](./02-device-roles.md)
-- [03-项目与服务结构](./03-project-structure.md)
-- [04-网络边界与安全](./04-network-security.md)
-- [05-数据备份与恢复](./05-backup-restore.md)
-- [06-Cursor CLI 执行计划](./06-cursor-cli-execution-plan.md)
-- [07-智能体操作与输出架构](./07-agent-operation-notification-architecture.md)
-- [08-GitHub 推送与服务器部署手册](./08-github-push-and-server-deploy.md)
-- [09-OpenClaw 与 SmartCore 桥接架构](./09-openclaw-smartcore-bridge.md)
-
-## 历史版本核心结论
-
-- 公网服务器是唯一主控节点，负责数据库、调度器、飞书机器人、Web 面板和备份任务。
-- 飞书作为主要交互入口，公网只暴露一个很小的 HTTPS 回调路径。
-- 手机和电脑通过 Tailscale 访问内部 Web 面板。
-- 树莓派 v1 不跑核心业务，只作为数据库快照备份接收节点。
-- 业务逻辑采用规则优先，LLM 只作为后续增强，不作为提醒可靠性的依赖。
+- README 只说明入口和稳定操作，不重复专题协议。
+- 当前事实优先更新本索引列出的文档；历史记录只修正明显错误，不持续扩写。
+- 示例不得包含真实域名、IP、token、用户数据或人脸样本。
+- 代码路径以 `app/server`、`app/raspberryPi`、`app/computer` 为准。

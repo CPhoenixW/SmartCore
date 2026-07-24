@@ -1,4 +1,4 @@
-from app.new_core import crud
+from app.server.new_core import crud
 
 
 def test_idea_attachment_url_matches_authorized_download_route() -> None:
