@@ -255,7 +255,12 @@
   },
   "device": {
     "title": "设备",
-    "subtitle": "查看树莓派状态与电脑使用统计",
+    "subtitle": "按设备类型完成配对、管理和参数检查",
+    "sectionNavigation": "设备类型",
+    "sections": {"raspberryPi": "RaspberryPi", "computer": "Computer", "screen": "Screen", "feishuBot": "Feishu Bot"},
+    "piTitle": "RaspberryPi",
+    "piSubtitle": "管理树莓派识别客户端、状态与摄像头回传",
+    "piPairTitle": "树莓派配对与管理",
     "piTab": "树莓派",
     "computerTab": "电脑使用",
     "latest": "当前状态",
@@ -300,6 +305,8 @@
     }
   },
   "computer": {
+    "title": "Computer",
+    "subtitle": "管理 Mac 监视器并查看客观使用统计",
     "pairTitle": "Mac 监视器",
     "device": "电脑",
     "range": "统计范围",
@@ -335,6 +342,30 @@
     "noDevice": "还没有已激活的电脑监视器，请先完成配对",
     "sessionDetail": "会话详情",
     "redactedTitle": "敏感应用标题已屏蔽"
+  },
+  "screenDevice": {
+    "title": "Screen",
+    "subtitle": "管理副屏连接和提醒展示端",
+    "pairTitle": "副屏配对与管理",
+    "parameters": "运行参数",
+    "registered": "已注册副屏",
+    "lastConnection": "最后连接记录",
+    "path": "页面路径",
+    "transport": "实时通道",
+    "channel": "提醒通道",
+    "credential": "认证方式",
+    "deviceToken": "设备 Token"
+  },
+  "feishuDevice": {
+    "title": "Feishu Bot",
+    "subtitle": "管理飞书会话绑定与机器人接入参数",
+    "pairTitle": "飞书会话配对与管理",
+    "parameters": "接入参数",
+    "scope": "绑定范围",
+    "currentUser": "当前 SmartCore 用户",
+    "management": "机器人配置",
+    "adminManaged": "由管理员管理",
+    "delivery": "消息通道"
   },
   "ideas": {
     "title": "灵感",

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { devicePersonNames, deviceStateView } from "@/utils/device";
+import { router } from "@/router";
 import { usageChartPosition, usageLineCoordinates } from "@/utils/usageChart";
 
 describe("device utilities", () => {
@@ -20,5 +21,15 @@ describe("device utilities", () => {
     expect(coordinates).toHaveLength(12);
     expect(peak.x).toBeGreaterThan(50);
     expect(peak.y).toBe(8);
+  });
+});
+
+describe("device routes", () => {
+  it("separates the four device domains and keeps the old entry route", () => {
+    expect(router.resolve({ name: "device" }).path).toBe("/device");
+    expect(router.resolve({ name: "deviceRaspberryPi" }).path).toBe("/device/raspberry-pi");
+    expect(router.resolve({ name: "deviceComputer" }).path).toBe("/device/computer");
+    expect(router.resolve({ name: "deviceScreen" }).path).toBe("/device/screen");
+    expect(router.resolve({ name: "deviceFeishuBot" }).path).toBe("/device/feishu-bot");
   });
 });

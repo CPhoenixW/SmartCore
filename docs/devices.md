@@ -101,5 +101,6 @@ unknown/offline、照片请求只上传一次、其他设备 token 无法冒用�
 swift run --package-path app/computer/macos SmartCoreMonitor
 ```
 
-在工作台“设备 -> 电脑使用”创建配对并复制 JSON 到菜单栏应用。当前版本不安装登录
+在工作台“设备 -> Computer”创建配对并复制 JSON 到菜单栏应用。设备管理页按
+RaspberryPi、Computer、Screen 和 Feishu Bot 四类隔离配对、管理与参数。当前版本不安装登录
 项、不签名发布，也不判断效率、分心或任务归属。

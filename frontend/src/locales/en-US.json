@@ -255,7 +255,12 @@
   },
   "device": {
     "title": "Device",
-    "subtitle": "Raspberry Pi status and computer usage statistics",
+    "subtitle": "Pair, manage, and inspect each device type independently",
+    "sectionNavigation": "Device type",
+    "sections": {"raspberryPi": "RaspberryPi", "computer": "Computer", "screen": "Screen", "feishuBot": "Feishu Bot"},
+    "piTitle": "RaspberryPi",
+    "piSubtitle": "Manage the recognition client, state, and camera returns",
+    "piPairTitle": "Raspberry Pi pairing and management",
     "piTab": "Raspberry Pi",
     "computerTab": "Computer usage",
     "latest": "Current state",
@@ -300,6 +305,8 @@
     }
   },
   "computer": {
+    "title": "Computer",
+    "subtitle": "Manage Mac monitors and inspect objective usage statistics",
     "pairTitle": "Mac monitor",
     "device": "Computer",
     "range": "Range",
@@ -335,6 +342,30 @@
     "noDevice": "No active computer monitor. Pair one first.",
     "sessionDetail": "Session details",
     "redactedTitle": "Sensitive app title redacted"
+  },
+  "screenDevice": {
+    "title": "Screen",
+    "subtitle": "Manage secondary displays and reminder delivery",
+    "pairTitle": "Screen pairing and management",
+    "parameters": "Runtime parameters",
+    "registered": "Registered screens",
+    "lastConnection": "Last connection record",
+    "path": "Page path",
+    "transport": "Realtime transport",
+    "channel": "Reminder channel",
+    "credential": "Authentication",
+    "deviceToken": "Device token"
+  },
+  "feishuDevice": {
+    "title": "Feishu Bot",
+    "subtitle": "Manage chat bindings and bot integration parameters",
+    "pairTitle": "Feishu chat pairing and management",
+    "parameters": "Integration parameters",
+    "scope": "Binding scope",
+    "currentUser": "Current SmartCore user",
+    "management": "Bot configuration",
+    "adminManaged": "Managed by an administrator",
+    "delivery": "Delivery channel"
   },
   "ideas": {
     "title": "Ideas",

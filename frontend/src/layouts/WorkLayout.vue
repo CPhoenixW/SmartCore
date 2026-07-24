@@ -31,7 +31,7 @@ async function logout() {
   <div class="app-shell">
     <aside class="sidebar" :class="{ 'sidebar--open': mobileOpen }">
       <RouterLink class="brand" :to="{ name: 'overview' }" @click="mobileOpen = false"><span class="brand-mark">SC</span><span><strong>{{ t('app.name') }}</strong><small>{{ t('app.subtitle') }}</small></span></RouterLink>
-      <nav class="nav-list" :aria-label="t('app.navigation')"><RouterLink v-for="item in nav" :key="item[0]" class="nav-link" :to="{ name: item[1] }" @click="mobileOpen = false"><span>{{ item[2] }}</span>{{ t(`nav.${item[0]}`) }}</RouterLink></nav>
+      <nav class="nav-list" :aria-label="t('app.navigation')"><RouterLink v-for="item in nav" :key="item[0]" class="nav-link" :class="{ 'nav-link--active': item[1] === 'device' && route.path.startsWith('/device') }" :to="{ name: item[1] }" @click="mobileOpen = false"><span>{{ item[2] }}</span>{{ t(`nav.${item[0]}`) }}</RouterLink></nav>
       <button class="sidebar-logout" type="button" :disabled="loggingOut" @click="logout">{{ logoutLabel }}</button>
     </aside>
     <div v-if="mobileOpen" class="sidebar-backdrop" @click="mobileOpen = false" />
@@ -43,5 +43,5 @@ async function logout() {
 </template>
 
 <style scoped>
-.sidebar-logout{position:absolute;left:16px;right:16px;bottom:20px;min-height:40px;border:1px solid #334155;border-radius:10px;background:#111827;color:#cbd5e1;font-weight:700}.sidebar-logout:hover{background:#1e293b;color:#fff}.sidebar-logout:disabled{opacity:.55}
+.nav-link--active{background:#1e293b;color:#fff}.sidebar-logout{position:absolute;left:16px;right:16px;bottom:20px;min-height:40px;border:1px solid #334155;border-radius:10px;background:#111827;color:#cbd5e1;font-weight:700}.sidebar-logout:hover{background:#1e293b;color:#fff}.sidebar-logout:disabled{opacity:.55}
 </style>
