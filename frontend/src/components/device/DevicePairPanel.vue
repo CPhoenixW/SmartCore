@@ -17,8 +17,10 @@ const deviceName = ref("");
 const deviceKind = ref(props.allowedKinds[0] ?? "screen");
 const currentPair = ref<DevicePair | FeishuPair | null>(null);
 const devices = useQuery({ queryKey: ["lifeDevices"], queryFn: deviceRegistryApi.list, refetchInterval: 15_000 });
-const feishuBindings = useQuery({ queryKey: ["userFeishuBindings"], queryFn: feishuPairApi.bindings, enabled: computed(() => props.allowedKinds.includes("feishuBot")) });
+const supportsFeishu = computed(() => props.allowedKinds.includes("feishuBot"));
+const feishuBindings = useQuery({ queryKey: ["userFeishuBindings"], queryFn: feishuPairApi.bindings, enabled: supportsFeishu });
 const visibleDevices = computed(() => (devices.data.value ?? []).filter((item) => item.deviceKind !== "feishuBot" && props.allowedKinds.includes(item.deviceKind)));
+const visibleFeishuBindings = computed(() => supportsFeishu.value ? feishuBindings.data.value ?? [] : []);
 const start = useMutation({
   mutationFn: () => deviceKind.value === "feishuBot"
     ? feishuPairApi.start()
@@ -104,11 +106,11 @@ function deleteDevice(deviceId: string, name: string) {
         <div class="device-pair-identity"><strong>{{ item.deviceName }}</strong><small>{{ t(`pair.kind.${item.deviceKind}`) }} · {{ item.stat }}</small></div>
         <div class="device-pair-actions"><small>{{ item.deviceKind === 'feishuBot' ? t('pair.bound') : item.lastSeenAt ? t('pair.updated') : t('pair.notReported') }}</small><button class="icon-button" type="button" :aria-label="t('pair.delete')" :title="t('pair.delete')" :disabled="remove.isPending.value" @click="deleteDevice(item.deviceId, item.deviceName)">×</button></div>
       </article>
-      <article v-for="binding in feishuBindings.data.value ?? []" :key="binding.bindId" class="device-pair-row">
+      <article v-for="binding in visibleFeishuBindings" :key="binding.bindId" class="device-pair-row">
         <div class="device-pair-identity"><strong>{{ binding.botName }}</strong><small>{{ t('pair.kind.feishuBot') }} · {{ binding.chatType }} {{ binding.chatHint }}</small></div>
         <div class="device-pair-actions"><small>{{ t('pair.bound') }}</small><button class="icon-button" type="button" :aria-label="t('pair.delete')" :title="t('pair.delete')" :disabled="removeFeishuBinding.isPending.value" @click="removeFeishuBinding.mutate(binding.bindId)">×</button></div>
       </article>
-      <p v-if="!visibleDevices.length && !(feishuBindings.data.value ?? []).length" class="muted">{{ t('pair.empty') }}</p>
+      <p v-if="!visibleDevices.length && !visibleFeishuBindings.length" class="muted">{{ t('pair.empty') }}</p>
     </div>
     <form class="device-pair-form" :class="{ 'device-pair-form--single': allowedKinds.length === 1 || deviceKind === 'feishuBot' }" @submit.prevent="start.mutate()"><input v-if="deviceKind !== 'feishuBot'" v-model.trim="deviceName" required :placeholder="t('pair.namePlaceholder')" /><select v-if="allowedKinds.length > 1" v-model="deviceKind"><option v-if="allowedKinds.includes('screen')" value="screen">{{ t('pair.kind.screen') }}</option><option v-if="allowedKinds.includes('pi')" value="pi">{{ t('pair.kind.pi') }}</option><option v-if="allowedKinds.includes('computer')" value="computer">{{ t('pair.kind.computer') }}</option><option v-if="allowedKinds.includes('browser')" value="browser">{{ t('pair.kind.browser') }}</option><option v-if="allowedKinds.includes('feishuBot')" value="feishuBot">{{ t('pair.kind.feishuBot') }}</option></select><button class="button button--primary" :disabled="start.isPending.value">{{ t('pair.start') }}</button></form>
     <section v-if="currentPair" class="pair-flow">

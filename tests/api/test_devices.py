@@ -52,6 +52,7 @@ def test_device_pair_api_requires_two_sided_confirmation(app_env) -> None:
     activated = client.post(
         f"/api/device/pair/{pair_id}/activate", json={"claimCode": pair["claimCode"]}
     )
+    assert activated.json()["data"]["device"]["deviceName"] == "Desk screen"
     token = activated.json()["data"]["deviceToken"]
     device_id = activated.json()["data"]["device"]["deviceId"]
     dispatched = client.post(

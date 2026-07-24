@@ -79,7 +79,7 @@
       await requestJson(`/api/device/pair/${pairId}/claim`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claimCode, deviceName: "副屏" }),
+        body: JSON.stringify({ claimCode }),
       });
       showSetup("已认领。请回到工作台确认这台副屏，确认后会自动连接。");
       const poll = async () => {
