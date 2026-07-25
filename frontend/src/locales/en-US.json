@@ -406,8 +406,8 @@
     "mediaStatus": {
       "ready": "Ready to save",
       "queued": "Queued",
-      "processing": "Running OCR",
-      "ocr_ready": "Summarizing",
+      "processing": "Analyzing image",
+      "ocr_ready": "Preparing summary",
       "failed": "Processing failed"
     },
     "content": "Idea content",

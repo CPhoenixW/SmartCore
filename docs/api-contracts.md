@@ -111,7 +111,7 @@ delete 前必须增加 assembled-app 鉴权与跨用户测试。
 - `/agent/db/create_event`
 - `/agent/db/update_event`
 - `/agent/feedback/*`
-- `/agent/idea/*`、`/agent/media/ocr`
+- `/agent/idea/*`
 
 删除暂时例外：在 canonical `/agent/db/delete_event` 完成 scope 加固前，调用方使用
 `/agent/evtDelete`，并同时携带 Agent token 与用户 scope。不要把 token-only canonical
@@ -184,8 +184,10 @@ upload -> queued -> processing -> ready -> consumed
 ```
 
 - PDF/TXT/ZIP 创建后即可绑定；图片必须经过 ready media job。
-- 同一 upload 只有一个 active job；重复 Agent OCR 调用复用状态/结果。
-- OCR evidence 绑定 user/upload/expiry，不能跨用户或用于文档。
+- 同一 upload 只有一个 active job；重复创建复用状态/结果。
+- 图片由 Adapter 校验并作为原生视觉输入；完成工具只接受 jobId 与摘要。
+- 旧 `/agent/media/ocr`、OCR 字段和 `ocr_ready` 状态仅作滚动兼容，不发布到
+  `GET /agent/tools`，新 Agent 不得调用。
 - `PATCH /api/idea/{id}` 用 `expectedRevision`、`addUploadIds`、
   `removeAttachmentIds` 原子提交；stale revision 返回冲突。
 - 数据库提交前不删除物理文件，清理不得删除仍被引用的附件。

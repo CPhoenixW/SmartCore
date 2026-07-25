@@ -428,7 +428,7 @@ def create_idea(body: IdeaBody, userId: str = Depends(require_authenticated_user
         if any(upload.mimeType.startswith("image/") for upload in uploads):
             raise HTTPException(
                 status_code=409,
-                detail="image attachments must use /api/idea/media-process so OCR cannot be skipped",
+                detail="image attachments must use /api/idea/media-process for multimodal processing",
             )
     return ok(
         crud.createIdea(
@@ -530,6 +530,9 @@ def create_idea_media_job(
     db.add(job)
     db.commit()
     db.refresh(job)
+    job.stat = "processing"
+    job.updatedAt = nowIso()
+    db.commit()
     try:
         _dispatch_idea_media_job(job, upload, settings=settings)
     except httpx.HTTPError as exc:
@@ -538,6 +541,7 @@ def create_idea_media_job(
         job.updatedAt = nowIso()
         db.commit()
         raise HTTPException(status_code=503, detail=job.errorMessage) from exc
+    db.refresh(job)
     return ok(_media_job_dict(job))
 
 
@@ -622,6 +626,9 @@ def retry_idea_media_job(
     job.errorMessage = None
     job.updatedAt = nowIso()
     db.commit()
+    job.stat = "processing"
+    job.updatedAt = nowIso()
+    db.commit()
     try:
         _dispatch_idea_media_job(job, upload, settings=settings)
     except httpx.HTTPError as exc:
@@ -630,6 +637,7 @@ def retry_idea_media_job(
         job.updatedAt = nowIso()
         db.commit()
         raise HTTPException(status_code=503, detail=job.errorMessage) from exc
+    db.refresh(job)
     return ok(_media_job_dict(job))
 
 

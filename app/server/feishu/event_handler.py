@@ -222,7 +222,7 @@ class FeishuEventHandler:
                 userId=binding.userId,
                 botId=bot.botId,
                 chatId=str(chat.get("chat_id") or ""),
-                # Image OCR and agent execution can exceed the text-only default.
+                # Native image analysis and agent execution can exceed the text-only default.
                 ttl_seconds=1800,
             )
         return normalized

@@ -54,15 +54,15 @@ def test_send_final_reply_uses_token_and_scope_without_target_ids(tmp_path, monk
 
 
 def test_reply_heading_is_card_title_not_card_body() -> None:
-    assert adapter.split_reply_card("# 图片灵感总结\n\n- 已保存图片\n- 已完成 OCR") == (
+    assert adapter.split_reply_card("# 图片灵感总结\n\n- 已保存图片\n- 已完成理解") == (
         "图片灵感总结",
-        "- 已保存图片\n- 已完成 OCR",
+        "- 已保存图片\n- 已完成理解",
     )
 
 
 def test_media_reply_drops_internal_narration_before_card_title() -> None:
-    raw = "Idea captured successfully. Now reply.\n\n# 面试聊天记录\n\n已完成 OCR 并保存。"
-    assert adapter.normalize_media_reply(raw) == "# 面试聊天记录\n\n已完成 OCR 并保存。"
+    raw = "Idea captured successfully. Now reply.\n\n# 面试聊天记录\n\n已理解图片并保存。"
+    assert adapter.normalize_media_reply(raw) == "# 面试聊天记录\n\n已理解图片并保存。"
 
 
 def test_daily_title_is_removed_from_card_body() -> None:
@@ -133,7 +133,7 @@ def test_run_openclaw_delivers_generated_final_text(tmp_path, monkeypatch) -> No
 
     def fake_run(args, **kwargs):
         prompt = args[args.index("--message") + 1]
-        scope_file = re.search(r"cat ([^)]*)", prompt).group(1)
+        scope_file = re.search(r"--scope-file ([^ ]+)", prompt).group(1)
         path = kwargs["cwd"] + "/" + scope_file
         captured["scope"] = open(path, encoding="utf-8").read()
         captured["env"] = kwargs["env"]
@@ -176,7 +176,7 @@ def test_prompt_does_not_embed_signed_scope() -> None:
     assert ".scope/task" in prompt
 
 
-def test_media_edit_prompt_forbids_ocr_retries_and_idea_creation() -> None:
+def test_media_edit_prompt_uses_native_image_and_forbids_idea_creation() -> None:
     prompt = adapter.build_prompt(
         {
             "event_type": "idea_media_edit",
@@ -185,14 +185,100 @@ def test_media_edit_prompt_forbids_ocr_retries_and_idea_creation() -> None:
             "attachments": [{"uploadId": "upload-1", "mimeType": "image/png"}],
         },
         scope_file=".scope/task",
+        image_paths=["./.smartcore-media/task/image-1.png"],
     )
 
     assert "Media Job ID：job-1" in prompt
-    assert "调用一次 mediaImageOcr" in prompt
-    assert "严禁重试 OCR" in prompt
+    assert "调用一次 ideaMediaJobComplete" in prompt
+    assert "只传 jobId 和 summary" in prompt
     assert "禁止调用 ideaCapture" in prompt
-    assert "pass every returned ocrEvidence to ideaCapture" not in prompt
+    assert "mediaImageOcr" not in prompt
+    assert "ocrEvidence" not in prompt
+    assert "[Image: source: ./.smartcore-media/task/image-1.png]" in prompt
     assert '"jobId": "job-1"' in prompt
+
+
+def test_sanitize_event_hides_internal_attachment_paths() -> None:
+    result = adapter.sanitize_event(
+        {
+            "event_id": "evt",
+            "attachments": [
+                {
+                    "uploadId": "upload-1",
+                    "fileName": "image.png",
+                    "mimeType": "image/png",
+                    "sizeBytes": 5,
+                    "agentPath": "/attachments/private.png",
+                    "storagePath": "/app/data/private.png",
+                }
+            ],
+        }
+    )
+
+    assert result["attachments"] == [
+        {
+            "uploadId": "upload-1",
+            "fileName": "image.png",
+            "mimeType": "image/png",
+            "sizeBytes": 5,
+        }
+    ]
+    assert "/attachments" not in json.dumps(result)
+    assert "/app/data" not in json.dumps(result)
+
+
+def test_stage_event_images_copies_private_image_into_workspace(tmp_path, monkeypatch) -> None:
+    attachment_root = tmp_path / "attachments"
+    attachment_root.mkdir()
+    source = attachment_root / "source.png"
+    source.write_bytes(b"image")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setenv("SMARTCORE_ATTACHMENT_ROOT", str(attachment_root))
+
+    paths, task_dir = adapter.stage_event_images(
+        {
+            "event_id": "evt",
+            "attachments": [
+                {
+                    "mimeType": "image/png",
+                    "sizeBytes": 5,
+                    "agentPath": str(source),
+                }
+            ],
+        },
+        workspace,
+    )
+
+    assert paths[0].startswith("./.smartcore-media/evt-")
+    staged = workspace / paths[0].removeprefix("./")
+    assert staged.read_bytes() == b"image"
+    assert staged.stat().st_mode & 0o777 == 0o600
+    assert task_dir is not None
+
+
+def test_stage_event_images_rejects_paths_outside_attachment_root(tmp_path, monkeypatch) -> None:
+    attachment_root = tmp_path / "attachments"
+    attachment_root.mkdir()
+    outside = tmp_path / "outside.png"
+    outside.write_bytes(b"image")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setenv("SMARTCORE_ATTACHMENT_ROOT", str(attachment_root))
+
+    with pytest.raises(ValueError, match="outside the private attachment root"):
+        adapter.stage_event_images(
+            {
+                "attachments": [
+                    {
+                        "mimeType": "image/png",
+                        "sizeBytes": 5,
+                        "agentPath": str(outside),
+                    }
+                ]
+            },
+            workspace,
+        )
 
 
 def test_run_openclaw_failure_sends_failure_reply(tmp_path, monkeypatch) -> None:

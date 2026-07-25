@@ -50,7 +50,8 @@ Web 主接口位于 `/api/evt`、`/api/planEvt`、`/api/ddlEvt`、`/api/courseEv
 ## Idea 与附件
 
 `idea` 保存标题、Markdown 描述、处理状态和 revision；`ideaAttachment` 是正式附件；
-`ideaUpload` 是临时上传；`ideaMediaJob` 保存图片 OCR/摘要的状态和幂等结果。
+`ideaUpload` 是临时上传；`ideaMediaJob` 保存图片分析状态、摘要和幂等结果。旧 OCR 字段
+只用于已有数据兼容，新流程不写入 evidence。
 
 - 所有记录都以用户为边界。
 - 编辑使用 `expectedRevision` 防止覆盖并发修改。

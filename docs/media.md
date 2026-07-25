@@ -1,6 +1,6 @@
 # Idea 与媒体
 
-媒体能力统一使用私有上传、受限 OCR、OpenClaw 提炼和 owner-scoped 附件读取。
+媒体能力统一使用私有上传、OpenClaw 原生图片理解和 owner-scoped 附件读取。
 浏览器与飞书共享同一组数据模型和安全边界。
 
 ## 现行流程
@@ -10,7 +10,7 @@ Feishu text/image/file ----> SmartCore ingress ----> private upload
 Web upload ----------------> upload API ----------> private upload
                                                        |
                                                        v
-OpenClaw scoped task -> image OCR -> concise summary -> Idea + attachments
+OpenClaw scoped task -> native image analysis -> Idea + attachments
                                                        |
                                                        v
                                       /work preview and download
@@ -19,10 +19,9 @@ OpenClaw scoped task -> image OCR -> concise summary -> Idea + attachments
 - 纯文字继续走普通日程、提醒、查询或 Idea 流程。
 - 图片、PDF、TXT 和 ZIP 可作为附件；ZIP 不解压、不执行，文档不读取内容。
 - 飞书富文本中的文字和全部受支持附件作为同一个任务转发。
-- 每张图片都经过一次 `mediaImageOcr`（DeepSeek OCR 2）；用户文字只是摘要上下文。
-- OCR 最多 128 tokens、60 秒硬超时且不自动重试。后端按 media job 幂等，重复工具
-  调用不会产生第二次上游 OCR 请求。
-- OpenClaw 媒体模型把 OCR 与用户文字合成事实性中文 Markdown 摘要，最多 100 字。
+- 图片由 SmartCore Agent 的 `tokendance/qwen3.7-plus` 原生理解；用户文字提供任务上下文。
+- Adapter 只把校验过的 JPEG、PNG、WebP 临时复制到隔离工作区，任务结束后删除。
+- 模型根据图片与用户文字生成事实性中文 Markdown 摘要，最多 100 字。
 - 文档只存储，文件名在没有有效标题时作为回退。
 
 ## 数据与状态
@@ -32,9 +31,9 @@ OpenClaw scoped task -> image OCR -> concise summary -> Idea + attachments
 - `ideaUpload`：用户绑定的临时上传。
 - `ideaMediaJob`：`queued -> processing -> ready|failed -> consumed`。
 
-图片任务保存受限 OCR 结果、摘要和服务端 evidence。evidence 绑定用户、upload 和
-过期时间，浏览器不能读取或回传。`ideaCapture` 与媒体任务完成接口会再次核对 scope、
-owner、MIME 和 job 状态。
+图片任务保存处理状态和摘要。`ideaCapture` 与媒体任务完成接口会再次核对 scope、
+owner、MIME 和 job 状态。旧 OCR 字段与 `ocr_ready` 状态只为已有数据和滚动发布兼容，
+不属于新 Agent 契约。
 
 ## 浏览器 API
 
@@ -56,24 +55,25 @@ owner、MIME 和 job 状态。
 
 ## 飞书与 Agent
 
-飞书下载附件后只把任务局部引用和私有 Adapter 路径传给 OpenClaw，不暴露存储路径
-给用户。Agent 相关接口包括媒体 OCR、Idea capture、media-job complete/fail；精确
-schema 由 `GET /agent/tools` 提供。
+飞书下载附件后只把任务局部引用传给 OpenClaw。Adapter 校验服务端路径、MIME、扩展名
+和大小后，以 `0600` 权限临时复制图片；模型提示与最终回复不包含私有存储路径。
+Agent 公开工具包括 Idea capture 与 media-job complete/fail，精确 schema 由
+`GET /agent/tools` 提供。
 
 一条富媒体消息要么形成一个一致的 Idea/附件结果，要么保持可诊断的失败状态。
-不允许回调处理器绕过 OpenClaw 直接根据 OCR 写 Idea，也不允许模型提交任意服务器
+不允许回调处理器绕过 OpenClaw 直接写 Idea，也不允许模型提交任意服务器
 路径或 URL。
 
 ## 存储与安全
 
 - 文件位于 `IDEA_MEDIA_DIR` 对应的私有 volume，不由 Caddy 静态公开。
 - 允许 JPEG、PNG、WebP、PDF、TXT 和 ZIP；默认单文件上限由
-  `IDEA_MEDIA_MAX_BYTES` 控制，图片另受 `VISION_MAX_IMAGE_BYTES` 限制。
+  `IDEA_MEDIA_MAX_BYTES` 控制，进入模型的图片另受 `OPENCLAW_IMAGE_MAX_BYTES` 限制。
 - 服务端校验 MIME/扩展名并生成不可猜测存储名；展示文件名不能参与路径拼接。
 - 下载设置安全的 `Content-Disposition` 和 `nosniff`；Markdown 禁止 raw HTML。
 - 图片可在鉴权 lightbox 中查看和下载；文档只提供下载。
 - 数据库先提交，之后再做有界文件删除；仍被数据库引用的附件不得由回滚/清理删除。
-- 日志只记录任务、附件 ID、类型、大小和结果，不记录附件内容、OCR evidence、scope
+- 日志只记录任务、附件 ID、类型、大小和结果，不记录附件内容、scope
   或供应商原始响应。
 
 ## 前端状态

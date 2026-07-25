@@ -568,18 +568,17 @@ def test_scoped_query_rejects_silent_full_scan_fields(app_env) -> None:
 
 def test_openclaw_skill_delegates_feishu_reply_to_adapter() -> None:
     skill = (REPO_ROOT / "openclaw/skills/smartcore/SKILL.md").read_text(encoding="utf-8")
-    assert "Adapter sends that text" in skill
-    assert "X-SmartCore-Agent-Scope" in skill
-    assert "Do not call `sendFeishuText`" in skill
+    assert "The Adapter owns Feishu delivery" in skill
+    assert "--scope-file" in skill
+    assert "Never construct HTTP requests" in skill
     assert "`--date YYYY-MM-DD`" in skill
     assert "`--start`" in skill
     assert "`data.items`" in skill
-    assert "`start_time`" in skill
-    assert "Do not pipe a response through `head`" in skill
-    assert "Filtering & Anti-Noise Rules" in skill
     assert "scripts/query_events.py" in skill
-    assert "use `/agent/evtDelete`" in skill
-    assert "do not call `/agent/db/delete_event`" in skill
+    assert "scripts/call_tool.py" in skill
+    assert "native visual inputs" in skill
+    assert "mediaImageOcr" not in skill
+    assert "ocrEvidence" not in skill
 
 
 def test_openclaw_adapter_prompt_owns_feishu_reply() -> None:
@@ -591,3 +590,4 @@ def test_openclaw_adapter_prompt_owns_feishu_reply() -> None:
     assert "data.items" in adapter_source
     assert "scripts/smartcore/scripts/query_events.py" not in adapter_source
     assert "skills/smartcore/scripts/query_events.py" in adapter_source
+    assert "OPENCLAW_MEDIA_MODEL" not in adapter_source

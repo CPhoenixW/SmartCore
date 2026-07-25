@@ -123,7 +123,7 @@ def test_idea_edit_rejects_stale_and_foreign_requests(app_env) -> None:
     assert _signed_client("other").delete(f"/api/idea/{idea['ideaId']}").status_code == 404
 
 
-def test_image_media_job_is_idempotent_and_required_for_edit(
+def test_multimodal_media_job_is_required_for_edit(
     app_env, monkeypatch, tmp_path
 ) -> None:
     monkeypatch.setenv("OPENCLAW_EVENTS_ENDPOINT", "http://openclaw.local/events")
@@ -142,14 +142,6 @@ def test_image_media_job_is_idempotent_and_required_for_edit(
         return Response()
 
     monkeypatch.setattr("app.server.api.routes.httpx.post", fake_post)
-    calls = 0
-
-    def fake_ocr(*_args, **_kwargs):
-        nonlocal calls
-        calls += 1
-        return "图中是一张流程图"
-
-    monkeypatch.setattr("app.server.agent.routes.analyze_image", fake_ocr)
     client = _signed_client()
     db = SessionLocal()
     try:
@@ -164,33 +156,18 @@ def test_image_media_job_is_idempotent_and_required_for_edit(
     assert queued.status_code == 202
     job = queued.json()["data"]
     assert dispatched[0]["jobId"] == job["jobId"]
+    assert job["stat"] == "processing"
     scope = issue_agent_scope(userId="default", purpose="web")
     headers = {
         "X-SmartCore-Agent-Token": "agent-secret",
         "X-SmartCore-Agent-Scope": scope,
     }
-    first = client.post(
-        "/agent/media/ocr",
-        headers=headers,
-        json={"jobId": job["jobId"], "uploadId": upload["uploadId"]},
-    )
-    second = client.post(
-        "/agent/media/ocr",
-        headers=headers,
-        json={"jobId": job["jobId"], "uploadId": upload["uploadId"]},
-    )
-    assert first.json()["ok"] is True
-    assert second.json()["data"]["cached"] is True
-    assert calls == 1
-
-    evidence = first.json()["data"]["ocrEvidence"]
     completed = client.post(
         "/agent/idea/media-job/complete",
         headers=headers,
         json={
             "jobId": job["jobId"],
             "summary": "流程图展示了主要处理步骤。",
-            "ocrEvidence": evidence,
         },
     )
     assert completed.json()["ok"] is True
@@ -255,7 +232,7 @@ def test_failed_media_job_requires_explicit_retry(app_env, monkeypatch, tmp_path
 
     retried = client.post(f"/api/idea/media-jobs/{queued['jobId']}/retry")
     assert retried.status_code == 202
-    assert retried.json()["data"]["stat"] == "queued"
+    assert retried.json()["data"]["stat"] == "processing"
     assert len(dispatched) == 2
     assert dispatched[1]["jobId"] == queued["jobId"]
 
@@ -295,7 +272,7 @@ def test_expired_temporary_media_is_removed_without_touching_attachments(app_env
     assert kept["attachments"][0]["fileName"] == "attached.txt"
 
 
-def test_web_scope_can_only_ocr_its_own_image_upload(app_env, monkeypatch, tmp_path) -> None:
+def test_multimodal_agent_can_only_capture_its_own_image_upload(app_env, tmp_path) -> None:
     image_path = tmp_path / "image.png"
     image_path.write_bytes(b"image-bytes")
     client = TestClient(create_app())
@@ -311,29 +288,20 @@ def test_web_scope_can_only_ocr_its_own_image_upload(app_env, monkeypatch, tmp_p
         )
     finally:
         db.close()
-    monkeypatch.setattr(
-        "app.server.agent.routes.analyze_image", lambda *_args, **_kwargs: "图中包含流程图"
-    )
     scope = issue_agent_scope(userId="default", purpose="web")
     headers = {"X-SmartCore-Agent-Token": "agent-secret", "X-SmartCore-Agent-Scope": scope}
-    response = client.post(
-        "/agent/media/ocr", headers=headers, json={"uploadId": upload["uploadId"]}
-    )
-    assert response.status_code == 200
-    assert response.json()["data"]["text"] == "图中包含流程图"
-    evidence = response.json()["data"]["ocrEvidence"]
-
-    rejected = client.post(
+    foreign_scope = issue_agent_scope(userId="other-user", purpose="web")
+    denied = client.post(
         "/agent/idea/capture",
-        headers=headers,
+        headers={**headers, "X-SmartCore-Agent-Scope": foreign_scope},
         json={
             "title": "流程图",
             "srcType": "media",
             "uploadIds": [upload["uploadId"]],
         },
     )
-    assert rejected.json()["ok"] is False
-    assert rejected.json()["errors"] == ["valid mediaImageOcr evidence required for every image"]
+    assert denied.json()["ok"] is False
+    assert denied.json()["errors"] == ["one or more attachments are unavailable"]
 
     captured = client.post(
         "/agent/idea/capture",
@@ -343,7 +311,6 @@ def test_web_scope_can_only_ocr_its_own_image_upload(app_env, monkeypatch, tmp_p
             "description": "图中包含流程图",
             "srcType": "media",
             "uploadIds": [upload["uploadId"]],
-            "ocrEvidence": {upload["uploadId"]: evidence},
         },
     )
     assert captured.json()["ok"] is True
@@ -354,13 +321,45 @@ def test_web_scope_can_only_ocr_its_own_image_upload(app_env, monkeypatch, tmp_p
         db.close()
     assert ideas[0]["attachments"][0]["fileName"] == "diagram.png"
 
-    foreign_scope = issue_agent_scope(userId="other-user", purpose="web")
+
+def test_legacy_ocr_route_remains_owner_scoped(app_env, monkeypatch, tmp_path) -> None:
+    image_path = tmp_path / "legacy.png"
+    image_path.write_bytes(b"image-bytes")
+    client = TestClient(create_app())
+    db = SessionLocal()
+    try:
+        upload = crud.createIdeaUpload(
+            db,
+            userId="default",
+            fileName="legacy.png",
+            mimeType="image/png",
+            storagePath=str(image_path),
+            sizeBytes=11,
+        )
+    finally:
+        db.close()
+    monkeypatch.setattr(
+        "app.server.agent.routes.analyze_image", lambda *_args, **_kwargs: "兼容结果"
+    )
+    headers = {
+        "X-SmartCore-Agent-Token": "agent-secret",
+        "X-SmartCore-Agent-Scope": issue_agent_scope(userId="default", purpose="web"),
+    }
+    response = client.post(
+        "/agent/media/ocr", headers=headers, json={"uploadId": upload["uploadId"]}
+    )
+    assert response.json()["data"]["text"] == "兼容结果"
+
     denied = client.post(
         "/agent/media/ocr",
-        headers={**headers, "X-SmartCore-Agent-Scope": foreign_scope},
+        headers={
+            **headers,
+            "X-SmartCore-Agent-Scope": issue_agent_scope(
+                userId="other-user", purpose="web"
+            ),
+        },
         json={"uploadId": upload["uploadId"]},
     )
-    assert denied.json()["ok"] is False
     assert denied.json()["errors"] == ["attachment not found"]
 
 
@@ -389,7 +388,7 @@ def test_document_capture_does_not_require_ocr_evidence(app_env, tmp_path) -> No
     assert response.json()["ok"] is True
 
 
-def test_browser_cannot_bypass_image_ocr_with_direct_idea_create(app_env, tmp_path) -> None:
+def test_browser_image_create_must_use_multimodal_processing(app_env, tmp_path) -> None:
     image_path = tmp_path / "direct.png"
     image_path.write_bytes(b"image")
     client = TestClient(create_app())
@@ -409,11 +408,11 @@ def test_browser_cannot_bypass_image_ocr_with_direct_idea_create(app_env, tmp_pa
     response = client.post(
         "/api/idea",
         json={
-            "title": "绕过 OCR",
+            "title": "直接图片",
             "description": "",
             "srcType": "media",
             "uploadIds": [upload["uploadId"]],
         },
     )
     assert response.status_code == 409
-    assert "OCR cannot be skipped" in response.json()["detail"]
+    assert "multimodal processing" in response.json()["detail"]

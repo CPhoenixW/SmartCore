@@ -64,8 +64,8 @@ current route registration in `app/server/main.py`.
 - Clear, authorized Agent requests execute directly. Queries and writes must be user-scoped.
 - Feishu replies use the bot/chat that authenticated the inbound event; never fall back across
   users.
-- Media files remain private and owner-scoped. Documents are storage-only; images require the
-  bounded OCR/evidence flow.
+- Media files remain private and owner-scoped. Documents are storage-only; images are staged into
+  the isolated OpenClaw workspace for native multimodal analysis.
 - The scheduler remains deterministic and independent from OpenClaw availability.
 - Public ingress is only `POST /feishu/event`; internal surfaces rely on the Tailscale boundary.
 

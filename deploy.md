@@ -25,6 +25,14 @@ ssh server 'cd /opt/smartcore-dev && ./scripts/deploy_dev.sh'
 ssh server 'cd /opt/smartcore && ./scripts/promote_prod.sh'
 ```
 
+涉及 SmartCore Agent 模型时，在候选镜像通过后应用并检查 OpenClaw 配置。脚本会先把
+当前配置以 `0600` 权限备份，并在校验或 Gateway 重启失败时自动恢复：
+
+```bash
+ssh server 'cd /opt/smartcore-dev && ./scripts/configure_openclaw_qwen.sh --apply'
+ssh server 'cd /opt/smartcore-dev && ./scripts/configure_openclaw_qwen.sh --status'
+```
+
 不要直接在 `/opt/smartcore` 编辑文件，也不要用普通 `docker compose up --build`
 替代候选提升流程。
 
@@ -46,6 +54,12 @@ ssh server 'cd /opt/smartcore && docker compose -f deploy/docker-compose.yml exe
 
 ```bash
 ssh server 'cd /opt/smartcore && ./scripts/deploy_prod.sh --rollback'
+```
+
+模型配置独立回滚，必须显式使用 `--apply` 输出的备份路径：
+
+```bash
+ssh server 'cd /opt/smartcore && ./scripts/configure_openclaw_qwen.sh --rollback /root/.openclaw/backups/openclaw-before-qwen-YYYYMMDDTHHMMSSZ.json'
 ```
 
 脚本使用上一个已记录镜像回滚，不删除 Docker 卷。若涉及数据迁移，先评估数据库

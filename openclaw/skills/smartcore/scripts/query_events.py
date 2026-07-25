@@ -34,6 +34,10 @@ def parser() -> argparse.ArgumentParser:
         default=os.environ.get("SMARTCORE_AGENT_SCOPE", ""),
         help="Optional override; normally inherited from SMARTCORE_AGENT_SCOPE.",
     )
+    result.add_argument(
+        "--scope-file",
+        help="Task-local scope file supplied by the SmartCore Adapter.",
+    )
     result.add_argument("--date")
     result.add_argument("--start")
     result.add_argument("--end")
@@ -78,6 +82,9 @@ def build_body(args: argparse.Namespace) -> dict[str, Any]:
 
 def query_events(args: argparse.Namespace) -> dict[str, Any]:
     scope = str(args.scope or "").strip()
+    scope_file = getattr(args, "scope_file", None)
+    if scope_file:
+        scope = Path(scope_file).read_text(encoding="utf-8").strip()
     if not scope:
         raise ValueError("SmartCore agent scope is unavailable in this task environment")
     runtime = runtime_config()

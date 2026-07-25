@@ -15,7 +15,6 @@ from app.server.agent.scope import (
     AgentScope,
     issue_ocr_evidence,
     require_agent_scope,
-    verify_ocr_evidence,
 )
 from app.server.config import Settings, get_settings
 from app.server.db.session import get_db
@@ -175,28 +174,8 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
                 "description": {"type": "string", "maxLength": 4000},
                 "srcType": {"type": "string", "enum": ["text", "voice", "media"]},
                 "uploadIds": {"type": "array", "items": {"type": "string"}},
-                "ocrEvidence": {
-                    "type": "object",
-                    "description": "Map each image uploadId to the evidence returned by mediaImageOcr.",
-                    "additionalProperties": {"type": "string"},
-                },
             },
             ["title"],
-        ),
-    },
-    {
-        "name": "mediaImageOcr",
-        "method": "POST",
-        "path": "/agent/media/ocr",
-        "riskLevel": "read",
-        "confirmationRequired": False,
-        "description": "Run DeepSeek OCR 2 on one owned image upload. Documents are never accepted.",
-        "inputSchema": _schema_object(
-            {
-                "uploadId": {"type": "string", "minLength": 1},
-                "jobId": {"type": "string", "minLength": 1},
-            },
-            ["uploadId"],
         ),
     },
     {
@@ -209,9 +188,8 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
             {
                 "jobId": {"type": "string", "minLength": 1},
                 "summary": {"type": "string", "minLength": 1, "maxLength": 100},
-                "ocrEvidence": {"type": "string", "minLength": 1},
             },
-            ["jobId", "summary", "ocrEvidence"],
+            ["jobId", "summary"],
         ),
     },
     {
@@ -673,19 +651,6 @@ def createAgentRouter() -> APIRouter:
             ).all()
             if len(uploads) != len(set(upload_ids)):
                 return _failed(["one or more attachments are unavailable"])
-            evidence = body.get("ocrEvidence") if isinstance(body.get("ocrEvidence"), dict) else {}
-            missing = [
-                upload.uploadId
-                for upload in uploads
-                if upload.mimeType.startswith("image/")
-                and not verify_ocr_evidence(
-                    str(evidence.get(upload.uploadId) or ""),
-                    userId=scope.userId,
-                    uploadId=upload.uploadId,
-                )
-            ]
-            if missing:
-                return _failed(["valid mediaImageOcr evidence required for every image"])
         return _run_write(
             db,
             lambda: crud.createIdea(
@@ -791,7 +756,6 @@ def createAgentRouter() -> APIRouter:
     ) -> dict[str, Any]:
         job_id = str(body.get("jobId") or "").strip()
         summary = str(body.get("summary") or "").strip()
-        evidence = str(body.get("ocrEvidence") or "").strip()
         if not job_id or not summary:
             return _failed(["jobId and summary required"])
         if len(summary) > 100:
@@ -801,17 +765,10 @@ def createAgentRouter() -> APIRouter:
             return _failed(["media job not found"])
         if job.stat in {"ready", "consumed"}:
             return _done({"jobId": job.jobId, "stat": job.stat, "summary": job.summary})
-        if job.stat != "ocr_ready":
+        if job.stat not in {"queued", "processing", "ocr_ready"}:
             return _failed([f"media job cannot complete from state {job.stat}"])
-        if not verify_ocr_evidence(
-            evidence,
-            userId=scope.userId,
-            uploadId=job.uploadId,
-        ):
-            return _failed(["valid mediaImageOcr evidence required"])
         job.stat = "ready"
         job.summary = summary
-        job.ocrEvidence = evidence
         job.errorMessage = None
         job.updatedAt = nowIso()
         db.commit()

@@ -8,7 +8,7 @@ import pytest
 
 from app.server.agent import routes
 from app.server.agent.v2_routes import _normalize_query_body, _resolved_iso
-from openclaw.skills.smartcore.scripts import query_events
+from openclaw.skills.smartcore.scripts import call_tool, query_events
 
 pytestmark = pytest.mark.contract
 
@@ -47,6 +47,12 @@ def test_agent_tools_keep_stable_names_and_aliases() -> None:
     assert tools["evtDelete"]["path"] == "/agent/db/delete_event"
     assert tools["sendFeishuText"]["path"] == "/agent/feedback/send_text"
     assert tools["sendFeishuCard"]["path"] == "/agent/feedback/send_card"
+    assert "mediaImageOcr" not in tools
+    assert "ocrEvidence" not in tools["ideaCapture"]["inputSchema"]["properties"]
+    assert tools["ideaMediaJobComplete"]["inputSchema"]["required"] == [
+        "jobId",
+        "summary",
+    ]
 
 
 def test_query_events_exposes_ddl_link_for_linked_plan(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -323,6 +329,71 @@ def test_query_helper_uses_task_scope_environment(tmp_path, monkeypatch) -> None
 
     assert result["ok"] is True
     assert captured["request"].headers["X-smartcore-agent-scope"] == "task-scope"
+
+
+def test_generic_tool_helper_discovers_path_without_exposing_credentials(
+    tmp_path, monkeypatch
+) -> None:
+    token_file = tmp_path / "token"
+    token_file.write_text("agent-secret\n", encoding="utf-8")
+    scope_file = tmp_path / "scope"
+    scope_file.write_text("signed-scope\n", encoding="utf-8")
+    requests = []
+
+    class Response:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps(self.payload).encode()
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        if request.full_url.endswith("/agent/tools"):
+            return Response(
+                {
+                    "ok": True,
+                    "data": {
+                        "tools": [
+                            {
+                                "name": "ideaCapture",
+                                "method": "POST",
+                                "path": "/agent/idea/capture",
+                            }
+                        ]
+                    },
+                }
+            )
+        return Response({"ok": True, "data": {"ideaId": "idea-1"}})
+
+    monkeypatch.setenv("SMARTCORE_AGENT_TOKEN_FILE", str(token_file))
+    monkeypatch.setenv("SMARTCORE_BASE_URL", "http://smartcore.local/")
+    monkeypatch.setattr(call_tool.urllib.request, "urlopen", fake_urlopen)
+    args = call_tool.parser().parse_args(
+        [
+            "--scope-file",
+            str(scope_file),
+            "--tool",
+            "ideaCapture",
+            "--body-json",
+            '{"title":"视觉记录"}',
+        ]
+    )
+
+    result = call_tool.call_tool(args)
+
+    assert result["ok"] is True
+    request = requests[1][0]
+    assert request.full_url == "http://smartcore.local/agent/idea/capture"
+    assert request.headers["X-smartcore-agent-token"] == "agent-secret"
+    assert request.headers["X-smartcore-agent-scope"] == "signed-scope"
+    assert json.loads(request.data) == {"title": "视觉记录"}
 
 
 def test_runtime_config_supplies_base_url_and_token_path(tmp_path, monkeypatch) -> None:

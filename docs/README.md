@@ -14,7 +14,7 @@
 | [领域模型](./domain-model.md) | 用户、事项、提醒、设备、日志和定时任务 |
 | [API 与鉴权契约](./api-contracts.md) | 凭证矩阵、关键接口、状态机和兼容别名 |
 | [飞书与 OpenClaw](./integrations.md) | 回调、配对、Agent scope、工具与输出契约 |
-| [Idea 与媒体](./media.md) | 上传、OCR、附件编辑、存储和鉴权 |
+| [Idea 与媒体](./media.md) | 上传、多模态分析、附件编辑、存储和鉴权 |
 | [设备与 Pi](./devices.md) | 设备配对、分发、Pi 状态和照片协议 |
 | [架构决策](./decisions.md) | 关键方案原因、拒绝方案和当前技术债 |
 | [交付历史](./delivery-history.md) | 影响后续维护的里程碑与验收边界 |

@@ -406,8 +406,8 @@
     "mediaStatus": {
       "ready": "可以保存",
       "queued": "等待处理",
-      "processing": "正在 OCR",
-      "ocr_ready": "正在提炼",
+      "processing": "正在分析",
+      "ocr_ready": "正在生成摘要",
       "failed": "处理失败"
     },
     "content": "灵感内容",
