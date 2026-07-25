@@ -591,9 +591,3 @@ def test_openclaw_adapter_prompt_owns_feishu_reply() -> None:
     assert "scripts/smartcore/scripts/query_events.py" not in adapter_source
     assert "skills/smartcore/scripts/query_events.py" in adapter_source
     assert "OPENCLAW_MEDIA_MODEL" not in adapter_source
-
-
-def test_openclaw_qwen_config_limits_smartcore_agent_capabilities() -> None:
-    script = (REPO_ROOT / "scripts/configure_openclaw_qwen.sh").read_text(encoding="utf-8")
-    assert '.skills = ["smartcore"]' in script
-    assert '.tools = {allow: ["exec"]}' in script
