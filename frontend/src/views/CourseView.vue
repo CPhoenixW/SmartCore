@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
+import PageHeader from "@/components/base/PageHeader.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
 import EventPreviewCard from "@/components/events/EventPreviewCard.vue";
 import { aiApi } from "@/api/ai";
@@ -125,7 +126,7 @@ function reset() { selected.value = null; fillForm(null); }
 
 <template>
   <div class="dual-scroll-page">
-    <section class="page-heading"><div><h1>{{ t("course.title") }}</h1><p>{{ t("course.subtitle") }}</p></div><div class="heading-actions"><button class="button" :disabled="busy" @click="syncAllMutation.mutate()">{{ t("course.syncAll") }}</button><button class="button button--primary" @click="reset">{{ t("course.new") }}</button></div></section>
+    <PageHeader :title="t('course.title')" :subtitle="t('course.subtitle')"><template #actions><button class="button" :disabled="busy" @click="syncAllMutation.mutate()">{{ t("course.syncAll") }}</button><button class="button button--primary" @click="reset">{{ t("course.new") }}</button></template></PageHeader>
     <section class="split-scroll-layout split-scroll-layout--course">
       <div class="split-scroll-column split-scroll-column--main">
         <div class="stack">

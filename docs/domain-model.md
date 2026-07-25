@@ -74,7 +74,8 @@ Web 主接口位于 `/api/evt`、`/api/planEvt`、`/api/ddlEvt`、`/api/courseEv
 
 协议见 [设备与 Pi](./devices.md)。
 
-电脑活动使用六张追加表：`computerActivityContext` 按用户去重应用；
+电脑活动使用六张追加表：`computerActivityContext` 按用户去重应用及过滤后的上下文，
+可保存窗口标题、浏览器域名、工作区和文档名；敏感场景只保存应用身份；
 `computerActivityBucket` 以 `(deviceId, bucketStart)` 幂等；`computerActivitySlice` 保存
 状态秒数；`computerMonitorStatus` 保存最后心跳；`computerDailyUsage` 与
 `computerDailyAppUsage` 保存永久日汇总。所有 owner 都从设备 token 派生。

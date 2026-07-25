@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from "vue";
 import { useMutation, useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
+import PageHeader from "@/components/base/PageHeader.vue";
 import { useToast } from "@/composables/useToast";
 import { adminApi } from "@/api/admin";
 import { useUserStore } from "@/stores/user";
@@ -76,7 +77,7 @@ function clearAvatar() {
 </script>
 
 <template>
-  <section class="page-heading"><div><h1>{{ t("settings.title") }}</h1><p>{{ t("settings.subtitle") }}</p></div></section>
+  <PageHeader :title="t('settings.title')" :subtitle="t('settings.subtitle')" />
   <section class="settings-scroll-layout">
     <div class="settings-scroll-column">
       <BaseCard :title="t('settings.title')">

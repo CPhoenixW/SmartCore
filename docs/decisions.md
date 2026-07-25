@@ -108,9 +108,11 @@ SmartCore Agent 的多模态模型直接理解；文档只存储。任务结束�
 
 状态：已采用。
 
-v1 只记录 active/idle/locked/sleeping 与应用 Bundle ID/名称。Mac 端是用户会话中的
-无界面 LaunchAgent，不采集窗口标题，也不要求辅助功能权限。Plan 关联只按时间区间
-并集求交，不从应用名推断任务，也不输出效率、分心、分类或建议。
+v1 记录 active/idle/locked/sleeping、应用 Bundle ID/名称和过滤后的聚焦窗口标题。
+Mac 端是用户会话中的无界面 LaunchAgent；辅助功能权限仅用于读取聚焦窗口的标题与
+文档引用。用户可选开启浏览器域名、IDE 工作区和文档名，完整 URL、路径及正文不进入
+队列。密码管理器、银行、支付和系统认证场景在客户端与 Server 双重降级为仅应用名。
+Plan 关联只按时间区间并集求交，不从上下文推断任务，也不输出效率、分心、分类或建议。
 
 设备 token 使用应用支持目录内的 `0600` 文件。原因是无 Developer ID 的 ad-hoc
 可执行文件每次构建都会改变 Keychain 代码要求，后台升级会阻塞等待授权；token 本身

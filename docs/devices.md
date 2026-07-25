@@ -95,8 +95,11 @@ unknown/offline、照片请求只上传一次、其他设备 token 无法冒用�
 `deviceId` 隔离，重新配对不会把旧身份数据发给新用户；token 存在应用支持目录的
 owner-only `0600` 文件中。旧开发版 Keychain token 由安装脚本一次性迁移且不输出。
 
-客户端不采集窗口标题、URL、键盘内容、剪贴板或截图，也不需要辅助功能权限。测试与
-安装：
+客户端默认通过 macOS 辅助功能权限采集过滤后的聚焦窗口标题。密码管理器、银行、
+支付和系统认证场景始终只保留应用名。可选结构化上下文只提取浏览器域名、IDE 工作区
+和文档文件名；完整 URL、文件路径、网页/文档正文、键盘内容、剪贴板和截图都不采集。
+使用 `SmartCoreMonitor structured-context on|off|status` 控制结构化字段，标题采集不受
+该开关影响。测试与安装：
 
 ```bash
 swift test --package-path app/computer/macos

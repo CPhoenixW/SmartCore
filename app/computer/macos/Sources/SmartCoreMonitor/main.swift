@@ -1,10 +1,12 @@
 import AppKit
+import ApplicationServices
 import CoreGraphics
 import Darwin
 import SmartCoreMonitorCore
 
 private let configurationChangedNotification = Notification.Name("com.smartcore.monitor.configurationChanged")
 private let anyInputEventType = CGEventType(rawValue: UInt32.max)!
+private let structuredContextPreference = "collectStructuredContext"
 
 @main
 struct SmartCoreMonitorMain {
@@ -17,10 +19,12 @@ struct SmartCoreMonitorMain {
             printStatus()
         case "migrate-token":
             migrateLegacyToken()
+        case "structured-context":
+            configureStructuredContext()
         case "run", nil:
             runAgent()
         default:
-            fputs("Usage: SmartCoreMonitor [run|pair|status|migrate-token]\n", stderr)
+            fputs("Usage: SmartCoreMonitor [run|pair|status|migrate-token|structured-context on|off|status]\n", stderr)
             exit(EXIT_FAILURE)
         }
     }
@@ -77,7 +81,23 @@ struct SmartCoreMonitorMain {
             return
         }
         let hasToken = ((try? FileTokenStorage().read(account: configuration.keychainAccount)) ?? nil) != nil
-        print("device=\(configuration.deviceName) id=\(configuration.deviceId) token=\(hasToken ? "ready" : "missing")")
+        let structured = UserDefaults.standard.bool(forKey: structuredContextPreference)
+        print("device=\(configuration.deviceName) id=\(configuration.deviceId) token=\(hasToken ? "ready" : "missing") accessibility=\(AXIsProcessTrusted() ? "granted" : "missing") structuredContext=\(structured ? "on" : "off")")
+    }
+
+    private static func configureStructuredContext() {
+        let value = CommandLine.arguments.dropFirst(2).first ?? "status"
+        switch value {
+        case "on", "off":
+            UserDefaults.standard.set(value == "on", forKey: structuredContextPreference)
+            DistributedNotificationCenter.default().post(name: configurationChangedNotification, object: nil)
+            print("Structured context collection is \(value).")
+        case "status":
+            print(UserDefaults.standard.bool(forKey: structuredContextPreference) ? "on" : "off")
+        default:
+            fputs("Usage: SmartCoreMonitor structured-context on|off|status\n", stderr)
+            exit(EXIT_FAILURE)
+        }
     }
 
     private static func migrateLegacyToken() {
@@ -121,6 +141,7 @@ final class MonitorAgentDelegate: NSObject, NSApplicationDelegate {
     private var currentState: ActivityState = .idle
     private var currentContext: ActivityContext?
     private var syncing = false
+    private var accessibilityGranted = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
@@ -132,6 +153,10 @@ final class MonitorAgentDelegate: NSObject, NSApplicationDelegate {
             fputs("SmartCoreMonitor: local queue unavailable: \(error.localizedDescription)\n", stderr)
         }
         reloadConfiguration()
+        let accessibilityOptions = [
+            "AXTrustedCheckOptionPrompt": true,
+        ] as CFDictionary
+        accessibilityGranted = AXIsProcessTrustedWithOptions(accessibilityOptions)
         installObservers()
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.sample() }
@@ -179,7 +204,7 @@ final class MonitorAgentDelegate: NSObject, NSApplicationDelegate {
             idleSeconds: idleSeconds
         )
         let context = state == .active ? frontmostContext() : nil
-        let changed = state != currentState || context?.bundleId != currentContext?.bundleId
+        let changed = state != currentState || context != currentContext
         capture(state: state, context: context, to: now)
         if changed { nextSyncAt = .distantPast }
         if now >= nextSyncAt { Task { await synchronize() } }
@@ -227,7 +252,39 @@ final class MonitorAgentDelegate: NSObject, NSApplicationDelegate {
         guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
         let bundle = String((app.bundleIdentifier ?? "unknown.\(app.processIdentifier)").prefix(300))
         let name = String((app.localizedName ?? "Unknown").prefix(200))
-        return ActivityContext(bundleId: bundle, appName: name)
+        accessibilityGranted = AXIsProcessTrusted()
+        var title: String?
+        var documentReference: String?
+        if accessibilityGranted {
+            let application = AXUIElementCreateApplication(app.processIdentifier)
+            var focusedValue: CFTypeRef?
+            if AXUIElementCopyAttributeValue(
+                application,
+                kAXFocusedWindowAttribute as CFString,
+                &focusedValue
+            ) == .success, let focusedValue {
+                let window = focusedValue as! AXUIElement
+                title = accessibilityString(window, attribute: kAXTitleAttribute)
+                documentReference = accessibilityString(window, attribute: kAXDocumentAttribute)
+            }
+        }
+        return ActivityContextSanitizer.sanitize(
+            RawActivityContext(
+                bundleId: bundle,
+                appName: name,
+                windowTitle: title,
+                documentReference: documentReference
+            ),
+            includeStructuredContext: UserDefaults.standard.bool(forKey: structuredContextPreference)
+        )
+    }
+
+    private func accessibilityString(_ element: AXUIElement, attribute: String) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
+            return nil
+        }
+        return value as? String
     }
 
     private func synchronize() async {
@@ -245,8 +302,10 @@ final class MonitorAgentDelegate: NSObject, NSApplicationDelegate {
                     currentState: currentState,
                     observedAt: Date(),
                     currentAppName: currentContext?.appName,
-                    appVersion: "0.2.0",
+                    currentWindowTitle: currentContext?.windowTitle,
+                    appVersion: "0.3.0",
                     osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+                    accessibilityGranted: accessibilityGranted,
                     queueDepth: try outbox.count(deviceId: configuration.deviceId)
                 ),
                 configuration: configuration,

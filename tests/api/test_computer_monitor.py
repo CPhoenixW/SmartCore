@@ -38,6 +38,9 @@ def _activity_payload(start: datetime, *, active: int = 45, idle: int = 15) -> d
             "bundleId": "com.apple.dt.Xcode",
             "appName": "Xcode",
             "windowTitle": "SmartCore - service.py",
+            "contextKind": "ide",
+            "workspace": "SmartCore",
+            "documentName": "service.py",
             "titleRedacted": False,
         }
     ]
@@ -127,7 +130,7 @@ def test_computer_upload_is_device_owned_idempotent_and_reported(app_env) -> Non
     assert status.status_code == 200
     status_data = status.json()["data"]
     assert status_data["state"] == "active"
-    assert status_data["currentWindowTitle"] is None
+    assert status_data["currentWindowTitle"] == "SmartCore - service.py"
     assert status_data["analysis"]["state"] == "plan_active"
     assert status_data["analysis"]["currentPlan"]["title"] == "Implement monitor"
     assert status_data["analysis"]["reasonCodes"] == ["computer.active", "plan.current"]
@@ -145,16 +148,71 @@ def test_computer_upload_is_device_owned_idempotent_and_reported(app_env) -> Non
     assert data["sessions"][0]["sessionId"] == "session-1"
     assert data["sessions"][0]["inference"] is None
     assert data["applications"][0]["bundleId"] == "com.apple.dt.Xcode"
-    assert data["titles"] == []
-    assert data["sessions"][0]["contexts"][0]["windowTitle"] is None
+    assert data["titles"][0]["windowTitle"] == "SmartCore - service.py"
+    assert data["titles"][0]["seconds"] == 30
+    context = data["sessions"][0]["contexts"][0]
+    assert context["windowTitle"] == "SmartCore - service.py"
+    assert context["contextKind"] == "ide"
+    assert context["workspace"] == "SmartCore"
+    assert context["documentName"] == "service.py"
 
     db = SessionLocal()
     try:
         assert len(list(db.scalars(select(ComputerActivityBucket)))) == 1
         daily = db.scalar(select(ComputerDailyUsage))
         assert daily is not None and daily.activeSeconds == 30
+        stored_context = db.scalar(select(ComputerActivityContext))
+        assert stored_context is not None and stored_context.windowTitle == "SmartCore - service.py"
     finally:
         db.close()
+
+
+def test_computer_server_redacts_sensitive_context_even_when_client_does_not(app_env) -> None:
+    client = TestClient(create_app())
+    paired = _setup_computer(client)
+    headers = {"X-SmartCore-Device-Token": paired["deviceToken"]}
+    start = _bucket_start()
+    payload = _activity_payload(start, active=60, idle=0)
+    payload["buckets"][0]["slices"][0].update(
+        bundleId="com.1password.1password",
+        appName="1Password",
+        windowTitle="Personal vault",
+        contextKind="application",
+        workspace="Private",
+        documentName="vault",
+    )
+
+    response = client.post("/api/computer/activity/batch", json=payload, headers=headers)
+    assert response.status_code == 200
+    report = client.get(
+        "/api/computer/usage",
+        params={
+            "deviceId": paired["device"]["deviceId"],
+            "range": "today",
+            "timezone": "Asia/Singapore",
+        },
+    ).json()["data"]
+    context = report["sessions"][0]["contexts"][0]
+    assert context["appName"] == "1Password"
+    assert context["titleRedacted"] is True
+    assert context["windowTitle"] is None
+    assert context["workspace"] is None
+    assert context["documentName"] is None
+    assert report["titles"] == []
+
+
+def test_computer_upload_rejects_full_urls_and_paths_in_structured_fields(app_env) -> None:
+    client = TestClient(create_app())
+    paired = _setup_computer(client)
+    headers = {"X-SmartCore-Device-Token": paired["deviceToken"]}
+    payload = _activity_payload(_bucket_start())
+    context = payload["buckets"][0]["slices"][0]
+    context["domain"] = "https://example.test/private"
+    assert client.post("/api/computer/activity/batch", json=payload, headers=headers).status_code == 422
+
+    context["domain"] = "example.test"
+    context["workspace"] = "/Users/person/Private/SmartCore"
+    assert client.post("/api/computer/activity/batch", json=payload, headers=headers).status_code == 422
 
 
 def test_computer_routes_reject_wrong_device_kind_and_cross_owner(app_env) -> None:

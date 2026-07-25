@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
+import PageHeader from "@/components/base/PageHeader.vue";
 import DevicePairPanel from "@/components/device/DevicePairPanel.vue";
 import FeishuBotManager from "@/components/device/FeishuBotManager.vue";
 import { useUserStore } from "@/stores/user";
@@ -12,9 +13,7 @@ const isAdmin = computed(() => userStore.user.role === "admin");
 </script>
 
 <template>
-  <section class="device-section-heading">
-    <div><h2>{{ t("feishuDevice.title") }}</h2><p>{{ t("feishuDevice.subtitle") }}</p></div>
-  </section>
+  <PageHeader compact :title="t('feishuDevice.title')" :subtitle="t('feishuDevice.subtitle')" />
   <section class="device-domain-grid">
     <DevicePairPanel :allowed-kinds="['feishuBot']" :title="t('feishuDevice.pairTitle')" />
     <FeishuBotManager v-if="isAdmin" />

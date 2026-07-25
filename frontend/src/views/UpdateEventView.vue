@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
+import PageHeader from "@/components/base/PageHeader.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
 import EventCard from "@/components/events/EventCard.vue";
 import EventEditor from "@/components/events/EventEditor.vue";
@@ -101,7 +102,7 @@ function markDone() { if (selected.value) updateMutation.mutate({ id: selected.v
 
 <template>
   <div class="dual-scroll-page">
-    <section class="page-heading"><div><h1>{{ t("update.title") }}</h1><p>{{ t("update.subtitle") }}</p></div></section>
+    <PageHeader :title="t('update.title')" :subtitle="t('update.subtitle')" />
     <section class="date-toolbar"><button class="button" @click="move(-1)">{{ t("common.previous") }}</button><input v-model="date" type="date" /><button class="button" @click="date = todayKey()">{{ t("common.today") }}</button><button class="button" @click="move(1)">{{ t("common.next") }}</button><input v-model="text" :placeholder="t('common.search')" /><select v-model="status"><option value="all">{{ t("common.all") }}</option><option value="active">{{ t("event.status.active") }}</option><option value="cancelled">{{ t("event.status.cancelled") }}</option></select></section>
     <section class="split-scroll-layout">
       <div class="split-scroll-column split-scroll-column--main">

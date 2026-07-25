@@ -5,6 +5,7 @@ import { useI18n } from "vue-i18n";
 import DevicePairPanel from "@/components/device/DevicePairPanel.vue";
 import BaseCard from "@/components/base/BaseCard.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
+import PageHeader from "@/components/base/PageHeader.vue";
 import { deviceApi } from "@/api/device";
 import { deviceRegistryApi } from "@/api/deviceRegistry";
 import { useToast } from "@/composables/useToast";
@@ -103,7 +104,7 @@ function stateLabel(state: string) {
 
 <template>
   <div class="dual-scroll-page device-nested-scroll">
-    <section class="device-section-heading"><div><h2>{{ t("device.piTitle") }}</h2><p>{{ t("device.piSubtitle") }}</p></div><button class="button" @click="refreshAll">{{ t("common.refresh") }}</button></section>
+    <PageHeader compact :title="t('device.piTitle')" :subtitle="t('device.piSubtitle')"><template #actions><button class="button" @click="refreshAll">{{ t("common.refresh") }}</button></template></PageHeader>
     <section class="split-scroll-layout">
       <div class="split-scroll-column split-scroll-column--main">
         <div class="stack"><DevicePairPanel :allowed-kinds="['pi']" :title="t('device.piPairTitle')" />

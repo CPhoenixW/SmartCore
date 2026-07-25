@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import { useMutation, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
+import PageHeader from "@/components/base/PageHeader.vue";
 import DdlForm from "@/components/events/DdlForm.vue";
 import EventPreviewCard from "@/components/events/EventPreviewCard.vue";
 import PlanForm from "@/components/events/PlanForm.vue";
@@ -103,7 +104,7 @@ function applyTemplate(kind: "homework" | "plan" | "exam" | "project") {
 
 <template>
   <div class="dual-scroll-page">
-    <section class="page-heading"><div><h1>{{ t("add.title") }}</h1><p>{{ t("add.subtitle") }}</p></div></section>
+    <PageHeader :title="t('add.title')" :subtitle="t('add.subtitle')" />
     <section class="split-scroll-layout">
       <div class="split-scroll-column split-scroll-column--main">
         <div class="stack">

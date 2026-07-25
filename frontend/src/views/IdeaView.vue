@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
 import MarkdownContent from "@/components/base/MarkdownContent.vue";
+import ImageViewer from "@/components/base/ImageViewer.vue";
+import PageHeader from "@/components/base/PageHeader.vue";
 import { ideaApi } from "@/api/idea";
 import { useToast } from "@/composables/useToast";
 import type { Idea, IdeaAttachment, IdeaMediaJob, IdeaUpload } from "@/types/idea";
+import { formatDateTime } from "@/utils/date";
 
 type UploadState = "ready" | "queued" | "processing" | "ocr_ready" | "failed";
 type StagedUpload = IdeaUpload & {
@@ -17,7 +20,7 @@ type StagedUpload = IdeaUpload & {
   errorMessage?: string;
 };
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const toast = useToast();
 const queryClient = useQueryClient();
 const selected = ref<Idea | null>(null);
@@ -52,14 +55,13 @@ function reset() {
   lightbox.value = null;
 }
 
-function closeLightbox() { lightbox.value = null; }
-function handleKeydown(event: KeyboardEvent) { if (event.key === "Escape") closeLightbox(); }
-onMounted(() => window.addEventListener("keydown", handleKeydown));
-onBeforeUnmount(() => window.removeEventListener("keydown", handleKeydown));
-
 function attachmentLabel(idea: Idea) {
   const images = idea.attachments.filter((item) => item.mimeType.startsWith("image/")).length;
   return images ? `🖼️ ${images} ${t("ideas.images")}` : `📎 ${idea.attachments.length} ${t("ideas.attachments")}`;
+}
+
+function displayTime(value?: string | null) {
+  return formatDateTime(value, locale.value === "en-US" ? "en-US" : "zh-CN");
 }
 
 function markAttachmentRemoved(id: string) {
@@ -180,17 +182,14 @@ const remove = useMutation({
 
 <template>
   <div class="dual-scroll-page idea-workspace">
-    <section class="page-heading">
-      <div><h1>{{ t("ideas.title") }}</h1><p>{{ t("ideas.subtitle") }}</p></div>
-      <button class="button button--primary" @click="reset">{{ t("ideas.new") }}</button>
-    </section>
+    <PageHeader :title="t('ideas.title')" :subtitle="t('ideas.subtitle')"><template #actions><button class="button button--primary" @click="reset">{{ t("ideas.new") }}</button></template></PageHeader>
     <section class="idea-layout">
       <div class="idea-list-pane">
         <BaseCard :title="`${t('ideas.title')} · ${items.length}`">
           <div class="idea-cards">
             <button v-for="idea in items" :key="idea.ideaId" class="idea-card" :class="{ selected: selected?.ideaId === idea.ideaId }" @click="choose(idea)">
               <strong>{{ idea.title }}</strong><p>{{ idea.description || t("ideas.noDescription") }}</p>
-              <footer><span v-if="idea.attachments.length">{{ attachmentLabel(idea) }}</span><time>{{ idea.createdAt }}</time></footer>
+              <footer><span v-if="idea.attachments.length">{{ attachmentLabel(idea) }}</span><time :datetime="idea.createdAt">{{ displayTime(idea.createdAt) }}</time></footer>
             </button>
             <EmptyState v-if="!items.length" />
           </div>
@@ -199,18 +198,24 @@ const remove = useMutation({
       <aside class="idea-detail"><div class="stack">
         <BaseCard :title="t('ideas.detail')">
           <template v-if="selected">
-            <h2>{{ selected.title }}</h2><time class="idea-time">{{ selected.createdAt }}</time>
-            <MarkdownContent :content="selected.description" />
-            <div class="attachment-grid">
-              <template v-for="file in selected.attachments" :key="file.attachmentId">
-                <div v-if="file.mimeType.startsWith('image/')" class="image-file">
-                  <button class="image-thumb" :aria-label="t('ideas.enlargeImage', { name: file.fileName })" @click="lightbox = file"><img :src="file.url" :alt="file.fileName" /></button>
-                  <a :href="file.url" class="attachment-download" download>{{ t("ideas.download") }}</a>
-                </div>
-                <a v-else :href="file.url" class="document-file" download>📄 {{ file.fileName }} · {{ t("ideas.download") }}</a>
-              </template>
-            </div>
-            <div class="form-actions"><button class="button button--danger" @click="remove.mutate(selected.ideaId)">{{ t("common.delete") }}</button></div>
+            <header class="idea-detail-header">
+              <div><h2>{{ selected.title }}</h2><time class="idea-time" :datetime="selected.createdAt">{{ displayTime(selected.createdAt) }}</time></div>
+              <span v-if="selected.attachments.length" class="idea-attachment-count">{{ attachmentLabel(selected) }}</span>
+            </header>
+            <section class="idea-detail-copy"><MarkdownContent :content="selected.description" /></section>
+            <section v-if="selected.attachments.length" class="idea-attachment-section" :aria-label="t('ideas.existingAttachments')">
+              <h3>{{ t("ideas.existingAttachments") }}</h3>
+              <div class="attachment-grid">
+                <template v-for="file in selected.attachments" :key="file.attachmentId">
+                  <div v-if="file.mimeType.startsWith('image/')" class="image-file">
+                    <button class="image-thumb" :aria-label="t('ideas.enlargeImage', { name: file.fileName })" @click="lightbox = file"><img :src="file.url" :alt="file.fileName" /></button>
+                    <div class="image-file__meta"><span>{{ file.fileName }}</span><a :href="file.url" class="attachment-download" download>{{ t("ideas.download") }}</a></div>
+                  </div>
+                  <a v-else :href="file.url" class="document-file" download>📄 {{ file.fileName }} · {{ t("ideas.download") }}</a>
+                </template>
+              </div>
+            </section>
+            <div class="idea-danger-zone"><button class="button button--danger" @click="remove.mutate(selected.ideaId)">{{ t("common.delete") }}</button></div>
           </template>
           <EmptyState v-else :text="t('ideas.select')" />
         </BaseCard>
@@ -253,8 +258,6 @@ const remove = useMutation({
         </BaseCard>
       </div></aside>
     </section>
-    <div v-if="lightbox" class="lightbox" role="dialog" aria-modal="true" :aria-label="t('ideas.imagePreview')" @click="closeLightbox">
-      <div class="lightbox-panel" @click.stop><img :src="lightbox.url" :alt="lightbox.fileName" /><div class="lightbox-actions"><span>{{ lightbox.fileName }}</span><a :href="lightbox.url" class="button button--primary" download>{{ t("ideas.download") }}</a><button class="button" type="button" @click="closeLightbox">{{ t("ideas.closePreview") }}</button></div></div>
-    </div>
+    <ImageViewer v-if="lightbox" :src="lightbox.url" :alt="lightbox.fileName" :file-name="lightbox.fileName" @close="lightbox = null" />
   </div>
 </template>

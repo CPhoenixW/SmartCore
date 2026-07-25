@@ -410,6 +410,11 @@ def _apply_sqlite_migrations(db_path: Path) -> None:
             )
         if "devicePair" in tables:
             _add_sqlite_column(conn, "devicePair", "botId", "botId VARCHAR(32)")
+        if "computerActivityContext" in tables:
+            _add_sqlite_column(conn, "computerActivityContext", "contextKind", "contextKind VARCHAR(20)")
+            _add_sqlite_column(conn, "computerActivityContext", "domain", "domain VARCHAR(253)")
+            _add_sqlite_column(conn, "computerActivityContext", "workspace", "workspace VARCHAR(300)")
+            _add_sqlite_column(conn, "computerActivityContext", "documentName", "documentName VARCHAR(300)")
         conn.commit()
         conn.execute("PRAGMA foreign_keys = ON")
     finally:

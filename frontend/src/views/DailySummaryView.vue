@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import { useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
+import PageHeader from "@/components/base/PageHeader.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
 import { dailySummaryApi } from "@/api/dailySummary";
 import { addDays, formatDateTime, todayKey } from "@/utils/date";
@@ -78,12 +79,7 @@ function moveDate(days: number) {
 </script>
 
 <template>
-  <section class="page-heading">
-    <div>
-      <h1>{{ t("dailySummary.title") }}</h1>
-      <p>{{ t("dailySummary.subtitle") }}</p>
-    </div>
-  </section>
+  <PageHeader :title="t('dailySummary.title')" :subtitle="t('dailySummary.subtitle')" />
 
   <div class="daily-summary-toolbar">
     <button class="button" type="button" @click="moveDate(-1)">{{ t("common.previous") }}</button>

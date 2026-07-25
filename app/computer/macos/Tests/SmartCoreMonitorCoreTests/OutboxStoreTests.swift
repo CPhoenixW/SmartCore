@@ -3,6 +3,15 @@ import Testing
 @testable import SmartCoreMonitorCore
 
 @Suite struct OutboxStoreTests {
+    @Test func legacyQueuedSlicesDecodeWithNewContextFieldsEmpty() throws {
+        let json = #"{"state":"active","seconds":5,"bundleId":"com.example.Editor","appName":"Editor"}"#.data(using: .utf8)!
+        let slice = try MonitorCoding.decoder().decode(ActivitySlice.self, from: json)
+
+        #expect(slice.windowTitle == nil)
+        #expect(slice.contextKind == nil)
+        #expect(slice.titleRedacted == false)
+    }
+
     @Test func persistenceAcknowledgementAndDeviceIsolation() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }

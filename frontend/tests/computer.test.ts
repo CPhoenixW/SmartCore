@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dominantComputerState, durationLabel, timelinePosition } from "@/utils/computer";
+import { dominantComputerState, durationLabel, timelinePosition, timelineTicks } from "@/utils/computer";
 
 describe("computer usage utilities", () => {
   it("selects the objective state with the most seconds", () => {
@@ -15,6 +15,18 @@ describe("computer usage utilities", () => {
   it("formats durations without implying productivity", () => {
     expect(durationLabel(5_400)).toBe("1h 30m");
     expect(durationLabel(0)).toBe("0m");
+    expect(durationLabel(3_900, "zh-CN")).toBe("1小时 5分钟");
+  });
+
+  it("derives evenly spaced labels from the actual visible window", () => {
+    expect(timelineTicks("2026-07-24T00:00:00Z", "2026-07-24T20:00:00Z"))
+      .toEqual([
+        "2026-07-24T00:00:00.000Z",
+        "2026-07-24T05:00:00.000Z",
+        "2026-07-24T10:00:00.000Z",
+        "2026-07-24T15:00:00.000Z",
+        "2026-07-24T20:00:00.000Z",
+      ]);
   });
 
   it("clamps timeline intervals to the visible window", () => {

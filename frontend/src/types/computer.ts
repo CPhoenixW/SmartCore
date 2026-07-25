@@ -34,6 +34,10 @@ export interface ComputerContextUsage {
   bundleId: string;
   appName: string;
   windowTitle: string | null;
+  contextKind: "application" | "browser" | "ide" | "document" | null;
+  domain: string | null;
+  workspace: string | null;
+  documentName: string | null;
   titleRedacted: boolean;
   classification: null;
   seconds: number;

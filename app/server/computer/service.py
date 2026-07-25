@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
+from pathlib import PurePath
 from typing import Any
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select
@@ -24,6 +27,43 @@ from app.server.new_core.models import (
 )
 
 STATES = ("active", "idle", "locked", "sleeping", "paused")
+SENSITIVE_APP_FRAGMENTS = (
+    "1password",
+    "bitwarden",
+    "dashlane",
+    "lastpass",
+    "keeper",
+    "keepass",
+    "passwords",
+    "keychain",
+    "securityagent",
+    "authorizationhost",
+    "loginwindow",
+)
+SENSITIVE_TITLE_FRAGMENTS = (
+    "password",
+    "passcode",
+    "one-time code",
+    "two-factor",
+    "sign in",
+    "banking",
+    "payment",
+    "密码",
+    "验证码",
+    "登录",
+    "认证",
+    "银行",
+    "支付",
+)
+SENSITIVE_DOMAIN_FRAGMENTS = (
+    "bank",
+    "paypal.",
+    "alipay.",
+    "stripe.",
+    "1password.",
+    "bitwarden.",
+    "account.apple.",
+)
 
 
 def _aware(value: str | datetime) -> datetime:
@@ -37,8 +77,72 @@ def _utc_text(value: str | datetime) -> str:
     return _aware(value).astimezone(UTC).replace(microsecond=0).isoformat()
 
 
-def _fingerprint(bundle_id: str) -> str:
-    return hashlib.sha256(f"{bundle_id}\0".encode()).hexdigest()
+def _normalized_text(value: str | None, limit: int) -> str | None:
+    normalized = " ".join((value or "").split())
+    return normalized[:limit] or None
+
+
+def _contains_fragment(value: str | None, fragments: tuple[str, ...]) -> bool:
+    lowered = (value or "").lower()
+    return any(fragment in lowered for fragment in fragments)
+
+
+def _privacy_filtered_title(value: str | None) -> str | None:
+    title = _normalized_text(value, 300)
+    if not title:
+        return None
+    parts: list[str] = []
+    for part in title.split(" — "):
+        parsed = urlsplit(part)
+        if parsed.scheme in {"http", "https"} and parsed.hostname:
+            parts.append(parsed.hostname.lower())
+        elif part.startswith("/") or re.match(r"^[A-Za-z]:\\", part):
+            parts.append(PurePath(part.replace("\\", "/")).name)
+        else:
+            parts.append(part)
+    return _normalized_text(" — ".join(parts), 300)
+
+
+def _sanitize_context(payload: dict[str, Any]) -> dict[str, Any]:
+    result = {
+        "bundleId": _normalized_text(payload.get("bundleId"), 300) or "unknown",
+        "appName": _normalized_text(payload.get("appName"), 200) or "Unknown",
+        "windowTitle": _privacy_filtered_title(payload.get("windowTitle")),
+        "contextKind": payload.get("contextKind"),
+        "domain": _normalized_text(payload.get("domain"), 253),
+        "workspace": _normalized_text(payload.get("workspace"), 300),
+        "documentName": _normalized_text(payload.get("documentName"), 300),
+        "titleRedacted": bool(payload.get("titleRedacted")),
+    }
+    sensitive = (
+        _contains_fragment(result["bundleId"], SENSITIVE_APP_FRAGMENTS)
+        or _contains_fragment(result["appName"], SENSITIVE_APP_FRAGMENTS)
+        or _contains_fragment(result["windowTitle"], SENSITIVE_TITLE_FRAGMENTS)
+        or _contains_fragment(result["domain"], SENSITIVE_DOMAIN_FRAGMENTS)
+    )
+    if sensitive or result["titleRedacted"]:
+        result.update(
+            windowTitle=None,
+            contextKind=None,
+            domain=None,
+            workspace=None,
+            documentName=None,
+            titleRedacted=True,
+        )
+    return result
+
+
+def _fingerprint(context: dict[str, Any]) -> str:
+    values = (
+        context["bundleId"],
+        context["windowTitle"],
+        context["contextKind"],
+        context["domain"],
+        context["workspace"],
+        context["documentName"],
+        context["titleRedacted"],
+    )
+    return hashlib.sha256("\0".join(str(value or "") for value in values).encode()).hexdigest()
 
 
 def _context_dict(row: ComputerActivityContext) -> dict[str, Any]:
@@ -46,8 +150,12 @@ def _context_dict(row: ComputerActivityContext) -> dict[str, Any]:
         "contextId": row.contextId,
         "bundleId": row.bundleId,
         "appName": row.appName,
-        "windowTitle": None,
-        "titleRedacted": False,
+        "windowTitle": row.windowTitle,
+        "contextKind": row.contextKind,
+        "domain": row.domain,
+        "workspace": row.workspace,
+        "documentName": row.documentName,
+        "titleRedacted": row.titleRedacted,
         "classification": None,
     }
 
@@ -56,11 +164,11 @@ def _resolve_context(
     db: Session,
     *,
     user_id: str,
-    bundle_id: str,
-    app_name: str,
+    payload: dict[str, Any],
     seen_at: str,
 ) -> ComputerActivityContext:
-    fingerprint = _fingerprint(bundle_id)
+    context = _sanitize_context(payload)
+    fingerprint = _fingerprint(context)
     row = db.scalar(
         select(ComputerActivityContext).where(
             ComputerActivityContext.userId == user_id,
@@ -71,19 +179,21 @@ def _resolve_context(
         row = ComputerActivityContext(
             userId=user_id,
             fingerprint=fingerprint,
-            bundleId=bundle_id,
-            appName=app_name,
-            windowTitle=None,
-            titleRedacted=False,
+            bundleId=context["bundleId"],
+            appName=context["appName"],
+            windowTitle=context["windowTitle"],
+            contextKind=context["contextKind"],
+            domain=context["domain"],
+            workspace=context["workspace"],
+            documentName=context["documentName"],
+            titleRedacted=context["titleRedacted"],
             firstSeenAt=seen_at,
             lastSeenAt=seen_at,
         )
         db.add(row)
         db.flush()
     else:
-        row.appName = app_name
-        row.windowTitle = None
-        row.titleRedacted = False
+        row.appName = context["appName"]
         row.lastSeenAt = max(row.lastSeenAt, seen_at)
     return row
 
@@ -195,8 +305,7 @@ def ingest_activity(
                 context = _resolve_context(
                     db,
                     user_id=device.userId,
-                    bundle_id=slice_item["bundleId"],
-                    app_name=slice_item["appName"],
+                    payload=slice_item,
                     seen_at=bucket_start,
                 )
                 context_id = context.contextId
@@ -225,12 +334,23 @@ def record_heartbeat(db: Session, *, device: LifeDevice, payload: dict[str, Any]
         db.add(row)
     previous_state = row.currentState
     row.currentState = payload["currentState"]
-    row.currentAppName = payload.get("currentAppName") if row.currentState == "active" else None
-    row.currentWindowTitle = None
+    heartbeat_context = _sanitize_context(
+        {
+            "bundleId": "heartbeat",
+            "appName": payload.get("currentAppName"),
+            "windowTitle": payload.get("currentWindowTitle"),
+        }
+    )
+    row.currentAppName = (
+        heartbeat_context["appName"]
+        if row.currentState == "active" and payload.get("currentAppName")
+        else None
+    )
+    row.currentWindowTitle = heartbeat_context["windowTitle"] if row.currentState == "active" else None
     row.observedAt = _utc_text(payload["observedAt"])
     row.appVersion = payload["appVersion"]
     row.osVersion = payload["osVersion"]
-    row.accessibilityGranted = True
+    row.accessibilityGranted = payload["accessibilityGranted"]
     row.paused = row.currentState == "paused"
     row.queueDepth = payload["queueDepth"]
     row.lastHeartbeatAt = heartbeat_at
@@ -255,10 +375,10 @@ def monitor_status_dict(row: ComputerMonitorStatus | None) -> dict[str, Any] | N
         "stateSince": row.lastHeartbeatAt if stale else row.stateSince,
         "observedAt": row.observedAt,
         "currentAppName": row.currentAppName if state == "active" else None,
-        "currentWindowTitle": None,
+        "currentWindowTitle": row.currentWindowTitle if state == "active" else None,
         "appVersion": row.appVersion,
         "osVersion": row.osVersion,
-        "accessibilityGranted": True,
+        "accessibilityGranted": row.accessibilityGranted,
         "paused": row.paused,
         "queueDepth": row.queueDepth,
         "lastHeartbeatAt": row.lastHeartbeatAt,
@@ -463,6 +583,7 @@ def usage_report(
 
     totals = {state: 0 for state in STATES}
     app_totals: dict[str, dict[str, Any]] = {}
+    title_totals: dict[str, dict[str, Any]] = {}
     daily_planned: dict[str, int] = defaultdict(int)
     planned_active = 0.0
     timeline: list[dict[str, Any]] = []
@@ -482,6 +603,12 @@ def usage_report(
             app = app_totals.setdefault(context.bundleId, {"bundleId": context.bundleId, "appName": context.appName, "seconds": 0})
             app["appName"] = context.appName
             app["seconds"] += activity_slice.seconds
+            if context.windowTitle:
+                title = title_totals.setdefault(
+                    context.contextId,
+                    {**_context_dict(context), "seconds": 0},
+                )
+                title["seconds"] += activity_slice.seconds
             if dominant is None or activity_slice.seconds > dominant[0]:
                 dominant = (activity_slice.seconds, context)
         fraction = min(1.0, _overlap_seconds(bucket_start, bucket_end, merged_plans) / 60.0)
@@ -523,7 +650,10 @@ def usage_report(
             session["plannedActiveSeconds"] += round(bucket_planned)
             for activity_slice, context in slices_by_bucket[bucket.bucketId]:
                 if activity_slice.state == "active" and context is not None:
-                    context_item = session["contexts"].setdefault(context.bundleId, {**_context_dict(context), "seconds": 0})
+                    context_item = session["contexts"].setdefault(
+                        context.contextId,
+                        {**_context_dict(context), "seconds": 0},
+                    )
                     context_item["seconds"] += activity_slice.seconds
 
     daily_rows = list(
@@ -569,5 +699,5 @@ def usage_report(
         "plans": plans,
         "sessions": sorted(session_list, key=lambda item: item["startAt"], reverse=True),
         "applications": sorted(app_totals.values(), key=lambda item: item["seconds"], reverse=True)[:20],
-        "titles": [],
+        "titles": sorted(title_totals.values(), key=lambda item: item["seconds"], reverse=True)[:30],
     }

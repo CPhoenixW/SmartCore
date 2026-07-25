@@ -131,10 +131,50 @@ def test_computer_activity_schema_is_additive_and_idempotent(app_env) -> None:
     with sqlite3.connect(app_env) as conn:
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         indexes = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+        context_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(computerActivityContext)")
+        }
         quick_check = conn.execute("PRAGMA quick_check").fetchone()
         foreign_keys = conn.execute("PRAGMA foreign_key_check").fetchall()
 
     assert expected_tables <= tables
     assert "idx_computer_bucket_device_start" in indexes
+    assert {"contextKind", "domain", "workspace", "documentName"} <= context_columns
     assert quick_check == ("ok",)
     assert [row for row in foreign_keys if str(row[0]).startswith("computer")] == []
+
+
+def test_existing_computer_context_table_gets_optional_structured_columns(tmp_path) -> None:
+    database = tmp_path / "legacy-computer.sqlite"
+    with sqlite3.connect(database) as conn:
+        conn.execute(
+            """
+            CREATE TABLE computerActivityContext (
+                contextId VARCHAR(32) PRIMARY KEY,
+                userId VARCHAR(32) NOT NULL,
+                fingerprint VARCHAR(64) NOT NULL,
+                bundleId VARCHAR(300) NOT NULL,
+                appName VARCHAR(200) NOT NULL,
+                windowTitle VARCHAR(300),
+                titleRedacted BOOLEAN NOT NULL DEFAULT 0,
+                firstSeenAt VARCHAR(64) NOT NULL,
+                lastSeenAt VARCHAR(64) NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO computerActivityContext VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("context-1", "user-1", "hash", "com.example.Editor", "Editor", "notes.txt", 0, "now", "now"),
+        )
+
+    _apply_sqlite_migrations(database)
+    _apply_sqlite_migrations(database)
+
+    with sqlite3.connect(database) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(computerActivityContext)")}
+        row = conn.execute(
+            "SELECT bundleId, windowTitle, contextKind, domain, workspace, documentName "
+            "FROM computerActivityContext WHERE contextId = 'context-1'"
+        ).fetchone()
+    assert {"contextKind", "domain", "workspace", "documentName"} <= columns
+    assert row == ("com.example.Editor", "notes.txt", None, None, None, None)

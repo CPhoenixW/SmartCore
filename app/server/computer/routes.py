@@ -25,14 +25,33 @@ class ActivitySliceBody(BaseModel):
     bundleId: str | None = Field(default=None, min_length=1, max_length=300)
     appName: str | None = Field(default=None, min_length=1, max_length=200)
     windowTitle: str | None = Field(default=None, max_length=300)
+    contextKind: Literal["application", "browser", "ide", "document"] | None = None
+    domain: str | None = Field(default=None, max_length=253)
+    workspace: str | None = Field(default=None, max_length=300)
+    documentName: str | None = Field(default=None, max_length=300)
     titleRedacted: bool = False
 
     @model_validator(mode="after")
     def validate_context(self) -> ActivitySliceBody:
         if self.state == "active" and (not self.bundleId or not self.appName):
             raise ValueError("active slices require bundleId and appName")
-        if self.state != "active" and any((self.bundleId, self.appName, self.windowTitle)):
+        context_values = (
+            self.bundleId,
+            self.appName,
+            self.windowTitle,
+            self.contextKind,
+            self.domain,
+            self.workspace,
+            self.documentName,
+        )
+        if self.state != "active" and any(context_values):
             raise ValueError("only active slices may include application context")
+        if self.titleRedacted and any((self.windowTitle, self.contextKind, self.domain, self.workspace, self.documentName)):
+            raise ValueError("redacted contexts may only include application identity")
+        if self.domain and any(character in self.domain for character in ("/", ":", "?", "#", "@")):
+            raise ValueError("domain must be a hostname without URL components")
+        if any(value and any(character in value for character in ("/", "\\")) for value in (self.workspace, self.documentName)):
+            raise ValueError("workspace and documentName must not include a path")
         return self
 
 
@@ -81,8 +100,10 @@ class HeartbeatBody(BaseModel):
     def validate_observed_at(self) -> HeartbeatBody:
         if self.observedAt.tzinfo is None:
             raise ValueError("observedAt must include an offset")
-        if self.currentState != "active" and self.currentAppName:
-            raise ValueError("only active heartbeats may include an application")
+        if self.currentState != "active" and any((self.currentAppName, self.currentWindowTitle)):
+            raise ValueError("only active heartbeats may include application context")
+        if self.currentWindowTitle and not self.currentAppName:
+            raise ValueError("window title requires an application")
         return self
 
 

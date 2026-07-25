@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
+import PageHeader from "@/components/base/PageHeader.vue";
 import DevicePairPanel from "@/components/device/DevicePairPanel.vue";
 import { deviceRegistryApi } from "@/api/deviceRegistry";
 import { formatDateTime } from "@/utils/date";
@@ -17,9 +18,7 @@ const lastSeenAt = computed(() => {
 </script>
 
 <template>
-  <section class="device-section-heading">
-    <div><h2>{{ t("screenDevice.title") }}</h2><p>{{ t("screenDevice.subtitle") }}</p></div>
-  </section>
+  <PageHeader compact :title="t('screenDevice.title')" :subtitle="t('screenDevice.subtitle')" />
   <section class="device-domain-grid">
     <DevicePairPanel :allowed-kinds="['screen']" :title="t('screenDevice.pairTitle')" />
     <BaseCard :title="t('screenDevice.parameters')">

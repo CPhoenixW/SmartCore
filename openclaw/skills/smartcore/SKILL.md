@@ -29,8 +29,11 @@ Use this skill for schedules, reminders, ideas, daily reports, and SmartCore-man
 
 - Images listed by the Adapter are native visual inputs. Use only facts visible in those images
   and optional user text; do not narrate internal processing or expose paths and upload IDs.
-- For a new media Idea, call `ideaCapture` once with a factual Chinese title, concise Markdown
-  description, `srcType=media`, and every attachment `uploadId`.
+- For a new media Idea, call `ideaCapture` once with a factual Chinese title of at most 10 visible
+  characters, `srcType=media`, and every attachment `uploadId`. The title must independently
+  summarize the subject; it must not be the opening fragment of the description.
+- Write the description as one concise paragraph of at most 100 Chinese characters. Do not use a
+  heading, list, or repeat the title at the beginning of the paragraph.
 - For `idea_media_edit`, do not create a new Idea. Generate a factual summary of at most 100
   characters and call `ideaMediaJobComplete` once with `jobId` and `summary`. If the image is
   unreadable, call `ideaMediaJobFail` once.

@@ -20,6 +20,7 @@ let package = Package(
             name: "SmartCoreMonitor",
             dependencies: ["SmartCoreMonitorCore"],
             linkerSettings: [
+                .linkedFramework("ApplicationServices"),
                 .linkedFramework("AppKit"),
             ]
         ),

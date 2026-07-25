@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
+import PageHeader from "@/components/base/PageHeader.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
 import EventCard from "@/components/events/EventCard.vue";
 import EventStatusToggle from "@/components/events/EventStatusToggle.vue";
@@ -85,7 +86,7 @@ function moveSelectedDate(days: number) {
 </script>
 
 <template>
-  <section class="page-heading"><div><h1>{{ t("overview.title") }}</h1><p>{{ t("overview.subtitle") }}</p></div></section>
+  <PageHeader :title="t('overview.title')" :subtitle="t('overview.subtitle')" />
   <section class="summary-grid">
     <article><span>{{ t("overview.todo") }}</span><strong>{{ todos.length }}</strong></article>
     <article><span>{{ t("overview.today") }}</span><strong>{{ todayEvents.length }}</strong></article>

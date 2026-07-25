@@ -198,6 +198,21 @@ def test_media_edit_prompt_uses_native_image_and_forbids_idea_creation() -> None
     assert '"jobId": "job-1"' in prompt
 
 
+def test_new_media_idea_prompt_requires_distinct_short_title_and_one_paragraph() -> None:
+    prompt = adapter.build_prompt(
+        {
+            "event_type": "idea_media",
+            "attachments": [{"uploadId": "upload-1", "mimeType": "image/png"}],
+        },
+        scope_file=".scope/task",
+        image_paths=["./.smartcore-media/task/image-1.png"],
+    )
+
+    assert "at most 10 visible characters" in prompt
+    assert "one description paragraph" in prompt
+    assert "must not start by repeating or continuing the title" in prompt
+
+
 def test_sanitize_event_hides_internal_attachment_paths() -> None:
     result = adapter.sanitize_event(
         {
