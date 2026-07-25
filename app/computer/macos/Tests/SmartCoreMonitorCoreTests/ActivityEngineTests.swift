@@ -5,19 +5,12 @@ import Testing
 @Suite struct ActivityEngineTests {
     private let utc = TimeZone(secondsFromGMT: 0)!
 
-    @Test func privacyFilterNormalizesAndRedactsSensitiveTitles() {
-        let filter = PrivacyFilter()
-        let normal = filter.context(bundleId: "com.apple.Safari", appName: "Safari", title: "  SmartCore\n  dashboard  ")
-        #expect(normal.windowTitle == "SmartCore dashboard")
-        #expect(!normal.titleRedacted)
-
-        let sensitive = filter.context(bundleId: "com.1password.1password", appName: "1Password", title: "Vault")
-        #expect(sensitive.windowTitle == nil)
-        #expect(sensitive.titleRedacted)
-
-        let otherManager = filter.context(bundleId: "com.lastpass.LastPass", appName: "LastPass", title: "Passwords")
-        #expect(otherManager.windowTitle == nil)
-        #expect(otherManager.titleRedacted)
+    @Test func objectiveStateUsesAnyInputIdleDurationAndPriority() {
+        #expect(ActivityStateResolver.resolve(paused: false, sleeping: false, locked: false, idleSeconds: 299) == .active)
+        #expect(ActivityStateResolver.resolve(paused: false, sleeping: false, locked: false, idleSeconds: 300) == .idle)
+        #expect(ActivityStateResolver.resolve(paused: false, sleeping: false, locked: true, idleSeconds: 0) == .locked)
+        #expect(ActivityStateResolver.resolve(paused: false, sleeping: true, locked: true, idleSeconds: 0) == .sleeping)
+        #expect(ActivityStateResolver.resolve(paused: true, sleeping: true, locked: true, idleSeconds: 0) == .paused)
     }
 
     @Test func sessionContinuesThroughShortIdleAndEndsAtBoundary() {
@@ -37,7 +30,7 @@ import Testing
     @Test func aggregatorSplitsMinutesAndCapsCoverage() throws {
         var aggregator = ActivityAggregator(timeZone: utc)
         let start = Date(timeIntervalSince1970: 1_704_067_258)
-        let context = ActivityContext(bundleId: "com.apple.Terminal", appName: "Terminal", windowTitle: "shell", titleRedacted: false)
+        let context = ActivityContext(bundleId: "com.apple.Terminal", appName: "Terminal")
         let completed = aggregator.record(state: .active, context: context, from: start, to: start.addingTimeInterval(65))
         #expect(completed.count == 2)
         #expect(try #require(completed.first).coveredSeconds == 2)
@@ -54,9 +47,9 @@ import Testing
     @Test func aggregatorCountsContextSwitches() throws {
         var aggregator = ActivityAggregator(timeZone: utc)
         let start = Date(timeIntervalSince1970: 1_704_067_200)
-        let first = ActivityContext(bundleId: "a", appName: "A", windowTitle: "First", titleRedacted: false)
-        let sameApp = ActivityContext(bundleId: "a", appName: "A", windowTitle: "Second", titleRedacted: false)
-        let second = ActivityContext(bundleId: "b", appName: "B", windowTitle: nil, titleRedacted: false)
+        let first = ActivityContext(bundleId: "a", appName: "A")
+        let sameApp = ActivityContext(bundleId: "a", appName: "A")
+        let second = ActivityContext(bundleId: "b", appName: "B")
         #expect(aggregator.record(state: .active, context: first, from: start, to: start.addingTimeInterval(5)).isEmpty)
         #expect(aggregator.record(state: .active, context: sameApp, from: start.addingTimeInterval(5), to: start.addingTimeInterval(10)).isEmpty)
         #expect(aggregator.record(state: .active, context: second, from: start.addingTimeInterval(10), to: start.addingTimeInterval(15)).isEmpty)

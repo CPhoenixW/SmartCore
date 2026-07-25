@@ -8,7 +8,7 @@ OpenClaw 和 Web 工作台；树莓派负责工位状态检测；电脑监视器
 ```text
 app/server/             FastAPI 与核心业务
 app/raspberryPi/yolo/   Pi 识别和心跳服务
-app/computer/macos/     Swift/AppKit 电脑使用监视器
+app/computer/macos/     Swift macOS 后台使用监视器
 frontend/               服务器托管的 Vue 工作台
 deploy/                 Docker 与网络配置
 scripts/                验证、发布、备份和恢复

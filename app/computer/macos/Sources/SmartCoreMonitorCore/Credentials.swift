@@ -80,6 +80,45 @@ public struct KeychainTokenStorage: TokenStorage {
     }
 }
 
+public struct FileTokenStorage: TokenStorage {
+    private let directory: URL
+
+    public init(directory: URL? = nil) {
+        self.directory = directory ?? FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        )[0].appendingPathComponent("SmartCoreMonitor", isDirectory: true)
+    }
+
+    public func read(account: String) throws -> String? {
+        let path = tokenPath(account: account)
+        guard FileManager.default.fileExists(atPath: path.path) else { return nil }
+        return String(data: try Data(contentsOf: path), encoding: .utf8)
+    }
+
+    public func write(_ token: String, account: String) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        let path = tokenPath(account: account)
+        try Data(token.utf8).write(to: path, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
+    }
+
+    public func delete(account: String) throws {
+        let path = tokenPath(account: account)
+        if FileManager.default.fileExists(atPath: path.path) {
+            try FileManager.default.removeItem(at: path)
+        }
+    }
+
+    private func tokenPath(account: String) -> URL {
+        let digest = account.utf8.reduce(into: UInt64(14_695_981_039_346_656_037)) { value, byte in
+            value = (value ^ UInt64(byte)) &* 1_099_511_628_211
+        }
+        return directory.appendingPathComponent("device-token-\(String(digest, radix: 16))")
+    }
+}
+
 public final class ConfigurationStore: @unchecked Sendable {
     private let defaults: UserDefaults
     private let key = "monitorConfiguration"

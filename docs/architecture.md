@@ -1,7 +1,7 @@
 # 系统架构
 
 SmartCore 是服务器主控的个人事务系统。Server 是唯一权威节点；Web、手机副屏、
-Raspberry Pi 和未来电脑监视器都是客户端。
+Raspberry Pi 和电脑监视器都是客户端。
 
 ```text
 Feishu -> Cloudflare/Caddy -> POST /feishu/event -> Server -> OpenClaw Adapter
@@ -29,7 +29,7 @@ Server scheduler -------------------------------> Screen or Feishu
 ```text
 app/server/             FastAPI 与全部权威业务
 app/raspberryPi/yolo/   Pi 识别和状态客户端
-app/computer/macos/     Swift/AppKit 菜单栏监视器与本地 SQLite 队列
+app/computer/macos/     Swift LaunchAgent 监视器与本地 SQLite 队列
 frontend/               Vue 工作台，构建后由 Server 托管
 openclaw/               Adapter 与 SmartCore skill
 deploy/                 Compose、Caddy 和设备配置
@@ -81,6 +81,6 @@ APScheduler 运行在 Server 内：
 - 天气从 Open-Meteo 定时刷新；临时失败保留最后一次成功缓存。
 - 日报由 Server 创建有用户 scope 的任务，OpenClaw 生成内容，Adapter 验证后持久化
   并投递。
-- 电脑活动明细与标题每日清理，日汇总不随明细过期。
+- 电脑活动明细每日清理，日汇总不随明细过期。
 
 外部模型、OpenClaw 或飞书失败不能阻断数据库、设备状态和核心提醒扫描。

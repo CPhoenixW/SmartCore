@@ -147,11 +147,13 @@ Pi 状态与照片使用 `/dev/*`；通用设备列表/配对/分发使用 `/api
 
 - `POST /api/computer/activity/batch`：computer 设备 token 上传 schema v1 分钟桶，
   每批最多 120 个；Server 以 `(deviceId, bucketStart)` 替换并确认时间。
-- `POST /api/computer/heartbeat`：同一凭证上报状态、权限、暂停、版本和队列深度。
+- `POST /api/computer/heartbeat`：同一凭证上报状态、当前应用、版本和队列深度；旧版
+  标题与权限字段仍接受但不再保存。
 - `GET /api/computer/status?deviceId=...`：登录 owner 读取当前状态；心跳超过 120 秒为
-  `offline`。
+  `offline`。响应包含基于当前 Plan、电脑状态和同用户新鲜 Pi 状态的确定性 analysis、
+  reason codes 与算法版本。
 - `GET /api/computer/usage?deviceId=...&range=today|7d|30d&timezone=...`：登录 owner
-  读取状态总量、Plan 区间并集交集、时间线、会话、应用与标题。
+  读取状态总量、Plan 区间并集交集、时间线、会话与应用。
 
 上传不接受 `userId` 或其他 owner 字段。非 computer token 返回 403，跨用户浏览器
 查询返回 404。会话的 `inference` 和上下文的 `classification` 在 v1 恒为 null。

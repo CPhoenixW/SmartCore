@@ -11,14 +11,10 @@ public enum ActivityState: String, Codable, Sendable {
 public struct ActivityContext: Codable, Hashable, Sendable {
     public let bundleId: String
     public let appName: String
-    public let windowTitle: String?
-    public let titleRedacted: Bool
 
-    public init(bundleId: String, appName: String, windowTitle: String?, titleRedacted: Bool) {
+    public init(bundleId: String, appName: String) {
         self.bundleId = bundleId
         self.appName = appName
-        self.windowTitle = windowTitle
-        self.titleRedacted = titleRedacted
     }
 }
 
@@ -27,16 +23,12 @@ public struct ActivitySlice: Codable, Equatable, Sendable {
     public var seconds: Int
     public let bundleId: String?
     public let appName: String?
-    public let windowTitle: String?
-    public let titleRedacted: Bool
 
     public init(state: ActivityState, seconds: Int, context: ActivityContext?) {
         self.state = state
         self.seconds = seconds
         bundleId = context?.bundleId
         appName = context?.appName
-        windowTitle = context?.windowTitle
-        titleRedacted = context?.titleRedacted ?? false
     }
 }
 
@@ -79,32 +71,23 @@ public struct MonitorHeartbeat: Codable, Sendable {
     public let currentState: ActivityState
     public let observedAt: Date
     public let currentAppName: String?
-    public let currentWindowTitle: String?
     public let appVersion: String
     public let osVersion: String
-    public let accessibilityGranted: Bool
-    public let paused: Bool
     public let queueDepth: Int
 
     public init(
         currentState: ActivityState,
         observedAt: Date,
         currentAppName: String?,
-        currentWindowTitle: String?,
         appVersion: String,
         osVersion: String,
-        accessibilityGranted: Bool,
-        paused: Bool,
         queueDepth: Int
     ) {
         self.currentState = currentState
         self.observedAt = observedAt
         self.currentAppName = currentAppName
-        self.currentWindowTitle = currentWindowTitle
         self.appVersion = appVersion
         self.osVersion = osVersion
-        self.accessibilityGranted = accessibilityGranted
-        self.paused = paused
         self.queueDepth = queueDepth
     }
 }

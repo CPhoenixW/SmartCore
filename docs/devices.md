@@ -85,22 +85,27 @@ unknown/offline、照片请求只上传一次、其他设备 token 无法冒用�
 
 ## Mac 使用监视器
 
-`app/computer/macos` 是 Swift/AppKit 菜单栏开发版。每 5 秒读取前台应用、过滤后的
-窗口标题和输入空闲时间，并监听锁屏、休眠、唤醒和手动暂停；每分钟生成一个桶。
-状态只有 `active`、`idle`、`locked`、`sleeping`、`paused`，`offline` 由 Server
-根据心跳超时派生。只有 active slice 携带应用上下文。
+`app/computer/macos` 是无界面的 Swift 用户级 LaunchAgent。每 5 秒读取前台应用和
+任意键鼠输入空闲时间，并监听锁屏、休眠和唤醒；状态或应用变化时立即同步，每 30 秒
+发送心跳，每分钟生成一个桶。状态为 `active`、`idle`、`locked`、`sleeping`；旧版
+`paused` 仍兼容，`offline` 由 Server 根据心跳超时派生。只有 active slice 携带应用。
 
 会话从活跃开始，短暂空闲继续；空闲达到 10 分钟、锁屏、休眠或暂停即结束。未确认
 桶保存在本地 SQLite，每批最多上传 120 个，成功确认后删除，失败指数退避。队列按
-`deviceId` 隔离，重新配对不会把旧身份数据发给新用户；token 只存 Keychain。
+`deviceId` 隔离，重新配对不会把旧身份数据发给新用户；token 存在应用支持目录的
+owner-only `0600` 文件中。旧开发版 Keychain token 由安装脚本一次性迁移且不输出。
 
-默认屏蔽密码管理器、Passwords 与 Keychain Access 标题。客户端不采集 URL、键盘
-内容、剪贴板或截图。启动开发版：
+客户端不采集窗口标题、URL、键盘内容、剪贴板或截图，也不需要辅助功能权限。测试与
+安装：
 
 ```bash
-swift run --package-path app/computer/macos SmartCoreMonitor
+swift test --package-path app/computer/macos
+app/computer/macos/scripts/install.sh
 ```
 
-在工作台“设备 -> Computer”创建配对并复制 JSON 到菜单栏应用。设备管理页按
-RaspberryPi、Computer、Screen 和 Feishu Bot 四类隔离配对、管理与参数。当前版本不安装登录
-项、不签名发布，也不判断效率、分心或任务归属。
+新设备在工作台“设备 -> Computer”创建配对，将配对 JSON 通过标准输入交给
+`SmartCoreMonitor pair`，在工作台确认后由客户端激活。安装脚本把签名可执行文件放在
+`~/Library/Application Support/SmartCoreMonitor/bin`，并注册登录自启和异常重启。
+设备管理页按 RaspberryPi、Computer、Screen 和 Feishu Bot 四类隔离配对、管理与参数。
+Server 可结合当前 Plan、电脑状态与同用户新鲜 Pi 状态生成带 reason codes 的确定性
+判断，但不输出效率、分心或任务内容推断。

@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.server.auth.security import create_session_token
-from app.server.computer.service import cleanup_activity
+from app.server.computer.service import cleanup_activity, monitor_status_dict
 from app.server.db.session import SessionLocal
 from app.server.main import create_app
 from app.server.new_core.models import (
@@ -15,6 +15,7 @@ from app.server.new_core.models import (
     ComputerActivityBucket,
     ComputerActivityContext,
     ComputerDailyUsage,
+    ComputerMonitorStatus,
     Device,
     EvtBase,
     PlanEvt,
@@ -62,6 +63,24 @@ def _setup_computer(client: TestClient) -> dict:
     return pair_device(client, name="Development Mac", kind="computer")
 
 
+def test_stale_status_hides_last_application() -> None:
+    last_heartbeat = (datetime.now(UTC) - timedelta(minutes=3)).isoformat()
+    row = ComputerMonitorStatus(
+        deviceId="computer",
+        userId="user",
+        currentState="active",
+        currentAppName="Xcode",
+        stateSince=(datetime.now(UTC) - timedelta(hours=1)).isoformat(),
+        observedAt=last_heartbeat,
+        lastHeartbeatAt=last_heartbeat,
+    )
+    status = monitor_status_dict(row)
+    assert status is not None
+    assert status["state"] == "offline"
+    assert status["stateSince"] == last_heartbeat
+    assert status["currentAppName"] is None
+
+
 def test_computer_upload_is_device_owned_idempotent_and_reported(app_env) -> None:
     client = TestClient(create_app())
     paired = _setup_computer(client)
@@ -106,7 +125,12 @@ def test_computer_upload_is_device_owned_idempotent_and_reported(app_env) -> Non
 
     status = client.get("/api/computer/status", params={"deviceId": device_id})
     assert status.status_code == 200
-    assert status.json()["data"]["state"] == "active"
+    status_data = status.json()["data"]
+    assert status_data["state"] == "active"
+    assert status_data["currentWindowTitle"] is None
+    assert status_data["analysis"]["state"] == "plan_active"
+    assert status_data["analysis"]["currentPlan"]["title"] == "Implement monitor"
+    assert status_data["analysis"]["reasonCodes"] == ["computer.active", "plan.current"]
     report = client.get(
         "/api/computer/usage",
         params={"deviceId": device_id, "range": "today", "timezone": "Asia/Singapore"},
@@ -121,7 +145,8 @@ def test_computer_upload_is_device_owned_idempotent_and_reported(app_env) -> Non
     assert data["sessions"][0]["sessionId"] == "session-1"
     assert data["sessions"][0]["inference"] is None
     assert data["applications"][0]["bundleId"] == "com.apple.dt.Xcode"
-    assert data["titles"][0]["classification"] is None
+    assert data["titles"] == []
+    assert data["sessions"][0]["contexts"][0]["windowTitle"] is None
 
     db = SessionLocal()
     try:
@@ -157,6 +182,45 @@ def test_computer_routes_reject_wrong_device_kind_and_cross_owner(app_env) -> No
         params={"deviceId": computer["device"]["deviceId"]},
     )
     assert response.status_code == 404
+
+
+def test_computer_analysis_uses_fresh_owned_pi_presence(app_env) -> None:
+    client = TestClient(create_app())
+    computer = _setup_computer(client)
+    pi = pair_device(client, name="Desk Pi", kind="pi")
+    pi_heartbeat = {
+        "devId": pi["device"]["deviceId"],
+        "currentTime": datetime.now(UTC).isoformat(),
+        "present": True,
+        "persons": [],
+        "stateConfidence": 0.9,
+        "state": "working",
+    }
+    assert client.post(
+        "/dev/heartbeat",
+        json=pi_heartbeat,
+        headers={"X-SmartCore-Device-Token": pi["deviceToken"]},
+    ).status_code == 200
+
+    computer_heartbeat = {
+        "currentState": "idle",
+        "observedAt": datetime.now(UTC).isoformat(),
+        "appVersion": "0.2.0",
+        "osVersion": "macOS",
+        "queueDepth": 0,
+    }
+    assert client.post(
+        "/api/computer/heartbeat",
+        json=computer_heartbeat,
+        headers={"X-SmartCore-Device-Token": computer["deviceToken"]},
+    ).status_code == 200
+    status = client.get(
+        "/api/computer/status",
+        params={"deviceId": computer["device"]["deviceId"]},
+    ).json()["data"]
+    assert status["analysis"]["state"] == "at_desk_inactive"
+    assert status["analysis"]["presence"]["deviceId"] == pi["device"]["deviceId"]
+    assert status["analysis"]["reasonCodes"] == ["computer.idle", "presence.present"]
 
 
 def test_computer_upload_validation_and_retention_preserve_daily_summary(app_env) -> None:

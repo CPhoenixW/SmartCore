@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.server.auth.security import require_authenticated_user_id
 from app.server.computer import service
 from app.server.db.session import get_db
-from app.server.new_core.models import ComputerMonitorStatus, LifeDevice
+from app.server.new_core.models import LifeDevice
 from app.server.user_device.service import requireDevice
 
 DEVICE_TOKEN_HEADER = "X-SmartCore-Device-Token"
@@ -73,14 +73,16 @@ class HeartbeatBody(BaseModel):
     currentWindowTitle: str | None = Field(default=None, max_length=300)
     appVersion: str = Field(min_length=1, max_length=50)
     osVersion: str = Field(min_length=1, max_length=100)
-    accessibilityGranted: bool
-    paused: bool
+    accessibilityGranted: bool = True
+    paused: bool = False
     queueDepth: int = Field(ge=0, le=1_000_000)
 
     @model_validator(mode="after")
     def validate_observed_at(self) -> HeartbeatBody:
         if self.observedAt.tzinfo is None:
             raise ValueError("observedAt must include an offset")
+        if self.currentState != "active" and self.currentAppName:
+            raise ValueError("only active heartbeats may include an application")
         return self
 
 
@@ -132,7 +134,7 @@ def status(
     db: Session = Depends(get_db),
 ) -> dict:
     device = _owned_computer(db, userId, deviceId)
-    return {"ok": True, "data": service.monitor_status_dict(db.get(ComputerMonitorStatus, device.deviceId))}
+    return {"ok": True, "data": service.monitor_status_with_analysis(db, device=device)}
 
 
 @router.get("/usage")

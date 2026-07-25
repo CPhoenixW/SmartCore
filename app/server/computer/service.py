@@ -16,6 +16,7 @@ from app.server.new_core.models import (
     ComputerDailyAppUsage,
     ComputerDailyUsage,
     ComputerMonitorStatus,
+    DeviceStateLog,
     EvtBase,
     LifeDevice,
     PlanEvt,
@@ -36,8 +37,8 @@ def _utc_text(value: str | datetime) -> str:
     return _aware(value).astimezone(UTC).replace(microsecond=0).isoformat()
 
 
-def _fingerprint(bundle_id: str, title: str | None) -> str:
-    return hashlib.sha256(f"{bundle_id}\0{title or ''}".encode()).hexdigest()
+def _fingerprint(bundle_id: str) -> str:
+    return hashlib.sha256(f"{bundle_id}\0".encode()).hexdigest()
 
 
 def _context_dict(row: ComputerActivityContext) -> dict[str, Any]:
@@ -45,8 +46,8 @@ def _context_dict(row: ComputerActivityContext) -> dict[str, Any]:
         "contextId": row.contextId,
         "bundleId": row.bundleId,
         "appName": row.appName,
-        "windowTitle": row.windowTitle,
-        "titleRedacted": row.titleRedacted,
+        "windowTitle": None,
+        "titleRedacted": False,
         "classification": None,
     }
 
@@ -57,11 +58,9 @@ def _resolve_context(
     user_id: str,
     bundle_id: str,
     app_name: str,
-    window_title: str | None,
-    title_redacted: bool,
     seen_at: str,
 ) -> ComputerActivityContext:
-    fingerprint = _fingerprint(bundle_id, window_title)
+    fingerprint = _fingerprint(bundle_id)
     row = db.scalar(
         select(ComputerActivityContext).where(
             ComputerActivityContext.userId == user_id,
@@ -74,8 +73,8 @@ def _resolve_context(
             fingerprint=fingerprint,
             bundleId=bundle_id,
             appName=app_name,
-            windowTitle=window_title,
-            titleRedacted=title_redacted,
+            windowTitle=None,
+            titleRedacted=False,
             firstSeenAt=seen_at,
             lastSeenAt=seen_at,
         )
@@ -83,7 +82,8 @@ def _resolve_context(
         db.flush()
     else:
         row.appName = app_name
-        row.titleRedacted = title_redacted
+        row.windowTitle = None
+        row.titleRedacted = False
         row.lastSeenAt = max(row.lastSeenAt, seen_at)
     return row
 
@@ -197,8 +197,6 @@ def ingest_activity(
                     user_id=device.userId,
                     bundle_id=slice_item["bundleId"],
                     app_name=slice_item["appName"],
-                    window_title=slice_item.get("windowTitle"),
-                    title_redacted=slice_item["titleRedacted"],
                     seen_at=bucket_start,
                 )
                 context_id = context.contextId
@@ -227,13 +225,13 @@ def record_heartbeat(db: Session, *, device: LifeDevice, payload: dict[str, Any]
         db.add(row)
     previous_state = row.currentState
     row.currentState = payload["currentState"]
-    row.currentAppName = payload.get("currentAppName")
-    row.currentWindowTitle = payload.get("currentWindowTitle")
+    row.currentAppName = payload.get("currentAppName") if row.currentState == "active" else None
+    row.currentWindowTitle = None
     row.observedAt = _utc_text(payload["observedAt"])
     row.appVersion = payload["appVersion"]
     row.osVersion = payload["osVersion"]
-    row.accessibilityGranted = payload["accessibilityGranted"]
-    row.paused = payload["paused"]
+    row.accessibilityGranted = True
+    row.paused = row.currentState == "paused"
     row.queueDepth = payload["queueDepth"]
     row.lastHeartbeatAt = heartbeat_at
     if previous_state != row.currentState or not row.stateSince:
@@ -254,18 +252,129 @@ def monitor_status_dict(row: ComputerMonitorStatus | None) -> dict[str, Any] | N
         "deviceId": row.deviceId,
         "state": state,
         "reportedState": row.currentState,
-        "stateSince": row.stateSince,
+        "stateSince": row.lastHeartbeatAt if stale else row.stateSince,
         "observedAt": row.observedAt,
-        "currentAppName": row.currentAppName,
-        "currentWindowTitle": row.currentWindowTitle,
+        "currentAppName": row.currentAppName if state == "active" else None,
+        "currentWindowTitle": None,
         "appVersion": row.appVersion,
         "osVersion": row.osVersion,
-        "accessibilityGranted": row.accessibilityGranted,
+        "accessibilityGranted": True,
         "paused": row.paused,
         "queueDepth": row.queueDepth,
         "lastHeartbeatAt": row.lastHeartbeatAt,
         "stale": stale,
     }
+
+
+def _current_plans(db: Session, *, user_id: str, at: datetime) -> list[dict[str, Any]]:
+    rows = db.execute(
+        select(EvtBase, PlanEvt)
+        .join(PlanEvt, PlanEvt.evtId == EvtBase.evtId)
+        .where(EvtBase.userId == user_id, EvtBase.stat != "cancelled")
+    ).all()
+    result: list[dict[str, Any]] = []
+    for base, plan in rows:
+        try:
+            start = _aware(plan.stTime).astimezone(UTC)
+        except (TypeError, ValueError):
+            continue
+        end = start + timedelta(minutes=plan.durationMin)
+        if start <= at < end:
+            result.append(
+                {
+                    "evtId": base.evtId,
+                    "title": base.title,
+                    "startAt": start.isoformat(),
+                    "endAt": end.isoformat(),
+                }
+            )
+    return sorted(result, key=lambda item: item["startAt"], reverse=True)
+
+
+def _current_presence(db: Session, *, user_id: str, at: datetime) -> dict[str, Any] | None:
+    device_ids = list(
+        db.scalars(
+            select(LifeDevice.deviceId).where(
+                LifeDevice.userId == user_id,
+                LifeDevice.deviceKind.in_(("pi", "raspberryPi")),
+                LifeDevice.stat == "active",
+            )
+        )
+    )
+    if not device_ids:
+        return None
+    row = db.scalar(
+        select(DeviceStateLog)
+        .where(DeviceStateLog.deviceId.in_(device_ids))
+        .order_by(DeviceStateLog.seenAt.desc())
+    )
+    if row is None:
+        return None
+    try:
+        observed_at = _aware(row.seenAt).astimezone(UTC)
+    except ValueError:
+        return None
+    if at - observed_at > timedelta(seconds=120):
+        return None
+    meta = row.meta if isinstance(row.meta, dict) else {}
+    present = meta.get("present") if isinstance(meta.get("present"), bool) else None
+    if present is None and row.state in {"working", "away"}:
+        present = row.state == "working"
+    return {
+        "deviceId": row.deviceId,
+        "state": row.state,
+        "present": present,
+        "observedAt": row.seenAt,
+    }
+
+
+def _current_analysis(db: Session, *, device: LifeDevice, status: dict[str, Any]) -> dict[str, Any]:
+    computed_at = datetime.now(UTC)
+    plans = _current_plans(db, user_id=device.userId, at=computed_at)
+    plan = plans[0] if plans else None
+    presence = _current_presence(db, user_id=device.userId, at=computed_at)
+    computer_state = status["state"]
+    reason_codes = [f"computer.{computer_state}"]
+    confidence = "high"
+
+    if computer_state == "offline":
+        analysis_state = "unknown"
+        confidence = "low"
+    elif computer_state == "active" and plan is not None:
+        analysis_state = "plan_active"
+        reason_codes.append("plan.current")
+    elif computer_state == "active":
+        analysis_state = "computer_active"
+    elif computer_state in {"idle", "locked"} and presence and presence["present"] is True:
+        analysis_state = "at_desk_inactive"
+        reason_codes.append("presence.present")
+    elif computer_state in {"idle", "locked"} and presence and presence["present"] is False:
+        analysis_state = "away"
+        reason_codes.append("presence.away")
+    elif computer_state in {"idle", "locked"}:
+        analysis_state = "computer_inactive"
+        confidence = "medium"
+    elif computer_state == "sleeping":
+        analysis_state = "computer_sleeping"
+    else:
+        analysis_state = "monitor_paused"
+
+    return {
+        "state": analysis_state,
+        "confidence": confidence,
+        "reasonCodes": reason_codes,
+        "computedAt": computed_at.isoformat(),
+        "currentPlan": plan,
+        "presence": presence,
+        "algorithmVersion": 1,
+    }
+
+
+def monitor_status_with_analysis(db: Session, *, device: LifeDevice) -> dict[str, Any] | None:
+    status = monitor_status_dict(db.get(ComputerMonitorStatus, device.deviceId))
+    if status is not None:
+        status["analysis"] = _current_analysis(db, device=device, status=status)
+    return status
 
 
 def cleanup_activity(db: Session, *, retention_days: int, now: datetime | None = None) -> int:
@@ -354,7 +463,6 @@ def usage_report(
 
     totals = {state: 0 for state in STATES}
     app_totals: dict[str, dict[str, Any]] = {}
-    title_totals: dict[tuple[str, str], dict[str, Any]] = {}
     daily_planned: dict[str, int] = defaultdict(int)
     planned_active = 0.0
     timeline: list[dict[str, Any]] = []
@@ -374,10 +482,6 @@ def usage_report(
             app = app_totals.setdefault(context.bundleId, {"bundleId": context.bundleId, "appName": context.appName, "seconds": 0})
             app["appName"] = context.appName
             app["seconds"] += activity_slice.seconds
-            if context.windowTitle:
-                key = (context.bundleId, context.windowTitle)
-                title = title_totals.setdefault(key, {**_context_dict(context), "seconds": 0})
-                title["seconds"] += activity_slice.seconds
             if dominant is None or activity_slice.seconds > dominant[0]:
                 dominant = (activity_slice.seconds, context)
         fraction = min(1.0, _overlap_seconds(bucket_start, bucket_end, merged_plans) / 60.0)
@@ -419,7 +523,7 @@ def usage_report(
             session["plannedActiveSeconds"] += round(bucket_planned)
             for activity_slice, context in slices_by_bucket[bucket.bucketId]:
                 if activity_slice.state == "active" and context is not None:
-                    context_item = session["contexts"].setdefault(context.contextId, {**_context_dict(context), "seconds": 0})
+                    context_item = session["contexts"].setdefault(context.bundleId, {**_context_dict(context), "seconds": 0})
                     context_item["seconds"] += activity_slice.seconds
 
     daily_rows = list(
@@ -451,7 +555,7 @@ def usage_report(
         for session in sessions.values():
             session["contexts"] = sorted(session["contexts"].values(), key=lambda item: item["seconds"], reverse=True)
             session_list.append(session)
-    status = monitor_status_dict(db.get(ComputerMonitorStatus, device.deviceId))
+    status = monitor_status_with_analysis(db, device=device)
     return {
         "deviceId": device.deviceId,
         "range": range_key,
@@ -465,5 +569,5 @@ def usage_report(
         "plans": plans,
         "sessions": sorted(session_list, key=lambda item: item["startAt"], reverse=True),
         "applications": sorted(app_totals.values(), key=lambda item: item["seconds"], reverse=True)[:20],
-        "titles": sorted(title_totals.values(), key=lambda item: item["seconds"], reverse=True)[:20] if range_key == "today" else [],
+        "titles": [],
     }

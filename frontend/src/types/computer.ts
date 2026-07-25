@@ -1,6 +1,16 @@
 export type ComputerState = "active" | "idle" | "locked" | "sleeping" | "paused" | "offline";
 export type ComputerRange = "today" | "7d" | "30d";
 
+export interface ComputerAnalysis {
+  state: "unknown" | "plan_active" | "computer_active" | "at_desk_inactive" | "away" | "computer_inactive" | "computer_sleeping" | "monitor_paused";
+  confidence: "high" | "medium" | "low";
+  reasonCodes: string[];
+  computedAt: string;
+  currentPlan: { evtId: string; title: string; startAt: string; endAt: string } | null;
+  presence: { deviceId: string; state: string; present: boolean | null; observedAt: string } | null;
+  algorithmVersion: number;
+}
+
 export interface ComputerMonitorStatus {
   deviceId: string;
   state: ComputerState;
@@ -16,6 +26,7 @@ export interface ComputerMonitorStatus {
   queueDepth: number;
   lastHeartbeatAt: string;
   stale: boolean;
+  analysis: ComputerAnalysis;
 }
 
 export interface ComputerContextUsage {

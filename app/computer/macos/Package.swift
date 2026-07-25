@@ -21,7 +21,6 @@ let package = Package(
             dependencies: ["SmartCoreMonitorCore"],
             linkerSettings: [
                 .linkedFramework("AppKit"),
-                .linkedFramework("ApplicationServices"),
             ]
         ),
         .testTarget(
@@ -29,6 +28,12 @@ let package = Package(
             dependencies: [
                 "SmartCoreMonitorCore",
                 .product(name: "Testing", package: "swift-testing"),
+            ],
+            linkerSettings: [
+                .unsafeFlags([
+                    "-L", "/Library/Developer/CommandLineTools/Library/Developer/usr/lib",
+                    "-Xlinker", "-rpath", "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/usr/lib",
+                ]),
             ]
         ),
     ]

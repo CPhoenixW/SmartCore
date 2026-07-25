@@ -106,12 +106,18 @@ scope、审计、幂等和回滚，也会扩大密钥与生产数据暴露面。
 
 状态：已采用。
 
-v1 只记录 active/idle/locked/sleeping/paused 与过滤后的应用上下文。Plan 关联只按
-时间区间并集求交，不从窗口标题推断任务，也不输出效率、分心、分类或建议。
+v1 只记录 active/idle/locked/sleeping 与应用 Bundle ID/名称。Mac 端是用户会话中的
+无界面 LaunchAgent，不采集窗口标题，也不要求辅助功能权限。Plan 关联只按时间区间
+并集求交，不从应用名推断任务，也不输出效率、分心、分类或建议。
+
+设备 token 使用应用支持目录内的 `0600` 文件。原因是无 Developer ID 的 ad-hoc
+可执行文件每次构建都会改变 Keychain 代码要求，后台升级会阻塞等待授权；token 本身
+只具备 computer 设备范围，Server 仍只保存哈希。旧 Keychain token 仅一次性迁移。
 
 原因：先建立可核对的数据质量、隐私和离线同步基础。`sessionId`、`contextId`、
 `schemaVersion` 及空 inference/classification 保留扩展点；未来 AI 以 annotation
-追加结论，不修改原始活动事实。
+追加结论，不修改原始活动事实。Server 可以用当前 Plan、电脑状态和同用户新鲜 Pi
+状态生成带 reason codes 与算法版本的确定性 analysis；该派生视图可重算且不写回事实。
 
 ## 当前兼容与技术债
 

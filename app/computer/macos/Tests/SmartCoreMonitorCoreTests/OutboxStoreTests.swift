@@ -32,8 +32,19 @@ import Testing
         #expect(first.keychainAccount != second.keychainAccount)
     }
 
+    @Test func fileTokenStorageUsesOwnerOnlyPermissions() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storage = FileTokenStorage(directory: directory)
+        try storage.write("secret", account: "device")
+        #expect(try storage.read(account: "device") == "secret")
+        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        let attributes = try FileManager.default.attributesOfItem(atPath: try #require(files.first).path)
+        #expect(attributes[.posixPermissions] as? Int == 0o600)
+    }
+
     private func makeBucket(at date: Date) -> ActivityBucket {
-        let context = ActivityContext(bundleId: "com.apple.Terminal", appName: "Terminal", windowTitle: "shell", titleRedacted: false)
+        let context = ActivityContext(bundleId: "com.apple.Terminal", appName: "Terminal")
         return ActivityBucket(
             bucketStart: date,
             timezone: "UTC",

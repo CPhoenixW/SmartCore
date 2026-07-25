@@ -40,6 +40,15 @@ const maxDaily = computed(() => Math.max(1, ...(report.value?.daily ?? []).map((
 const maxApp = computed(() => Math.max(1, ...(report.value?.applications ?? []).map((item) => item.seconds)));
 
 function stateLabel(state: string) { return t(`computer.state.${state}`); }
+function analysisLabel(state: string) { return t(`computer.analysisState.${state}`); }
+function analysisBasis() {
+  const analysis = monitor.value?.analysis;
+  if (!analysis) return t("common.notSet");
+  if (analysis.currentPlan) return analysis.currentPlan.title;
+  if (analysis.presence?.present === true) return t("computer.analysisPresencePresent");
+  if (analysis.presence?.present === false) return t("computer.analysisPresenceAway");
+  return t("computer.analysisComputerOnly");
+}
 function timeLabel(value: string) {
   return new Date(value).toLocaleTimeString(locale.value === "en-US" ? "en-US" : "zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
@@ -66,9 +75,8 @@ function intervalStyle(startAt: string, endAt: string) {
         <div class="segmented" role="group" :aria-label="t('computer.range')"><button v-for="item in (['today', '7d', '30d'] as ComputerRange[])" :key="item" type="button" :class="{ active: range === item }" @click="range = item">{{ t(`computer.rangeOption.${item}`) }}</button></div>
       </div>
 
-      <div v-if="monitor && (!monitor.accessibilityGranted || monitor.paused || monitor.state === 'offline' || monitor.queueDepth > 5)" class="computer-alert" :class="`computer-alert--${monitor.state}`">
-        <strong v-if="!monitor.accessibilityGranted">{{ t("computer.accessibilityMissing") }}</strong>
-        <strong v-else-if="monitor.paused">{{ t("computer.paused") }}</strong>
+      <div v-if="monitor && (monitor.paused || monitor.state === 'offline' || monitor.queueDepth > 5)" class="computer-alert" :class="`computer-alert--${monitor.state}`">
+        <strong v-if="monitor.paused">{{ t("computer.paused") }}</strong>
         <strong v-else-if="monitor.state === 'offline'">{{ t("computer.offline") }}</strong>
         <strong v-else>{{ t("computer.syncDelayed", { count: monitor.queueDepth }) }}</strong>
       </div>
@@ -77,9 +85,9 @@ function intervalStyle(startAt: string, endAt: string) {
         <div v-if="monitor" class="computer-current">
           <span class="computer-state-dot" :class="`computer-state-dot--${monitor.state}`" />
           <div class="computer-current__identity"><strong>{{ stateLabel(monitor.state) }}</strong><span>{{ currentDuration() }}</span></div>
-          <div><span>{{ t("computer.context") }}</span><strong>{{ monitor.currentAppName || t("common.notSet") }}</strong><small>{{ monitor.currentWindowTitle || t("computer.noTitle") }}</small></div>
+          <div><span>{{ t("computer.context") }}</span><strong>{{ monitor.currentAppName || t("common.notSet") }}</strong></div>
+          <div><span>{{ t("computer.analysis") }}</span><strong>{{ analysisLabel(monitor.analysis.state) }}</strong><small>{{ analysisBasis() }}</small></div>
           <div><span>{{ t("computer.lastSync") }}</span><strong>{{ formatDateTime(monitor.lastHeartbeatAt) }}</strong><small>{{ t("computer.queue", { count: monitor.queueDepth }) }}</small></div>
-          <div><span>{{ t("computer.permission") }}</span><strong>{{ monitor.accessibilityGranted ? t("computer.granted") : t("computer.notGranted") }}</strong><small>{{ monitor.appVersion }}</small></div>
         </div>
         <EmptyState v-else :text="t('computer.waitingHeartbeat')" />
       </BaseCard>
@@ -134,7 +142,7 @@ function intervalStyle(startAt: string, endAt: string) {
       <aside class="session-drawer" role="dialog" aria-modal="true" :aria-label="t('computer.sessionDetail')">
         <header><div><h2>{{ t("computer.sessionDetail") }}</h2><p>{{ timeLabel(selectedSession.startAt) }}–{{ timeLabel(selectedSession.endAt) }}</p></div><button class="icon-button" type="button" :aria-label="t('common.close')" @click="selectedSession = null">×</button></header>
         <dl><div><dt>{{ t("computer.activeTime") }}</dt><dd>{{ durationLabel(selectedSession.activeSeconds) }}</dd></div><div><dt>{{ t("computer.plannedActive") }}</dt><dd>{{ durationLabel(selectedSession.plannedActiveSeconds) }}</dd></div><div><dt>{{ t("computer.switches") }}</dt><dd>{{ selectedSession.switchCount }}</dd></div></dl>
-        <div class="session-contexts"><article v-for="context in selectedSession.contexts" :key="context.contextId"><div><strong>{{ context.appName }}</strong><small>{{ context.windowTitle || (context.titleRedacted ? t("computer.redactedTitle") : t("computer.noTitle")) }}</small></div><span>{{ durationLabel(context.seconds) }}</span></article></div>
+        <div class="session-contexts"><article v-for="context in selectedSession.contexts" :key="context.contextId"><div><strong>{{ context.appName }}</strong><small>{{ context.bundleId }}</small></div><span>{{ durationLabel(context.seconds) }}</span></article></div>
       </aside>
     </div>
   </div>

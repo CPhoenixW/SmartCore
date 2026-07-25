@@ -15,7 +15,7 @@ Server scheduler -------------------> Screen or Feishu
 
 - `app/server` owns SQLite, authorization, business rules, scheduling, integrations, and Web.
 - `app/raspberryPi/yolo` is an outbound-only recognition/status client.
-- `app/computer` is a future desktop monitor boundary and currently has no implementation.
+- `app/computer/macos` is the headless macOS usage monitor and local offline queue.
 - `frontend` is the Vue workbench served at `/work` after build.
 - `openclaw` contains the Adapter and SmartCore skill; it never reads the database directly.
 

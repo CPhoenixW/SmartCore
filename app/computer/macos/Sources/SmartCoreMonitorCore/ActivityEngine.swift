@@ -1,31 +1,18 @@
 import Foundation
 
-public struct PrivacyFilter: Sendable {
-    private let sensitiveFragments: [String]
-
-    public init(sensitiveFragments: [String] = [
-        "1password", "bitwarden", "dashlane", "enpass", "keepass", "keeper",
-        "lastpass", "nordpass", "protonpass", "keychainaccess", "com.apple.passwords",
-    ]) {
-        self.sensitiveFragments = sensitiveFragments.map { $0.lowercased() }
-    }
-
-    public func context(bundleId: String, appName: String, title: String?) -> ActivityContext {
-        let key = "\(bundleId) \(appName)".lowercased()
-        let redacted = sensitiveFragments.contains { key.contains($0) }
-        let normalized = redacted ? nil : Self.normalizedTitle(title)
-        return ActivityContext(
-            bundleId: String(bundleId.prefix(300)),
-            appName: String(appName.prefix(200)),
-            windowTitle: normalized,
-            titleRedacted: redacted
-        )
-    }
-
-    private static func normalizedTitle(_ value: String?) -> String? {
-        guard let value else { return nil }
-        let compact = value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
-        return compact.isEmpty ? nil : String(compact.prefix(300))
+public enum ActivityStateResolver {
+    public static func resolve(
+        paused: Bool,
+        sleeping: Bool,
+        locked: Bool,
+        idleSeconds: TimeInterval,
+        idleThreshold: TimeInterval = 300
+    ) -> ActivityState {
+        if paused { return .paused }
+        if sleeping { return .sleeping }
+        if locked { return .locked }
+        if idleSeconds >= idleThreshold { return .idle }
+        return .active
     }
 }
 
