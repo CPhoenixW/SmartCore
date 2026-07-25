@@ -37,6 +37,8 @@ OpenClaw -> SmartCore /agent/* -> 数据或反馈 -> Feishu
 
 Adapter 由 SmartCore Compose 管理；OpenClaw Gateway 是服务器上的独立 user service。
 OpenClaw 不读取 SQLite、Docker volume、备份、`.env` 或生产密钥。
+SmartCore Agent 只加载 `smartcore` skill，并只暴露执行 bundled helper 所需的 `exec`
+工具；其他 OpenClaw skills 和工具不进入该 Agent 的上下文。
 
 每个业务任务至少包含：
 

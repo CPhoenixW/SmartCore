@@ -50,10 +50,12 @@ status() {
     command -v jq >/dev/null 2>&1 || die "jq is required"
     [[ -f "$CONFIG_PATH" ]] || die "OpenClaw config is missing: $CONFIG_PATH"
     validate_active_config
-    local model input
+    local model input skills tools
     model="$("$(openclaw_bin)" models --agent smartcore status --json | jq -r '.resolvedDefault // empty')"
     input="$("$(openclaw_bin)" models --agent smartcore list --json | jq -r '.models[] | select(.key == "tokendance/qwen3.7-plus") | .input')"
-    log "smartcore_model=${model:-missing} qwen_input=${input:-missing} gateway=$(systemctl --user is-active "$SERVICE_NAME" 2>/dev/null || true)"
+    skills="$(jq -r '.agents.list[] | select(.id == "smartcore") | (.skills // []) | join(",")' "$CONFIG_PATH")"
+    tools="$(jq -r '.agents.list[] | select(.id == "smartcore") | (.tools.allow // []) | join(",")' "$CONFIG_PATH")"
+    log "smartcore_model=${model:-missing} qwen_input=${input:-missing} skills=${skills:-missing} tools=${tools:-missing} gateway=$(systemctl --user is-active "$SERVICE_NAME" 2>/dev/null || true)"
 }
 
 apply_config() {
@@ -83,7 +85,13 @@ apply_config() {
             }]
         )
         | .agents.defaults.models[$model] = (.agents.defaults.models[$model] // {})
-        | .agents.list = (.agents.list | map(if .id == "smartcore" then .model = $model else . end))
+        | .agents.list = (.agents.list | map(
+            if .id == "smartcore" then
+                .model = $model
+                | .skills = ["smartcore"]
+                | .tools = {allow: ["exec"]}
+            else . end
+        ))
         | .tools.fs.workspaceOnly = true
     ' "$CONFIG_PATH" >"$temporary"
     chmod 600 "$temporary"
