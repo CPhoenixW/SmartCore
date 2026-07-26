@@ -1,18 +1,81 @@
 from __future__ import annotations
 
-from typing import Any
+from collections import Counter
+from datetime import datetime, timedelta
+from typing import Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.server.auth.security import require_authenticated_user_id
 from app.server.db.session import get_db
 from app.server.feishu.bot_service import seal
-from app.server.new_core.models import FeishuBind, FeishuBot, FeishuChatPair, nowIso
+from app.server.new_core.models import (
+    FeishuBind,
+    FeishuBot,
+    FeishuChatPair,
+    MsgLog,
+    NotifyLog,
+    nowIso,
+)
 from app.server.user_device.service import confirmFeishuChatPair, startFeishuChatPair
 
 router = APIRouter(prefix="/api/feishu", tags=["feishu-pairing"])
+
+
+def _local_time(value: str, timezone: ZoneInfo) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone)
+    return parsed.astimezone(timezone)
+
+
+def _usage_window(range_key: str, timezone: ZoneInfo) -> tuple[datetime, datetime]:
+    end = datetime.now(timezone)
+    days = {"today": 1, "7d": 7, "30d": 30}[range_key]
+    start = end.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+    return start, end
+
+
+def _trend_rows(
+    rows: list[MsgLog],
+    *,
+    start: datetime,
+    end: datetime,
+    timezone: ZoneInfo,
+    range_key: str,
+) -> list[dict[str, Any]]:
+    step = timedelta(hours=1) if range_key == "today" else timedelta(days=1)
+    bucket_start = start
+    buckets: list[dict[str, Any]] = []
+    while bucket_start <= end:
+        buckets.append(
+            {
+                "startAt": bucket_start.isoformat(),
+                "messages": 0,
+                "forwarded": 0,
+                "failed": 0,
+            }
+        )
+        bucket_start += step
+    for row in rows:
+        observed = _local_time(row.createdAt, timezone)
+        if observed is None:
+            continue
+        index = int((observed - start).total_seconds() // step.total_seconds())
+        if index < 0 or index >= len(buckets):
+            continue
+        buckets[index]["messages"] += 1
+        if row.stat == "forwarded":
+            buckets[index]["forwarded"] += 1
+        elif row.stat == "forward_failed":
+            buckets[index]["failed"] += 1
+    return buckets
 
 
 def _default_bot(db: Session) -> FeishuBot:
@@ -106,6 +169,76 @@ def bindings(
         .order_by(FeishuBind.isPrimary.desc(), FeishuBind.createdAt)
     ).all()
     return {"ok": True, "data": [_binding_data(db, row) for row in rows]}
+
+
+@router.get("/usage")
+def usage(
+    range: Literal["today", "7d", "30d"] = "today",
+    timezone_name: str = Query(default="Asia/Shanghai", alias="timezone", min_length=1, max_length=64),
+    user_id: str = Depends(require_authenticated_user_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        timezone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as exc:
+        raise HTTPException(status_code=422, detail="timezone must be a valid IANA name") from exc
+    start, end = _usage_window(range, timezone)
+    messages = [
+        row
+        for row in db.scalars(
+            select(MsgLog).where(MsgLog.userId == user_id, MsgLog.channel == "feishu")
+        ).all()
+        if (observed := _local_time(row.createdAt, timezone)) is not None and start <= observed <= end
+    ]
+    notifications = [
+        row
+        for row in db.scalars(
+            select(NotifyLog).where(NotifyLog.userId == user_id, NotifyLog.channel == "feishu")
+        ).all()
+        if (observed := _local_time(row.scheduledAt, timezone)) is not None and start <= observed <= end
+    ]
+    intent_counts = Counter(row.intent or "unknown" for row in messages)
+    forwarded = sum(row.stat == "forwarded" for row in messages)
+    failed = sum(row.stat == "forward_failed" for row in messages)
+    unsupported = sum(str(row.stat or "").startswith("unsupported:") for row in messages)
+    recent = sorted(messages, key=lambda row: row.createdAt, reverse=True)[:8]
+    return {
+        "ok": True,
+        "data": {
+            "range": range,
+            "timezone": timezone_name,
+            "windowStart": start.isoformat(),
+            "windowEnd": end.isoformat(),
+            "totals": {
+                "messages": len(messages),
+                "forwarded": forwarded,
+                "failed": failed,
+                "unsupported": unsupported,
+                "notificationsSent": sum(row.stat == "sent" for row in notifications),
+                "notificationsFailed": sum(row.stat == "failed" for row in notifications),
+            },
+            "intents": [
+                {"intent": intent, "count": count}
+                for intent, count in sorted(intent_counts.items(), key=lambda item: (-item[1], item[0]))
+            ],
+            "trend": _trend_rows(
+                messages,
+                start=start,
+                end=end,
+                timezone=timezone,
+                range_key=range,
+            ),
+            "recent": [
+                {
+                    "msgId": row.msgId,
+                    "intent": row.intent,
+                    "stat": row.stat,
+                    "createdAt": row.createdAt,
+                }
+                for row in recent
+            ],
+        },
+    }
 
 
 @router.delete("/bindings/{bind_id}")

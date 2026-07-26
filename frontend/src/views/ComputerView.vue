@@ -7,6 +7,8 @@ const { t } = useI18n();
 </script>
 
 <template>
-  <PageHeader compact :title="t('computer.title')" :subtitle="t('computer.subtitle')" />
-  <ComputerUsagePanel />
+  <div class="device-data-page">
+    <PageHeader compact :title="t('computer.title')" :subtitle="t('computer.subtitle')" />
+    <ComputerUsagePanel />
+  </div>
 </template>

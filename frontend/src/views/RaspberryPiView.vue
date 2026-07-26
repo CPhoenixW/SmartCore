@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import DevicePairPanel from "@/components/device/DevicePairPanel.vue";
+import DeviceManagementPanel from "@/components/device/DeviceManagementPanel.vue";
+import DeviceMetricStrip, { type DeviceMetric } from "@/components/device/DeviceMetricStrip.vue";
 import BaseCard from "@/components/base/BaseCard.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
 import PageHeader from "@/components/base/PageHeader.vue";
@@ -42,6 +44,32 @@ const usagePoints = computed(() => usage.data.value?.points ?? []);
 const maxUsage = computed(() => Math.max(1, ...usagePoints.value.map((point) => point.minutes)));
 const lineCoordinates = computed(() => usageLineCoordinates(usagePoints.value.map((point) => point.minutes)));
 const areaCoordinates = computed(() => lineCoordinates.value ? `3,92 ${lineCoordinates.value} 97,92` : "");
+const activeDevice = computed(() => (registeredDevices.data.value ?? []).find((device) => device.deviceId === activeDeviceId.value));
+const metrics = computed<DeviceMetric[]>(() => [
+  {
+    label: t("device.latest"),
+    value: stateLabel(currentView.value.state),
+    note: currentView.value.seenAt ? formatDateTime(currentView.value.seenAt) : t("common.notSet"),
+    tone: currentView.value.state === "working" ? "success" : currentView.value.state === "away" ? "warning" : "neutral",
+  },
+  {
+    label: t("device.present"),
+    value: currentView.value.present ? t("device.presentYes") : t("device.presentNo"),
+    note: names.value.join(t("common.listSeparator")) || t("device.unidentified"),
+  },
+  {
+    label: t("device.stateConfidence"),
+    value: currentView.value.confidence == null ? t("common.notSet") : `${Math.round(currentView.value.confidence * 100)}%`,
+    note: usage.data.value?.averageConfidence == null ? t("device.noAverageConfidence") : t("device.averageConfidenceNote", { value: Math.round(usage.data.value.averageConfidence * 100) }),
+    tone: "warning",
+  },
+  {
+    label: t("device.lastReport"),
+    value: currentView.value.seenAt ? usageTimeLabel(currentView.value.seenAt) : t("common.notSet"),
+    note: activeDevice.value?.deviceName ?? t("device.piTitle"),
+    tone: "neutral",
+  },
+]);
 const requestPhoto = useMutation({
   mutationFn: () => deviceApi.requestPhoto(activeDeviceId.value),
   onSuccess: async (request) => {
@@ -103,51 +131,41 @@ function stateLabel(state: string) {
 </script>
 
 <template>
-  <div class="dual-scroll-page device-nested-scroll">
+  <div class="device-data-page">
     <PageHeader compact :title="t('device.piTitle')" :subtitle="t('device.piSubtitle')"><template #actions><button class="button" @click="refreshAll">{{ t("common.refresh") }}</button></template></PageHeader>
-    <section class="split-scroll-layout">
-      <div class="split-scroll-column split-scroll-column--main">
-        <div class="stack"><DevicePairPanel :allowed-kinds="['pi']" :title="t('device.piPairTitle')" />
-          <BaseCard :title="t('device.latest')"><div class="device-status"><span class="state-dot large" :class="`state-dot--${currentView.state}`" /><div><strong>{{ stateLabel(currentView.state) }}</strong><small>{{ currentView.seenAt ? formatDateTime(currentView.seenAt) : t('common.notSet') }}{{ currentView.stale ? ` · ${t('device.offline')}` : '' }}</small></div></div><div class="kv-grid"><div><span>{{ t("device.present") }}</span><strong>{{ currentView.present ? t("device.presentYes") : t("device.presentNo") }}</strong></div><div><span>{{ t("device.persons") }}</span><strong>{{ names.join(t('common.listSeparator')) || t('device.unidentified') }}</strong></div><div><span>{{ t("device.stateConfidence") }}</span><strong>{{ currentView.confidence == null ? t('common.notSet') : `${Math.round(currentView.confidence * 100)}%` }}</strong></div><div><span>{{ t("device.clockSkew") }}</span><strong>{{ currentView.meta.clockSkewSeconds == null ? t('common.notSet') : t("device.seconds", { value: Number(currentView.meta.clockSkewSeconds).toFixed(2) }) }}</strong></div><div><span>{{ t("device.model") }}</span><strong>{{ currentView.meta.model || t('common.notSet') }}</strong></div><div><span>{{ t("device.camera") }}</span><strong>{{ currentView.meta.camera || t('common.notSet') }}</strong></div></div></BaseCard>
-          <BaseCard :title="`${t('device.recent')} · ${logs.length}`"><template #actions><input v-model="search" class="compact-search" :placeholder="t('device.searchPlaceholder')" /></template><div class="log-list"><details v-for="row in logs" :key="row.stateLogId ?? row.seenAt" class="device-log-detail"><summary><span><i class="state-dot" :class="`state-dot--${deviceStateView(row, Number.MAX_SAFE_INTEGER).state}`" />{{ stateLabel(deviceStateView(row, Number.MAX_SAFE_INTEGER).state) }} · {{ devicePersonNames(deviceStateView(row, Number.MAX_SAFE_INTEGER)).join(t('common.listSeparator')) || t('device.unidentifiedPerson') }}</span><small>{{ formatDateTime(row.seenAt) }} · {{ row.confidence == null ? t('common.notSet') : `${Math.round(Number(row.confidence) * 100)}%` }}</small></summary><pre>{{ JSON.stringify(row, null, 2) }}</pre></details><EmptyState v-if="!logs.length" /></div></BaseCard>
+    <DeviceMetricStrip :items="metrics" :label="t('device.dataSummary')" />
+
+    <section class="device-data-grid device-data-grid--pi">
+      <BaseCard :title="t('device.usage')">
+        <div class="usage-summary">
+          <div><span>{{ t("device.total") }}</span><strong>{{ t("device.minutesValue", { value: Math.round(usage.data.value?.totalMinutes ?? 0) }) }}</strong></div>
+          <div><span>{{ t("device.peak") }}</span><strong>{{ usage.data.value?.peakStartAt ? usageTimeLabel(usage.data.value.peakStartAt) : t('common.notSet') }}</strong></div>
+          <div><span>{{ t("device.confidence") }}</span><strong>{{ usage.data.value?.averageConfidence == null ? t('common.notSet') : `${Math.round(usage.data.value.averageConfidence * 100)}%` }}</strong></div>
         </div>
-      </div>
-      <aside class="split-scroll-column split-scroll-column--side">
-        <div class="stack">
-          <BaseCard :title="t('device.photo')"><template #actions><button class="button button--primary" :disabled="requestPhoto.isPending.value || Boolean(activeRequestId)" @click="requestPhoto.mutate()">{{ activeRequestId ? t('device.waiting') : t('device.requestPhoto') }}</button></template><div class="camera-frame"><img v-if="photoUrl" :src="photoUrl" :alt="t('device.photoAlt')" /><div v-else class="camera-placeholder"><EmptyState :text="activeRequestId ? t('device.waitingForReturn') : t('device.readyForPhoto')" /></div></div><p class="camera-meta">{{ photoMeta(activePhoto ?? displayedPhoto) }}</p></BaseCard>
-          <BaseCard :title="t('device.usage')">
-            <div class="usage-summary">
-              <div><span>{{ t("device.total") }}</span><strong>{{ t("device.minutesValue", { value: Math.round(usage.data.value?.totalMinutes ?? 0) }) }}</strong></div>
-              <div><span>{{ t("device.peak") }}</span><strong>{{ usage.data.value?.peakStartAt ? usageTimeLabel(usage.data.value.peakStartAt) : t('common.notSet') }}</strong></div>
-              <div><span>{{ t("device.confidence") }}</span><strong>{{ usage.data.value?.averageConfidence == null ? t('common.notSet') : `${Math.round(usage.data.value.averageConfidence * 100)}%` }}</strong></div>
+        <div class="usage-chart-scroll" tabindex="0">
+          <div class="usage-line-chart">
+            <div class="usage-line-canvas">
+              <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" :aria-label="t('device.usage')">
+                <line v-for="line in [8, 50, 92]" :key="line" class="usage-line-grid" x1="3" :y1="line" x2="97" :y2="line" />
+                <polygon v-if="areaCoordinates" class="usage-line-area" :points="areaCoordinates" />
+                <polyline v-if="lineCoordinates" class="usage-line-path" :points="lineCoordinates" />
+              </svg>
+              <button v-for="(point, index) in usagePoints" :key="point.startAt" class="usage-line-point" type="button" :style="usagePointStyle(point, index)" :aria-label="usageTooltip(point)" :data-tooltip="usageTooltip(point)" />
             </div>
-            <div class="usage-chart-scroll" tabindex="0">
-              <div class="usage-line-chart">
-                <div class="usage-line-canvas">
-                  <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" :aria-label="t('device.usage')">
-                    <line v-for="line in [8, 50, 92]" :key="line" class="usage-line-grid" x1="3" :y1="line" x2="97" :y2="line" />
-                    <polygon v-if="areaCoordinates" class="usage-line-area" :points="areaCoordinates" />
-                    <polyline v-if="lineCoordinates" class="usage-line-path" :points="lineCoordinates" />
-                  </svg>
-                  <button
-                    v-for="(point, index) in usagePoints"
-                    :key="point.startAt"
-                    class="usage-line-point"
-                    type="button"
-                    :style="usagePointStyle(point, index)"
-                    :aria-label="usageTooltip(point)"
-                    :data-tooltip="usageTooltip(point)"
-                  />
-                </div>
-                <div class="usage-line-labels">
-                  <span v-for="point in usagePoints" :key="`label-${point.startAt}`">{{ usageTimeLabel(point.startAt) }}</span>
-                </div>
-              </div>
-            </div>
-            <p class="chart-hint">{{ t("device.scrollHint") }}</p>
-          </BaseCard>
+            <div class="usage-line-labels"><span v-for="point in usagePoints" :key="`label-${point.startAt}`">{{ usageTimeLabel(point.startAt) }}</span></div>
+          </div>
         </div>
-      </aside>
+        <p class="chart-hint">{{ t("device.scrollHint") }}</p>
+      </BaseCard>
+
+      <BaseCard :title="t('device.photo')"><template #actions><button class="button button--primary" :disabled="requestPhoto.isPending.value || Boolean(activeRequestId)" @click="requestPhoto.mutate()">{{ activeRequestId ? t('device.waiting') : t('device.requestPhoto') }}</button></template><div class="camera-frame"><img v-if="photoUrl" :src="photoUrl" :alt="t('device.photoAlt')" /><div v-else class="camera-placeholder"><EmptyState :text="activeRequestId ? t('device.waitingForReturn') : t('device.readyForPhoto')" /></div></div><p class="camera-meta">{{ photoMeta(activePhoto ?? displayedPhoto) }}</p></BaseCard>
     </section>
+
+    <section class="device-data-grid device-data-grid--equal">
+      <BaseCard :title="`${t('device.recent')} · ${logs.length}`"><template #actions><input v-model="search" class="compact-search" :placeholder="t('device.searchPlaceholder')" /></template><div class="log-list"><details v-for="row in logs.slice(0, 8)" :key="row.stateLogId ?? row.seenAt" class="device-log-detail"><summary><span><i class="state-dot" :class="`state-dot--${deviceStateView(row, Number.MAX_SAFE_INTEGER).state}`" />{{ stateLabel(deviceStateView(row, Number.MAX_SAFE_INTEGER).state) }} · {{ devicePersonNames(deviceStateView(row, Number.MAX_SAFE_INTEGER)).join(t('common.listSeparator')) || t('device.unidentifiedPerson') }}</span><small>{{ formatDateTime(row.seenAt) }} · {{ row.confidence == null ? t('common.notSet') : `${Math.round(Number(row.confidence) * 100)}%` }}</small></summary><pre>{{ JSON.stringify(row, null, 2) }}</pre></details><EmptyState v-if="!logs.length" /></div></BaseCard>
+      <BaseCard :title="t('device.collectionHealth')"><div class="device-parameter-grid"><div><span>{{ t("device.clockSkew") }}</span><strong>{{ currentView.meta.clockSkewSeconds == null ? t('common.notSet') : t("device.seconds", { value: Number(currentView.meta.clockSkewSeconds).toFixed(2) }) }}</strong></div><div><span>{{ t("device.model") }}</span><strong>{{ currentView.meta.model || t('common.notSet') }}</strong></div><div><span>{{ t("device.camera") }}</span><strong>{{ currentView.meta.camera || t('common.notSet') }}</strong></div><div><span>{{ t("device.sampleCount") }}</span><strong>{{ usage.data.value?.sampleCount ?? 0 }}</strong></div></div></BaseCard>
+    </section>
+
+    <DeviceManagementPanel icon="Pi" :title="t('device.managementTitle')" :summary="t('device.managementSummary', { count: activeDevice ? 1 : 0 })"><DevicePairPanel embedded :allowed-kinds="['pi']" :title="t('device.piPairTitle')" /></DeviceManagementPanel>
   </div>
 </template>

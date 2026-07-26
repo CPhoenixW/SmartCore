@@ -7,6 +7,7 @@ import { adminApi, type FeishuBot, type FeishuBotInput } from "@/api/admin";
 import { useToast } from "@/composables/useToast";
 
 const toast = useToast();
+const props = withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false });
 const { t } = useI18n();
 const queryClient = useQueryClient();
 const form = reactive<FeishuBotInput>({ botName: "", appId: "", appSecret: "", verificationToken: "", encryptKey: "", defaultChatId: "", isDefault: false });
@@ -62,7 +63,8 @@ async function copyCode() {
 </script>
 
 <template>
-  <BaseCard :title="t('feishuBot.title')">
+  <component :is="props.embedded ? 'section' : BaseCard" :title="props.embedded ? undefined : t('feishuBot.title')" :class="{ 'feishu-manager--embedded': props.embedded }">
+    <header v-if="props.embedded" class="feishu-manager__header"><h3>{{ t('feishuBot.title') }}</h3></header>
     <div class="bot-list">
       <article v-for="bot in bots.data.value ?? []" :key="bot.botId" class="bot-row">
         <div><strong>{{ bot.botName }}</strong><small>{{ bot.appIdHint }} · {{ bot.enabled ? t('feishuBot.enabled') : t('feishuBot.disabled') }}{{ bot.hasRecipient ? ` · ${t('feishuBot.bound')}` : ` · ${t('feishuBot.unbound')}` }}</small></div>
@@ -88,9 +90,9 @@ async function copyCode() {
       <label class="bot-default"><input v-model="form.isDefault" type="checkbox" /> {{ t('feishuBot.default') }}</label>
       <div><button class="button button--primary" type="submit" :disabled="save.isPending.value">{{ t('feishuBot.save') }}</button><button v-if="editing" class="button button--ghost" type="button" @click="reset">{{ t('common.cancel') }}</button></div>
     </form>
-  </BaseCard>
+  </component>
 </template>
 
 <style scoped>
-.bot-list,.bind-list{display:grid;gap:2px}.bind-list{margin:18px 0;padding:16px 0;border-top:1px solid var(--border-subtle);border-bottom:1px solid var(--border-subtle)}.bind-list h3{margin:0 0 4px}.bot-row,.bind-row{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px 0;border-bottom:1px solid var(--border-subtle)}.bot-row strong,.bot-row small,.bind-row strong,.bind-row small{display:block}.bot-row small,.bind-row small{margin-top:4px;color:var(--text-muted)}.bot-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px}.text-button{border:0;background:transparent;color:var(--accent);font:inherit;cursor:pointer}.text-button--danger{color:#dc2626}.bot-pair-flow{display:grid;gap:10px;margin:18px 0;padding:16px;border:1px solid #bfdbfe;border-radius:16px;background:#f8fbff}.bot-pair-flow code{width:max-content;max-width:100%;overflow:hidden;text-overflow:ellipsis;padding:8px 10px;border-radius:8px;background:#fff;color:#1e3a8a}.bot-pair-flow>div{display:flex;gap:10px}.bot-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:20px;padding-top:20px;border-top:1px solid var(--border-subtle)}.bot-form h3,.bot-form>div,.bot-default{grid-column:1/-1}.bot-form label{display:grid;gap:7px;color:var(--text-secondary)}.bot-form input{min-width:0;padding:11px 13px;border:1px solid var(--border-color);border-radius:14px;font:inherit}.bot-default{display:flex!important;align-items:center;gap:8px}.bot-default input{min-width:auto;padding:0}@media(max-width:700px){.bot-row,.bind-row{align-items:flex-start;flex-direction:column}.bot-actions{justify-content:flex-start}.bot-form{grid-template-columns:1fr}}
+.feishu-manager--embedded{display:grid;gap:14px}.feishu-manager__header{padding-bottom:10px;border-bottom:1px solid var(--border-color)}.feishu-manager__header h3{font-size:14px}.bot-list,.bind-list{display:grid;gap:2px}.bind-list{margin:18px 0;padding:16px 0;border-top:1px solid var(--border-color);border-bottom:1px solid var(--border-color)}.bind-list h3{margin:0 0 4px}.bot-row,.bind-row{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px 0;border-bottom:1px solid var(--border-color)}.bot-row strong,.bot-row small,.bind-row strong,.bind-row small{display:block}.bot-row small,.bind-row small{margin-top:4px;color:var(--color-text-muted)}.bot-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px}.text-button{border:0;background:transparent;color:var(--color-primary);font:inherit;cursor:pointer}.text-button--danger{color:#dc2626}.bot-pair-flow{display:grid;gap:10px;margin:18px 0;padding:16px;border:1px solid #bfdbfe;border-radius:8px;background:#f8fbff}.bot-pair-flow code{width:max-content;max-width:100%;overflow:hidden;text-overflow:ellipsis;padding:8px 10px;border-radius:7px;background:#fff;color:#1e3a8a}.bot-pair-flow>div{display:flex;gap:10px}.bot-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:20px;padding-top:20px;border-top:1px solid var(--border-color)}.bot-form h3,.bot-form>div,.bot-default{grid-column:1/-1}.bot-form label{display:grid;gap:7px;color:#475569}.bot-form input{min-width:0;padding:11px 13px;border:1px solid var(--border-color);border-radius:7px;font:inherit}.bot-default{display:flex!important;align-items:center;gap:8px}.bot-default input{min-width:auto;padding:0}@media(max-width:700px){.bot-row,.bind-row{align-items:flex-start;flex-direction:column}.bot-actions{justify-content:flex-start}.bot-form{grid-template-columns:1fr}}
 </style>

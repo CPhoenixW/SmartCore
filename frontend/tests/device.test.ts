@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { devicePersonNames, deviceStateView } from "@/utils/device";
 import { router } from "@/router";
 import { usageChartPosition, usageLineCoordinates } from "@/utils/usageChart";
@@ -31,5 +33,11 @@ describe("device routes", () => {
     expect(router.resolve({ name: "deviceComputer" }).path).toBe("/device/computer");
     expect(router.resolve({ name: "deviceScreen" }).path).toBe("/device/screen");
     expect(router.resolve({ name: "deviceFeishuBot" }).path).toBe("/device/feishu-bot");
+  });
+
+  it("keeps the Feishu page focused on outcomes instead of exposing a processing chain", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/views/FeishuBotView.vue"), "utf8");
+    expect(source).not.toContain("处理链路");
+    expect(source.toLowerCase()).not.toContain("processing chain");
   });
 });

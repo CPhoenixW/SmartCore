@@ -112,4 +112,19 @@ describe("API clients", () => {
 
     expectFetch(fetchMock, "/api/feishu/bindings", "GET");
   });
+
+  it("queries owner-scoped Feishu usage without requesting raw message content", async () => {
+    const fetchMock = mockJsonFetch({
+      range: "7d",
+      timezone: "Asia/Singapore",
+      totals: { messages: 0, forwarded: 0, failed: 0, unsupported: 0, notificationsSent: 0, notificationsFailed: 0 },
+      intents: [],
+      trend: [],
+      recent: [],
+    });
+
+    await feishuPairApi.usage("7d", "Asia/Singapore");
+
+    expectFetch(fetchMock, "/api/feishu/usage?range=7d&timezone=Asia%2FSingapore", "GET");
+  });
 });

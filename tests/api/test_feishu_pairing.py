@@ -12,7 +12,7 @@ from app.server.db.session import SessionLocal
 from app.server.feishu.client import FeishuClient
 from app.server.feishu.security import compute_signature
 from app.server.main import create_app
-from app.server.new_core.models import AppUser, FeishuBot
+from app.server.new_core.models import AppUser, FeishuBot, MsgLog, NotifyLog, nowIso
 from app.server.new_core.notify import routeNotify
 from app.server.new_core.preferences import update_user_preferences
 
@@ -332,6 +332,87 @@ def test_user_feishu_pairing_is_owner_scoped(app_env, monkeypatch) -> None:
     bind_id = owner.post(f"/api/feishu/pair/{pair['pairId']}/confirm").json()["data"]["bindId"]
     assert intruder.delete(f"/api/feishu/bindings/{bind_id}").status_code == 404
     assert owner.delete(f"/api/feishu/bindings/{bind_id}").status_code == 200
+
+
+def test_feishu_usage_is_owner_scoped_and_never_returns_message_content(app_env) -> None:
+    app = create_app()
+    db = SessionLocal()
+    try:
+        db.add_all(
+            [
+                AppUser(userId="usage-owner", loginName="usage-owner", displayName="Usage Owner", role="user"),
+                AppUser(userId="usage-other", loginName="usage-other", displayName="Usage Other", role="user"),
+            ]
+        )
+        db.flush()
+        db.add_all(
+            [
+                MsgLog(
+                    userId="usage-owner",
+                    channel="feishu",
+                    direction="in",
+                    externalId="private-message-id",
+                    rawText="sensitive message content",
+                    intent="openclaw_forward",
+                    stat="forwarded",
+                    createdAt=nowIso(),
+                ),
+                MsgLog(
+                    userId="usage-owner",
+                    channel="feishu",
+                    direction="in",
+                    rawText="failed sensitive content",
+                    intent="openclaw_forward",
+                    stat="forward_failed",
+                    createdAt=nowIso(),
+                ),
+                MsgLog(
+                    userId="usage-other",
+                    channel="feishu",
+                    direction="in",
+                    rawText="other user content",
+                    intent="openclaw_forward",
+                    stat="forwarded",
+                    createdAt=nowIso(),
+                ),
+                NotifyLog(
+                    userId="usage-owner",
+                    channel="feishu",
+                    title="Private reminder",
+                    content="Private notification content",
+                    scheduledAt=nowIso(),
+                    sentAt=nowIso(),
+                    stat="sent",
+                ),
+            ]
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    anonymous = TestClient(app)
+    assert anonymous.get("/api/feishu/usage").status_code == 401
+
+    owner = _user_client(app, "usage-owner")
+    response = owner.get(
+        "/api/feishu/usage",
+        params={"range": "today", "timezone": "Asia/Singapore"},
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["totals"] == {
+        "messages": 2,
+        "forwarded": 1,
+        "failed": 1,
+        "unsupported": 0,
+        "notificationsSent": 1,
+        "notificationsFailed": 0,
+    }
+    assert data["recent"][0].keys() == {"msgId", "intent", "stat", "createdAt"}
+    serialized = json.dumps(data)
+    assert "sensitive message content" not in serialized
+    assert "private-message-id" not in serialized
+    assert "other user content" not in serialized
 
 
 def test_unbound_normal_user_does_not_fall_back_to_admin_chat(app_env, monkeypatch) -> None:

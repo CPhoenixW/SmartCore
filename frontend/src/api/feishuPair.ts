@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { apiRequest, buildQuery } from "./client";
 
 export interface FeishuPair {
   pairId: string;
@@ -24,10 +24,33 @@ export interface UserFeishuBinding {
   lastSeenAt?: string | null;
 }
 
+export type FeishuUsageRange = "today" | "7d" | "30d";
+
+export interface FeishuUsageReport {
+  range: FeishuUsageRange;
+  timezone: string;
+  windowStart: string;
+  windowEnd: string;
+  totals: {
+    messages: number;
+    forwarded: number;
+    failed: number;
+    unsupported: number;
+    notificationsSent: number;
+    notificationsFailed: number;
+  };
+  intents: Array<{ intent: string; count: number }>;
+  trend: Array<{ startAt: string; messages: number; forwarded: number; failed: number }>;
+  recent: Array<{ msgId: string; intent?: string | null; stat?: string | null; createdAt: string }>;
+}
+
 export const feishuPairApi = {
   start: () => apiRequest<FeishuPair>("/api/feishu/pair/start", { method: "POST" }),
   read: (pairId: string) => apiRequest<FeishuPair>(`/api/feishu/pair/${encodeURIComponent(pairId)}`),
   confirm: (pairId: string) => apiRequest<FeishuPair>(`/api/feishu/pair/${encodeURIComponent(pairId)}/confirm`, { method: "POST" }),
   bindings: () => apiRequest<UserFeishuBinding[]>("/api/feishu/bindings"),
+  usage: (range: FeishuUsageRange, timezone: string) => apiRequest<FeishuUsageReport>(
+    `/api/feishu/usage${buildQuery({ range, timezone })}`,
+  ),
   removeBinding: (bindId: string) => apiRequest<{ bindId: string; deleted: boolean }>(`/api/feishu/bindings/${encodeURIComponent(bindId)}`, { method: "DELETE" }),
 };

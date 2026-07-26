@@ -37,3 +37,32 @@ export function timelinePosition(startAt: string, endAt: string, windowStart: st
   const right = Math.max(left, Math.min(100, ((end - rangeStart) / width) * 100));
   return { left: `${left}%`, width: `${Math.max(0.2, right - left)}%` };
 }
+
+export interface ComputerTimelineSegment {
+  key: string;
+  label: string;
+  startAt: string;
+  endAt: string;
+}
+
+export function mergeComputerTimeline(
+  points: ComputerTimelinePoint[],
+  selectValue: (point: ComputerTimelinePoint) => { key: string; label: string } | null,
+): ComputerTimelineSegment[] {
+  const result: ComputerTimelineSegment[] = [];
+  for (const point of points) {
+    const value = selectValue(point);
+    if (!value) continue;
+    const start = new Date(point.startAt);
+    if (Number.isNaN(start.getTime())) continue;
+    const endAt = new Date(start.getTime() + 60_000).toISOString();
+    const previous = result.at(-1);
+    const gap = previous ? start.getTime() - new Date(previous.endAt).getTime() : Number.POSITIVE_INFINITY;
+    if (previous && previous.key === value.key && gap >= 0 && gap <= 1_000) {
+      previous.endAt = endAt;
+      continue;
+    }
+    result.push({ ...value, startAt: start.toISOString(), endAt });
+  }
+  return result;
+}

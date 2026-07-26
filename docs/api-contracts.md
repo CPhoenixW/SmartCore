@@ -178,6 +178,10 @@ POST /api/feishu/pair/start
 管理员 `/api/admin/feishuBots/*` 可以配置、启停、测试和配对 bot。明文 App Secret、
 Verification Token 与 Encrypt Key 只允许写入，读取响应和日志绝不返回。
 
+`GET /api/feishu/usage?range=today|7d|30d&timezone=...` 只允许登录用户读取自己的
+消息数量、结果趋势、通知数量和最近处理状态。响应不包含原始消息、外部消息 ID、
+通知正文或其他用户的数据。
+
 ## Idea 媒体状态机
 
 ```text
