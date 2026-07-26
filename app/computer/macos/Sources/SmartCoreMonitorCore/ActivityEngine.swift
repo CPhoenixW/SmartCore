@@ -1,12 +1,14 @@
 import Foundation
 
 public enum ActivityStateResolver {
+    public static let defaultIdleThreshold: TimeInterval = 120
+
     public static func resolve(
         paused: Bool,
         sleeping: Bool,
         locked: Bool,
         idleSeconds: TimeInterval,
-        idleThreshold: TimeInterval = 300
+        idleThreshold: TimeInterval = defaultIdleThreshold
     ) -> ActivityState {
         if paused { return .paused }
         if sleeping { return .sleeping }

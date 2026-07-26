@@ -85,10 +85,11 @@ unknown/offline、照片请求只上传一次、其他设备 token 无法冒用�
 
 ## Mac 使用监视器
 
-`app/computer/macos` 是无界面的 Swift 用户级 LaunchAgent。每 5 秒读取前台应用和
+`app/computer/macos` 是无界面的 Swift 用户级 LaunchAgent。每 20 秒读取前台应用和
 任意键鼠输入空闲时间，并监听锁屏、休眠和唤醒；状态或应用变化时立即同步，每 30 秒
-发送心跳，每分钟生成一个桶。状态为 `active`、`idle`、`locked`、`sleeping`；旧版
-`paused` 仍兼容，`offline` 由 Server 根据心跳超时派生。只有 active slice 携带应用。
+发送心跳，每分钟生成一个桶。输入空闲达到 2 分钟时进入 `idle`。状态为 `active`、
+`idle`、`locked`、`sleeping`；旧版 `paused` 仍兼容，`offline` 由 Server 根据心跳超时
+派生。只有 active slice 携带应用。
 
 会话从活跃开始，短暂空闲继续；空闲达到 10 分钟、锁屏、休眠或暂停即结束。未确认
 桶保存在本地 SQLite，每批最多上传 120 个，成功确认后删除，失败指数退避。队列按

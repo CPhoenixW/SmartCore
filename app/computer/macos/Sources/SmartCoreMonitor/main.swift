@@ -7,6 +7,7 @@ import SmartCoreMonitorCore
 private let configurationChangedNotification = Notification.Name("com.smartcore.monitor.configurationChanged")
 private let anyInputEventType = CGEventType(rawValue: UInt32.max)!
 private let structuredContextPreference = "collectStructuredContext"
+private let sampleInterval: TimeInterval = 20
 
 @main
 struct SmartCoreMonitorMain {
@@ -158,7 +159,7 @@ final class MonitorAgentDelegate: NSObject, NSApplicationDelegate {
         ] as CFDictionary
         accessibilityGranted = AXIsProcessTrustedWithOptions(accessibilityOptions)
         installObservers()
-        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: sampleInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.sample() }
         }
         sample()

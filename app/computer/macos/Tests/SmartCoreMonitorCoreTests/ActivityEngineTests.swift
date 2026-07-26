@@ -6,8 +6,8 @@ import Testing
     private let utc = TimeZone(secondsFromGMT: 0)!
 
     @Test func objectiveStateUsesAnyInputIdleDurationAndPriority() {
-        #expect(ActivityStateResolver.resolve(paused: false, sleeping: false, locked: false, idleSeconds: 299) == .active)
-        #expect(ActivityStateResolver.resolve(paused: false, sleeping: false, locked: false, idleSeconds: 300) == .idle)
+        #expect(ActivityStateResolver.resolve(paused: false, sleeping: false, locked: false, idleSeconds: 119) == .active)
+        #expect(ActivityStateResolver.resolve(paused: false, sleeping: false, locked: false, idleSeconds: 120) == .idle)
         #expect(ActivityStateResolver.resolve(paused: false, sleeping: false, locked: true, idleSeconds: 0) == .locked)
         #expect(ActivityStateResolver.resolve(paused: false, sleeping: true, locked: true, idleSeconds: 0) == .sleeping)
         #expect(ActivityStateResolver.resolve(paused: true, sleeping: true, locked: true, idleSeconds: 0) == .paused)
