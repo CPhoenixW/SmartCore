@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { devicePersonNames, deviceStateView } from "@/utils/device";
 import { router } from "@/router";
-import { usageChartPosition, usageLineCoordinates } from "@/utils/usageChart";
+import { usageChartPosition, usageLineCoordinates, usageSmoothPath } from "@/utils/usageChart";
 
 describe("device utilities", () => {
   it("reads presence and people from heartbeat metadata", () => {
@@ -23,6 +23,7 @@ describe("device utilities", () => {
     expect(coordinates).toHaveLength(12);
     expect(peak.x).toBeGreaterThan(50);
     expect(peak.y).toBe(8);
+    expect(usageSmoothPath(values)).toContain(" C ");
   });
 });
 
@@ -53,5 +54,19 @@ describe("device routes", () => {
     const computerPanel = readFileSync(resolve(process.cwd(), "src/components/device/ComputerUsagePanel.vue"), "utf8");
     expect(computerPanel).not.toContain('<section v-if="monitor" class="computer-live-summary">');
     expect(computerPanel).toContain('label: t("computer.activeTime")');
+  });
+
+  it("keeps dense device histories scrollable and uses the read-only screen preview", () => {
+    const piView = readFileSync(resolve(process.cwd(), "src/views/RaspberryPiView.vue"), "utf8");
+    const computerPanel = readFileSync(resolve(process.cwd(), "src/components/device/ComputerUsagePanel.vue"), "utf8");
+    const screenView = readFileSync(resolve(process.cwd(), "src/views/ScreenView.vue"), "utf8");
+    const screenClient = readFileSync(resolve(process.cwd(), "../app/server/screen/static/screen.js"), "utf8");
+
+    expect(piView).toContain('class="log-list device-scroll-list"');
+    expect(piView).not.toContain("logs.slice(");
+    expect(computerPanel).toContain('class="computer-map-index"');
+    expect(computerPanel).toContain("computer-card-scroll");
+    expect(screenView).toContain('src="/screen?preview=1"');
+    expect(screenClient).toContain('event.data?.kind !== "smartcore-screen-preview"');
   });
 });

@@ -25,3 +25,18 @@ export function usageLineCoordinates(
     })
     .join(" ");
 }
+
+export function usageSmoothPath(values: number[], maxValue?: number): string {
+  if (!values.length) return "";
+  const maximum = Math.max(1, maxValue ?? 0, ...values);
+  const points = values.map((value, index) => usageChartPosition(index, values.length, value, maximum));
+  const first = points[0];
+  if (!first) return "";
+  if (points.length === 1) return `M ${first.x} ${first.y}`;
+  return points.slice(1).reduce((path, point, index) => {
+    const previous = points[index];
+    if (!previous) return path;
+    const midpoint = (previous.x + point.x) / 2;
+    return `${path} C ${midpoint} ${previous.y}, ${midpoint} ${point.y}, ${point.x} ${point.y}`;
+  }, `M ${first.x} ${first.y}`);
+}

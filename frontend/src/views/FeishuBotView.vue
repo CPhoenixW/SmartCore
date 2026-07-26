@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
+import SmoothLineChart, { type CurveChartSeries } from "@/components/base/SmoothLineChart.vue";
 import DeviceManagementPanel from "@/components/device/DeviceManagementPanel.vue";
 import DeviceMetricStrip, { type DeviceMetric } from "@/components/device/DeviceMetricStrip.vue";
 import DevicePairPanel from "@/components/device/DevicePairPanel.vue";
@@ -27,7 +28,13 @@ const bindings = useQuery({ queryKey: ["userFeishuBindings"], queryFn: feishuPai
 const bots = useQuery({ queryKey: ["feishuBots"], queryFn: adminApi.feishuBots, enabled: isAdmin, refetchInterval: 30_000 });
 const report = computed(() => usage.data.value);
 const enabledBots = computed(() => (bots.data.value ?? []).filter((bot) => bot.enabled));
-const maxTrend = computed(() => Math.max(1, ...(report.value?.trend ?? []).map((point) => point.messages)));
+const trendLabels = computed(() => (report.value?.trend ?? []).map((point) => trendLabel(point.startAt)));
+const trendSeries = computed<CurveChartSeries[]>(() => [{
+  key: "messages",
+  name: t("feishuDevice.messages"),
+  color: "#2563eb",
+  values: (report.value?.trend ?? []).map((point) => point.messages),
+}]);
 const successRate = computed(() => {
   const total = (report.value?.totals.forwarded ?? 0) + (report.value?.totals.failed ?? 0);
   return total ? Math.round((report.value?.totals.forwarded ?? 0) / total * 100) : null;
@@ -95,14 +102,9 @@ function percentage(value: number, total: number) {
 
     <DeviceMetricStrip :items="metrics" :label="t('feishuDevice.dataSummary')" />
 
-    <section class="device-data-grid">
+    <section class="device-data-grid device-data-grid--matched device-data-grid--feishu-summary">
       <BaseCard :title="t('feishuDevice.messageTrend')" :subtitle="t('feishuDevice.messageTrendNote')">
-        <div v-if="report?.totals.messages" class="feishu-trend" tabindex="0">
-          <div v-for="point in report.trend" :key="point.startAt" class="feishu-trend__column" :title="`${trendLabel(point.startAt)} · ${point.messages}`">
-            <span><i :style="{ height: `${Math.max(3, point.messages / maxTrend * 100)}%` }" /></span>
-            <small>{{ trendLabel(point.startAt) }}</small>
-          </div>
-        </div>
+        <SmoothLineChart v-if="report?.totals.messages" :labels="trendLabels" :series="trendSeries" :label="t('feishuDevice.messageTrend')" />
         <EmptyState v-else :text="t('feishuDevice.noMessages')" />
       </BaseCard>
 
@@ -116,15 +118,15 @@ function percentage(value: number, total: number) {
       </BaseCard>
     </section>
 
-    <section class="device-data-grid device-data-grid--equal">
+    <section class="device-data-grid device-data-grid--equal device-data-grid--scroll-pair device-data-grid--feishu-activity">
       <BaseCard :title="t('feishuDevice.recentMessages')">
-        <div v-if="report?.recent.length" class="device-activity-list">
+        <div v-if="report?.recent.length" class="device-activity-list device-scroll-list">
           <article v-for="item in report.recent" :key="item.msgId"><time>{{ formatDateTime(item.createdAt, locale === 'en-US' ? 'en-US' : 'zh-CN') }}</time><div><strong>{{ intentLabel(item.intent) }}</strong><small>{{ statusLabel(item.stat) }}</small></div><span class="device-status-text" :class="{ 'device-status-text--warning': item.stat !== 'forwarded' }">{{ statusLabel(item.stat) }}</span></article>
         </div>
         <EmptyState v-else :text="t('feishuDevice.noMessages')" />
       </BaseCard>
       <BaseCard :title="t('feishuDevice.bindingStatus')">
-        <div v-if="bindings.data.value?.length" class="device-activity-list">
+        <div v-if="bindings.data.value?.length" class="device-activity-list device-scroll-list">
           <article v-for="binding in bindings.data.value" :key="binding.bindId"><time>{{ binding.chatType }}</time><div><strong>{{ binding.botName }}</strong><small>{{ binding.chatHint }}</small></div><span class="device-status-text">{{ binding.isPrimary ? t("feishuDevice.primaryBinding") : t("feishuDevice.activeBinding") }}</span></article>
         </div>
         <EmptyState v-else :text="t('feishuDevice.noBindings')" />

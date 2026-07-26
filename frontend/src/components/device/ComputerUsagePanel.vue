@@ -7,6 +7,7 @@ import DeviceManagementPanel from "@/components/device/DeviceManagementPanel.vue
 import DeviceMetricStrip, { type DeviceMetric } from "@/components/device/DeviceMetricStrip.vue";
 import DevicePairPanel from "@/components/device/DevicePairPanel.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
+import SmoothLineChart, { type CurveChartSeries } from "@/components/base/SmoothLineChart.vue";
 import { computerApi } from "@/api/computer";
 import { deviceRegistryApi } from "@/api/deviceRegistry";
 import type { ComputerRange, ComputerSession } from "@/types/computer";
@@ -48,8 +49,24 @@ const usage = useQuery({
 });
 const report = computed(() => usage.data.value);
 const monitor = computed(() => status.data.value ?? report.value?.status ?? null);
-const maxDaily = computed(() => Math.max(1, ...(report.value?.daily ?? []).map((item) => Math.max(item.activeSeconds, item.plannedActiveSeconds))));
 const maxApp = computed(() => Math.max(1, ...(report.value?.applications ?? []).map((item) => item.seconds)));
+const dailyLabels = computed(() => (report.value?.daily ?? []).map((item) => item.date.slice(5)));
+const dailySeries = computed<CurveChartSeries[]>(() => [
+  {
+    key: "active",
+    name: t("computer.activeTime"),
+    color: "#16a34a",
+    values: (report.value?.daily ?? []).map((item) => item.activeSeconds),
+    displayValues: (report.value?.daily ?? []).map((item) => duration(item.activeSeconds)),
+  },
+  {
+    key: "planned",
+    name: t("computer.plannedActive"),
+    color: "#2563eb",
+    values: (report.value?.daily ?? []).map((item) => item.plannedActiveSeconds),
+    displayValues: (report.value?.daily ?? []).map((item) => duration(item.plannedActiveSeconds)),
+  },
+]);
 const axisTicks = computed(() => report.value ? timelineTicks(report.value.windowStart, report.value.windowEnd, 6) : []);
 const stateSegments = computed(() => mergeComputerTimeline(report.value?.timeline ?? [], (point) => {
   const state = dominantComputerState(point);
@@ -109,30 +126,35 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
       <DeviceMetricStrip :items="metrics" :label="t('computer.activitySummary')" />
 
       <BaseCard v-if="range === 'today'" :title="t('computer.activityMap')" :subtitle="t('computer.activityMapNote')">
-        <div v-if="report?.timeline.length" class="computer-activity-map-scroll" tabindex="0">
-          <div class="computer-activity-map">
-            <div class="computer-map-legend"><span v-for="state in OBJECTIVE_STATES" :key="state"><i :class="`timeline-key timeline-key--${state}`" />{{ stateLabel(state) }}</span></div>
-            <div class="computer-map-axis"><span v-for="tick in axisTicks" :key="tick">{{ timeLabel(tick) }}</span></div>
-            <div class="computer-map-row computer-map-row--plans">
-              <strong>{{ t("computer.plans") }}</strong>
-              <div class="computer-map-track"><i v-for="plan in report.plans" :key="plan.evtId" class="computer-map-block computer-map-block--plan" :style="intervalStyle(plan.startAt, plan.endAt)" :title="`${plan.title} · ${duration(plan.activeSeconds)}`"><span>{{ plan.title }}</span></i><span v-if="!report.plans.length" class="timeline-empty">{{ t("computer.noPlans") }}</span></div>
-            </div>
-            <div class="computer-map-row">
-              <strong>{{ t("computer.statusLane") }}</strong>
-              <div class="computer-map-track"><i v-for="segment in stateSegments" :key="`${segment.startAt}-${segment.key}`" class="computer-map-block" :class="`computer-map-block--${segment.key}`" :style="segmentStyle(segment)" :title="segmentTitle(segment)"><span v-if="segmentIsWide(segment)">{{ segment.label }}</span></i></div>
-            </div>
-            <div class="computer-map-row">
-              <strong>{{ t("computer.appLane") }}</strong>
-              <div class="computer-map-track"><i v-for="segment in appSegments" :key="`${segment.startAt}-${segment.key}`" class="computer-map-block computer-map-block--app" :style="segmentStyle(segment, stableColor(segment.key))" :title="segmentTitle(segment)"><span v-if="segmentIsWide(segment)">{{ segment.label }}</span></i></div>
+        <div v-if="report?.timeline.length" class="computer-activity-map-frame">
+          <div class="computer-map-index" aria-hidden="true">
+            <div class="computer-map-index__spacer" />
+            <strong>{{ t("computer.plans") }}</strong>
+            <strong>{{ t("computer.statusLane") }}</strong>
+            <strong>{{ t("computer.appLane") }}</strong>
+          </div>
+          <div class="computer-activity-map-scroll" tabindex="0">
+            <div class="computer-activity-map">
+              <div class="computer-map-legend"><span v-for="state in OBJECTIVE_STATES" :key="state"><i :class="`timeline-key timeline-key--${state}`" />{{ stateLabel(state) }}</span></div>
+              <div class="computer-map-axis"><span v-for="tick in axisTicks" :key="tick">{{ timeLabel(tick) }}</span></div>
+              <div class="computer-map-row computer-map-row--plans">
+                <div class="computer-map-track"><i v-for="plan in report.plans" :key="plan.evtId" class="computer-map-block computer-map-block--plan" :style="intervalStyle(plan.startAt, plan.endAt)" :title="`${plan.title} · ${duration(plan.activeSeconds)}`"><span>{{ plan.title }}</span></i><span v-if="!report.plans.length" class="timeline-empty">{{ t("computer.noPlans") }}</span></div>
+              </div>
+              <div class="computer-map-row">
+                <div class="computer-map-track"><i v-for="segment in stateSegments" :key="`${segment.startAt}-${segment.key}`" class="computer-map-block" :class="`computer-map-block--${segment.key}`" :style="segmentStyle(segment)" :title="segmentTitle(segment)"><span v-if="segmentIsWide(segment)">{{ segment.label }}</span></i></div>
+              </div>
+              <div class="computer-map-row">
+                <div class="computer-map-track"><i v-for="segment in appSegments" :key="`${segment.startAt}-${segment.key}`" class="computer-map-block computer-map-block--app" :style="segmentStyle(segment, stableColor(segment.key))" :title="segmentTitle(segment)"><span v-if="segmentIsWide(segment)">{{ segment.label }}</span></i></div>
+              </div>
             </div>
           </div>
         </div>
         <EmptyState v-else :text="t('computer.noUsage')" />
       </BaseCard>
 
-      <div v-if="range === 'today'" class="computer-two-column">
+      <div v-if="range === 'today'" class="computer-two-column computer-two-column--scroll">
         <BaseCard :title="t('computer.sessions')">
-          <div v-if="report?.sessions.length" class="session-list">
+          <div v-if="report?.sessions.length" class="session-list computer-card-scroll">
             <button v-for="session in report.sessions" :key="session.sessionId" type="button" @click="selectedSession = session">
               <i class="session-app-mark" :style="{ background: stableColor(session.contexts[0]?.bundleId || session.sessionId) }">{{ appInitial(session.contexts[0]?.appName) }}</i>
               <span class="session-main"><strong>{{ session.contexts[0]?.appName || t("common.notSet") }}</strong><small>{{ timeLabel(session.startAt) }}–{{ timeLabel(session.endAt) }}</small></span>
@@ -142,14 +164,14 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
           <EmptyState v-else :text="t('computer.noSessions')" />
         </BaseCard>
         <BaseCard :title="t('computer.applications')">
-          <div v-if="report?.applications.length" class="app-ranking"><div v-for="(app, index) in report.applications" :key="app.bundleId"><span class="app-ranking__label"><b>{{ index + 1 }}</b><strong>{{ app.appName }}</strong><small>{{ duration(app.seconds) }}</small></span><i><b :style="{ width: `${app.seconds / maxApp * 100}%`, background: stableColor(app.bundleId) }" /></i></div></div>
+          <div v-if="report?.applications.length" class="app-ranking computer-card-scroll"><div v-for="(app, index) in report.applications" :key="app.bundleId"><span class="app-ranking__label"><b>{{ index + 1 }}</b><strong>{{ app.appName }}</strong><small>{{ duration(app.seconds) }}</small></span><i><b :style="{ width: `${app.seconds / maxApp * 100}%`, background: stableColor(app.bundleId) }" /></i></div></div>
           <EmptyState v-else :text="t('computer.noUsage')" />
         </BaseCard>
       </div>
 
       <div v-else class="computer-two-column">
         <BaseCard :title="t('computer.dailyTrend')">
-          <div v-if="report?.daily.length" class="daily-chart"><div v-for="day in report.daily" :key="day.date"><div class="daily-bars"><i :style="{ height: `${day.activeSeconds / maxDaily * 100}%` }" :title="`${t('computer.activeTime')} ${duration(day.activeSeconds)}`" /><i :style="{ height: `${day.plannedActiveSeconds / maxDaily * 100}%` }" :title="`${t('computer.plannedActive')} ${duration(day.plannedActiveSeconds)}`" /></div><small>{{ day.date.slice(5) }}</small></div></div>
+          <SmoothLineChart v-if="report?.daily.length" :labels="dailyLabels" :series="dailySeries" :label="t('computer.dailyTrend')" />
           <EmptyState v-else :text="t('computer.noUsage')" />
         </BaseCard>
         <BaseCard :title="t('computer.applications')">
@@ -181,4 +203,82 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
 
 <style scoped>
 .computer-panel{display:grid;grid-auto-rows:max-content;align-content:start;gap:18px}.computer-toolbar{display:flex;align-items:end;justify-content:space-between;gap:16px}.computer-toolbar label{display:grid;min-width:240px;gap:6px;color:var(--color-text-muted);font-size:12px}.computer-toolbar select{min-height:40px;padding:0 11px;border:1px solid var(--border-color);border-radius:7px;background:#fff;color:var(--color-text);font:inherit}.computer-alert{padding:12px 14px;border-left:4px solid #d97706;background:#fffbeb;color:#92400e}.computer-alert--offline,.computer-alert--paused{border-left-color:#64748b;background:#f8fafc;color:#475569}.computer-live-summary{display:grid;grid-template-columns:auto minmax(160px,.55fr) minmax(240px,1fr) minmax(220px,.85fr);align-items:center;gap:16px;padding:16px 18px;border:1px solid var(--border-color);border-radius:8px;background:#fff;box-shadow:var(--shadow-card)}.computer-live-summary>div{min-width:0}.computer-live-summary span,.computer-live-summary strong,.computer-live-summary small{display:block}.computer-live-summary>div>span,.computer-live-summary small{color:var(--color-text-muted);font-size:11px}.computer-live-summary strong{margin:5px 0;overflow:hidden;font-size:15px;text-overflow:ellipsis;white-space:nowrap}.computer-live-summary__state strong{font-size:21px}.computer-live-summary__context,.computer-live-summary__analysis{padding-left:16px;border-left:1px solid var(--border-color)}.computer-state-dot{width:20px;height:20px;border:5px solid #e2e8f0;border-radius:50%;background:#94a3b8;box-sizing:content-box}.computer-state-dot--active{border-color:#dcfce7;background:#16a34a}.computer-state-dot--idle{border-color:#fef3c7;background:#d97706}.computer-state-dot--locked,.computer-state-dot--sleeping{border-color:#e2e8f0;background:#475569}.computer-state-dot--paused{border-color:#dbeafe;background:#2563eb}.computer-activity-map-scroll{overflow-x:auto;overscroll-behavior-x:contain;padding:3px 0 8px}.computer-activity-map{min-width:760px}.computer-map-legend{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:12px;margin-bottom:10px;color:#64748b;font-size:10px}.computer-map-legend span{display:flex;align-items:center;gap:5px}.timeline-key{width:8px;height:8px;border-radius:2px;background:#94a3b8}.timeline-key--active{background:#16a34a}.timeline-key--idle{background:#d97706}.timeline-key--locked{background:#64748b}.timeline-key--sleeping{background:#0f172a}.timeline-key--paused{background:#0ea5e9}.computer-map-axis{display:flex;justify-content:space-between;margin:0 4px 6px 114px;color:#94a3b8;font-size:10px}.computer-map-row{display:grid;grid-template-columns:104px minmax(0,1fr);align-items:center;gap:10px;margin-top:10px}.computer-map-row>strong{color:#475569;font-size:12px}.computer-map-track{position:relative;height:48px;overflow:hidden;border:1px solid var(--border-color);border-radius:6px;background:repeating-linear-gradient(90deg,#f8fafc 0,#f8fafc calc(20% - 1px),#e2e8f0 20%)}.computer-map-row--plans .computer-map-track{height:54px}.computer-map-block{position:absolute;top:7px;height:34px;min-width:3px;overflow:hidden;border-radius:4px;background:#94a3b8;color:#fff;font-style:normal}.computer-map-block>span{display:block;overflow:hidden;padding:9px 8px;font-size:10px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}.computer-map-block--plan{top:7px;height:40px;background:#2563eb}.computer-map-block--plan>span{padding-top:11px}.computer-map-block--active{background:#16a34a}.computer-map-block--idle{background:#d97706}.computer-map-block--locked{background:#64748b}.computer-map-block--sleeping{background:#0f172a}.computer-map-block--paused{background:#0ea5e9}.computer-map-block--app{background:#0891b2}.timeline-empty{position:absolute;inset:0;display:grid;place-items:center;color:#94a3b8;font-size:10px}.computer-two-column{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:18px}.session-list{display:grid;gap:7px}.session-list button{display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:11px;width:100%;padding:10px;border:1px solid #eef2f7;border-radius:7px;background:#fff;text-align:left}.session-list button:hover{border-color:#bfdbfe;background:#f8fbff}.session-app-mark{display:grid;width:34px;height:34px;place-items:center;border-radius:7px;color:#fff;font-size:13px;font-style:normal;font-weight:800}.session-main strong,.session-main small,.session-summary strong,.session-summary small{display:block}.session-main strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.session-main small,.session-summary small{margin-top:3px;color:var(--color-text-muted);font-size:10px}.session-summary{text-align:right}.app-ranking{display:grid;gap:13px}.app-ranking>div{display:grid;gap:6px}.app-ranking__label{display:grid;grid-template-columns:20px minmax(0,1fr) auto;align-items:center;gap:7px}.app-ranking__label>b{color:#94a3b8;font-size:11px}.app-ranking__label strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.app-ranking__label small{color:var(--color-text-muted)}.app-ranking>div>i{height:5px;overflow:hidden;border-radius:3px;background:#e2e8f0}.app-ranking>div>i>b{display:block;height:100%}.daily-chart{display:flex;align-items:end;gap:7px;height:220px;overflow-x:auto;padding-top:16px}.daily-chart>div{display:grid;grid-template-rows:180px auto;min-width:30px;flex:1;gap:7px;text-align:center}.daily-bars{display:flex;align-items:end;justify-content:center;gap:3px}.daily-bars i{width:8px;min-height:2px;background:#16a34a}.daily-bars i+i{background:#2563eb}.daily-chart small{color:#64748b;font-size:9px}.computer-runtime-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:18px}.computer-runtime-grid>div{min-width:0;padding:12px;border-radius:7px;background:#f8fafc}.computer-runtime-grid span,.computer-runtime-grid strong{display:block}.computer-runtime-grid span{color:var(--color-text-muted);font-size:10px}.computer-runtime-grid strong{margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.session-drawer-backdrop{position:fixed;inset:0;z-index:80;background:rgb(15 23 42 / 35%)}.session-drawer{position:absolute;inset:0 0 0 auto;width:min(460px,100%);overflow:auto;padding:24px;background:#fff;box-shadow:-14px 0 30px rgb(15 23 42 / 18%)}.session-drawer header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding-bottom:18px;border-bottom:1px solid var(--border-color)}.session-drawer header p{margin-top:5px;color:var(--color-text-muted)}.session-drawer dl{display:grid;grid-template-columns:repeat(3,1fr);margin:18px 0;border:1px solid var(--border-color);border-radius:8px}.session-drawer dl div{padding:12px}.session-drawer dt{color:var(--color-text-muted);font-size:11px}.session-drawer dd{margin:5px 0 0;font-weight:700}.session-contexts{display:grid}.session-contexts article{display:flex;justify-content:space-between;gap:16px;padding:13px 0;border-bottom:1px solid var(--border-color)}.session-contexts strong,.session-contexts small{display:block}.session-contexts small{margin-top:4px;color:var(--color-text-muted);overflow-wrap:anywhere}@media(max-width:1050px){.computer-live-summary{grid-template-columns:auto minmax(0,1fr) minmax(0,1fr)}.computer-live-summary__analysis{grid-column:2/-1}.computer-two-column{grid-template-columns:1fr}}@media(max-width:760px){.computer-toolbar{align-items:stretch;flex-direction:column}.computer-toolbar label{min-width:0}.segmented button{min-width:0;flex:1}.computer-live-summary{grid-template-columns:auto minmax(0,1fr)}.computer-live-summary__context,.computer-live-summary__analysis{grid-column:1/-1;padding:12px 0 0;border-top:1px solid var(--border-color);border-left:0}.computer-runtime-grid{grid-template-columns:1fr 1fr}.session-list button{grid-template-columns:36px 1fr}.session-summary{grid-column:2;text-align:left}.session-drawer dl{grid-template-columns:1fr}}
+</style>
+
+<style scoped>
+.computer-activity-map-frame {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.computer-map-index {
+  color: #475569;
+  font-size: 12px;
+}
+
+.computer-map-index__spacer {
+  height: 39px;
+}
+
+.computer-map-index strong {
+  display: flex;
+  align-items: center;
+  height: 48px;
+  margin-top: 10px;
+}
+
+.computer-map-index strong:first-of-type {
+  height: 54px;
+}
+
+.computer-activity-map-scroll {
+  min-width: 0;
+  padding: 3px 0 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-gutter: stable;
+}
+
+.computer-activity-map {
+  min-width: 1120px;
+}
+
+.computer-map-axis {
+  margin-left: 4px;
+}
+
+.computer-map-row {
+  display: block;
+}
+
+.computer-two-column--scroll > :deep(.card) {
+  display: flex;
+  height: 342px;
+  flex-direction: column;
+}
+
+.computer-two-column--scroll > :deep(.card-body) {
+  min-height: 0;
+  flex: 1;
+}
+
+.computer-card-scroll {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding-right: 5px;
+  scrollbar-gutter: stable;
+}
+
+@media (max-width: 760px) {
+  .computer-activity-map-frame {
+    grid-template-columns: 82px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .computer-activity-map {
+    min-width: 900px;
+  }
+}
 </style>
