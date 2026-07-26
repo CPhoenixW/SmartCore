@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { scrollToLatest } from "@/utils/scroll";
 
 export interface BarChartSeries {
   key: string;
@@ -17,6 +18,7 @@ const props = defineProps<{
 }>();
 
 const maximum = computed(() => Math.max(1, ...props.series.flatMap((item) => item.values)));
+const scrollContainer = ref<HTMLElement | null>(null);
 const chartStyle = computed(() => ({ minWidth: `${Math.max(620, props.labels.length * 54)}px` }));
 
 function barStyle(value: number, color: string) {
@@ -29,10 +31,16 @@ function tooltip(index: number, item: BarChartSeries) {
   const value = item.displayValues?.[index] ?? item.values[index] ?? 0;
   return [heading, `${item.name}: ${value}`].filter(Boolean).join(" · ");
 }
+function showLatest() {
+  void nextTick(() => scrollToLatest(scrollContainer.value));
+}
+
+onMounted(showLatest);
+watch(() => [props.labels.length, props.labels[props.labels.length - 1]], showLatest);
 </script>
 
 <template>
-  <div class="bar-chart-scroll" tabindex="0">
+  <div ref="scrollContainer" class="bar-chart-scroll" tabindex="0">
     <div class="bar-chart" :style="chartStyle">
       <div v-if="series.length > 1" class="bar-chart__legend">
         <span v-for="item in series" :key="item.key"><i :style="{ background: item.color }" />{{ item.name }}</span>

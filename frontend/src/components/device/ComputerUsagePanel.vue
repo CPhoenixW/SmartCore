@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
@@ -20,6 +20,7 @@ import {
   type ComputerTimelineSegment,
 } from "@/utils/computer";
 import { formatDateTime } from "@/utils/date";
+import { scrollToLatest } from "@/utils/scroll";
 
 const APP_COLORS = ["#2563eb", "#0891b2", "#db2777", "#d97706", "#16a34a", "#475569"];
 const OBJECTIVE_STATES = ["active", "idle", "locked", "sleeping", "paused"] as const;
@@ -28,6 +29,7 @@ const { t, locale } = useI18n();
 const range = ref<ComputerRange>("today");
 const selectedDeviceId = ref("");
 const selectedSession = ref<ComputerSession | null>(null);
+const activityMapScroll = ref<HTMLElement | null>(null);
 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
 const devices = useQuery({ queryKey: ["lifeDevices"], queryFn: deviceRegistryApi.list, refetchInterval: 15_000 });
 const computers = computed(() => (devices.data.value ?? []).filter((item) => item.deviceKind === "computer" && item.stat === "active"));
@@ -90,6 +92,11 @@ const metrics = computed<DeviceMetric[]>(() => [
   { label: t("computer.switches"), value: String(report.value?.totals.switchCount ?? 0), note: t("computer.applicationChanges"), tone: "neutral" },
 ]);
 
+watch([range, () => mapReport.value?.windowEnd], async ([selectedRange, windowEnd]) => {
+  if (selectedRange !== "today" || !windowEnd) return;
+  await nextTick();
+  scrollToLatest(activityMapScroll.value);
+});
 function stateLabel(state: string) { return t(`computer.state.${state}`); }
 function timeLabel(value: string) {
   return new Date(value).toLocaleTimeString(locale.value === "en-US" ? "en-US" : "zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -140,7 +147,7 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
             <strong>{{ t("computer.statusLane") }}</strong>
             <strong>{{ t("computer.appLane") }}</strong>
           </div>
-          <div class="computer-activity-map-scroll" tabindex="0">
+          <div ref="activityMapScroll" class="computer-activity-map-scroll" tabindex="0">
             <div class="computer-activity-map">
               <div class="computer-map-legend"><span v-for="state in OBJECTIVE_STATES" :key="state"><i :class="`timeline-key timeline-key--${state}`" />{{ stateLabel(state) }}</span></div>
               <div class="computer-map-axis"><span v-for="tick in axisTicks" :key="tick">{{ timeLabel(tick) }}</span></div>
@@ -159,9 +166,9 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
         <EmptyState v-else :text="t('computer.noUsage')" />
       </BaseCard>
 
-      <div v-if="range === 'today'" class="computer-two-column">
+      <div v-if="range === 'today'" class="computer-two-column computer-two-column--scroll">
         <BaseCard :title="t('computer.sessions')">
-          <div v-if="report?.sessions.length" class="session-list">
+          <div v-if="report?.sessions.length" class="session-list computer-card-scroll">
             <button v-for="session in report.sessions" :key="session.sessionId" type="button" @click="selectedSession = session">
               <i class="session-app-mark" :style="{ background: stableColor(session.contexts[0]?.bundleId || session.sessionId) }">{{ appInitial(session.contexts[0]?.appName) }}</i>
               <span class="session-main"><strong>{{ session.contexts[0]?.appName || t("common.notSet") }}</strong><small>{{ timeLabel(session.startAt) }}–{{ timeLabel(session.endAt) }}</small></span>
@@ -171,7 +178,7 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
           <EmptyState v-else :text="t('computer.noSessions')" />
         </BaseCard>
         <BaseCard :title="t('computer.applications')">
-          <div v-if="report?.applications.length" class="app-ranking"><div v-for="(app, index) in report.applications" :key="app.bundleId"><span class="app-ranking__label"><b>{{ index + 1 }}</b><strong>{{ app.appName }}</strong><small>{{ duration(app.seconds) }}</small></span><i><b :style="{ width: `${app.seconds / maxApp * 100}%`, background: stableColor(app.bundleId) }" /></i></div></div>
+          <div v-if="report?.applications.length" class="app-ranking computer-card-scroll"><div v-for="(app, index) in report.applications" :key="app.bundleId"><span class="app-ranking__label"><b>{{ index + 1 }}</b><strong>{{ app.appName }}</strong><small>{{ duration(app.seconds) }}</small></span><i><b :style="{ width: `${app.seconds / maxApp * 100}%`, background: stableColor(app.bundleId) }" /></i></div></div>
           <EmptyState v-else :text="t('computer.noUsage')" />
         </BaseCard>
       </div>
@@ -257,6 +264,25 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
 
 .computer-map-row {
   display: block;
+}
+
+.computer-two-column--scroll > :deep(.card) {
+  display: flex;
+  height: 300px;
+  flex-direction: column;
+}
+
+.computer-two-column--scroll > :deep(.card-body) {
+  min-height: 0;
+  flex: 1;
+}
+
+.computer-card-scroll {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding-right: 5px;
+  scrollbar-gutter: stable;
 }
 
 @media (max-width: 760px) {
