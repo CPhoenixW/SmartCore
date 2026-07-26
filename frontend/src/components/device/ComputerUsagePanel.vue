@@ -60,30 +60,17 @@ const appSegments = computed(() => mergeComputerTimeline(report.value?.timeline 
   return context ? { key: context.contextId || context.bundleId, label: context.appName } : null;
 }));
 const metrics = computed<DeviceMetric[]>(() => [
-  { label: t("computer.activeTime"), value: duration(report.value?.totals.activeSeconds ?? 0), note: t("computer.selectedRange"), tone: "success" },
+  { label: t("computer.activeTime"), value: duration(report.value?.totals.activeSeconds ?? 0), note: monitor.value ? `${t("computer.current")}: ${stateLabel(monitor.value.state)}` : t("computer.waitingHeartbeat"), tone: monitor.value?.state === "active" ? "success" : "neutral" },
   { label: t("computer.plannedActive"), value: duration(report.value?.totals.plannedActiveSeconds ?? 0), note: t("computer.planOverlapNote") },
   { label: t("computer.idleTime"), value: duration(report.value?.totals.idleSeconds ?? 0), note: t("computer.objectiveOnly"), tone: "warning" },
   { label: t("computer.switches"), value: String(report.value?.totals.switchCount ?? 0), note: t("computer.applicationChanges"), tone: "neutral" },
 ]);
 
 function stateLabel(state: string) { return t(`computer.state.${state}`); }
-function analysisLabel(state: string) { return t(`computer.analysisState.${state}`); }
-function analysisBasis() {
-  const analysis = monitor.value?.analysis;
-  if (!analysis) return t("common.notSet");
-  if (analysis.currentPlan) return analysis.currentPlan.title;
-  if (analysis.presence?.present === true) return t("computer.analysisPresencePresent");
-  if (analysis.presence?.present === false) return t("computer.analysisPresenceAway");
-  return t("computer.analysisComputerOnly");
-}
 function timeLabel(value: string) {
   return new Date(value).toLocaleTimeString(locale.value === "en-US" ? "en-US" : "zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 function duration(seconds: number) { return durationLabel(seconds, locale.value === "en-US" ? "en-US" : "zh-CN"); }
-function currentDuration() {
-  if (!monitor.value?.stateSince) return t("common.notSet");
-  return duration((Date.now() - new Date(monitor.value.stateSince).getTime()) / 1000);
-}
 function intervalStyle(startAt: string, endAt: string) {
   if (!report.value) return {};
   return timelinePosition(startAt, endAt, report.value.windowStart, report.value.windowEnd);
@@ -118,14 +105,6 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
       <div v-if="monitor && (monitor.paused || monitor.state === 'offline' || monitor.queueDepth > 5 || !monitor.accessibilityGranted)" class="computer-alert" :class="`computer-alert--${monitor.state}`">
         {{ !monitor.accessibilityGranted ? t("computer.accessibilityMissing") : monitor.paused ? t("computer.paused") : monitor.state === "offline" ? t("computer.offline") : t("computer.syncDelayed", { count: monitor.queueDepth }) }}
       </div>
-
-      <section v-if="monitor" class="computer-live-summary">
-        <span class="computer-state-dot" :class="`computer-state-dot--${monitor.state}`" />
-        <div class="computer-live-summary__state"><span>{{ t("computer.current") }}</span><strong>{{ stateLabel(monitor.state) }}</strong><small>{{ currentDuration() }} · {{ monitor.currentAppName || t("computer.noTitle") }}</small></div>
-        <div class="computer-live-summary__context"><span>{{ t("computer.context") }}</span><strong>{{ monitor.currentWindowTitle || monitor.currentAppName || t("common.notSet") }}</strong><small>{{ t("computer.lastSync") }} · {{ formatDateTime(monitor.lastHeartbeatAt, locale === 'en-US' ? 'en-US' : 'zh-CN') }}</small></div>
-        <div class="computer-live-summary__analysis"><span>{{ t("computer.analysis") }}</span><strong>{{ analysisLabel(monitor.analysis.state) }}</strong><small>{{ analysisBasis() }}</small></div>
-      </section>
-      <EmptyState v-else :text="t('computer.waitingHeartbeat')" />
 
       <DeviceMetricStrip :items="metrics" :label="t('computer.activitySummary')" />
 

@@ -7,7 +7,6 @@ import DeviceManagementPanel from "@/components/device/DeviceManagementPanel.vue
 import DeviceMetricStrip, { type DeviceMetric } from "@/components/device/DeviceMetricStrip.vue";
 import BaseCard from "@/components/base/BaseCard.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
-import PageHeader from "@/components/base/PageHeader.vue";
 import { deviceApi } from "@/api/device";
 import { deviceRegistryApi } from "@/api/deviceRegistry";
 import { useToast } from "@/composables/useToast";
@@ -132,11 +131,10 @@ function stateLabel(state: string) {
 
 <template>
   <div class="device-data-page">
-    <PageHeader compact :title="t('device.piTitle')" :subtitle="t('device.piSubtitle')"><template #actions><button class="button" @click="refreshAll">{{ t("common.refresh") }}</button></template></PageHeader>
     <DeviceMetricStrip :items="metrics" :label="t('device.dataSummary')" />
 
     <section class="device-data-grid device-data-grid--pi">
-      <BaseCard :title="t('device.usage')">
+      <BaseCard :title="t('device.usage')"><template #actions><button class="button" @click="refreshAll">{{ t("common.refresh") }}</button></template>
         <div class="usage-summary">
           <div><span>{{ t("device.total") }}</span><strong>{{ t("device.minutesValue", { value: Math.round(usage.data.value?.totalMinutes ?? 0) }) }}</strong></div>
           <div><span>{{ t("device.peak") }}</span><strong>{{ usage.data.value?.peakStartAt ? usageTimeLabel(usage.data.value.peakStartAt) : t('common.notSet') }}</strong></div>

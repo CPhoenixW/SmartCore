@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
-import PageHeader from "@/components/base/PageHeader.vue";
 import DeviceManagementPanel from "@/components/device/DeviceManagementPanel.vue";
 import DeviceMetricStrip, { type DeviceMetric } from "@/components/device/DeviceMetricStrip.vue";
 import DevicePairPanel from "@/components/device/DevicePairPanel.vue";
@@ -87,13 +86,12 @@ function percentage(value: number, total: number) {
 
 <template>
   <div class="device-data-page">
-    <PageHeader compact :title="t('feishuDevice.title')" :subtitle="t('feishuDevice.subtitle')">
-      <template #actions>
-        <div class="segmented" role="group" :aria-label="t('feishuDevice.range')">
-          <button v-for="item in (['today', '7d', '30d'] as FeishuUsageRange[])" :key="item" type="button" :class="{ active: range === item }" @click="range = item">{{ t(`computer.rangeOption.${item}`) }}</button>
-        </div>
-      </template>
-    </PageHeader>
+    <div class="device-range-toolbar">
+      <span>{{ t("feishuDevice.range") }}</span>
+      <div class="segmented" role="group" :aria-label="t('feishuDevice.range')">
+        <button v-for="item in (['today', '7d', '30d'] as FeishuUsageRange[])" :key="item" type="button" :class="{ active: range === item }" @click="range = item">{{ t(`computer.rangeOption.${item}`) }}</button>
+      </div>
+    </div>
 
     <DeviceMetricStrip :items="metrics" :label="t('feishuDevice.dataSummary')" />
 
@@ -139,3 +137,8 @@ function percentage(value: number, total: number) {
     </DeviceManagementPanel>
   </div>
 </template>
+
+<style scoped>
+.device-range-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;color:var(--color-text-muted);font-size:12px}
+@media(max-width:640px){.device-range-toolbar{align-items:stretch;flex-direction:column;gap:8px}.device-range-toolbar .segmented{width:100%}}
+</style>

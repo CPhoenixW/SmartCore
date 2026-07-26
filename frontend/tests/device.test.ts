@@ -40,4 +40,15 @@ describe("device routes", () => {
     expect(source).not.toContain("处理链路");
     expect(source.toLowerCase()).not.toContain("processing chain");
   });
+
+  it("keeps device pages focused on data without duplicate page headers", () => {
+    for (const view of ["ComputerView.vue", "RaspberryPiView.vue", "ScreenView.vue", "FeishuBotView.vue"]) {
+      const source = readFileSync(resolve(process.cwd(), `src/views/${view}`), "utf8");
+      expect(source).not.toContain("<PageHeader");
+    }
+
+    const computerPanel = readFileSync(resolve(process.cwd(), "src/components/device/ComputerUsagePanel.vue"), "utf8");
+    expect(computerPanel).not.toContain('<section v-if="monitor" class="computer-live-summary">');
+    expect(computerPanel).toContain('label: t("computer.activeTime")');
+  });
 });

@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
-import PageHeader from "@/components/base/PageHeader.vue";
 import DevicePairPanel from "@/components/device/DevicePairPanel.vue";
 import DeviceManagementPanel from "@/components/device/DeviceManagementPanel.vue";
 import DeviceMetricStrip, { type DeviceMetric } from "@/components/device/DeviceMetricStrip.vue";
@@ -43,7 +42,6 @@ function timeLabel(value: string) {
 
 <template>
   <div class="device-data-page">
-    <PageHeader compact :title="t('screenDevice.title')" :subtitle="t('screenDevice.subtitle')" />
     <DeviceMetricStrip :items="metrics" :label="t('screenDevice.dataSummary')" />
     <section class="device-data-grid">
       <BaseCard :title="t('screenDevice.displaySchedule')">
