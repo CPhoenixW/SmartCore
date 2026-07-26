@@ -82,6 +82,7 @@ describe("device routes", () => {
     const piView = readFileSync(resolve(process.cwd(), "src/views/RaspberryPiView.vue"), "utf8");
     const computerPanel = readFileSync(resolve(process.cwd(), "src/components/device/ComputerUsagePanel.vue"), "utf8");
     const feishuView = readFileSync(resolve(process.cwd(), "src/views/FeishuBotView.vue"), "utf8");
+    const styles = readFileSync(resolve(process.cwd(), "src/styles/workbench.css"), "utf8");
 
     for (const source of [piView, computerPanel, feishuView]) {
       expect(source).toContain("BarChart");
@@ -90,5 +91,7 @@ describe("device routes", () => {
     expect(piView).toContain("recentUsage(activeDeviceId.value, 24)");
     expect(feishuView).not.toContain("feishuDevice.recentMessages");
     expect(feishuView).toContain("feishu-binding-management");
+    expect(styles).toContain(".bar-chart__canvas{display:grid;align-items:end;height:134px");
+    expect(styles).toContain(".bar-chart__labels{display:grid;min-height:16px");
   });
 });

@@ -150,18 +150,18 @@
 @media(max-width:640px){.device-metric-strip{grid-template-columns:1fr}.device-metric{min-height:0;border-right:0;border-bottom:1px solid var(--border-color)}.device-metric:nth-child(2){border-bottom:1px solid var(--border-color)}.device-metric:last-child{border-bottom:0}.device-parameter-grid{grid-template-columns:1fr}.device-management-panel>summary{align-items:flex-start}.device-management-panel__body{padding:14px}.segmented{display:flex;width:100%}.segmented button{min-width:0;flex:1}.device-activity-list article{grid-template-columns:86px minmax(0,1fr)}.device-status-text{grid-column:2}.screen-content-preview{padding:18px 18px 18px 23px}.camera-frame{aspect-ratio:4/3}}
 
 /* Compact, inspectable bars shared by device trend cards. */
-.bar-chart-scroll{min-width:0;overflow-x:auto;overflow-y:hidden;padding:38px 2px 5px;overscroll-behavior-x:contain}
+.bar-chart-scroll{min-width:0;overflow-x:auto;overflow-y:hidden;padding:30px 2px 12px;overscroll-behavior-x:contain}
 .bar-chart{display:grid;min-width:620px}
 .bar-chart__legend{display:flex;justify-content:flex-end;gap:14px;margin:-25px 0 8px;color:#64748b;font-size:10px}
 .bar-chart__legend span{display:flex;align-items:center;gap:5px}
 .bar-chart__legend i{width:9px;height:9px;border-radius:2px}
-.bar-chart__canvas{display:grid;align-items:end;height:158px;border-bottom:1px solid #cbd5e1;background:repeating-linear-gradient(to bottom,#fff 0,#fff 52px,#e2e8f0 53px)}
+.bar-chart__canvas{display:grid;align-items:end;height:134px;border-bottom:1px solid #cbd5e1;background:repeating-linear-gradient(to bottom,#fff 0,#fff 44px,#e2e8f0 45px)}
 .bar-chart__group{display:flex;align-items:end;justify-content:center;height:100%;gap:4px;padding:0 5px}
 .bar-chart__bar{position:relative;width:18px;max-width:42%;min-height:2px;padding:0;border:0;border-radius:3px 3px 0 0;cursor:default;transition:filter .15s,transform .15s}
 .bar-chart__bar::after{position:absolute;left:50%;bottom:calc(100% + 7px);z-index:4;padding:6px 8px;border-radius:6px;background:#0f172a;color:#fff;content:attr(data-tooltip);font-size:10px;white-space:nowrap;opacity:0;pointer-events:none;transform:translate(-50%,5px);transition:.15s}
 .bar-chart__bar:hover,.bar-chart__bar:focus-visible{filter:brightness(.9);outline:0;transform:scaleX(1.08)}
 .bar-chart__bar:hover::after,.bar-chart__bar:focus-visible::after{opacity:1;transform:translate(-50%,0)}
-.bar-chart__labels{display:grid;margin-top:8px;color:#64748b;font-size:9px;text-align:center}
+.bar-chart__labels{display:grid;min-height:16px;margin-top:8px;color:#64748b;font-size:9px;line-height:16px;text-align:center}
 .bar-chart__labels span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* Device dashboard pairs share a baseline while keeping dense history scrollable. */
