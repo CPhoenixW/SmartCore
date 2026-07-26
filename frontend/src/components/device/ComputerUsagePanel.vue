@@ -7,7 +7,7 @@ import DeviceManagementPanel from "@/components/device/DeviceManagementPanel.vue
 import DeviceMetricStrip, { type DeviceMetric } from "@/components/device/DeviceMetricStrip.vue";
 import DevicePairPanel from "@/components/device/DevicePairPanel.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
-import SmoothLineChart, { type CurveChartSeries } from "@/components/base/SmoothLineChart.vue";
+import BarChart, { type BarChartSeries } from "@/components/base/BarChart.vue";
 import { computerApi } from "@/api/computer";
 import { deviceRegistryApi } from "@/api/deviceRegistry";
 import type { ComputerRange, ComputerSession } from "@/types/computer";
@@ -47,11 +47,18 @@ const usage = useQuery({
   enabled,
   refetchInterval: 60_000,
 });
+const activityMapUsage = useQuery({
+  queryKey: ["computer", "usage", selectedDeviceId, "24h", timezone],
+  queryFn: () => computerApi.usage(selectedDeviceId.value, "24h", timezone),
+  enabled: computed(() => enabled.value && range.value === "today"),
+  refetchInterval: 60_000,
+});
 const report = computed(() => usage.data.value);
+const mapReport = computed(() => activityMapUsage.data.value ?? report.value);
 const monitor = computed(() => status.data.value ?? report.value?.status ?? null);
 const maxApp = computed(() => Math.max(1, ...(report.value?.applications ?? []).map((item) => item.seconds)));
 const dailyLabels = computed(() => (report.value?.daily ?? []).map((item) => item.date.slice(5)));
-const dailySeries = computed<CurveChartSeries[]>(() => [
+const dailySeries = computed<BarChartSeries[]>(() => [
   {
     key: "active",
     name: t("computer.activeTime"),
@@ -67,12 +74,12 @@ const dailySeries = computed<CurveChartSeries[]>(() => [
     displayValues: (report.value?.daily ?? []).map((item) => duration(item.plannedActiveSeconds)),
   },
 ]);
-const axisTicks = computed(() => report.value ? timelineTicks(report.value.windowStart, report.value.windowEnd, 6) : []);
-const stateSegments = computed(() => mergeComputerTimeline(report.value?.timeline ?? [], (point) => {
+const axisTicks = computed(() => mapReport.value ? timelineTicks(mapReport.value.windowStart, mapReport.value.windowEnd, 7) : []);
+const stateSegments = computed(() => mergeComputerTimeline(mapReport.value?.timeline ?? [], (point) => {
   const state = dominantComputerState(point);
   return { key: state, label: stateLabel(state) };
 }));
-const appSegments = computed(() => mergeComputerTimeline(report.value?.timeline ?? [], (point) => {
+const appSegments = computed(() => mergeComputerTimeline(mapReport.value?.timeline ?? [], (point) => {
   const context = point.dominantContext;
   return context ? { key: context.contextId || context.bundleId, label: context.appName } : null;
 }));
@@ -89,8 +96,8 @@ function timeLabel(value: string) {
 }
 function duration(seconds: number) { return durationLabel(seconds, locale.value === "en-US" ? "en-US" : "zh-CN"); }
 function intervalStyle(startAt: string, endAt: string) {
-  if (!report.value) return {};
-  return timelinePosition(startAt, endAt, report.value.windowStart, report.value.windowEnd);
+  if (!mapReport.value) return {};
+  return timelinePosition(startAt, endAt, mapReport.value.windowStart, mapReport.value.windowEnd);
 }
 function stableColor(value: string) {
   let hash = 0;
@@ -105,8 +112,8 @@ function segmentTitle(segment: ComputerTimelineSegment) {
   return `${timeLabel(segment.startAt)}–${timeLabel(segment.endAt)} · ${segment.label}`;
 }
 function segmentIsWide(segment: ComputerTimelineSegment) {
-  if (!report.value) return false;
-  const width = new Date(report.value.windowEnd).getTime() - new Date(report.value.windowStart).getTime();
+  if (!mapReport.value) return false;
+  const width = new Date(mapReport.value.windowEnd).getTime() - new Date(mapReport.value.windowStart).getTime();
   return (new Date(segment.endAt).getTime() - new Date(segment.startAt).getTime()) / Math.max(1, width) >= 0.045;
 }
 </script>
@@ -126,7 +133,7 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
       <DeviceMetricStrip :items="metrics" :label="t('computer.activitySummary')" />
 
       <BaseCard v-if="range === 'today'" :title="t('computer.activityMap')" :subtitle="t('computer.activityMapNote')">
-        <div v-if="report?.timeline.length" class="computer-activity-map-frame">
+        <div v-if="mapReport?.timeline.length" class="computer-activity-map-frame">
           <div class="computer-map-index" aria-hidden="true">
             <div class="computer-map-index__spacer" />
             <strong>{{ t("computer.plans") }}</strong>
@@ -138,7 +145,7 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
               <div class="computer-map-legend"><span v-for="state in OBJECTIVE_STATES" :key="state"><i :class="`timeline-key timeline-key--${state}`" />{{ stateLabel(state) }}</span></div>
               <div class="computer-map-axis"><span v-for="tick in axisTicks" :key="tick">{{ timeLabel(tick) }}</span></div>
               <div class="computer-map-row computer-map-row--plans">
-                <div class="computer-map-track"><i v-for="plan in report.plans" :key="plan.evtId" class="computer-map-block computer-map-block--plan" :style="intervalStyle(plan.startAt, plan.endAt)" :title="`${plan.title} · ${duration(plan.activeSeconds)}`"><span>{{ plan.title }}</span></i><span v-if="!report.plans.length" class="timeline-empty">{{ t("computer.noPlans") }}</span></div>
+                <div class="computer-map-track"><i v-for="plan in mapReport.plans" :key="plan.evtId" class="computer-map-block computer-map-block--plan" :style="intervalStyle(plan.startAt, plan.endAt)" :title="`${plan.title} · ${duration(plan.activeSeconds)}`"><span>{{ plan.title }}</span></i><span v-if="!mapReport.plans.length" class="timeline-empty">{{ t("computer.noPlans") }}</span></div>
               </div>
               <div class="computer-map-row">
                 <div class="computer-map-track"><i v-for="segment in stateSegments" :key="`${segment.startAt}-${segment.key}`" class="computer-map-block" :class="`computer-map-block--${segment.key}`" :style="segmentStyle(segment)" :title="segmentTitle(segment)"><span v-if="segmentIsWide(segment)">{{ segment.label }}</span></i></div>
@@ -152,9 +159,9 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
         <EmptyState v-else :text="t('computer.noUsage')" />
       </BaseCard>
 
-      <div v-if="range === 'today'" class="computer-two-column computer-two-column--scroll">
+      <div v-if="range === 'today'" class="computer-two-column">
         <BaseCard :title="t('computer.sessions')">
-          <div v-if="report?.sessions.length" class="session-list computer-card-scroll">
+          <div v-if="report?.sessions.length" class="session-list">
             <button v-for="session in report.sessions" :key="session.sessionId" type="button" @click="selectedSession = session">
               <i class="session-app-mark" :style="{ background: stableColor(session.contexts[0]?.bundleId || session.sessionId) }">{{ appInitial(session.contexts[0]?.appName) }}</i>
               <span class="session-main"><strong>{{ session.contexts[0]?.appName || t("common.notSet") }}</strong><small>{{ timeLabel(session.startAt) }}–{{ timeLabel(session.endAt) }}</small></span>
@@ -164,14 +171,14 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
           <EmptyState v-else :text="t('computer.noSessions')" />
         </BaseCard>
         <BaseCard :title="t('computer.applications')">
-          <div v-if="report?.applications.length" class="app-ranking computer-card-scroll"><div v-for="(app, index) in report.applications" :key="app.bundleId"><span class="app-ranking__label"><b>{{ index + 1 }}</b><strong>{{ app.appName }}</strong><small>{{ duration(app.seconds) }}</small></span><i><b :style="{ width: `${app.seconds / maxApp * 100}%`, background: stableColor(app.bundleId) }" /></i></div></div>
+          <div v-if="report?.applications.length" class="app-ranking"><div v-for="(app, index) in report.applications" :key="app.bundleId"><span class="app-ranking__label"><b>{{ index + 1 }}</b><strong>{{ app.appName }}</strong><small>{{ duration(app.seconds) }}</small></span><i><b :style="{ width: `${app.seconds / maxApp * 100}%`, background: stableColor(app.bundleId) }" /></i></div></div>
           <EmptyState v-else :text="t('computer.noUsage')" />
         </BaseCard>
       </div>
 
       <div v-else class="computer-two-column">
         <BaseCard :title="t('computer.dailyTrend')">
-          <SmoothLineChart v-if="report?.daily.length" :labels="dailyLabels" :series="dailySeries" :label="t('computer.dailyTrend')" />
+          <BarChart v-if="report?.daily.length" :labels="dailyLabels" :series="dailySeries" :label="t('computer.dailyTrend')" />
           <EmptyState v-else :text="t('computer.noUsage')" />
         </BaseCard>
         <BaseCard :title="t('computer.applications')">
@@ -241,7 +248,7 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
 }
 
 .computer-activity-map {
-  min-width: 1120px;
+  min-width: 1680px;
 }
 
 .computer-map-axis {
@@ -252,25 +259,6 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
   display: block;
 }
 
-.computer-two-column--scroll > :deep(.card) {
-  display: flex;
-  height: 342px;
-  flex-direction: column;
-}
-
-.computer-two-column--scroll > :deep(.card-body) {
-  min-height: 0;
-  flex: 1;
-}
-
-.computer-card-scroll {
-  height: 100%;
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
-  padding-right: 5px;
-  scrollbar-gutter: stable;
-}
-
 @media (max-width: 760px) {
   .computer-activity-map-frame {
     grid-template-columns: 82px minmax(0, 1fr);
@@ -278,7 +266,7 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
   }
 
   .computer-activity-map {
-    min-width: 900px;
+    min-width: 1320px;
   }
 }
 </style>

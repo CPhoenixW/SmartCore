@@ -1,5 +1,6 @@
 export type ComputerState = "active" | "idle" | "locked" | "sleeping" | "paused" | "offline";
 export type ComputerRange = "today" | "7d" | "30d";
+export type ComputerUsageRange = ComputerRange | "24h";
 
 export interface ComputerAnalysis {
   state: "unknown" | "plan_active" | "computer_active" | "at_desk_inactive" | "away" | "computer_inactive" | "computer_sleeping" | "monitor_paused";
@@ -65,7 +66,7 @@ export interface ComputerSession {
 
 export interface ComputerUsageReport {
   deviceId: string;
-  range: ComputerRange;
+  range: ComputerUsageRange;
   timezone: string;
   windowStart: string;
   windowEnd: string;

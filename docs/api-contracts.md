@@ -152,7 +152,7 @@ Pi 状态与照片使用 `/dev/*`；通用设备列表/配对/分发使用 `/api
 - `GET /api/computer/status?deviceId=...`：登录 owner 读取当前状态；心跳超过 120 秒为
   `offline`。响应包含基于当前 Plan、电脑状态和同用户新鲜 Pi 状态的确定性 analysis、
   reason codes 与算法版本。
-- `GET /api/computer/usage?deviceId=...&range=today|7d|30d&timezone=...`：登录 owner
+- `GET /api/computer/usage?deviceId=...&range=today|24h|7d|30d&timezone=...`：登录 owner；`24h` 为滚动 24 小时窗口，供活动地图使用
   读取状态总量、Plan 区间并集交集、时间线、会话、应用与过滤后的上下文。可选上下文
   字段为 `contextKind`、`domain`、`workspace` 和 `documentName`。
 

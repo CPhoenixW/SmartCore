@@ -156,6 +156,18 @@ def test_computer_upload_is_device_owned_idempotent_and_reported(app_env) -> Non
     assert context["workspace"] == "SmartCore"
     assert context["documentName"] == "service.py"
 
+    rolling = client.get(
+        "/api/computer/usage",
+        params={"deviceId": device_id, "range": "24h", "timezone": "Asia/Singapore"},
+    )
+    assert rolling.status_code == 200
+    rolling_data = rolling.json()["data"]
+    rolling_start = datetime.fromisoformat(rolling_data["windowStart"])
+    rolling_end = datetime.fromisoformat(rolling_data["windowEnd"])
+    assert rolling_end - rolling_start == timedelta(hours=24)
+    assert rolling_data["timeline"]
+    assert rolling_data["sessions"] == []
+
     db = SessionLocal()
     try:
         assert len(list(db.scalars(select(ComputerActivityBucket)))) == 1
