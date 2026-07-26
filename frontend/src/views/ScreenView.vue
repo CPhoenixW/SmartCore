@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
-import EmptyState from "@/components/base/EmptyState.vue";
 import DevicePairPanel from "@/components/device/DevicePairPanel.vue";
 import DeviceManagementPanel from "@/components/device/DeviceManagementPanel.vue";
 import DeviceMetricStrip, { type DeviceMetric } from "@/components/device/DeviceMetricStrip.vue";
@@ -13,6 +12,7 @@ import type { PlanEvent } from "@/types/event";
 import { formatDateTime, todayKey } from "@/utils/date";
 
 const { t } = useI18n();
+const previewFrame = ref<HTMLIFrameElement | null>(null);
 const devices = useQuery({ queryKey: ["lifeDevices"], queryFn: deviceRegistryApi.list, refetchInterval: 15_000 });
 const events = useQuery({ queryKey: ["screenPlans", todayKey()], queryFn: () => eventApi.list({ date: todayKey(), evtType: ["plan"], stat: ["todo"] }), refetchInterval: 60_000 });
 const screens = computed(() => (devices.data.value ?? []).filter((item) => item.deviceKind === "screen"));
@@ -38,20 +38,24 @@ const metrics = computed<DeviceMetric[]>(() => [
 function timeLabel(value: string) {
   return new Date(value).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
 }
+function updateScreenPreview() {
+  previewFrame.value?.contentWindow?.postMessage({
+    kind: "smartcore-screen-preview",
+    events: plans.value,
+    state: currentPlan.value ? "working" : "away",
+  }, window.location.origin);
+}
+watch([plans, currentPlan], updateScreenPreview, { flush: "post" });
 </script>
 
 <template>
   <div class="device-data-page">
     <DeviceMetricStrip :items="metrics" :label="t('screenDevice.dataSummary')" />
-    <section class="device-data-grid">
+    <section class="device-data-grid device-data-grid--matched device-data-grid--screen">
       <BaseCard :title="t('screenDevice.displaySchedule')">
-        <div v-if="currentPlan || nextPlan" class="screen-content-preview">
-          <span>{{ currentPlan ? t("screenDevice.currentPlan") : t("screenDevice.nextPlan") }}</span>
-          <strong>{{ (currentPlan ?? nextPlan)?.title }}</strong>
-          <p>{{ timeLabel((currentPlan ?? nextPlan)?.stTime ?? '') }} · {{ t("screenDevice.duration", { value: (currentPlan ?? nextPlan)?.durationMin ?? 0 }) }}</p>
+        <div class="screen-live-preview">
+          <iframe ref="previewFrame" src="/screen?preview=1" :title="t('screenDevice.previewTitle')" tabindex="-1" @load="updateScreenPreview" />
         </div>
-        <EmptyState v-else :text="t('screenDevice.noPlans')" />
-        <div v-if="plans.length" class="screen-plan-list"><article v-for="plan in plans.slice(0, 6)" :key="plan.evtId"><time>{{ timeLabel(plan.stTime) }}</time><div><strong>{{ plan.title }}</strong><small>{{ t("screenDevice.duration", { value: plan.durationMin }) }}</small></div></article></div>
       </BaseCard>
       <BaseCard :title="t('screenDevice.parameters')">
         <p class="device-data-note">{{ t("screenDevice.parameterNote") }}</p>

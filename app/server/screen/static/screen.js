@@ -2,6 +2,7 @@
   const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
   const wsBaseUrl = `${wsProto}//${location.host}/screen/ws`;
   const credentialKey = "smartcoreScreenCredential";
+  const previewMode = new URLSearchParams(location.search).get("preview") === "1";
   let deviceCredential = null;
   const shellEl = document.querySelector(".screen-shell");
   const clockHoursEl = document.getElementById("clockHours");
@@ -61,6 +62,18 @@
   }
 
   async function activateScreen() {
+    if (previewMode) {
+      hideSetup();
+      if (wsStatusText) wsStatusText.textContent = "预览";
+      window.addEventListener("message", (event) => {
+        if (event.origin !== location.origin || event.data?.kind !== "smartcore-screen-preview") return;
+        cachedEvents = Array.isArray(event.data.events) ? event.data.events : [];
+        renderState(event.data.state || "away");
+        renderSchedule(cachedEvents);
+      });
+      window.parent.postMessage({ kind: "smartcore-screen-preview-ready" }, location.origin);
+      return;
+    }
     deviceCredential = readCredential();
     if (deviceCredential) {
       hideSetup();
@@ -428,7 +441,7 @@
 
   reminderDoneEl?.addEventListener("click", () => submitReminderAction("done"));
   reminderSnoozeEl?.addEventListener("click", () => submitReminderAction("snooze10"));
-  document.body.addEventListener("pointerdown", () => getAudioCtx()?.resume?.(), { once: true });
+  if (!previewMode) document.body.addEventListener("pointerdown", () => getAudioCtx()?.resume?.(), { once: true });
   setInterval(tickClock, 1000);
   setInterval(loadTodayEvents, 30000);
   tickClock();
