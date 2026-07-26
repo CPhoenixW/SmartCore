@@ -22,10 +22,12 @@ struct SmartCoreMonitorMain {
             migrateLegacyToken()
         case "structured-context":
             configureStructuredContext()
+        case "accessibility":
+            configureAccessibility()
         case "run", nil:
             runAgent()
         default:
-            fputs("Usage: SmartCoreMonitor [run|pair|status|migrate-token|structured-context on|off|status]\n", stderr)
+            fputs("Usage: SmartCoreMonitor [run|pair|status|migrate-token|structured-context on|off|status|accessibility status|open]\n", stderr)
             exit(EXIT_FAILURE)
         }
     }
@@ -83,7 +85,7 @@ struct SmartCoreMonitorMain {
         }
         let hasToken = ((try? FileTokenStorage().read(account: configuration.keychainAccount)) ?? nil) != nil
         let structured = UserDefaults.standard.bool(forKey: structuredContextPreference)
-        print("device=\(configuration.deviceName) id=\(configuration.deviceId) token=\(hasToken ? "ready" : "missing") accessibility=\(AXIsProcessTrusted() ? "granted" : "missing") structuredContext=\(structured ? "on" : "off")")
+        print("device=\(configuration.deviceName) id=\(configuration.deviceId) token=\(hasToken ? "ready" : "missing") accessibility=\(AXIsProcessTrusted() ? "granted" : "missing") structuredContext=\(structured ? "on" : "off") path=\(executablePath())")
     }
 
     private static func configureStructuredContext() {
@@ -99,6 +101,29 @@ struct SmartCoreMonitorMain {
             fputs("Usage: SmartCoreMonitor structured-context on|off|status\n", stderr)
             exit(EXIT_FAILURE)
         }
+    }
+
+    @MainActor
+    private static func configureAccessibility() {
+        let value = CommandLine.arguments.dropFirst(2).first ?? "status"
+        switch value {
+        case "status":
+            print("accessibility=\(AXIsProcessTrusted() ? "granted" : "missing") path=\(executablePath())")
+        case "open":
+            guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
+                fputs("Unable to open macOS Accessibility settings.\n", stderr)
+                exit(EXIT_FAILURE)
+            }
+            NSWorkspace.shared.open(url)
+            print("Opened macOS Accessibility settings. Add and enable:\n\(executablePath())")
+        default:
+            fputs("Usage: SmartCoreMonitor accessibility status|open\n", stderr)
+            exit(EXIT_FAILURE)
+        }
+    }
+
+    private static func executablePath() -> String {
+        URL(fileURLWithPath: CommandLine.arguments.first ?? "SmartCoreMonitor").standardizedFileURL.path
     }
 
     private static func migrateLegacyToken() {
@@ -194,6 +219,7 @@ final class MonitorAgentDelegate: NSObject, NSApplicationDelegate {
     private func sample() {
         guard configuration != nil, token != nil else { return }
         let now = Date()
+        let permissionChanged = refreshAccessibilityPermission()
         let idleSeconds = CGEventSource.secondsSinceLastEventType(
             .combinedSessionState,
             eventType: anyInputEventType
@@ -205,7 +231,7 @@ final class MonitorAgentDelegate: NSObject, NSApplicationDelegate {
             idleSeconds: idleSeconds
         )
         let context = state == .active ? frontmostContext() : nil
-        let changed = state != currentState || context != currentContext
+        let changed = permissionChanged || state != currentState || context != currentContext
         capture(state: state, context: context, to: now)
         if changed { nextSyncAt = .distantPast }
         if now >= nextSyncAt { Task { await synchronize() } }
@@ -264,9 +290,11 @@ final class MonitorAgentDelegate: NSObject, NSApplicationDelegate {
                 kAXFocusedWindowAttribute as CFString,
                 &focusedValue
             ) == .success, let focusedValue {
-                let window = focusedValue as! AXUIElement
-                title = accessibilityString(window, attribute: kAXTitleAttribute)
-                documentReference = accessibilityString(window, attribute: kAXDocumentAttribute)
+                if CFGetTypeID(focusedValue) == AXUIElementGetTypeID() {
+                    let window = focusedValue as! AXUIElement
+                    title = accessibilityString(window, attribute: kAXTitleAttribute)
+                    documentReference = accessibilityString(window, attribute: kAXDocumentAttribute)
+                }
             }
         }
         return ActivityContextSanitizer.sanitize(
@@ -288,6 +316,13 @@ final class MonitorAgentDelegate: NSObject, NSApplicationDelegate {
         return value as? String
     }
 
+    private func refreshAccessibilityPermission() -> Bool {
+        let trusted = AXIsProcessTrusted()
+        let changed = trusted != accessibilityGranted
+        accessibilityGranted = trusted
+        return changed
+    }
+
     private func synchronize() async {
         guard !syncing, let configuration, let token, let outbox else { return }
         syncing = true
@@ -304,7 +339,7 @@ final class MonitorAgentDelegate: NSObject, NSApplicationDelegate {
                     observedAt: Date(),
                     currentAppName: currentContext?.appName,
                     currentWindowTitle: currentContext?.windowTitle,
-                    appVersion: "0.3.0",
+                    appVersion: "0.3.1",
                     osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
                     accessibilityGranted: accessibilityGranted,
                     queueDepth: try outbox.count(deviceId: configuration.deviceId)

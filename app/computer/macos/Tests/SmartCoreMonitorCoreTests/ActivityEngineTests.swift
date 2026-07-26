@@ -57,6 +57,19 @@ import Testing
         #expect(bucket.switchCount == 1)
     }
 
+    @Test func nonActiveSlicesDoNotCarryWindowContext() throws {
+        var aggregator = ActivityAggregator(timeZone: utc)
+        let start = Date(timeIntervalSince1970: 1_704_067_200)
+        let context = ActivityContext(bundleId: "com.example.Reader", appName: "Reader", windowTitle: "Notes")
+
+        #expect(aggregator.record(state: .idle, context: context, from: start, to: start.addingTimeInterval(10)).isEmpty)
+        let bucket = try #require(aggregator.flush(before: start.addingTimeInterval(61)).first)
+        let slice = try #require(bucket.slices.first)
+        #expect(slice.state == .idle)
+        #expect(slice.appName == nil)
+        #expect(slice.windowTitle == nil)
+    }
+
     @Test func retryBackoffResetsAfterSuccess() {
         var backoff = RetryBackoff()
         #expect(backoff.failed() == 5)

@@ -29,9 +29,16 @@ build_and_install() {
     codesign --force --sign - --identifier "$LABEL" "$INSTALL_PATH"
     codesign --verify --strict "$INSTALL_PATH"
 
-    if "$INSTALL_PATH" status | grep -q 'token=missing'; then
+    local monitor_status
+    monitor_status="$("$INSTALL_PATH" status 2>&1 || true)"
+    printf '%s\n' "$monitor_status"
+    if grep -q 'token=missing' <<<"$monitor_status"; then
         log "migrating the existing device token; macOS may request one-time Keychain approval"
         "$INSTALL_PATH" migrate-token
+    fi
+    if grep -q 'accessibility=missing' <<<"$monitor_status"; then
+        log "Accessibility permission is missing for the installed executable"
+        log "run: $INSTALL_PATH accessibility open"
     fi
 
     local plist_tmp
@@ -47,7 +54,17 @@ build_and_install() {
 
     launchctl bootout "$DOMAIN/$DEV_LABEL" >/dev/null 2>&1 || true
     launchctl bootout "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
-    launchctl bootstrap "$DOMAIN" "$PLIST_PATH"
+    local bootstrap_attempt
+    for bootstrap_attempt in 1 2 3; do
+        if launchctl bootstrap "$DOMAIN" "$PLIST_PATH"; then
+            break
+        fi
+        if [[ "$bootstrap_attempt" -eq 3 ]]; then
+            log "failed to bootstrap $LABEL after $bootstrap_attempt attempts"
+            exit 1
+        fi
+        sleep 1
+    done
     launchctl kickstart -k "$DOMAIN/$LABEL"
     log "installed and started $INSTALL_PATH"
 }
