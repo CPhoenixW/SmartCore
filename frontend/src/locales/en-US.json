@@ -422,7 +422,6 @@
     "lastMessageAt": "Last active {value}",
     "noRecentMessage": "No recent messages",
     "messageTrend": "Message trend",
-    "messageTrendNote": "Counts and outcomes only; original message content is never shown",
     "noMessages": "No messages in this range",
     "results": "Outcomes",
     "notifications": "Notifications sent",

@@ -91,7 +91,7 @@ function percentage(value: number, total: number) {
     <DeviceMetricStrip :items="metrics" :label="t('feishuDevice.dataSummary')" />
 
     <section class="device-data-grid device-data-grid--matched device-data-grid--feishu-summary">
-      <BaseCard :title="t('feishuDevice.messageTrend')" :subtitle="t('feishuDevice.messageTrendNote')">
+      <BaseCard :title="t('feishuDevice.messageTrend')">
         <BarChart v-if="report?.totals.messages" :labels="trendLabels" :series="trendSeries" :label="t('feishuDevice.messageTrend')" />
         <EmptyState v-else :text="t('feishuDevice.noMessages')" />
       </BaseCard>
