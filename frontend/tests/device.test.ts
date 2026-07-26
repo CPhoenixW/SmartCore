@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { mount } from "@vue/test-utils";
+import BarChart from "@/components/base/BarChart.vue";
 import { devicePersonNames, deviceStateView } from "@/utils/device";
 import { router } from "@/router";
-import { usageChartPosition, usageLineCoordinates, usageSmoothPath } from "@/utils/usageChart";
 
 describe("device utilities", () => {
   it("reads presence and people from heartbeat metadata", () => {
@@ -15,15 +16,23 @@ describe("device utilities", () => {
     const view = deviceStateView({ deviceId: "pi", state: "working", seenAt: "2020-01-01T00:00:00+08:00", meta: {} });
     expect(view.state).toBe("offline");
   });
-  it("positions all twelve line points inside the chart", () => {
-    const values = [0, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1];
-    const coordinates = usageLineCoordinates(values).split(" ");
-    const peak = usageChartPosition(6, values.length, 6, 6);
+});
 
-    expect(coordinates).toHaveLength(12);
-    expect(peak.x).toBeGreaterThan(50);
-    expect(peak.y).toBe(8);
-    expect(usageSmoothPath(values)).toContain(" C ");
+describe("device charts", () => {
+  it("renders focusable bars with value details", () => {
+    const wrapper = mount(BarChart, {
+      props: {
+        labels: ["09:00", "10:00"],
+        details: ["09:00–10:00", "10:00–11:00"],
+        label: "Usage",
+        series: [{ key: "usage", name: "Minutes", color: "#2563eb", values: [10, 20] }],
+      },
+    });
+
+    const bars = wrapper.findAll(".bar-chart__bar");
+    expect(bars).toHaveLength(2);
+    expect(bars[0]?.attributes("data-tooltip")).toBe("09:00–10:00 · Minutes: 10");
+    expect(bars[1]?.attributes("style")).toContain("height: 100%");
   });
 });
 
@@ -56,7 +65,7 @@ describe("device routes", () => {
     expect(computerPanel).toContain('label: t("computer.activeTime")');
   });
 
-  it("keeps dense device histories scrollable and uses the read-only screen preview", () => {
+  it("keeps only the Pi log scrollable and uses the read-only screen preview", () => {
     const piView = readFileSync(resolve(process.cwd(), "src/views/RaspberryPiView.vue"), "utf8");
     const computerPanel = readFileSync(resolve(process.cwd(), "src/components/device/ComputerUsagePanel.vue"), "utf8");
     const screenView = readFileSync(resolve(process.cwd(), "src/views/ScreenView.vue"), "utf8");
@@ -64,7 +73,22 @@ describe("device routes", () => {
     expect(piView).toContain('class="log-list device-scroll-list"');
     expect(piView).not.toContain("logs.slice(");
     expect(computerPanel).toContain('class="computer-map-index"');
-    expect(computerPanel).toContain("computer-card-scroll");
+    expect(computerPanel).toContain('computerApi.usage(selectedDeviceId.value, "24h", timezone)');
+    expect(computerPanel).not.toContain("computer-card-scroll");
     expect(screenView).toContain('src="/screen?preview=1"');
+  });
+
+  it("uses interactive bars for all time-series charts", () => {
+    const piView = readFileSync(resolve(process.cwd(), "src/views/RaspberryPiView.vue"), "utf8");
+    const computerPanel = readFileSync(resolve(process.cwd(), "src/components/device/ComputerUsagePanel.vue"), "utf8");
+    const feishuView = readFileSync(resolve(process.cwd(), "src/views/FeishuBotView.vue"), "utf8");
+
+    for (const source of [piView, computerPanel, feishuView]) {
+      expect(source).toContain("BarChart");
+      expect(source).not.toContain("SmoothLineChart");
+    }
+    expect(piView).toContain("recentUsage(activeDeviceId.value, 24)");
+    expect(feishuView).not.toContain("feishuDevice.recentMessages");
+    expect(feishuView).toContain("feishu-binding-management");
   });
 });

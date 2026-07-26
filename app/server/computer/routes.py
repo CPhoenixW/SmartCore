@@ -161,7 +161,7 @@ def status(
 @router.get("/usage")
 def usage(
     deviceId: Annotated[str, Query(min_length=1, max_length=32)],
-    range: Literal["today", "7d", "30d"] = "today",
+    range: Literal["today", "24h", "7d", "30d"] = "today",
     timezoneName: Annotated[str, Query(alias="timezone", min_length=1, max_length=64)] = "Asia/Shanghai",
     userId: str = Depends(require_authenticated_user_id),
     db: Session = Depends(get_db),

@@ -538,9 +538,9 @@ def usage_report(
 ) -> dict[str, Any]:
     local_tz = ZoneInfo(timezone_name)
     local_now = (now or datetime.now(UTC)).astimezone(local_tz)
-    days = {"today": 1, "7d": 7, "30d": 30}[range_key]
+    days = {"today": 1, "24h": 2, "7d": 7, "30d": 30}[range_key]
     start_date = local_now.date() - timedelta(days=days - 1)
-    local_start = datetime.combine(start_date, datetime.min.time(), tzinfo=local_tz)
+    local_start = local_now - timedelta(hours=24) if range_key == "24h" else datetime.combine(start_date, datetime.min.time(), tzinfo=local_tz)
     range_start = local_start.astimezone(UTC)
     range_end = local_now.astimezone(UTC)
     buckets = list(
@@ -618,7 +618,7 @@ def usage_report(
         daily_planned[local_bucket_date] += round(bucket_planned)
         for plan_payload, interval in zip(plans, plan_intervals, strict=True):
             plan_payload["activeSeconds"] += round(active_seconds * min(1.0, _overlap_seconds(bucket_start, bucket_end, [interval]) / 60.0))
-        if range_key == "today":
+        if range_key in {"today", "24h"}:
             timeline.append(
                 {
                     "startAt": bucket.bucketStart,
