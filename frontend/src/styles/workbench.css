@@ -173,6 +173,10 @@
 .device-data-grid--scroll-pair>.card{display:flex;height:334px;flex-direction:column}
 .device-data-grid--scroll-pair>.card>.card-body{min-height:0;flex:1}
 .device-scroll-list{height:100%;overflow-y:auto;overscroll-behavior-y:contain;padding-right:5px;scrollbar-gutter:stable}
+.computer-two-column--scroll{align-items:stretch}
+.computer-two-column--scroll>.card{display:flex;height:300px;min-height:0;flex-direction:column;overflow:hidden}
+.computer-two-column--scroll>.card>.card-body{min-height:0;flex:1;overflow:hidden}
+.computer-card-scroll{align-content:start;height:100%;overflow-y:auto;overscroll-behavior-y:contain;padding-right:5px;scrollbar-gutter:stable}
 .device-parameter-grid--health{height:100%;overflow-y:auto;overscroll-behavior-y:contain;padding-right:5px;scrollbar-gutter:stable}
 .device-parameter-grid--health>div{padding:11px 12px}
 .device-data-grid--feishu-summary>.card{display:flex;min-height:278px;flex-direction:column}

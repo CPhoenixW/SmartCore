@@ -266,25 +266,6 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
   display: block;
 }
 
-.computer-two-column--scroll > :deep(.card) {
-  display: flex;
-  height: 300px;
-  flex-direction: column;
-}
-
-.computer-two-column--scroll > :deep(.card-body) {
-  min-height: 0;
-  flex: 1;
-}
-
-.computer-card-scroll {
-  height: 100%;
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
-  padding-right: 5px;
-  scrollbar-gutter: stable;
-}
-
 @media (max-width: 760px) {
   .computer-activity-map-frame {
     grid-template-columns: 82px minmax(0, 1fr);

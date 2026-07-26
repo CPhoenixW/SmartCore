@@ -76,6 +76,7 @@ describe("device routes", () => {
     const piView = readFileSync(resolve(process.cwd(), "src/views/RaspberryPiView.vue"), "utf8");
     const computerPanel = readFileSync(resolve(process.cwd(), "src/components/device/ComputerUsagePanel.vue"), "utf8");
     const screenView = readFileSync(resolve(process.cwd(), "src/views/ScreenView.vue"), "utf8");
+    const styles = readFileSync(resolve(process.cwd(), "src/styles/workbench.css"), "utf8");
 
     expect(piView).toContain('class="log-list device-scroll-list"');
     expect(piView).not.toContain("logs.slice(");
@@ -84,6 +85,9 @@ describe("device routes", () => {
     expect(computerPanel).toContain("computer-two-column computer-two-column--scroll");
     expect(computerPanel).toContain("computer-card-scroll");
     expect(computerPanel).toContain('ref="activityMapScroll"');
+    expect(styles).toContain(".computer-two-column--scroll>.card{display:flex;height:300px");
+    expect(styles).toContain(".computer-two-column--scroll>.card>.card-body{min-height:0;flex:1;overflow:hidden}");
+    expect(styles).toContain(".computer-card-scroll{align-content:start;height:100%;overflow-y:auto");
     expect(screenView).toContain('src="/screen?preview=1"');
   });
 
