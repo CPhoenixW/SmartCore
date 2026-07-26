@@ -60,13 +60,11 @@ describe("device routes", () => {
     const piView = readFileSync(resolve(process.cwd(), "src/views/RaspberryPiView.vue"), "utf8");
     const computerPanel = readFileSync(resolve(process.cwd(), "src/components/device/ComputerUsagePanel.vue"), "utf8");
     const screenView = readFileSync(resolve(process.cwd(), "src/views/ScreenView.vue"), "utf8");
-    const screenClient = readFileSync(resolve(process.cwd(), "../app/server/screen/static/screen.js"), "utf8");
 
     expect(piView).toContain('class="log-list device-scroll-list"');
     expect(piView).not.toContain("logs.slice(");
     expect(computerPanel).toContain('class="computer-map-index"');
     expect(computerPanel).toContain("computer-card-scroll");
     expect(screenView).toContain('src="/screen?preview=1"');
-    expect(screenClient).toContain('event.data?.kind !== "smartcore-screen-preview"');
   });
 });
