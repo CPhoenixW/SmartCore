@@ -5,6 +5,7 @@ import { mount } from "@vue/test-utils";
 import BarChart from "@/components/base/BarChart.vue";
 import { devicePersonNames, deviceStateView } from "@/utils/device";
 import { router } from "@/router";
+import { scrollToLatest } from "@/utils/scroll";
 
 describe("device utilities", () => {
   it("reads presence and people from heartbeat metadata", () => {
@@ -15,6 +16,12 @@ describe("device utilities", () => {
   it("marks stale state as offline", () => {
     const view = deviceStateView({ deviceId: "pi", state: "working", seenAt: "2020-01-01T00:00:00+08:00", meta: {} });
     expect(view.state).toBe("offline");
+  });
+  it("positions horizontal histories at their latest data", () => {
+    const element = { scrollLeft: 0, scrollWidth: 960 };
+
+    scrollToLatest(element);
+    expect(element.scrollLeft).toBe(960);
   });
 });
 
@@ -65,7 +72,7 @@ describe("device routes", () => {
     expect(computerPanel).toContain('label: t("computer.activeTime")');
   });
 
-  it("keeps only the Pi log scrollable and uses the read-only screen preview", () => {
+  it("keeps dense device histories scrollable and uses the read-only screen preview", () => {
     const piView = readFileSync(resolve(process.cwd(), "src/views/RaspberryPiView.vue"), "utf8");
     const computerPanel = readFileSync(resolve(process.cwd(), "src/components/device/ComputerUsagePanel.vue"), "utf8");
     const screenView = readFileSync(resolve(process.cwd(), "src/views/ScreenView.vue"), "utf8");
@@ -74,7 +81,9 @@ describe("device routes", () => {
     expect(piView).not.toContain("logs.slice(");
     expect(computerPanel).toContain('class="computer-map-index"');
     expect(computerPanel).toContain('computerApi.usage(selectedDeviceId.value, "24h", timezone)');
-    expect(computerPanel).not.toContain("computer-card-scroll");
+    expect(computerPanel).toContain("computer-two-column computer-two-column--scroll");
+    expect(computerPanel).toContain("computer-card-scroll");
+    expect(computerPanel).toContain('ref="activityMapScroll"');
     expect(screenView).toContain('src="/screen?preview=1"');
   });
 
