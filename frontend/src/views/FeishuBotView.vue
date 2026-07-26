@@ -31,7 +31,7 @@ const enabledBots = computed(() => (bots.data.value ?? []).filter((bot) => bot.e
 const maxTrend = computed(() => Math.max(1, ...(report.value?.trend ?? []).map((point) => point.messages)));
 const successRate = computed(() => {
   const total = (report.value?.totals.forwarded ?? 0) + (report.value?.totals.failed ?? 0);
-  return total ? Math.round((report.value?.totals.forwarded ?? 0) / total * 100) : 100;
+  return total ? Math.round((report.value?.totals.forwarded ?? 0) / total * 100) : null;
 });
 const latestBinding = computed(() => [...(bindings.data.value ?? [])]
   .filter((binding) => binding.lastSeenAt)
@@ -50,9 +50,9 @@ const metrics = computed<DeviceMetric[]>(() => [
   },
   {
     label: t("feishuDevice.successRate"),
-    value: `${successRate.value}%`,
+    value: successRate.value == null ? t("common.notSet") : `${successRate.value}%`,
     note: t("feishuDevice.failureNote", { count: report.value?.totals.failed ?? 0 }),
-    tone: (report.value?.totals.failed ?? 0) > 0 ? "warning" : "success",
+    tone: successRate.value == null ? "neutral" : (report.value?.totals.failed ?? 0) > 0 ? "warning" : "success",
   },
   {
     label: t("feishuDevice.bindings"),
@@ -80,6 +80,9 @@ function intentLabel(value?: string | null) {
   if (value === "unsupported_message") return t("feishuDevice.intent.unsupported");
   return t("feishuDevice.intent.other");
 }
+function percentage(value: number, total: number) {
+  return total > 0 ? value / total * 100 : 0;
+}
 </script>
 
 <template>
@@ -96,7 +99,7 @@ function intentLabel(value?: string | null) {
 
     <section class="device-data-grid">
       <BaseCard :title="t('feishuDevice.messageTrend')" :subtitle="t('feishuDevice.messageTrendNote')">
-        <div v-if="report?.trend.length" class="feishu-trend" tabindex="0">
+        <div v-if="report?.totals.messages" class="feishu-trend" tabindex="0">
           <div v-for="point in report.trend" :key="point.startAt" class="feishu-trend__column" :title="`${trendLabel(point.startAt)} · ${point.messages}`">
             <span><i :style="{ height: `${Math.max(3, point.messages / maxTrend * 100)}%` }" /></span>
             <small>{{ trendLabel(point.startAt) }}</small>
@@ -107,10 +110,10 @@ function intentLabel(value?: string | null) {
 
       <BaseCard :title="t('feishuDevice.results')">
         <div class="feishu-result-list">
-          <div><span>{{ t("feishuDevice.status.forwarded") }}</span><strong>{{ report?.totals.forwarded ?? 0 }}</strong><i><b :style="{ width: `${Math.max(2, successRate)}%` }" /></i></div>
-          <div><span>{{ t("feishuDevice.status.failed") }}</span><strong>{{ report?.totals.failed ?? 0 }}</strong><i><b class="failed" :style="{ width: `${Math.max(2, 100 - successRate)}%` }" /></i></div>
-          <div><span>{{ t("feishuDevice.status.unsupported") }}</span><strong>{{ report?.totals.unsupported ?? 0 }}</strong><i><b class="unsupported" :style="{ width: `${Math.max(2, (report?.totals.unsupported ?? 0) / Math.max(1, report?.totals.messages ?? 0) * 100)}%` }" /></i></div>
-          <div><span>{{ t("feishuDevice.notifications") }}</span><strong>{{ report?.totals.notificationsSent ?? 0 }}</strong><i><b class="notification" :style="{ width: `${Math.max(2, (report?.totals.notificationsSent ?? 0) / Math.max(1, (report?.totals.notificationsSent ?? 0) + (report?.totals.notificationsFailed ?? 0)) * 100)}%` }" /></i></div>
+          <div><span>{{ t("feishuDevice.status.forwarded") }}</span><strong>{{ report?.totals.forwarded ?? 0 }}</strong><i><b :style="{ width: `${percentage(report?.totals.forwarded ?? 0, report?.totals.messages ?? 0)}%` }" /></i></div>
+          <div><span>{{ t("feishuDevice.status.failed") }}</span><strong>{{ report?.totals.failed ?? 0 }}</strong><i><b class="failed" :style="{ width: `${percentage(report?.totals.failed ?? 0, report?.totals.messages ?? 0)}%` }" /></i></div>
+          <div><span>{{ t("feishuDevice.status.unsupported") }}</span><strong>{{ report?.totals.unsupported ?? 0 }}</strong><i><b class="unsupported" :style="{ width: `${percentage(report?.totals.unsupported ?? 0, report?.totals.messages ?? 0)}%` }" /></i></div>
+          <div><span>{{ t("feishuDevice.notifications") }}</span><strong>{{ report?.totals.notificationsSent ?? 0 }}</strong><i><b class="notification" :style="{ width: `${percentage(report?.totals.notificationsSent ?? 0, (report?.totals.notificationsSent ?? 0) + (report?.totals.notificationsFailed ?? 0))}%` }" /></i></div>
         </div>
       </BaseCard>
     </section>
