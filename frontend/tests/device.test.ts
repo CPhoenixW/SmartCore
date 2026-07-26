@@ -47,6 +47,9 @@ describe("device routes", () => {
       expect(source).not.toContain("<PageHeader");
     }
 
+    const computerView = readFileSync(resolve(process.cwd(), "src/views/ComputerView.vue"), "utf8");
+    expect(computerView).toContain('import ComputerUsagePanel from "@/components/device/ComputerUsagePanel.vue"');
+
     const computerPanel = readFileSync(resolve(process.cwd(), "src/components/device/ComputerUsagePanel.vue"), "utf8");
     expect(computerPanel).not.toContain('<section v-if="monitor" class="computer-live-summary">');
     expect(computerPanel).toContain('label: t("computer.activeTime")');
