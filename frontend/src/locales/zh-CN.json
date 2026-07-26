@@ -422,7 +422,6 @@
     "lastMessageAt": "最后活跃 {value}",
     "noRecentMessage": "暂无最近消息",
     "messageTrend": "消息趋势",
-    "messageTrendNote": "仅统计数量和结果，不展示原始消息内容",
     "noMessages": "所选范围内暂无消息",
     "results": "处理结果",
     "notifications": "已发送通知",
