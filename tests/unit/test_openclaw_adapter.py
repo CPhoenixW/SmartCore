@@ -88,6 +88,29 @@ def test_daily_report_extraction_drops_reasoning_preamble() -> None:
     assert "Now let me" not in normalized
 
 
+def test_daily_report_rejects_bracketed_title() -> None:
+    report = (
+        "📅 **[2026年07月22日] 工作日报**\n\n"
+        "### 📝 本日工作概述\n> 完成核心工作。\n\n"
+        "### 🚀 今日主要成果与技术进展\n- **模块**\n\n"
+        "### ⚠️ 遇到问题与阻碍 (Blockers)\n- 无。\n\n"
+        "### 📅 明日规划\n- 延续已记录工作。"
+    )
+    normalized, error = adapter.normalize_daily_report(report, "2026-07-22")
+    assert normalized == ""
+    assert error == "missing exact report title"
+
+
+def test_daily_retry_prompt_requires_exact_unbracketed_title() -> None:
+    prompt = adapter.build_daily_retry_prompt(
+        {"event_type": "daily_summary", "reportDate": "2026-07-22"},
+        scope_file=".smartcore-task-scopes/retry",
+    )
+    assert "📅 **[YYYY年MM月DD日] 工作日报**" not in prompt
+    assert "📅 **2026年07月22日 工作日报**" in prompt
+    assert "日期不得使用方括号" in prompt
+
+
 def test_daily_report_rejects_wrong_structure() -> None:
     normalized, error = adapter.normalize_daily_report(
         "📅 **2026年07月22日 工作日报**\n\n只有正文",

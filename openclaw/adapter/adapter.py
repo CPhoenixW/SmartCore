@@ -292,8 +292,8 @@ def build_prompt(
             "按项目/模块归纳成果，不按时间流水账排列。不要在标题中罗列时间段。\n"
             "完成事项只从描述提取脚本、命令、版本、封装功能和踩坑；记录缺失时写“记录中未提供技术细节”，严禁猜测。\n"
             "未完成事项提炼明确阻碍并转入明日规划；没有阻碍时写“今日记录中未发现明确阻碍”。\n\n"
-            "必须逐字使用以下 Markdown 结构，不得增加前言、后记或其他章节：\n"
-            "📅 **[YYYY年MM月DD日] 工作日报**\n\n"
+            "必须逐字使用以下 Markdown 结构，不得增加前言、后记或其他章节。标题日期不加方括号：\n"
+            "📅 **YYYY年MM月DD日 工作日报**\n\n"
             "### 📝 本日工作概述\n"
             "> [用 1-2 句话概括核心工作和状态变化]\n\n"
             "### 🚀 今日主要成果与技术进展\n"
@@ -484,10 +484,13 @@ def normalize_daily_report(text: str, report_date: str) -> tuple[str, str | None
 
 
 def build_daily_retry_prompt(event: dict[str, Any], *, scope_file: str) -> str:
+    report_date = str(event.get("reportDate") or "").strip()
+    title = daily_report_title(report_date) or "📅 **YYYY年MM月DD日 工作日报**"
     return (
         build_prompt(event, scope_file=scope_file)
         + "\n\n上一次输出因格式或语言不合格已被 Adapter 拒绝。"
-        "请重新查询并直接输出最终中文日报。第一个字符必须是 📅，"
+        f"请重新查询并直接输出最终中文日报。第一行必须逐字为：{title}；"
+        "日期不得使用方括号，第一个字符必须是 📅，"
         "四个规定章节各出现一次；不要输出任何分析、筛选过程、英文前言或后记。"
     )
 
