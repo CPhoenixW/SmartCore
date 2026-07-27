@@ -118,6 +118,20 @@ def test_message_card_keeps_pipes_outside_tables_as_markdown() -> None:
     assert card["elements"] == [{"tag": "div", "text": {"tag": "lark_md", "content": content}}]
 
 
+def test_message_card_adapts_gfm_headings_and_quotes_for_feishu() -> None:
+    card = build_message_card(content="### 今日总结\n> 完成核心工作。\n\n**结果**")
+
+    assert card["elements"] == [
+        {
+            "tag": "div",
+            "text": {
+                "tag": "lark_md",
+                "content": "**今日总结**\n完成核心工作。\n\n**结果**",
+            },
+        }
+    ]
+
+
 def test_message_card_does_not_convert_table_inside_code_fence() -> None:
     content = "```\n| A | B |\n| --- | --- |\n| 1 | 2 |\n```"
     card = build_message_card(content=content)

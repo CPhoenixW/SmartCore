@@ -113,11 +113,18 @@ def test_daily_retry_prompt_requires_exact_unbracketed_title() -> None:
 
 def test_daily_report_rejects_wrong_structure() -> None:
     normalized, error = adapter.normalize_daily_report(
-        "📅 **2026年07月22日 工作日报**\n\n只有正文",
+        "📅 **2026年07月22日 工作日报**\n\n",
         "2026-07-22",
     )
     assert normalized == ""
-    assert error == "heading count invalid: ### 📝 本日工作概述"
+    assert error == "report body is required"
+
+
+def test_daily_report_accepts_summary_without_empty_sections() -> None:
+    report = "📅 **2026年07月22日 工作日报**\n\n今天完成了核心开发，版本已经部署并通过验证。"
+    normalized, error = adapter.normalize_daily_report(report, "2026-07-22")
+    assert error is None
+    assert normalized == report
 
 
 def test_media_event_uses_an_isolated_openclaw_session(tmp_path, monkeypatch) -> None:

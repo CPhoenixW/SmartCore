@@ -24,8 +24,28 @@ def _plain_text(content: Any) -> dict[str, str]:
     return {"tag": "plain_text", "content": str(content or "")}
 
 
+def _feishu_markdown(content: Any) -> str:
+    """Adapt common GFM syntax to the subset supported by Feishu lark_md."""
+    lines = str(content or "").splitlines()
+    normalized: list[str] = []
+    in_code_block = False
+    for line in lines:
+        if line.lstrip().startswith("```"):
+            in_code_block = not in_code_block
+            normalized.append(line)
+            continue
+        if not in_code_block:
+            heading = re.match(r"^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$", line)
+            if heading:
+                line = f"**{heading.group(1).strip()}**"
+            else:
+                line = re.sub(r"^\s*>\s?", "", line)
+        normalized.append(line)
+    return "\n".join(normalized)
+
+
 def _markdown(content: Any) -> dict[str, str]:
-    return {"tag": "lark_md", "content": str(content or "")}
+    return {"tag": "lark_md", "content": _feishu_markdown(content)}
 
 
 _TABLE_SEPARATOR_CELL = re.compile(r"^:?-{3,}:?$")

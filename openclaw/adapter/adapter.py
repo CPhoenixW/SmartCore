@@ -20,12 +20,6 @@ LOG_PATH = Path(os.environ.get("ADAPTER_LOG_PATH", str(BASE_DIR / "adapter.log")
 MAX_FINAL_TEXT = 800
 MAX_STDERR = 800
 FAILURE_REPLY = "抱歉，这次处理没有成功，请稍后再试。"
-DAILY_HEADINGS = (
-    "### 📝 本日工作概述",
-    "### 🚀 今日主要成果与技术进展",
-    "### ⚠️ 遇到问题与阻碍 (Blockers)",
-    "### 📅 明日规划",
-)
 IMAGE_SUFFIXES = {
     "image/jpeg": {".jpg", ".jpeg"},
     "image/png": {".png"},
@@ -291,20 +285,15 @@ def build_prompt(
             "同一事项若 DDL 为 cancelled 且关联 plan 为 done，只汇报已完成的业务事项，不汇报 DDL 取消。\n"
             "按项目/模块归纳成果，不按时间流水账排列。不要在标题中罗列时间段。\n"
             "完成事项只从描述提取脚本、命令、版本、封装功能和踩坑；记录缺失时写“记录中未提供技术细节”，严禁猜测。\n"
-            "未完成事项提炼明确阻碍并转入明日规划；没有阻碍时写“今日记录中未发现明确阻碍”。\n\n"
-            "必须逐字使用以下 Markdown 结构，不得增加前言、后记或其他章节。标题日期不加方括号：\n"
+            "没有事实就不要补写成果、阻碍或计划，也不要使用‘无记录’、‘未提供’等占位句。\n\n"
+            "日报只固定标题，正文不要按小时流水账。标题日期不加方括号：\n"
             "📅 **YYYY年MM月DD日 工作日报**\n\n"
-            "### 📝 本日工作概述\n"
-            "> [用 1-2 句话概括核心工作和状态变化]\n\n"
-            "### 🚀 今日主要成果与技术进展\n"
-            "- **[模块名称]**\n"
-            "  - **进展**：[实际完成内容]\n"
-            "  - **技术要点/避坑**：[仅写记录中存在的技术事实]\n\n"
-            "### ⚠️ 遇到问题与阻碍 (Blockers)\n"
-            "- **[问题名称]**：[具体阻碍与现象]\n\n"
-            "### 📅 明日规划\n"
-            "- [针对阻碍的下一步行动]\n"
-            "- [记录中已有的其他计划]\n\n"
+            "标题后先写一段 2-4 句的核心总结，说明当天最重要的工作主题、实际结果和状态变化。\n"
+            "只有确实有事实时，才追加以下加粗小节（没有就省略）：\n"
+            "**主要成果**\n- 只写已完成或有明确结果的事项\n"
+            "**问题与阻碍**\n- 只写记录中明确出现的问题\n"
+            "**下一步**\n- 只写记录中已有的后续计划\n"
+            "不要使用 Markdown 标题（#）或引用块（>），不要重复标题，不要罗列每个时间段。\n\n"
             "查询日期必须等于日报日期，不加状态过滤，includeLinkedPlans=true。"
             "禁止创建、更新、完成或删除事件，也不要调用日报保存接口；Adapter 负责保存。\n"
         )
@@ -458,13 +447,6 @@ def normalize_daily_report(text: str, report_date: str) -> tuple[str, str | None
     report = text[start:].strip()
     if report.count(title) != 1:
         return "", "report title must appear exactly once"
-    positions: list[int] = []
-    for heading in DAILY_HEADINGS:
-        if report.count(heading) != 1:
-            return "", f"heading count invalid: {heading}"
-        positions.append(report.index(heading))
-    if positions != sorted(positions) or positions[0] <= 0:
-        return "", "daily report headings are out of order"
     leaked_markers = (
         "now let me",
         "analysis of ",
@@ -476,10 +458,11 @@ def normalize_daily_report(text: str, report_date: str) -> tuple[str, str | None
     lowered = report.lower()
     if any(marker in lowered for marker in leaked_markers):
         return "", "analysis or tool narration leaked into report"
-    overview_start = positions[0] + len(DAILY_HEADINGS[0])
-    overview = report[overview_start : positions[1]]
-    if not re.search(r"[\u4e00-\u9fff]", overview):
-        return "", "overview is not Chinese"
+    body = report[len(title) :].strip()
+    if not body:
+        return "", "report body is required"
+    if not re.search(r"[\u4e00-\u9fff]", body):
+        return "", "report body is not Chinese"
     return report, None
 
 
@@ -490,8 +473,10 @@ def build_daily_retry_prompt(event: dict[str, Any], *, scope_file: str) -> str:
         build_prompt(event, scope_file=scope_file)
         + "\n\n上一次输出因格式或语言不合格已被 Adapter 拒绝。"
         f"请重新查询并直接输出最终中文日报。第一行必须逐字为：{title}；"
-        "日期不得使用方括号，第一个字符必须是 📅，"
-        "四个规定章节各出现一次；不要输出任何分析、筛选过程、英文前言或后记。"
+        "日期不得使用方括号。标题后先写一段 2-4 句核心总结；"
+        "只有存在事实时才追加加粗的主要成果、问题与阻碍或下一步，没有就省略。"
+        "不要使用 # 标题、> 引用、流水账、‘无记录’或‘未提供’等占位句，"
+        "不要输出任何分析、筛选过程、英文前言或后记。"
     )
 
 
