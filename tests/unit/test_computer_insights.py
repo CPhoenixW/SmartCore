@@ -108,6 +108,36 @@ def test_hourly_result_rejects_substantial_without_seventy_percent_overlap(db_se
     assert db_session.get(ComputerHourlyAnalysis, row.analysisId).status == "queued"
 
 
+def test_hourly_result_accepts_equivalent_zulu_hour_start(db_session) -> None:
+    _user, device = _fixture_db(db_session)
+    hour = datetime(2026, 7, 27, 9, tzinfo=UTC)
+    _add_activity(db_session, device, hour, 60)
+    row, queued, _ = queue_hourly_analysis(
+        db_session, device=device, hour_start=hour, timezone_name="UTC"
+    )
+    assert row is not None and queued
+    assert row.hourStart == "2026-07-27T09:00:00+00:00"
+
+    result = store_hourly_analysis(
+        db_session,
+        user_id=device.userId,
+        payload={
+            "deviceId": device.deviceId,
+            "hourStart": "2026-07-27T09:00:00Z",
+            "status": "complete",
+            "title": "开发工作",
+            "summary": "本小时主要进行了开发工作。",
+            "planAssessments": [],
+            "topics": [],
+            "model": "qwen3.7-plus",
+            "promptVersion": "computer-analysis-v1",
+        },
+    )
+
+    assert result["status"] == "complete"
+    assert result["title"] == "开发工作"
+
+
 def test_zero_active_cannot_be_marked_partial(db_session) -> None:
     _user, device = _fixture_db(db_session)
     hour = datetime(2026, 7, 27, 9, tzinfo=UTC)

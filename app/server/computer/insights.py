@@ -333,11 +333,15 @@ def queue_hourly_analysis(
 
 
 def store_hourly_analysis(db: Session, *, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        hour_start = _iso(_aware(payload.get("hourStart")))
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise ValueError("hourStart must be a valid timezone-aware datetime") from exc
     row = db.scalar(
         select(ComputerHourlyAnalysis).where(
             ComputerHourlyAnalysis.userId == user_id,
             ComputerHourlyAnalysis.deviceId == str(payload.get("deviceId")),
-            ComputerHourlyAnalysis.hourStart == str(payload.get("hourStart")),
+            ComputerHourlyAnalysis.hourStart == hour_start,
         )
     )
     if row is None:
