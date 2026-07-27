@@ -14,6 +14,24 @@ public struct RawActivityContext: Sendable {
     }
 }
 
+public enum ChatGPTConversationTitlePolicy {
+    private static let ignoredLabels: Set<String> = [
+        "chatgpt", "new chat", "search", "settings", "send", "stop generating",
+        "attach files", "voice mode", "start a new chat", "close", "back",
+    ]
+
+    public static func sanitize(_ value: String?, appName: String) -> String? {
+        guard let value else { return nil }
+        guard !value.contains("\n"), !value.contains("\r") else { return nil }
+        let normalized = value.split(whereSeparator: \Character.isWhitespace).joined(separator: " ")
+        guard !normalized.isEmpty,
+              normalized.count <= 200,
+              normalized.localizedCaseInsensitiveCompare(appName) != .orderedSame,
+              !ignoredLabels.contains(normalized.lowercased()) else { return nil }
+        return normalized
+    }
+}
+
 public enum ActivityContextSanitizer {
     private static let sensitiveAppFragments = [
         "1password", "bitwarden", "dashlane", "lastpass", "keeper", "keepass",

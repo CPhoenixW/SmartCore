@@ -168,6 +168,7 @@ final class MonitorAgentDelegate: NSObject, NSApplicationDelegate {
     private var currentContext: ActivityContext?
     private var syncing = false
     private var accessibilityGranted = false
+    private let codexConversationTitleReader = CodexConversationTitleReader()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
@@ -297,6 +298,9 @@ final class MonitorAgentDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        if bundle.caseInsensitiveCompare("com.openai.codex") == .orderedSame {
+            title = codexConversationTitleReader.currentTitle(appName: name) ?? title
+        }
         return ActivityContextSanitizer.sanitize(
             RawActivityContext(
                 bundleId: bundle,
@@ -339,7 +343,7 @@ final class MonitorAgentDelegate: NSObject, NSApplicationDelegate {
                     observedAt: Date(),
                     currentAppName: currentContext?.appName,
                     currentWindowTitle: currentContext?.windowTitle,
-                    appVersion: "0.3.1",
+                    appVersion: "0.3.3",
                     osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
                     accessibilityGranted: accessibilityGranted,
                     queueDepth: try outbox.count(deviceId: configuration.deviceId)

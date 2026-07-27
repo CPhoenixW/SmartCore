@@ -17,4 +17,5 @@ Keychain token 会在安装时一次性迁移。用 `SmartCoreMonitor structured
 控制结构化上下文采集，`SmartCoreMonitor status` 同时显示辅助功能授权状态和当前二进制
 路径。若未授权，运行 `SmartCoreMonitor accessibility open` 打开 macOS 辅助功能设置，
 添加并启用该路径下的 `SmartCoreMonitor`。标题只在 `active` 状态采集；未授权时仍记录
-前台应用，但窗口标题为空。
+前台应用，但普通应用的窗口标题为空。ChatGPT 桌面端会从本机运行日志取得当前会话 ID，
+再映射会话标题元数据；不读取 rollout 文件或聊天正文，也不依赖辅助功能权限。

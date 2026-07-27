@@ -2,6 +2,14 @@ import Foundation
 import SmartCoreMonitorCore
 import Testing
 
+@Test func chatGPTConversationTitlePolicyKeepsOnlyBoundedNonControlLabels() {
+    #expect(ChatGPTConversationTitlePolicy.sanitize("  SmartCore   monitor  ", appName: "ChatGPT") == "SmartCore monitor")
+    #expect(ChatGPTConversationTitlePolicy.sanitize("ChatGPT", appName: "ChatGPT") == nil)
+    #expect(ChatGPTConversationTitlePolicy.sanitize("Send", appName: "ChatGPT") == nil)
+    #expect(ChatGPTConversationTitlePolicy.sanitize("message\nbody", appName: "ChatGPT") == nil)
+    #expect(ChatGPTConversationTitlePolicy.sanitize(String(repeating: "x", count: 201), appName: "ChatGPT") == nil)
+}
+
 @Test func defaultContextKeepsFilteredTitleWithoutStructuredFields() {
     let context = ActivityContextSanitizer.sanitize(
         RawActivityContext(

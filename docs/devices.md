@@ -99,6 +99,9 @@ owner-only `0600` 文件中。旧开发版 Keychain token 由安装脚本一次�
 客户端默认通过 macOS 辅助功能权限采集过滤后的聚焦窗口标题。密码管理器、银行、
 支付和系统认证场景始终只保留应用名。可选结构化上下文只提取浏览器域名、IDE 工作区
 和文档文件名；完整 URL、文件路径、网页/文档正文、键盘内容、剪贴板和截图都不采集。
+ChatGPT（`com.openai.codex`）的辅助功能树不暴露会话标题。客户端仅从桌面端运行日志读取
+当前会话 ID，再映射本机的会话标题索引；读取不到时回退为应用窗口标题，不读取 rollout
+文件或聊天正文。该兼容路径不依赖辅助功能权限。
 使用 `SmartCoreMonitor structured-context on|off|status` 控制结构化字段，标题采集不受
 该开关影响。`SmartCoreMonitor accessibility status|open` 可检查或打开辅助功能授权；
 未授权时仍记录前台应用，但 active 窗口标题为空。测试与安装：
