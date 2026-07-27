@@ -396,6 +396,72 @@ def test_generic_tool_helper_discovers_path_without_exposing_credentials(
     assert json.loads(request.data) == {"title": "视觉记录"}
 
 
+def test_generic_tool_helper_accepts_unique_published_path_suffix(
+    tmp_path, monkeypatch
+) -> None:
+    token_file = tmp_path / "token"
+    token_file.write_text("agent-secret\n", encoding="utf-8")
+    scope_file = tmp_path / "scope"
+    scope_file.write_text("signed-scope\n", encoding="utf-8")
+    requests = []
+
+    class Response:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps(self.payload).encode()
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        if request.full_url.endswith("/agent/tools"):
+            return Response(
+                {
+                    "ok": True,
+                    "data": {
+                        "tools": [
+                            {
+                                "name": "evtUpdate",
+                                "method": "POST",
+                                "path": "/agent/db/update_event",
+                            }
+                        ]
+                    },
+                }
+            )
+        return Response({"ok": True, "stat": "done"})
+
+    monkeypatch.setenv("SMARTCORE_AGENT_TOKEN_FILE", str(token_file))
+    monkeypatch.setenv("SMARTCORE_BASE_URL", "http://smartcore.local/")
+    monkeypatch.setattr(call_tool.urllib.request, "urlopen", fake_urlopen)
+    args = call_tool.parser().parse_args(
+        [
+            "--scope-file",
+            str(scope_file),
+            "--tool",
+            "update_event",
+            "--body-json",
+            '{"evtId":"plan-1","stTime":"2026-07-27T11:00:00+08:00"}',
+        ]
+    )
+
+    result = call_tool.call_tool(args)
+
+    assert result["ok"] is True
+    request = requests[1][0]
+    assert request.full_url == "http://smartcore.local/agent/db/update_event"
+    assert json.loads(request.data) == {
+        "evtId": "plan-1",
+        "stTime": "2026-07-27T11:00:00+08:00",
+    }
+
+
 def test_runtime_config_supplies_base_url_and_token_path(tmp_path, monkeypatch) -> None:
     skill_root = tmp_path / "smartcore"
     script = skill_root / "scripts" / "query_events.py"

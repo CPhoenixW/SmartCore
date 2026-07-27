@@ -47,6 +47,24 @@ def _request_json(request: urllib.request.Request, *, timeout: int = 20) -> dict
     return payload
 
 
+def _resolve_tool(tools: list[Any], requested_name: str) -> dict[str, Any] | None:
+    published = [item for item in tools if isinstance(item, dict)]
+    exact = next((item for item in published if item.get("name") == requested_name), None)
+    if exact is not None:
+        return exact
+
+    # Models sometimes use the final path component shown in the published contract
+    # (for example ``update_event``) instead of its tool name (``evtUpdate``).
+    # Resolve that spelling only when it identifies exactly one published tool, so
+    # compatibility never grants access to an unpublished endpoint.
+    path_matches = [
+        item
+        for item in published
+        if str(item.get("path") or "").rstrip("/").rsplit("/", 1)[-1] == requested_name
+    ]
+    return path_matches[0] if len(path_matches) == 1 else None
+
+
 def call_tool(args: argparse.Namespace) -> dict[str, Any]:
     runtime = runtime_config()
     scope = Path(args.scope_file).read_text(encoding="utf-8").strip()
@@ -74,10 +92,7 @@ def call_tool(args: argparse.Namespace) -> dict[str, Any]:
     )
     data = catalog.get("data") if isinstance(catalog.get("data"), dict) else {}
     tools = data.get("tools") if isinstance(data.get("tools"), list) else []
-    tool = next(
-        (item for item in tools if isinstance(item, dict) and item.get("name") == args.tool),
-        None,
-    )
+    tool = _resolve_tool(tools, args.tool)
     if tool is None:
         raise ValueError(f"SmartCore tool is unavailable: {args.tool}")
     method = str(tool.get("method") or "POST").upper()

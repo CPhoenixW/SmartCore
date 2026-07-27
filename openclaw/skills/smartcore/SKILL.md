@@ -22,6 +22,8 @@ Use this skill for schedules, reminders, ideas, daily reports, and SmartCore-man
 - Query events with `skills/smartcore/scripts/query_events.py --scope-file <path> ...`.
 - Call every other published tool with
   `skills/smartcore/scripts/call_tool.py --scope-file <path> --tool <name> --body-json '<json>'`.
+- Use the published tool name, not the URL path suffix: update an event with `--tool evtUpdate`
+  (not `update_event`) after obtaining its `evtId` from a query.
 - Check `ok`, `stat`, `data`, and `errors`. Do not interpret a failed call as an empty result.
 - Query before updating or cancelling an ambiguous target. Never invent event IDs.
 
