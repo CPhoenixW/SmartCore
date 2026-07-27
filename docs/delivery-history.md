@@ -107,3 +107,11 @@ OpenClaw 周期请求。
 - Agent 工具移除 OCR/evidence 要求，Skill 只保留 scoped helper 与附件安全边界。
 
 关键边界：文档仍只存储；旧 OCR 路由、字段和状态仅用于滚动兼容，不删除历史数据。
+
+## 2026-07-27：Computer 工作智能分析
+
+- Computer 设备页调整为默认入口，增加小时总结、Plan 执行判断、主题聚类、智能提醒和每日工作日志。
+- Server 新增小时/每日追加分析表、owner-scoped insights 与 Agent context/write 接口；迁移只新增表和索引。
+- Scheduler 每小时第 5 分钟和每日 23:59 通过 OpenClaw `qwen3.7-plus` 生成分析；原始 Computer 上传与普通日报保持兼容。
+
+关键边界：AI 只读取脱敏聚合事实，不访问数据库、OCR 或聊天正文；结果不能覆盖活动事实或修改 Plan，生产启用由 `COMPUTER_ANALYSIS_ENABLED` 控制。

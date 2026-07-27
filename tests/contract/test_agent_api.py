@@ -47,6 +47,11 @@ def test_agent_tools_keep_stable_names_and_aliases() -> None:
     assert tools["evtDelete"]["path"] == "/agent/db/delete_event"
     assert tools["sendFeishuText"]["path"] == "/agent/feedback/send_text"
     assert tools["sendFeishuCard"]["path"] == "/agent/feedback/send_card"
+    assert tools["computerHourlyContext"]["path"] == "/agent/computer/hourly-context"
+    assert tools["computerHourlyContext"]["method"] == "GET"
+    assert tools["computerHourlyAnalysisComplete"]["path"] == "/agent/computer/hourly-analysis"
+    assert tools["computerDailyContext"]["path"] == "/agent/computer/daily-context"
+    assert tools["computerDailyLogComplete"]["path"] == "/agent/computer/daily-log"
     assert "mediaImageOcr" not in tools
     assert "ocrEvidence" not in tools["ideaCapture"]["inputSchema"]["properties"]
     assert tools["ideaMediaJobComplete"]["inputSchema"]["required"] == [
@@ -460,6 +465,69 @@ def test_generic_tool_helper_accepts_unique_published_path_suffix(
         "evtId": "plan-1",
         "stTime": "2026-07-27T11:00:00+08:00",
     }
+
+
+def test_generic_tool_helper_encodes_get_tool_arguments(tmp_path, monkeypatch) -> None:
+    token_file = tmp_path / "token"
+    token_file.write_text("agent-secret\n", encoding="utf-8")
+    scope_file = tmp_path / "scope"
+    scope_file.write_text("signed-scope\n", encoding="utf-8")
+    requests = []
+
+    class Response:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps(self.payload).encode()
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        if request.full_url.endswith("/agent/tools"):
+            return Response(
+                {
+                    "ok": True,
+                    "data": {
+                        "tools": [
+                            {
+                                "name": "computerHourlyContext",
+                                "method": "GET",
+                                "path": "/agent/computer/hourly-context",
+                            }
+                        ]
+                    },
+                }
+            )
+        return Response({"ok": True, "data": {"activeSeconds": 120}})
+
+    monkeypatch.setenv("SMARTCORE_AGENT_TOKEN_FILE", str(token_file))
+    monkeypatch.setenv("SMARTCORE_BASE_URL", "http://smartcore.local/")
+    monkeypatch.setattr(call_tool.urllib.request, "urlopen", fake_urlopen)
+    args = call_tool.parser().parse_args(
+        [
+            "--scope-file",
+            str(scope_file),
+            "--tool",
+            "computerHourlyContext",
+            "--body-json",
+            '{"deviceId":"computer-1","hourStart":"2026-07-27T08:00:00+00:00"}',
+        ]
+    )
+
+    result = call_tool.call_tool(args)
+
+    assert result["ok"] is True
+    request = requests[1][0]
+    assert request.method == "GET"
+    assert request.data is None
+    assert "deviceId=computer-1" in request.full_url
+    assert "hourStart=2026-07-27T08%3A00%3A00%2B00%3A00" in request.full_url
 
 
 def test_runtime_config_supplies_base_url_and_token_path(tmp_path, monkeypatch) -> None:

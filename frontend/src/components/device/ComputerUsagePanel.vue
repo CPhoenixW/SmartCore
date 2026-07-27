@@ -10,7 +10,7 @@ import EmptyState from "@/components/base/EmptyState.vue";
 import BarChart, { type BarChartSeries } from "@/components/base/BarChart.vue";
 import { computerApi } from "@/api/computer";
 import { deviceRegistryApi } from "@/api/deviceRegistry";
-import type { ComputerRange, ComputerSession } from "@/types/computer";
+import type { ComputerPlanAssessment, ComputerRange, ComputerSession } from "@/types/computer";
 import {
   dominantComputerState,
   durationLabel,
@@ -19,7 +19,7 @@ import {
   timelineTicks,
   type ComputerTimelineSegment,
 } from "@/utils/computer";
-import { formatDateTime } from "@/utils/date";
+import { formatDateTime, todayKey } from "@/utils/date";
 import { scrollToLatest } from "@/utils/scroll";
 
 const APP_COLORS = ["#2563eb", "#0891b2", "#db2777", "#d97706", "#16a34a", "#475569"];
@@ -28,6 +28,7 @@ const OBJECTIVE_STATES = ["active", "idle", "locked", "sleeping", "paused"] as c
 const { t, locale } = useI18n();
 const range = ref<ComputerRange>("today");
 const selectedDeviceId = ref("");
+const selectedDate = ref(todayKey());
 const selectedSession = ref<ComputerSession | null>(null);
 const activityMapScroll = ref<HTMLElement | null>(null);
 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
@@ -53,6 +54,12 @@ const activityMapUsage = useQuery({
   queryKey: ["computer", "usage", selectedDeviceId, "24h", timezone],
   queryFn: () => computerApi.usage(selectedDeviceId.value, "24h", timezone),
   enabled: computed(() => enabled.value && range.value === "today"),
+  refetchInterval: 60_000,
+});
+const insights = useQuery({
+  queryKey: ["computer", "insights", selectedDeviceId, selectedDate],
+  queryFn: () => computerApi.insights(selectedDeviceId.value, selectedDate.value),
+  enabled,
   refetchInterval: 60_000,
 });
 const report = computed(() => usage.data.value);
@@ -123,13 +130,18 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
   const width = new Date(mapReport.value.windowEnd).getTime() - new Date(mapReport.value.windowStart).getTime();
   return (new Date(segment.endAt).getTime() - new Date(segment.startAt).getTime()) / Math.max(1, width) >= 0.045;
 }
+function planStateLabel(item: ComputerPlanAssessment) { return t(`computer.planExecutionState.${item.state}`); }
+function insightStatusLabel(statusValue: string) { return t(`computer.insightStatus.${statusValue}`); }
 </script>
 
 <template>
   <div class="computer-panel">
     <template v-if="computers.length">
       <div class="computer-toolbar">
-        <label><span>{{ t("computer.device") }}</span><select v-model="selectedDeviceId"><option v-for="item in computers" :key="item.deviceId" :value="item.deviceId">{{ item.deviceName }}</option></select></label>
+        <div class="computer-toolbar__fields">
+          <label><span>{{ t("computer.device") }}</span><select v-model="selectedDeviceId"><option v-for="item in computers" :key="item.deviceId" :value="item.deviceId">{{ item.deviceName }}</option></select></label>
+          <label><span>{{ t("computer.insightDate") }}</span><input v-model="selectedDate" type="date" :max="todayKey()" /></label>
+        </div>
         <div class="segmented" role="group" :aria-label="t('computer.range')"><button v-for="item in (['today', '7d', '30d'] as ComputerRange[])" :key="item" type="button" :class="{ active: range === item }" @click="range = item">{{ t(`computer.rangeOption.${item}`) }}</button></div>
       </div>
 
@@ -138,6 +150,53 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
       </div>
 
       <DeviceMetricStrip :items="metrics" :label="t('computer.activitySummary')" />
+
+      <section v-if="range === 'today'" class="computer-insights-grid">
+        <BaseCard :title="t('computer.hourlySummary')">
+          <div v-if="insights.data.value?.hours.length" class="computer-insight-list computer-card-scroll">
+            <article v-for="hour in [...insights.data.value.hours].reverse()" :key="hour.analysisId">
+              <header><time>{{ timeLabel(hour.hourStart) }}–{{ timeLabel(hour.hourEnd) }}</time><span :class="`insight-state insight-state--${hour.status}`">{{ insightStatusLabel(hour.status) }}</span></header>
+              <strong>{{ hour.title || insightStatusLabel(hour.status) }}</strong>
+              <p>{{ hour.summary || hour.errorMessage || t('computer.analysisPending') }}</p>
+              <small>{{ t('computer.hourEvidence', { active: duration(hour.activeSeconds), planned: duration(hour.plannedActiveSeconds) }) }}</small>
+            </article>
+          </div>
+          <EmptyState v-else :text="t('computer.noHourlySummary')" />
+        </BaseCard>
+        <BaseCard :title="t('computer.planExecution')">
+          <div v-if="insights.data.value?.planAssessments.length" class="computer-plan-assessments computer-card-scroll">
+            <article v-for="(item, index) in insights.data.value.planAssessments" :key="`${item.evtId}-${index}`">
+              <div><strong>{{ planStateLabel(item) }}</strong><span>{{ t(`computer.confidence.${item.confidence}`) }}</span></div>
+              <p>{{ item.title || item.note || item.evidenceCodes.join(t('common.listSeparator')) }}</p>
+              <small v-if="item.overlapRatio !== undefined">{{ t('computer.objectiveOverlap', { percent: Math.round(item.overlapRatio * 100) }) }}</small>
+            </article>
+          </div>
+          <EmptyState v-else :text="t('computer.noPlanAssessment')" />
+        </BaseCard>
+        <BaseCard :title="t('computer.workTopics')">
+          <div v-if="insights.data.value?.topics.length" class="computer-topic-list">
+            <article v-for="topic in insights.data.value.topics" :key="topic.name"><div><strong>{{ topic.name }}</strong><small>{{ duration(topic.activeSeconds) }} · {{ t('computer.evidenceCount', { count: (topic.hourStarts ?? []).length }) }}</small></div><p>{{ topic.summary || t('common.notSet') }}</p></article>
+          </div>
+          <EmptyState v-else :text="t('computer.noTopics')" />
+        </BaseCard>
+        <BaseCard :title="t('computer.dailyWorkLog')">
+          <article v-if="insights.data.value?.dailyLog" class="computer-daily-log">
+            <div><strong>{{ insights.data.value.dailyLog.title || insightStatusLabel(insights.data.value.dailyLog.status) }}</strong><span>{{ insightStatusLabel(insights.data.value.dailyLog.status) }}</span></div>
+            <p>{{ insights.data.value.dailyLog.summary || insights.data.value.dailyLog.errorMessage || t('computer.analysisPending') }}</p>
+            <small>{{ t('computer.smartReminderCount', { count: insights.data.value.reminders.length }) }}</small>
+          </article>
+          <EmptyState v-else :text="t('computer.noDailyLog')" />
+        </BaseCard>
+        <BaseCard :title="t('computer.smartReminders')">
+          <div v-if="insights.data.value?.reminders.length" class="computer-reminder-list">
+            <article v-for="(reminder, index) in insights.data.value.reminders" :key="`${reminder.dedupKey || reminder.title}-${index}`">
+              <div><strong>{{ reminder.title }}</strong><span :class="`insight-state insight-state--${reminder.stat}`">{{ reminder.stat }}</span></div>
+              <p>{{ reminder.content }}</p>
+            </article>
+          </div>
+          <EmptyState v-else :text="t('computer.noSmartReminders')" />
+        </BaseCard>
+      </section>
 
       <BaseCard v-if="range === 'today'" :title="t('computer.activityMap')" :subtitle="t('computer.activityMapNote')">
         <div v-if="mapReport?.timeline.length" class="computer-activity-map-frame">
@@ -217,9 +276,68 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
 
 <style scoped>
 .computer-panel{display:grid;grid-auto-rows:max-content;align-content:start;gap:18px}.computer-toolbar{display:flex;align-items:end;justify-content:space-between;gap:16px}.computer-toolbar label{display:grid;min-width:240px;gap:6px;color:var(--color-text-muted);font-size:12px}.computer-toolbar select{min-height:40px;padding:0 11px;border:1px solid var(--border-color);border-radius:7px;background:#fff;color:var(--color-text);font:inherit}.computer-alert{padding:12px 14px;border-left:4px solid #d97706;background:#fffbeb;color:#92400e}.computer-alert--offline,.computer-alert--paused{border-left-color:#64748b;background:#f8fafc;color:#475569}.computer-live-summary{display:grid;grid-template-columns:auto minmax(160px,.55fr) minmax(240px,1fr) minmax(220px,.85fr);align-items:center;gap:16px;padding:16px 18px;border:1px solid var(--border-color);border-radius:8px;background:#fff;box-shadow:var(--shadow-card)}.computer-live-summary>div{min-width:0}.computer-live-summary span,.computer-live-summary strong,.computer-live-summary small{display:block}.computer-live-summary>div>span,.computer-live-summary small{color:var(--color-text-muted);font-size:11px}.computer-live-summary strong{margin:5px 0;overflow:hidden;font-size:15px;text-overflow:ellipsis;white-space:nowrap}.computer-live-summary__state strong{font-size:21px}.computer-live-summary__context,.computer-live-summary__analysis{padding-left:16px;border-left:1px solid var(--border-color)}.computer-state-dot{width:20px;height:20px;border:5px solid #e2e8f0;border-radius:50%;background:#94a3b8;box-sizing:content-box}.computer-state-dot--active{border-color:#dcfce7;background:#16a34a}.computer-state-dot--idle{border-color:#fef3c7;background:#d97706}.computer-state-dot--locked,.computer-state-dot--sleeping{border-color:#e2e8f0;background:#475569}.computer-state-dot--paused{border-color:#dbeafe;background:#2563eb}.computer-activity-map-scroll{overflow-x:auto;overscroll-behavior-x:contain;padding:3px 0 8px}.computer-activity-map{min-width:760px}.computer-map-legend{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:12px;margin-bottom:10px;color:#64748b;font-size:10px}.computer-map-legend span{display:flex;align-items:center;gap:5px}.timeline-key{width:8px;height:8px;border-radius:2px;background:#94a3b8}.timeline-key--active{background:#16a34a}.timeline-key--idle{background:#d97706}.timeline-key--locked{background:#64748b}.timeline-key--sleeping{background:#0f172a}.timeline-key--paused{background:#0ea5e9}.computer-map-axis{display:flex;justify-content:space-between;margin:0 4px 6px 114px;color:#94a3b8;font-size:10px}.computer-map-row{display:grid;grid-template-columns:104px minmax(0,1fr);align-items:center;gap:10px;margin-top:10px}.computer-map-row>strong{color:#475569;font-size:12px}.computer-map-track{position:relative;height:48px;overflow:hidden;border:1px solid var(--border-color);border-radius:6px;background:repeating-linear-gradient(90deg,#f8fafc 0,#f8fafc calc(20% - 1px),#e2e8f0 20%)}.computer-map-row--plans .computer-map-track{height:54px}.computer-map-block{position:absolute;top:7px;height:34px;min-width:3px;overflow:hidden;border-radius:4px;background:#94a3b8;color:#fff;font-style:normal}.computer-map-block>span{display:block;overflow:hidden;padding:9px 8px;font-size:10px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}.computer-map-block--plan{top:7px;height:40px;background:#2563eb}.computer-map-block--plan>span{padding-top:11px}.computer-map-block--active{background:#16a34a}.computer-map-block--idle{background:#d97706}.computer-map-block--locked{background:#64748b}.computer-map-block--sleeping{background:#0f172a}.computer-map-block--paused{background:#0ea5e9}.computer-map-block--app{background:#0891b2}.timeline-empty{position:absolute;inset:0;display:grid;place-items:center;color:#94a3b8;font-size:10px}.computer-two-column{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:18px}.session-list{display:grid;gap:7px}.session-list button{display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:11px;width:100%;padding:10px;border:1px solid #eef2f7;border-radius:7px;background:#fff;text-align:left}.session-list button:hover{border-color:#bfdbfe;background:#f8fbff}.session-app-mark{display:grid;width:34px;height:34px;place-items:center;border-radius:7px;color:#fff;font-size:13px;font-style:normal;font-weight:800}.session-main strong,.session-main small,.session-summary strong,.session-summary small{display:block}.session-main strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.session-main small,.session-summary small{margin-top:3px;color:var(--color-text-muted);font-size:10px}.session-summary{text-align:right}.app-ranking{display:grid;gap:13px}.app-ranking>div{display:grid;gap:6px}.app-ranking__label{display:grid;grid-template-columns:20px minmax(0,1fr) auto;align-items:center;gap:7px}.app-ranking__label>b{color:#94a3b8;font-size:11px}.app-ranking__label strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.app-ranking__label small{color:var(--color-text-muted)}.app-ranking>div>i{height:5px;overflow:hidden;border-radius:3px;background:#e2e8f0}.app-ranking>div>i>b{display:block;height:100%}.daily-chart{display:flex;align-items:end;gap:7px;height:220px;overflow-x:auto;padding-top:16px}.daily-chart>div{display:grid;grid-template-rows:180px auto;min-width:30px;flex:1;gap:7px;text-align:center}.daily-bars{display:flex;align-items:end;justify-content:center;gap:3px}.daily-bars i{width:8px;min-height:2px;background:#16a34a}.daily-bars i+i{background:#2563eb}.daily-chart small{color:#64748b;font-size:9px}.computer-runtime-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:18px}.computer-runtime-grid>div{min-width:0;padding:12px;border-radius:7px;background:#f8fafc}.computer-runtime-grid span,.computer-runtime-grid strong{display:block}.computer-runtime-grid span{color:var(--color-text-muted);font-size:10px}.computer-runtime-grid strong{margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.session-drawer-backdrop{position:fixed;inset:0;z-index:80;background:rgb(15 23 42 / 35%)}.session-drawer{position:absolute;inset:0 0 0 auto;width:min(460px,100%);overflow:auto;padding:24px;background:#fff;box-shadow:-14px 0 30px rgb(15 23 42 / 18%)}.session-drawer header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding-bottom:18px;border-bottom:1px solid var(--border-color)}.session-drawer header p{margin-top:5px;color:var(--color-text-muted)}.session-drawer dl{display:grid;grid-template-columns:repeat(3,1fr);margin:18px 0;border:1px solid var(--border-color);border-radius:8px}.session-drawer dl div{padding:12px}.session-drawer dt{color:var(--color-text-muted);font-size:11px}.session-drawer dd{margin:5px 0 0;font-weight:700}.session-contexts{display:grid}.session-contexts article{display:flex;justify-content:space-between;gap:16px;padding:13px 0;border-bottom:1px solid var(--border-color)}.session-contexts strong,.session-contexts small{display:block}.session-contexts small{margin-top:4px;color:var(--color-text-muted);overflow-wrap:anywhere}@media(max-width:1050px){.computer-live-summary{grid-template-columns:auto minmax(0,1fr) minmax(0,1fr)}.computer-live-summary__analysis{grid-column:2/-1}.computer-two-column{grid-template-columns:1fr}}@media(max-width:760px){.computer-toolbar{align-items:stretch;flex-direction:column}.computer-toolbar label{min-width:0}.segmented button{min-width:0;flex:1}.computer-live-summary{grid-template-columns:auto minmax(0,1fr)}.computer-live-summary__context,.computer-live-summary__analysis{grid-column:1/-1;padding:12px 0 0;border-top:1px solid var(--border-color);border-left:0}.computer-runtime-grid{grid-template-columns:1fr 1fr}.session-list button{grid-template-columns:36px 1fr}.session-summary{grid-column:2;text-align:left}.session-drawer dl{grid-template-columns:1fr}}
+.computer-toolbar__fields{display:flex;gap:12px}.computer-toolbar input{min-height:40px;padding:0 11px;border:1px solid var(--border-color);border-radius:7px;background:#fff;color:var(--color-text);font:inherit}.computer-plan-assessments small{color:var(--color-text-muted);font-size:10px}
 </style>
 
 <style scoped>
+.computer-insights-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.computer-insight-list,
+.computer-plan-assessments {
+  display: grid;
+  gap: 9px;
+  max-height: 320px;
+}
+
+.computer-insight-list article,
+.computer-plan-assessments article,
+.computer-topic-list article {
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.computer-insight-list header,
+.computer-plan-assessments article > div,
+.computer-topic-list article > div,
+.computer-daily-log > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.computer-insight-list time,
+.computer-insight-list small,
+.computer-plan-assessments span,
+.computer-topic-list small,
+.computer-daily-log span,
+.computer-daily-log small {
+  color: var(--color-text-muted);
+  font-size: 10px;
+}
+
+.computer-insight-list strong { display: block; margin-top: 8px; }
+.computer-insight-list p,
+.computer-plan-assessments p,
+.computer-topic-list p,
+.computer-daily-log p { margin: 6px 0; color: #475569; line-height: 1.65; }
+.insight-state { padding: 2px 6px; border-radius: 4px; background: #f1f5f9; color: #475569; font-size: 10px; }
+.insight-state--complete { background: #dcfce7; color: #166534; }
+.insight-state--failed { background: #fee2e2; color: #991b1b; }
+.computer-topic-list { display: grid; gap: 9px; }
+.computer-daily-log { padding: 4px 0; }
+.computer-daily-log > div strong { font-size: 17px; }
+.computer-reminder-list { display: grid; gap: 9px; max-height: 320px; overflow: auto; }
+.computer-reminder-list article { padding: 12px; border: 1px solid #e5e7eb; border-radius: 7px; background: #fff; }
+.computer-reminder-list article > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.computer-reminder-list p { margin: 6px 0 0; color: #475569; line-height: 1.6; }
+
 .computer-activity-map-frame {
   display: grid;
   grid-template-columns: 104px minmax(0, 1fr);
@@ -267,6 +385,7 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
 }
 
 @media (max-width: 760px) {
+  .computer-insights-grid { grid-template-columns: 1fr; }
   .computer-activity-map-frame {
     grid-template-columns: 82px minmax(0, 1fr);
     gap: 8px;

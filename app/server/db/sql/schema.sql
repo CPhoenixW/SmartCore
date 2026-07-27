@@ -281,6 +281,55 @@ CREATE INDEX IF NOT EXISTS idx_actLog_user_created ON actLog(userId, createdAt);
 CREATE INDEX IF NOT EXISTS idx_actLog_target ON actLog(targetKind, targetId);
 CREATE INDEX IF NOT EXISTS idx_notifyLog_user_scheduled ON notifyLog(userId, scheduledAt);
 CREATE INDEX IF NOT EXISTS idx_msgLog_user_created ON msgLog(userId, createdAt);
+
+CREATE TABLE IF NOT EXISTS computerHourlyAnalysis (
+    analysisId VARCHAR(32) PRIMARY KEY,
+    userId VARCHAR(32) NOT NULL REFERENCES appUser(userId) ON DELETE CASCADE,
+    deviceId VARCHAR(32) NOT NULL REFERENCES lifeDevice(deviceId) ON DELETE CASCADE,
+    hourStart VARCHAR(64) NOT NULL,
+    hourEnd VARCHAR(64) NOT NULL,
+    timezone VARCHAR(64) NOT NULL,
+    localDate VARCHAR(10) NOT NULL,
+    activeSeconds INTEGER NOT NULL DEFAULT 0,
+    idleSeconds INTEGER NOT NULL DEFAULT 0,
+    plannedActiveSeconds INTEGER NOT NULL DEFAULT 0,
+    status VARCHAR(20) NOT NULL DEFAULT 'queued',
+    title VARCHAR(40),
+    summary TEXT,
+    planAssessments JSON,
+    topics JSON,
+    evidence JSON,
+    model VARCHAR(100),
+    promptVersion VARCHAR(40),
+    generatedAt VARCHAR(64),
+    errorMessage TEXT,
+    createdAt VARCHAR(64) NOT NULL,
+    updatedAt VARCHAR(64) NOT NULL,
+    UNIQUE(userId, deviceId, hourStart)
+);
+
+CREATE TABLE IF NOT EXISTS computerDailyWorkLog (
+    logId VARCHAR(32) PRIMARY KEY,
+    userId VARCHAR(32) NOT NULL REFERENCES appUser(userId) ON DELETE CASCADE,
+    deviceId VARCHAR(32) NOT NULL REFERENCES lifeDevice(deviceId) ON DELETE CASCADE,
+    logDate VARCHAR(10) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'queued',
+    title VARCHAR(40),
+    summary TEXT,
+    topics JSON,
+    planAssessments JSON,
+    reminderSummary JSON,
+    hourlyAnalysisIds JSON,
+    model VARCHAR(100),
+    promptVersion VARCHAR(40),
+    generatedAt VARCHAR(64),
+    errorMessage TEXT,
+    createdAt VARCHAR(64) NOT NULL,
+    updatedAt VARCHAR(64) NOT NULL,
+    UNIQUE(userId, deviceId, logDate)
+);
+CREATE INDEX IF NOT EXISTS idx_computer_hourly_user_date ON computerHourlyAnalysis(userId, localDate, hourStart);
+CREATE INDEX IF NOT EXISTS idx_computer_daily_log_user_date ON computerDailyWorkLog(userId, logDate);
 -- User and device unified dispatch. This file is the auditable DDL source for
 -- the new tables; the SQLite migration runner applies it only once to an
 -- existing database.

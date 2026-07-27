@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     daily_summary_hour: int = 22
     daily_summary_minute: int = 0
     daily_summary_timezone: str = "Asia/Shanghai"
+    computer_analysis_enabled: bool = False
+    computer_analysis_timezone: str = "Asia/Shanghai"
+    computer_analysis_minute: int = 5
 
     weather_enabled: bool = False
     weather_refresh_minutes: int = 30

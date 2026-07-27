@@ -116,4 +116,7 @@ app/computer/macos/scripts/install.sh
 `~/Library/Application Support/SmartCoreMonitor/bin`，并注册登录自启和异常重启。
 设备管理页按 RaspberryPi、Computer、Screen 和 Feishu Bot 四类隔离配对、管理与参数。
 Server 可结合当前 Plan、电脑状态与同用户新鲜 Pi 状态生成带 reason codes 的确定性
-判断，但不输出效率、分心或任务内容推断。
+判断，但不输出效率、分心或任务内容推断。启用 `COMPUTER_ANALYSIS_ENABLED` 后，调度器
+每小时第 5 分钟排队上一完整小时的 AI 注释，并在 `Asia/Shanghai` 每日 23:59 排队工作日志；
+OpenClaw 只读取脱敏聚合上下文并使用 `qwen3.7-plus`，结果写入追加分析表。分析失败或
+OpenClaw 不可用不影响原始上传，失败记录会在下一次调度重试。

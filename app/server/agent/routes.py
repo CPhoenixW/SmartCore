@@ -83,6 +83,77 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         ),
     },
     {
+        "name": "computerHourlyContext",
+        "method": "GET",
+        "path": "/agent/computer/hourly-context",
+        "riskLevel": "read",
+        "confirmationRequired": False,
+        "inputSchema": _schema_object(
+            {
+                "deviceId": {"type": "string"},
+                "hourStart": {"type": "string", "format": "date-time"},
+                "timezone": {"type": "string"},
+            },
+            ["deviceId", "hourStart"],
+        ),
+    },
+    {
+        "name": "computerHourlyAnalysisComplete",
+        "method": "POST",
+        "path": "/agent/computer/hourly-analysis",
+        "riskLevel": "write",
+        "confirmationRequired": False,
+        "inputSchema": _schema_object(
+            {
+                "deviceId": {"type": "string"},
+                "hourStart": {"type": "string", "format": "date-time"},
+                "status": {"type": "string", "enum": ["complete", "failed"]},
+                "title": {"type": "string", "maxLength": 10},
+                "summary": {"type": "string", "maxLength": 800},
+                "planAssessments": {"type": "array"},
+                "topics": {"type": "array"},
+                "evidence": {"type": "object"},
+                "model": {"type": "string", "enum": ["qwen3.7-plus"]},
+                "promptVersion": {"type": "string", "enum": ["computer-analysis-v1"]},
+            },
+            ["deviceId", "hourStart", "status"],
+        ),
+    },
+    {
+        "name": "computerDailyContext",
+        "method": "GET",
+        "path": "/agent/computer/daily-context",
+        "riskLevel": "read",
+        "confirmationRequired": False,
+        "inputSchema": _schema_object(
+            {"deviceId": {"type": "string"}, "date": {"type": "string", "format": "date"}},
+            ["deviceId", "date"],
+        ),
+    },
+    {
+        "name": "computerDailyLogComplete",
+        "method": "POST",
+        "path": "/agent/computer/daily-log",
+        "riskLevel": "write",
+        "confirmationRequired": False,
+        "inputSchema": _schema_object(
+            {
+                "deviceId": {"type": "string"},
+                "logDate": {"type": "string", "format": "date"},
+                "status": {"type": "string", "enum": ["complete", "failed"]},
+                "title": {"type": "string", "maxLength": 10},
+                "summary": {"type": "string", "maxLength": 1200},
+                "topics": {"type": "array"},
+                "planAssessments": {"type": "array"},
+                "reminderSummary": {"type": "array"},
+                "hourlyAnalysisIds": {"type": "array"},
+                "model": {"type": "string", "enum": ["qwen3.7-plus"]},
+                "promptVersion": {"type": "string", "enum": ["computer-analysis-v1"]},
+            },
+            ["deviceId", "logDate", "status"],
+        ),
+    },
+    {
         "name": "evtCreate",
         "method": "POST",
         "path": "/agent/db/create_event",
@@ -363,9 +434,7 @@ def _course_in_range(event: dict[str, Any], start: datetime | None, end: datetim
     return left + timedelta(days=offset) <= right
 
 
-def _overlaps_range(
-    event: dict[str, Any], start: datetime | None, end: datetime | None
-) -> bool:
+def _overlaps_range(event: dict[str, Any], start: datetime | None, end: datetime | None) -> bool:
     if start is None and end is None:
         return True
     if event.get("evtType") == "course":
@@ -439,7 +508,9 @@ def _query_events(db: Session, body: dict[str, Any]) -> dict[str, Any]:
         event_start, _ = _event_interval(item)
         if item.get("evtType") == "course":
             return 0, str(item.get("stDate") or "") + str(item.get("stTime") or "")
-        return (0, event_start.isoformat()) if event_start else (1, str(item.get("createdAt") or ""))
+        return (
+            (0, event_start.isoformat()) if event_start else (1, str(item.get("createdAt") or ""))
+        )
 
     filtered.sort(key=sort_key)
     limit = int(body.get("limit") or 100)
@@ -627,7 +698,11 @@ def createAgentRouter() -> APIRouter:
 
     @router.post("/evtDelete", dependencies=protected)
     @router.post("/db/delete_event", dependencies=protected)
-    def evtDelete(body: dict[str, Any], db: Session = Depends(get_db), scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
+    def evtDelete(
+        body: dict[str, Any],
+        db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
+    ) -> dict[str, Any]:
         evt_id = body.get("evtId") or body.get("eventId")
         if not evt_id:
             return _failed(["evtId required"])
@@ -638,7 +713,11 @@ def createAgentRouter() -> APIRouter:
 
     @router.post("/ideaCapture", dependencies=protected)
     @router.post("/idea/capture", dependencies=protected)
-    def ideaCapture(body: dict[str, Any], db: Session = Depends(get_db), scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
+    def ideaCapture(
+        body: dict[str, Any],
+        db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
+    ) -> dict[str, Any]:
         title = str(body.get("title") or "").strip()
         if not title:
             return _failed(["title required"])
@@ -687,11 +766,7 @@ def createAgentRouter() -> APIRouter:
         job: IdeaMediaJob | None = None
         if job_id:
             job = db.get(IdeaMediaJob, job_id)
-            if (
-                job is None
-                or job.userId != scope.userId
-                or job.uploadId != upload_id
-            ):
+            if job is None or job.userId != scope.userId or job.uploadId != upload_id:
                 return _failed(["media job not found"])
             if job.stat in {"ocr_ready", "ready", "consumed"} and job.ocrText:
                 return _done(
@@ -793,7 +868,11 @@ def createAgentRouter() -> APIRouter:
 
     @router.post("/ideaToEvt", dependencies=protected)
     @router.post("/idea/to_event", dependencies=protected)
-    def ideaToEvt(body: dict[str, Any], db: Session = Depends(get_db), scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
+    def ideaToEvt(
+        body: dict[str, Any],
+        db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
+    ) -> dict[str, Any]:
         idea_id = body.get("ideaId")
         if not idea_id:
             return _failed(["ideaId required"])
@@ -891,7 +970,9 @@ def createAgentRouter() -> APIRouter:
 
     @router.post("/screenPush", dependencies=protected)
     @router.post("/feedback/screen_push", dependencies=protected)
-    async def screenPush(body: dict[str, Any], scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
+    async def screenPush(
+        body: dict[str, Any], scope: AgentScope = Depends(require_agent_scope)
+    ) -> dict[str, Any]:
         delivered = await screenManager.broadcast(
             {
                 "kind": "reminder",

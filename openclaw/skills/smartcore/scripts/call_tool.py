@@ -7,6 +7,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
+import urllib.parse
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -97,17 +98,21 @@ def call_tool(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError(f"SmartCore tool is unavailable: {args.tool}")
     method = str(tool.get("method") or "POST").upper()
     path = str(tool.get("path") or "")
-    if method != "POST" or not path.startswith("/agent/"):
+    if method not in {"GET", "POST"} or not path.startswith("/agent/"):
         raise ValueError(f"SmartCore tool has an unsupported contract: {args.tool}")
     body = json.loads(args.body_json)
     if not isinstance(body, dict):
         raise ValueError("--body-json must contain a JSON object")
-    request = urllib.request.Request(
-        f"{base_url}{path}",
-        data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
-        headers={**headers, "Content-Type": "application/json"},
-        method="POST",
-    )
+    if method == "GET":
+        query = urllib.parse.urlencode({key: value for key, value in body.items() if value is not None})
+        request = urllib.request.Request(f"{base_url}{path}?{query}", headers=headers, method="GET")
+    else:
+        request = urllib.request.Request(
+            f"{base_url}{path}",
+            data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+            headers={**headers, "Content-Type": "application/json"},
+            method="POST",
+        )
     return _request_json(request)
 
 

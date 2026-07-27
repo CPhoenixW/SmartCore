@@ -123,6 +123,16 @@ Plan 关联只按时间区间并集求交，不从上下文推断任务，也不
 追加结论，不修改原始活动事实。Server 可以用当前 Plan、电脑状态和同用户新鲜 Pi
 状态生成带 reason codes 与算法版本的确定性 analysis；该派生视图可重算且不写回事实。
 
+## D012 Computer 分析是追加注释层
+
+状态：已采用。
+
+小时总结和每日工作日志分别写入 `computerHourlyAnalysis` 与 `computerDailyWorkLog`，
+不改变分钟桶、会话、窗口标题或 Plan。调度器只在存在 active 事实或有效 Plan 时排队，
+OpenClaw 通过 scoped 聚合接口调用 `qwen3.7-plus`；服务端再次校验模型、Plan 引用、
+状态枚举和客观重叠阈值。提醒仍由 Server 根据 10 分钟未活跃和低于 30% 重叠规则产生，
+按用户现有 Screen/Feishu 路由并写入 `notifyLog`，AI 不直接发送小时消息或修改 Plan。
+
 ## 当前兼容与技术债
 
 这些不是可直接删除的“冗余”：

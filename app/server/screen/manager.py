@@ -52,7 +52,6 @@ class ScreenManager:
         except Exception:
             return False
 
-    @property
     def online(self, userId: str | None = None) -> bool:
         return any(owner == userId for owner in self._connections.values()) if userId else bool(self._connections)
 

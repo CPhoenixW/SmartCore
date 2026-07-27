@@ -91,3 +91,67 @@ export interface ComputerUsageReport {
   applications: Array<{ bundleId: string; appName: string; seconds: number }>;
   titles: ComputerContextUsage[];
 }
+
+export type ComputerPlanExecutionState = "not_started" | "partial" | "substantially_executed" | "unclear";
+
+export interface ComputerPlanAssessment {
+  evtId: string;
+  state: ComputerPlanExecutionState;
+  confidence: "high" | "medium" | "low";
+  evidenceCodes: string[];
+  note: string | null;
+  title?: string;
+  activeSeconds?: number;
+  durationSeconds?: number;
+  overlapRatio?: number;
+}
+
+export interface ComputerWorkTopic {
+  name: string;
+  summary: string | null;
+  activeSeconds: number;
+  sessionIds?: string[];
+  contextIds?: string[];
+  hourStarts?: string[];
+}
+
+export interface ComputerHourlyInsight {
+  analysisId: string;
+  deviceId: string;
+  hourStart: string;
+  hourEnd: string;
+  status: "queued" | "running" | "complete" | "failed";
+  title: string | null;
+  summary: string | null;
+  activeSeconds: number;
+  idleSeconds: number;
+  plannedActiveSeconds: number;
+  planAssessments: ComputerPlanAssessment[];
+  topics: ComputerWorkTopic[];
+  model: string | null;
+  generatedAt: string | null;
+  errorMessage: string | null;
+}
+
+export interface ComputerDailyWorkLog {
+  logId: string;
+  logDate: string;
+  status: "queued" | "running" | "complete" | "failed";
+  title: string | null;
+  summary: string | null;
+  topics: ComputerWorkTopic[];
+  planAssessments: ComputerPlanAssessment[];
+  reminderSummary: Array<Record<string, unknown>>;
+  generatedAt: string | null;
+  errorMessage: string | null;
+}
+
+export interface ComputerInsightsReport {
+  deviceId: string;
+  date: string;
+  hours: ComputerHourlyInsight[];
+  topics: ComputerWorkTopic[];
+  planAssessments: ComputerPlanAssessment[];
+  reminders: Array<{ title: string; content: string; stat: string; dedupKey: string | null }>;
+  dailyLog: ComputerDailyWorkLog | null;
+}

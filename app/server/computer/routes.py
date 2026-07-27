@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -46,11 +46,16 @@ class ActivitySliceBody(BaseModel):
         )
         if self.state != "active" and any(context_values):
             raise ValueError("only active slices may include application context")
-        if self.titleRedacted and any((self.windowTitle, self.contextKind, self.domain, self.workspace, self.documentName)):
+        if self.titleRedacted and any(
+            (self.windowTitle, self.contextKind, self.domain, self.workspace, self.documentName)
+        ):
             raise ValueError("redacted contexts may only include application identity")
         if self.domain and any(character in self.domain for character in ("/", ":", "?", "#", "@")):
             raise ValueError("domain must be a hostname without URL components")
-        if any(value and any(character in value for character in ("/", "\\")) for value in (self.workspace, self.documentName)):
+        if any(
+            value and any(character in value for character in ("/", "\\"))
+            for value in (self.workspace, self.documentName)
+        ):
             raise ValueError("workspace and documentName must not include a path")
         return self
 
@@ -119,7 +124,12 @@ def _computer_device(
 
 def _owned_computer(db: Session, user_id: str, device_id: str) -> LifeDevice:
     device = db.get(LifeDevice, device_id)
-    if device is None or device.userId != user_id or device.deviceKind != "computer" or device.stat != "active":
+    if (
+        device is None
+        or device.userId != user_id
+        or device.deviceKind != "computer"
+        or device.stat != "active"
+    ):
         raise HTTPException(status_code=404, detail="computer device not found")
     return device
 
@@ -145,7 +155,10 @@ def heartbeat(
     device: LifeDevice = Depends(_computer_device),
     db: Session = Depends(get_db),
 ) -> dict:
-    return {"ok": True, "data": service.record_heartbeat(db, device=device, payload=body.model_dump())}
+    return {
+        "ok": True,
+        "data": service.record_heartbeat(db, device=device, payload=body.model_dump()),
+    }
 
 
 @router.get("/status")
@@ -162,7 +175,9 @@ def status(
 def usage(
     deviceId: Annotated[str, Query(min_length=1, max_length=32)],
     range: Literal["today", "24h", "7d", "30d"] = "today",
-    timezoneName: Annotated[str, Query(alias="timezone", min_length=1, max_length=64)] = "Asia/Shanghai",
+    timezoneName: Annotated[
+        str, Query(alias="timezone", min_length=1, max_length=64)
+    ] = "Asia/Shanghai",
     userId: str = Depends(require_authenticated_user_id),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -171,4 +186,30 @@ def usage(
     except ZoneInfoNotFoundError as exc:
         raise HTTPException(status_code=422, detail="timezone must be a valid IANA name") from exc
     device = _owned_computer(db, userId, deviceId)
-    return {"ok": True, "data": service.usage_report(db, device=device, range_key=range, timezone_name=timezoneName)}
+    return {
+        "ok": True,
+        "data": service.usage_report(
+            db, device=device, range_key=range, timezone_name=timezoneName
+        ),
+    }
+
+
+@router.get("/insights")
+def insights(
+    deviceId: Annotated[str, Query(min_length=1, max_length=32)],
+    dateValue: Annotated[str | None, Query(alias="date")] = None,
+    userId: str = Depends(require_authenticated_user_id),
+    db: Session = Depends(get_db),
+) -> dict:
+    from app.server.computer.insights import insights_report
+
+    try:
+        log_date = (
+            date.fromisoformat(dateValue).isoformat()
+            if dateValue
+            else datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="date must be YYYY-MM-DD") from exc
+    device = _owned_computer(db, userId, deviceId)
+    return {"ok": True, "data": insights_report(db, device=device, log_date=log_date)}

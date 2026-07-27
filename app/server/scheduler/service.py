@@ -7,10 +7,15 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy.orm import Session
 
+from app.server.computer.insights import dispatch_smart_plan_reminders
 from app.server.computer.service import cleanup_activity
 from app.server.config import Settings
 from app.server.db.session import SessionLocal
 from app.server.new_core.scheduler import runReminderTick
+from app.server.scheduler.computer_analysis import (
+    dispatch_daily_work_logs,
+    dispatch_hourly_analyses,
+)
 from app.server.scheduler.daily_summary import dispatch_daily_summaries
 from app.server.screen.manager import screenManager
 from app.server.weather.service import deliver_tomorrow_weather, refresh_weather
@@ -26,6 +31,7 @@ def build_scheduler_service(
         not settings.scheduler_enabled
         and not settings.daily_summary_enabled
         and not settings.weather_enabled
+        and not settings.computer_analysis_enabled
         and settings.computer_activity_retention_days < 1
     ):
         return None
@@ -48,16 +54,14 @@ class SchedulerService:
     ) -> None:
         self._settings = settings
         self._session_factory = session_factory
-        self._scheduler = scheduler or BackgroundScheduler(
-            timezone=settings.daily_summary_timezone
-        )
+        self._scheduler = scheduler or BackgroundScheduler(timezone=settings.daily_summary_timezone)
 
     def _tick(self) -> None:
         from app.server.new_core.models import nowIso
 
         db = self._session_factory()
         try:
-            runReminderTick(db, now=nowIso(), screenOnline=screenManager.online)
+            runReminderTick(db, now=nowIso(), screenOnline=screenManager.online())
         finally:
             db.close()
 
@@ -97,6 +101,39 @@ class SchedulerService:
             cleanup_activity(
                 db,
                 retention_days=self._settings.computer_activity_retention_days,
+            )
+        finally:
+            db.close()
+
+    def _computer_hourly_analysis_tick(self) -> None:
+        db = self._session_factory()
+        try:
+            dispatch_hourly_analyses(
+                db,
+                settings=self._settings,
+                now=datetime.now(ZoneInfo(self._settings.computer_analysis_timezone)),
+            )
+        finally:
+            db.close()
+
+    def _computer_daily_log_tick(self) -> None:
+        db = self._session_factory()
+        try:
+            dispatch_daily_work_logs(
+                db,
+                settings=self._settings,
+                now=datetime.now(ZoneInfo(self._settings.computer_analysis_timezone)),
+            )
+        finally:
+            db.close()
+
+    def _computer_smart_reminder_tick(self) -> None:
+        db = self._session_factory()
+        try:
+            dispatch_smart_plan_reminders(
+                db,
+                now=datetime.now(ZoneInfo(self._settings.computer_analysis_timezone)),
+                screen_online=screenManager.online,
             )
         finally:
             db.close()
@@ -170,6 +207,42 @@ class SchedulerService:
                 coalesce=True,
                 max_instances=1,
                 misfire_grace_time=3600,
+            )
+        if self._settings.computer_analysis_enabled:
+            if not 0 <= self._settings.computer_analysis_minute <= 59:
+                raise ValueError("COMPUTER_ANALYSIS_MINUTE must be between 0 and 59")
+            ZoneInfo(self._settings.computer_analysis_timezone)
+            self._scheduler.add_job(
+                self._computer_hourly_analysis_tick,
+                trigger="cron",
+                minute=self._settings.computer_analysis_minute,
+                timezone=self._settings.computer_analysis_timezone,
+                id="smartcore-computer-hourly-analysis",
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=900,
+            )
+            self._scheduler.add_job(
+                self._computer_daily_log_tick,
+                trigger="cron",
+                hour=23,
+                minute=59,
+                timezone=self._settings.computer_analysis_timezone,
+                id="smartcore-computer-daily-work-log",
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=900,
+            )
+            self._scheduler.add_job(
+                self._computer_smart_reminder_tick,
+                trigger="interval",
+                seconds=60,
+                id="smartcore-computer-smart-reminders",
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
             )
         self._scheduler.start()
 

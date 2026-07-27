@@ -605,3 +605,58 @@ class ComputerDailyAppUsage(Base):
     bundleId: Mapped[str] = mapped_column(String(300), nullable=False)
     appName: Mapped[str] = mapped_column(String(200), nullable=False)
     activeSeconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class ComputerHourlyAnalysis(Base):
+    __tablename__ = "computerHourlyAnalysis"
+    __table_args__ = (
+        UniqueConstraint("userId", "deviceId", "hourStart", name="uq_computer_hourly_user_device_hour"),
+    )
+
+    analysisId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    deviceId: Mapped[str] = mapped_column(String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), nullable=False)
+    hourStart: Mapped[str] = mapped_column(String(64), nullable=False)
+    hourEnd: Mapped[str] = mapped_column(String(64), nullable=False)
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False)
+    localDate: Mapped[str] = mapped_column(String(10), nullable=False)
+    activeSeconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    idleSeconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    plannedActiveSeconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="queued", nullable=False)
+    title: Mapped[str | None] = mapped_column(String(40))
+    summary: Mapped[str | None] = mapped_column(Text)
+    planAssessments: Mapped[list | None] = mapped_column(JSON)
+    topics: Mapped[list | None] = mapped_column(JSON)
+    evidence: Mapped[dict | None] = mapped_column(JSON)
+    model: Mapped[str | None] = mapped_column(String(100))
+    promptVersion: Mapped[str | None] = mapped_column(String(40))
+    generatedAt: Mapped[str | None] = mapped_column(String(64))
+    errorMessage: Mapped[str | None] = mapped_column(Text)
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class ComputerDailyWorkLog(Base):
+    __tablename__ = "computerDailyWorkLog"
+    __table_args__ = (
+        UniqueConstraint("userId", "deviceId", "logDate", name="uq_computer_daily_log_user_device_date"),
+    )
+
+    logId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    deviceId: Mapped[str] = mapped_column(String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), nullable=False)
+    logDate: Mapped[str] = mapped_column(String(10), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="queued", nullable=False)
+    title: Mapped[str | None] = mapped_column(String(40))
+    summary: Mapped[str | None] = mapped_column(Text)
+    topics: Mapped[list | None] = mapped_column(JSON)
+    planAssessments: Mapped[list | None] = mapped_column(JSON)
+    reminderSummary: Mapped[list | None] = mapped_column(JSON)
+    hourlyAnalysisIds: Mapped[list | None] = mapped_column(JSON)
+    model: Mapped[str | None] = mapped_column(String(100))
+    promptVersion: Mapped[str | None] = mapped_column(String(40))
+    generatedAt: Mapped[str | None] = mapped_column(String(64))
+    errorMessage: Mapped[str | None] = mapped_column(Text)
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)

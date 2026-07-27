@@ -155,10 +155,19 @@ Pi 状态与照片使用 `/dev/*`；通用设备列表/配对/分发使用 `/api
 - `GET /api/computer/usage?deviceId=...&range=today|24h|7d|30d&timezone=...`：登录 owner；`24h` 为滚动 24 小时窗口，供活动地图使用
   读取状态总量、Plan 区间并集交集、时间线、会话、应用与过滤后的上下文。可选上下文
   字段为 `contextKind`、`domain`、`workspace` 和 `documentName`。
+- `GET /api/computer/insights?deviceId=...&date=YYYY-MM-DD`：登录 owner 读取该日小时总结、
+  Plan 执行判断、主题聚类、提醒记录和每日工作日志；分析状态为 `queued/running/complete/failed`。
 
 上传不接受 `userId` 或其他 owner 字段。非 computer token 返回 403，跨用户浏览器
 查询返回 404。Server 会再次执行敏感应用和认证/金融场景脱敏；会话的 `inference`
 和上下文的 `classification` 在 v1 恒为 null。
+
+Computer 分析使用 Agent scope 的内部接口：`GET /agent/computer/hourly-context`、
+`POST /agent/computer/hourly-analysis`、`GET /agent/computer/daily-context` 和
+`POST /agent/computer/daily-log`。owner 从 scope 派生，写入按小时/日期唯一键幂等；
+服务端拒绝未知 Plan 引用、零活跃的执行判断，以及低于 70% 客观重叠的
+`substantially_executed`。结果固定记录模型 `qwen3.7-plus` 与提示版本
+`computer-analysis-v1`，不读取数据库、OCR、网页正文或聊天正文。
 
 ## Feishu 配对状态机
 

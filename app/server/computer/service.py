@@ -67,7 +67,11 @@ SENSITIVE_DOMAIN_FRAGMENTS = (
 
 
 def _aware(value: str | datetime) -> datetime:
-    parsed = value if isinstance(value, datetime) else datetime.fromisoformat(value.replace("Z", "+00:00"))
+    parsed = (
+        value
+        if isinstance(value, datetime)
+        else datetime.fromisoformat(value.replace("Z", "+00:00"))
+    )
     if parsed.tzinfo is None:
         raise ValueError("timestamp must include an offset")
     return parsed
@@ -250,7 +254,11 @@ def _recompute_daily(db: Session, *, device: LifeDevice, local_date: str) -> Non
     daily.pausedSeconds = totals["paused"]
     daily.switchCount = sum(row.switchCount for row in buckets)
     daily.updatedAt = nowIso()
-    db.execute(delete(ComputerDailyAppUsage).where(ComputerDailyAppUsage.dailyUsageId == daily.dailyUsageId))
+    db.execute(
+        delete(ComputerDailyAppUsage).where(
+            ComputerDailyAppUsage.dailyUsageId == daily.dailyUsageId
+        )
+    )
     for bundle_id, item in apps.items():
         db.add(
             ComputerDailyAppUsage(
@@ -290,7 +298,11 @@ def ingest_activity(
             db.add(existing)
         else:
             affected_dates.add(existing.localDate)
-            db.execute(delete(ComputerActivitySlice).where(ComputerActivitySlice.bucketId == existing.bucketId))
+            db.execute(
+                delete(ComputerActivitySlice).where(
+                    ComputerActivitySlice.bucketId == existing.bucketId
+                )
+            )
         existing.sessionId = item.get("sessionId")
         existing.timezone = timezone_name
         existing.localDate = local_date
@@ -346,7 +358,9 @@ def record_heartbeat(db: Session, *, device: LifeDevice, payload: dict[str, Any]
         if row.currentState == "active" and payload.get("currentAppName")
         else None
     )
-    row.currentWindowTitle = heartbeat_context["windowTitle"] if row.currentState == "active" else None
+    row.currentWindowTitle = (
+        heartbeat_context["windowTitle"] if row.currentState == "active" else None
+    )
     row.observedAt = _utc_text(payload["observedAt"])
     row.appVersion = payload["appVersion"]
     row.osVersion = payload["osVersion"]
@@ -501,15 +515,31 @@ def cleanup_activity(db: Session, *, retention_days: int, now: datetime | None =
     if retention_days < 1:
         return 0
     current = now or datetime.now(UTC)
-    cutoff = (current.astimezone(UTC) - timedelta(days=retention_days)).replace(microsecond=0).isoformat()
+    cutoff = (
+        (current.astimezone(UTC) - timedelta(days=retention_days))
+        .replace(microsecond=0)
+        .isoformat()
+    )
     bucket_ids = list(
-        db.scalars(select(ComputerActivityBucket.bucketId).where(ComputerActivityBucket.bucketStart < cutoff))
+        db.scalars(
+            select(ComputerActivityBucket.bucketId).where(
+                ComputerActivityBucket.bucketStart < cutoff
+            )
+        )
     )
     if bucket_ids:
-        db.execute(delete(ComputerActivitySlice).where(ComputerActivitySlice.bucketId.in_(bucket_ids)))
-        db.execute(delete(ComputerActivityBucket).where(ComputerActivityBucket.bucketId.in_(bucket_ids)))
-    referenced = select(ComputerActivitySlice.contextId).where(ComputerActivitySlice.contextId.is_not(None))
-    db.execute(delete(ComputerActivityContext).where(ComputerActivityContext.contextId.not_in(referenced)))
+        db.execute(
+            delete(ComputerActivitySlice).where(ComputerActivitySlice.bucketId.in_(bucket_ids))
+        )
+        db.execute(
+            delete(ComputerActivityBucket).where(ComputerActivityBucket.bucketId.in_(bucket_ids))
+        )
+    referenced = select(ComputerActivitySlice.contextId).where(
+        ComputerActivitySlice.contextId.is_not(None)
+    )
+    db.execute(
+        delete(ComputerActivityContext).where(ComputerActivityContext.contextId.not_in(referenced))
+    )
     db.commit()
     return len(bucket_ids)
 
@@ -524,8 +554,13 @@ def _merge_intervals(intervals: list[tuple[datetime, datetime]]) -> list[tuple[d
     return merged
 
 
-def _overlap_seconds(start: datetime, end: datetime, intervals: list[tuple[datetime, datetime]]) -> float:
-    return sum(max(0.0, (min(end, other_end) - max(start, other_start)).total_seconds()) for other_start, other_end in intervals)
+def _overlap_seconds(
+    start: datetime, end: datetime, intervals: list[tuple[datetime, datetime]]
+) -> float:
+    return sum(
+        max(0.0, (min(end, other_end) - max(start, other_start)).total_seconds())
+        for other_start, other_end in intervals
+    )
 
 
 def usage_report(
@@ -540,7 +575,11 @@ def usage_report(
     local_now = (now or datetime.now(UTC)).astimezone(local_tz)
     days = {"today": 1, "24h": 2, "7d": 7, "30d": 30}[range_key]
     start_date = local_now.date() - timedelta(days=days - 1)
-    local_start = local_now - timedelta(hours=24) if range_key == "24h" else datetime.combine(start_date, datetime.min.time(), tzinfo=local_tz)
+    local_start = (
+        local_now - timedelta(hours=24)
+        if range_key == "24h"
+        else datetime.combine(start_date, datetime.min.time(), tzinfo=local_tz)
+    )
     range_start = local_start.astimezone(UTC)
     range_end = local_now.astimezone(UTC)
     buckets = list(
@@ -555,11 +594,16 @@ def usage_report(
         )
     )
     bucket_ids = [row.bucketId for row in buckets]
-    slices_by_bucket: dict[str, list[tuple[ComputerActivitySlice, ComputerActivityContext | None]]] = defaultdict(list)
+    slices_by_bucket: dict[
+        str, list[tuple[ComputerActivitySlice, ComputerActivityContext | None]]
+    ] = defaultdict(list)
     if bucket_ids:
         rows = db.execute(
             select(ComputerActivitySlice, ComputerActivityContext)
-            .outerjoin(ComputerActivityContext, ComputerActivityContext.contextId == ComputerActivitySlice.contextId)
+            .outerjoin(
+                ComputerActivityContext,
+                ComputerActivityContext.contextId == ComputerActivitySlice.contextId,
+            )
             .where(ComputerActivitySlice.bucketId.in_(bucket_ids))
         ).all()
         for activity_slice, context in rows:
@@ -577,7 +621,15 @@ def usage_report(
         end = start + timedelta(minutes=plan.durationMin)
         if end <= range_start or start >= range_end:
             continue
-        plans.append({"evtId": base.evtId, "title": base.title, "startAt": start.isoformat(), "endAt": end.isoformat(), "activeSeconds": 0})
+        plans.append(
+            {
+                "evtId": base.evtId,
+                "title": base.title,
+                "startAt": start.isoformat(),
+                "endAt": end.isoformat(),
+                "activeSeconds": 0,
+            }
+        )
         plan_intervals.append((start, end))
     merged_plans = _merge_intervals(plan_intervals)
 
@@ -600,7 +652,10 @@ def usage_report(
             if activity_slice.state != "active" or context is None:
                 continue
             active_seconds += activity_slice.seconds
-            app = app_totals.setdefault(context.bundleId, {"bundleId": context.bundleId, "appName": context.appName, "seconds": 0})
+            app = app_totals.setdefault(
+                context.bundleId,
+                {"bundleId": context.bundleId, "appName": context.appName, "seconds": 0},
+            )
             app["appName"] = context.appName
             app["seconds"] += activity_slice.seconds
             if context.windowTitle:
@@ -617,7 +672,10 @@ def usage_report(
         local_bucket_date = bucket_start.astimezone(local_tz).date().isoformat()
         daily_planned[local_bucket_date] += round(bucket_planned)
         for plan_payload, interval in zip(plans, plan_intervals, strict=True):
-            plan_payload["activeSeconds"] += round(active_seconds * min(1.0, _overlap_seconds(bucket_start, bucket_end, [interval]) / 60.0))
+            plan_payload["activeSeconds"] += round(
+                active_seconds
+                * min(1.0, _overlap_seconds(bucket_start, bucket_end, [interval]) / 60.0)
+            )
         if range_key in {"today", "24h"}:
             timeline.append(
                 {
@@ -683,7 +741,9 @@ def usage_report(
     session_list = []
     if range_key == "today":
         for session in sessions.values():
-            session["contexts"] = sorted(session["contexts"].values(), key=lambda item: item["seconds"], reverse=True)
+            session["contexts"] = sorted(
+                session["contexts"].values(), key=lambda item: item["seconds"], reverse=True
+            )
             session_list.append(session)
     status = monitor_status_with_analysis(db, device=device)
     return {
@@ -693,11 +753,19 @@ def usage_report(
         "windowStart": range_start.isoformat(),
         "windowEnd": range_end.isoformat(),
         "status": status,
-        "totals": {**{f"{state}Seconds": totals[state] for state in STATES}, "plannedActiveSeconds": round(planned_active), "switchCount": sum(row.switchCount for row in buckets)},
+        "totals": {
+            **{f"{state}Seconds": totals[state] for state in STATES},
+            "plannedActiveSeconds": round(planned_active),
+            "switchCount": sum(row.switchCount for row in buckets),
+        },
         "timeline": timeline,
         "daily": daily,
         "plans": plans,
         "sessions": sorted(session_list, key=lambda item: item["startAt"], reverse=True),
-        "applications": sorted(app_totals.values(), key=lambda item: item["seconds"], reverse=True)[:20],
-        "titles": sorted(title_totals.values(), key=lambda item: item["seconds"], reverse=True)[:30],
+        "applications": sorted(app_totals.values(), key=lambda item: item["seconds"], reverse=True)[
+            :20
+        ],
+        "titles": sorted(title_totals.values(), key=lambda item: item["seconds"], reverse=True)[
+            :30
+        ],
     }

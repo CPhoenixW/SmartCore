@@ -5,8 +5,8 @@ import PageHeader from "@/components/base/PageHeader.vue";
 const { t } = useI18n();
 
 const sections = [
-  { name: "deviceRaspberryPi", label: "device.sections.raspberryPi" },
   { name: "deviceComputer", label: "device.sections.computer" },
+  { name: "deviceRaspberryPi", label: "device.sections.raspberryPi" },
   { name: "deviceScreen", label: "device.sections.screen" },
   { name: "deviceFeishuBot", label: "device.sections.feishuBot" },
 ] as const;

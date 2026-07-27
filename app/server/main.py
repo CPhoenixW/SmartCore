@@ -24,6 +24,7 @@ from app.server.api.routes import router as apiRouter
 from app.server.api.weather_routes import router as weatherApiRouter
 from app.server.auth.security import session_user_id_from_request
 from app.server.auth.storage import ensure_auth_schema
+from app.server.computer.agent_routes import createComputerAgentRouter
 from app.server.computer.routes import router as computerRouter
 from app.server.computer.service import cleanup_activity
 from app.server.config import get_settings
@@ -144,6 +145,7 @@ def create_app() -> FastAPI:
     app.include_router(createRelationWriteRouter())
     app.include_router(createFeedbackRouter())
     app.include_router(createDailySummaryAgentRouter())
+    app.include_router(createComputerAgentRouter())
     app.include_router(createAgentV2Router())
     app.include_router(createLegacyTimeRouter())
     app.include_router(createAgentRouter())

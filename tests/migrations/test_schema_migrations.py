@@ -127,6 +127,8 @@ def test_computer_activity_schema_is_additive_and_idempotent(app_env) -> None:
         "computerMonitorStatus",
         "computerDailyUsage",
         "computerDailyAppUsage",
+        "computerHourlyAnalysis",
+        "computerDailyWorkLog",
     }
     with sqlite3.connect(app_env) as conn:
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -139,6 +141,8 @@ def test_computer_activity_schema_is_additive_and_idempotent(app_env) -> None:
 
     assert expected_tables <= tables
     assert "idx_computer_bucket_device_start" in indexes
+    assert "idx_computer_hourly_user_date" in indexes
+    assert "idx_computer_daily_log_user_date" in indexes
     assert {"contextKind", "domain", "workspace", "documentName"} <= context_columns
     assert quick_check == ("ok",)
     assert [row for row in foreign_keys if str(row[0]).startswith("computer")] == []
