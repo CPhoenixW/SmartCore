@@ -10,7 +10,7 @@ import EmptyState from "@/components/base/EmptyState.vue";
 import BarChart, { type BarChartSeries } from "@/components/base/BarChart.vue";
 import { computerApi } from "@/api/computer";
 import { deviceRegistryApi } from "@/api/deviceRegistry";
-import type { ComputerPlanAssessment, ComputerRange, ComputerSession } from "@/types/computer";
+import type { ComputerPlanAssessment, ComputerRange, ComputerSession, ComputerWorkBlock } from "@/types/computer";
 import {
   dominantComputerState,
   durationLabel,
@@ -30,6 +30,7 @@ const range = ref<ComputerRange>("today");
 const selectedDeviceId = ref("");
 const selectedDate = ref(todayKey());
 const selectedSession = ref<ComputerSession | null>(null);
+const showHourlyEvidence = ref(false);
 const activityMapScroll = ref<HTMLElement | null>(null);
 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
 const devices = useQuery({ queryKey: ["lifeDevices"], queryFn: deviceRegistryApi.list, refetchInterval: 15_000 });
@@ -65,6 +66,11 @@ const insights = useQuery({
 const report = computed(() => usage.data.value);
 const mapReport = computed(() => activityMapUsage.data.value ?? report.value);
 const monitor = computed(() => status.data.value ?? report.value?.status ?? null);
+const recentWorkBlocks = computed(() =>
+  [...(insights.data.value?.workBlocks ?? [])]
+    .filter((block) => block.status === "closed")
+    .reverse(),
+);
 const maxApp = computed(() => Math.max(1, ...(report.value?.applications ?? []).map((item) => item.seconds)));
 const dailyLabels = computed(() => (report.value?.daily ?? []).map((item) => item.date.slice(5)));
 const dailySeries = computed<BarChartSeries[]>(() => [
@@ -132,6 +138,10 @@ function segmentIsWide(segment: ComputerTimelineSegment) {
 }
 function planStateLabel(item: ComputerPlanAssessment) { return t(`computer.planExecutionState.${item.state}`); }
 function insightStatusLabel(statusValue: string) { return t(`computer.insightStatus.${statusValue}`); }
+function blockEndLabel(block: ComputerWorkBlock) {
+  return block.endAt ? timeLabel(block.endAt) : t("computer.ongoing");
+}
+function semanticLabel(value?: string) { return t(`computer.semanticAlignment.${value || "unclear"}`); }
 </script>
 
 <template>
@@ -152,16 +162,29 @@ function insightStatusLabel(statusValue: string) { return t(`computer.insightSta
       <DeviceMetricStrip :items="metrics" :label="t('computer.activitySummary')" />
 
       <section v-if="range === 'today'" class="computer-insights-grid">
-        <BaseCard :title="t('computer.hourlySummary')">
-          <div v-if="insights.data.value?.hours.length" class="computer-insight-list computer-card-scroll">
-            <article v-for="hour in [...insights.data.value.hours].reverse()" :key="hour.analysisId">
-              <header><time>{{ timeLabel(hour.hourStart) }}–{{ timeLabel(hour.hourEnd) }}</time><span :class="`insight-state insight-state--${hour.status}`">{{ insightStatusLabel(hour.status) }}</span></header>
-              <strong>{{ hour.title || insightStatusLabel(hour.status) }}</strong>
-              <p>{{ hour.summary || hour.errorMessage || t('computer.analysisPending') }}</p>
-              <small>{{ t('computer.hourEvidence', { active: duration(hour.activeSeconds), planned: duration(hour.plannedActiveSeconds) }) }}</small>
+        <BaseCard class="computer-work-block-primary" :title="t('computer.currentWorkBlock')">
+          <template v-if="insights.data.value?.currentBlock">
+          <article class="computer-work-block computer-work-block--current">
+            <header><div><span class="computer-work-block__status">{{ t('computer.ongoing') }}</span><strong>{{ insights.data.value.currentBlock.title || t('computer.analysisPending') }}</strong></div><time>{{ timeLabel(insights.data.value.currentBlock.startAt) }}–{{ blockEndLabel(insights.data.value.currentBlock) }}</time></header>
+            <p v-if="insights.data.value.currentBlock.summary">{{ insights.data.value.currentBlock.summary }}</p>
+            <div class="computer-work-block__metrics"><span>{{ t('computer.activeTime') }} <b>{{ duration(insights.data.value.currentBlock.activeSeconds) }}</b></span><span>{{ t('computer.plannedActive') }} <b>{{ duration(insights.data.value.currentBlock.plannedActiveSeconds) }}</b></span><span v-if="insights.data.value.currentBlock.primaryApps.length">{{ insights.data.value.currentBlock.primaryApps.map((item) => item.appName).slice(0, 3).join(t('common.listSeparator')) }}</span></div>
+            <dl v-if="insights.data.value.currentBlock.progress || insights.data.value.currentBlock.outcome || insights.data.value.currentBlock.blocker || insights.data.value.currentBlock.nextStep" class="computer-work-block__details"><div v-if="insights.data.value.currentBlock.progress"><dt>{{ t('computer.progress') }}</dt><dd>{{ insights.data.value.currentBlock.progress }}</dd></div><div v-if="insights.data.value.currentBlock.outcome"><dt>{{ t('computer.outcome') }}</dt><dd>{{ insights.data.value.currentBlock.outcome }}</dd></div><div v-if="insights.data.value.currentBlock.blocker"><dt>{{ t('computer.blocker') }}</dt><dd>{{ insights.data.value.currentBlock.blocker }}</dd></div><div v-if="insights.data.value.currentBlock.nextStep"><dt>{{ t('computer.nextStep') }}</dt><dd>{{ insights.data.value.currentBlock.nextStep }}</dd></div></dl>
+          </article>
+          <div v-if="insights.data.value.analysisState && insights.data.value.analysisState.status !== 'complete'" class="computer-analysis-state"><strong>{{ insightStatusLabel(insights.data.value.analysisState.status) }}</strong><p v-if="insights.data.value.analysisState.errorMessage">{{ insights.data.value.analysisState.errorMessage }}</p><small v-if="insights.data.value.analysisState.nextRetryAt">{{ formatDateTime(insights.data.value.analysisState.nextRetryAt, locale === 'en-US' ? 'en-US' : 'zh-CN') }}</small></div>
+          </template>
+          <div v-else-if="insights.data.value?.analysisState && ['queued', 'running', 'failed'].includes(insights.data.value.analysisState.status)" class="computer-analysis-state"><strong>{{ insightStatusLabel(insights.data.value.analysisState.status) }}</strong><p v-if="insights.data.value.analysisState.errorMessage">{{ insights.data.value.analysisState.errorMessage }}</p><small v-if="insights.data.value.analysisState.nextRetryAt">{{ formatDateTime(insights.data.value.analysisState.nextRetryAt, locale === 'en-US' ? 'en-US' : 'zh-CN') }}</small></div>
+          <EmptyState v-else :text="t('computer.noCurrentWorkBlock')" />
+        </BaseCard>
+        <BaseCard :title="t('computer.recentWorkBlocks')">
+          <div v-if="recentWorkBlocks.length" class="computer-work-block-list computer-card-scroll">
+            <article v-for="block in recentWorkBlocks" :key="block.blockId" class="computer-work-block">
+              <header><div><strong>{{ block.title || t('computer.analysisPending') }}</strong><small>{{ duration(block.activeSeconds) }}</small></div><time>{{ timeLabel(block.startAt) }}–{{ blockEndLabel(block) }}</time></header>
+              <p v-if="block.summary">{{ block.summary }}</p>
+              <div class="computer-work-block__metrics"><span v-if="block.primaryApps.length">{{ block.primaryApps.map((item) => item.appName).slice(0, 3).join(t('common.listSeparator')) }}</span><span v-if="block.planAssessments.length">{{ t('computer.planCount', { count: block.planAssessments.length }) }}</span></div>
             </article>
           </div>
-          <EmptyState v-else :text="t('computer.noHourlySummary')" />
+          <EmptyState v-else :text="t('computer.noWorkBlocks')" />
+          <button v-if="insights.data.value?.legacyHours.length" class="button button--ghost computer-evidence-button" type="button" @click="showHourlyEvidence = true">{{ t('computer.viewHourlyEvidence') }}</button>
         </BaseCard>
         <BaseCard :title="t('computer.planExecution')">
           <div v-if="insights.data.value?.planAssessments.length" class="computer-plan-assessments computer-card-scroll">
@@ -169,19 +192,20 @@ function insightStatusLabel(statusValue: string) { return t(`computer.insightSta
               <div><strong>{{ planStateLabel(item) }}</strong><span>{{ t(`computer.confidence.${item.confidence}`) }}</span></div>
               <p>{{ item.title || item.note || item.evidenceCodes.join(t('common.listSeparator')) }}</p>
               <small v-if="item.overlapRatio !== undefined">{{ t('computer.objectiveOverlap', { percent: Math.round(item.overlapRatio * 100) }) }}</small>
+              <small v-if="item.semanticAlignment"> · {{ semanticLabel(item.semanticAlignment) }}</small>
             </article>
           </div>
           <EmptyState v-else :text="t('computer.noPlanAssessment')" />
         </BaseCard>
         <BaseCard :title="t('computer.workTopics')">
           <div v-if="insights.data.value?.topics.length" class="computer-topic-list">
-            <article v-for="topic in insights.data.value.topics" :key="topic.name"><div><strong>{{ topic.name }}</strong><small>{{ duration(topic.activeSeconds) }} · {{ t('computer.evidenceCount', { count: (topic.hourStarts ?? []).length }) }}</small></div><p>{{ topic.summary || t('common.notSet') }}</p></article>
+            <article v-for="topic in insights.data.value.topics" :key="topic.name"><div><strong>{{ topic.name }}</strong><small>{{ duration(topic.activeSeconds) }} · {{ t('computer.blockEvidenceCount', { count: (topic.blockIds ?? []).length }) }}</small></div><p v-if="topic.summary">{{ topic.summary }}</p></article>
           </div>
           <EmptyState v-else :text="t('computer.noTopics')" />
         </BaseCard>
         <BaseCard :title="t('computer.dailyWorkLog')">
           <article v-if="insights.data.value?.dailyLog" class="computer-daily-log">
-            <div><strong>{{ insights.data.value.dailyLog.title || insightStatusLabel(insights.data.value.dailyLog.status) }}</strong><span>{{ insightStatusLabel(insights.data.value.dailyLog.status) }}</span></div>
+            <div><strong>{{ insights.data.value.dailyLog.title || insightStatusLabel(insights.data.value.dailyLog.status) }}</strong><span>{{ t(`computer.dailyLogPhase.${insights.data.value.dailyLog.phase}`) }} · {{ insightStatusLabel(insights.data.value.dailyLog.status) }}</span></div>
             <p>{{ insights.data.value.dailyLog.summary || insights.data.value.dailyLog.errorMessage || t('computer.analysisPending') }}</p>
             <small>{{ t('computer.smartReminderCount', { count: insights.data.value.reminders.length }) }}</small>
           </article>
@@ -271,6 +295,12 @@ function insightStatusLabel(statusValue: string) { return t(`computer.insightSta
         <div class="session-contexts"><article v-for="context in selectedSession.contexts" :key="context.contextId"><div><strong>{{ context.appName }}</strong><small>{{ [context.domain, context.workspace, context.documentName, context.windowTitle, context.bundleId].filter(Boolean).join(' · ') }}</small></div><span>{{ duration(context.seconds) }}</span></article></div>
       </aside>
     </div>
+    <div v-if="showHourlyEvidence" class="session-drawer-backdrop" @click.self="showHourlyEvidence = false">
+      <aside class="session-drawer" role="dialog" aria-modal="true" :aria-label="t('computer.hourlyEvidence')">
+        <header><div><h2>{{ t('computer.hourlyEvidence') }}</h2><p>{{ selectedDate }}</p></div><button class="icon-button" type="button" :aria-label="t('common.close')" @click="showHourlyEvidence = false">×</button></header>
+        <div class="computer-insight-list"><article v-for="hour in [...(insights.data.value?.legacyHours ?? [])].reverse()" :key="hour.analysisId"><header><time>{{ timeLabel(hour.hourStart) }}–{{ timeLabel(hour.hourEnd) }}</time><span :class="`insight-state insight-state--${hour.status}`">{{ insightStatusLabel(hour.status) }}</span></header><strong v-if="hour.title">{{ hour.title }}</strong><p v-if="hour.summary || hour.errorMessage">{{ hour.summary || hour.errorMessage }}</p><small>{{ t('computer.hourEvidence', { active: duration(hour.activeSeconds), planned: duration(hour.plannedActiveSeconds) }) }}</small></article></div>
+      </aside>
+    </div>
   </div>
 </template>
 
@@ -285,6 +315,27 @@ function insightStatusLabel(statusValue: string) { return t(`computer.insightSta
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
 }
+
+.computer-work-block-primary { grid-column: 1 / -1; }
+.computer-work-block-list { display: grid; gap: 9px; max-height: 420px; }
+.computer-work-block { padding: 14px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }
+.computer-work-block--current { border-color: #bfdbfe; background: linear-gradient(135deg, #f8fbff, #fff); }
+.computer-work-block header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.computer-work-block header strong,.computer-work-block header small { display: block; }
+.computer-work-block header strong { margin-top: 4px; font-size: 17px; }
+.computer-work-block header small,.computer-work-block time,.computer-work-block__status { color: var(--color-text-muted); font-size: 10px; }
+.computer-work-block__status { color: #2563eb; font-weight: 700; }
+.computer-work-block > p { margin: 10px 0; color: #334155; line-height: 1.7; }
+.computer-work-block__metrics { display: flex; flex-wrap: wrap; gap: 8px 16px; color: #64748b; font-size: 11px; }
+.computer-work-block__metrics b { color: #0f172a; }
+.computer-work-block__details { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin: 12px 0 0; }
+.computer-work-block__details div { padding: 9px 10px; border-radius: 6px; background: #f8fafc; }
+.computer-work-block__details dt { color: #64748b; font-size: 10px; }
+.computer-work-block__details dd { margin: 4px 0 0; color: #334155; line-height: 1.5; }
+.computer-analysis-state { padding: 16px; border-radius: 8px; background: #f8fafc; }
+.computer-analysis-state p { margin: 6px 0; color: #475569; }
+.computer-analysis-state small { color: #64748b; }
+.computer-evidence-button { margin-top: 12px; }
 
 .computer-insight-list,
 .computer-plan-assessments {

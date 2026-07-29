@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -23,8 +25,11 @@ from app.server.new_core.models import (
 from app.server.new_core.notify import routeNotify
 
 PROMPT_VERSION = "computer-analysis-v1"
+DAILY_PROMPT_VERSION = "computer-work-block-v1"
 ALLOWED_STATUSES = {"queued", "running", "complete", "failed"}
 ALLOWED_PLAN_STATES = {"not_started", "partial", "substantially_executed", "unclear"}
+DAILY_LOG_LEASE_SECONDS = 15 * 60
+DAILY_LOG_RETRY_DELAYS = (60, 300, 900, 3600)
 
 
 def _aware(value: str | datetime) -> datetime:
@@ -246,7 +251,11 @@ def _validate_plan_assessments(
             raise ValueError("plan assessment references a plan outside the context")
         if allowed_evt_ids is not None and evt_id not in allowed_evt_ids:
             raise ValueError("plan assessment references an unknown plan")
-        if active_seconds <= 0 and state in {"partial", "substantially_executed"}:
+        if (
+            plans is not None
+            and active_seconds <= 0
+            and state in {"partial", "substantially_executed"}
+        ):
             raise ValueError("a plan cannot be judged executed when activeSeconds is zero")
         if state == "substantially_executed" and float(plan.get("overlapRatio", 0)) < 0.7:
             raise ValueError("substantially_executed requires at least 70% objective overlap")
@@ -330,6 +339,50 @@ def queue_hourly_analysis(
     db.commit()
     db.refresh(row)
     return row, True, context
+
+
+def record_hourly_evidence(
+    db: Session, *, device: LifeDevice, hour_start: datetime, timezone_name: str
+) -> ComputerHourlyAnalysis | None:
+    """Persist the immutable hourly objective snapshot without requesting an AI diary entry."""
+    context = build_hour_context(
+        db, device=device, hour_start=hour_start, timezone_name=timezone_name
+    )
+    if context["activeSeconds"] == 0 and not context["plans"]:
+        return None
+    row = db.scalar(
+        select(ComputerHourlyAnalysis).where(
+            ComputerHourlyAnalysis.userId == device.userId,
+            ComputerHourlyAnalysis.deviceId == device.deviceId,
+            ComputerHourlyAnalysis.hourStart == context["hourStart"],
+        )
+    )
+    now = nowIso()
+    if row is None:
+        row = ComputerHourlyAnalysis(
+            analysisId=newId(),
+            userId=device.userId,
+            deviceId=device.deviceId,
+            hourStart=context["hourStart"],
+            hourEnd=context["hourEnd"],
+            timezone=timezone_name,
+            localDate=context["localDate"],
+            createdAt=now,
+            updatedAt=now,
+        )
+        db.add(row)
+    row.activeSeconds = context["activeSeconds"]
+    row.idleSeconds = context["idleSeconds"]
+    row.plannedActiveSeconds = context["plannedActiveSeconds"]
+    if row.promptVersion in {None, "objective-v1"} and not row.title and not row.summary:
+        row.status = "complete"
+        row.promptVersion = "objective-v1"
+        row.generatedAt = now
+        row.errorMessage = None
+    row.updatedAt = now
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 def store_hourly_analysis(db: Session, *, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -425,6 +478,15 @@ def _daily_log_dict(row: ComputerDailyWorkLog | None) -> dict[str, Any] | None:
         "planAssessments": row.planAssessments or [],
         "reminderSummary": row.reminderSummary or [],
         "hourlyAnalysisIds": row.hourlyAnalysisIds or [],
+        "workBlockIds": row.workBlockIds or [],
+        "phase": row.phase,
+        "previewRevision": row.previewRevision,
+        "sourceFingerprint": row.sourceFingerprint,
+        "finalizedAt": row.finalizedAt,
+        "attemptCount": row.attemptCount,
+        "lastAttemptAt": row.lastAttemptAt,
+        "leaseExpiresAt": row.leaseExpiresAt,
+        "nextRetryAt": row.nextRetryAt,
         "model": row.model,
         "promptVersion": row.promptVersion,
         "generatedAt": row.generatedAt,
@@ -433,6 +495,9 @@ def _daily_log_dict(row: ComputerDailyWorkLog | None) -> dict[str, Any] | None:
 
 
 def build_daily_context(db: Session, *, device: LifeDevice, log_date: str) -> dict[str, Any]:
+    from app.server.computer.work_blocks import work_block_dict
+    from app.server.new_core.models import ComputerWorkBlock
+
     hours = list(
         db.scalars(
             select(ComputerHourlyAnalysis)
@@ -451,11 +516,23 @@ def build_daily_context(db: Session, *, device: LifeDevice, log_date: str) -> di
             )
         )
     )
+    work_blocks = list(
+        db.scalars(
+            select(ComputerWorkBlock)
+            .where(
+                ComputerWorkBlock.userId == device.userId,
+                ComputerWorkBlock.deviceId == device.deviceId,
+                ComputerWorkBlock.localDate == log_date,
+            )
+            .order_by(ComputerWorkBlock.startAt)
+        )
+    )
     return {
         "deviceId": device.deviceId,
         "userId": device.userId,
         "logDate": log_date,
         "hours": [hourly_dict(row) for row in hours],
+        "workBlocks": [work_block_dict(row) for row in work_blocks],
         "reminders": [
             {"title": row.title, "content": row.content, "stat": row.stat, "dedupKey": row.dedupKey}
             for row in reminders
@@ -464,11 +541,56 @@ def build_daily_context(db: Session, *, device: LifeDevice, log_date: str) -> di
     }
 
 
+def _daily_log_phase(row: ComputerDailyWorkLog, requested: str) -> str:
+    """A finalization request wins over an in-flight preview response."""
+    return "final" if requested == "final" or row.phase == "final" else "preview"
+
+
+def fail_daily_log(
+    db: Session,
+    *,
+    row: ComputerDailyWorkLog,
+    error_message: str,
+    now: datetime | None = None,
+) -> None:
+    current = _aware(now or datetime.now(UTC))
+    delay = DAILY_LOG_RETRY_DELAYS[
+        min(max(0, row.attemptCount - 1), len(DAILY_LOG_RETRY_DELAYS) - 1)
+    ]
+    row.status = "failed"
+    row.leaseExpiresAt = None
+    row.nextRetryAt = _iso(current + timedelta(seconds=delay))
+    row.errorMessage = _validate_text(error_message, max_length=1000, required=False)
+    row.updatedAt = nowIso()
+    db.commit()
+
+
+def mark_daily_log_dispatched(
+    db: Session, *, row: ComputerDailyWorkLog, now: datetime
+) -> None:
+    current = _aware(now)
+    row.status = "running"
+    row.attemptCount += 1
+    row.lastAttemptAt = _iso(current)
+    row.leaseExpiresAt = _iso(current + timedelta(seconds=DAILY_LOG_LEASE_SECONDS))
+    row.nextRetryAt = None
+    row.errorMessage = None
+    row.updatedAt = nowIso()
+    db.commit()
+
+
 def queue_daily_log(
-    db: Session, *, device: LifeDevice, log_date: str
+    db: Session,
+    *,
+    device: LifeDevice,
+    log_date: str,
+    phase: str = "final",
+    now: datetime | None = None,
 ) -> tuple[ComputerDailyWorkLog | None, bool, dict[str, Any]]:
+    if phase not in {"preview", "final"}:
+        raise ValueError("daily log phase must be preview or final")
     context = build_daily_context(db, device=device, log_date=log_date)
-    if not context["hours"]:
+    if not context["hours"] and not context["workBlocks"]:
         return None, False, context
     row = db.scalar(
         select(ComputerDailyWorkLog).where(
@@ -477,9 +599,65 @@ def queue_daily_log(
             ComputerDailyWorkLog.logDate == log_date,
         )
     )
-    if row is not None and row.status in {"queued", "running", "complete"}:
-        return row, False, context
-    now = nowIso()
+    source_fingerprint = hashlib.sha256(
+        json.dumps(
+            [
+                {
+                    "blockId": item["blockId"],
+                    "status": item["status"],
+                    "title": item["title"],
+                    "summary": item["summary"],
+                    "generatedAt": item["generatedAt"],
+                    "planStates": [
+                        (plan.get("evtId"), plan.get("state"), plan.get("semanticAlignment"))
+                        for plan in item.get("planAssessments", [])
+                    ],
+                }
+                for item in context["workBlocks"]
+            ],
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    current = _aware(now or datetime.now(UTC))
+    if row is not None:
+        if row.phase == "final" and row.status == "complete":
+            return row, False, context
+        desired_phase = _daily_log_phase(row, phase)
+        if row.status in {"queued", "running"}:
+            lease_expired = bool(
+                row.leaseExpiresAt and _aware(row.leaseExpiresAt) <= current
+            )
+            legacy_stale = (
+                not row.leaseExpiresAt
+                and _aware(row.updatedAt) <= current - timedelta(seconds=DAILY_LOG_LEASE_SECONDS)
+            )
+            if not lease_expired and not legacy_stale:
+                if row.phase != desired_phase:
+                    row.phase = desired_phase
+                    row.updatedAt = nowIso()
+                    db.commit()
+                return row, False, context
+            row.phase = desired_phase
+            fail_daily_log(
+                db,
+                row=row,
+                error_message="daily work log lease expired before completion",
+                now=current,
+            )
+        if row.status == "failed" and row.nextRetryAt and _aware(row.nextRetryAt) > current:
+            if row.phase != desired_phase:
+                row.phase = desired_phase
+                row.updatedAt = nowIso()
+                db.commit()
+            return row, False, context
+        if (
+            phase == "preview"
+            and row.status == "complete"
+            and row.sourceFingerprint == source_fingerprint
+        ):
+            return row, False, context
+    now_iso = nowIso()
     if row is None:
         row = ComputerDailyWorkLog(
             logId=newId(),
@@ -487,14 +665,18 @@ def queue_daily_log(
             deviceId=device.deviceId,
             logDate=log_date,
             status="queued",
-            createdAt=now,
-            updatedAt=now,
+            phase=phase,
+            createdAt=now_iso,
+            updatedAt=now_iso,
         )
         db.add(row)
     else:
         row.status = "queued"
+        row.phase = _daily_log_phase(row, phase)
+        row.leaseExpiresAt = None
+        row.nextRetryAt = None
         row.errorMessage = None
-        row.updatedAt = now
+        row.updatedAt = now_iso
     db.commit()
     db.refresh(row)
     return row, True, context
@@ -513,20 +695,44 @@ def store_daily_log(db: Session, *, user_id: str, payload: dict[str, Any]) -> di
     device = db.get(LifeDevice, row.deviceId)
     if device is None or device.userId != user_id or device.deviceKind != "computer":
         raise ValueError("computer device not found")
-    context = build_daily_context(db, device=device, log_date=row.logDate)
     status = str(payload.get("status") or "complete")
     if status not in {"complete", "failed"}:
         raise ValueError("status must be complete or failed")
+    requested_phase = str(payload.get("phase") or row.phase or "final")
+    if requested_phase not in {"preview", "final"}:
+        raise ValueError("daily log phase must be preview or final")
+    if row.status == "complete" and row.phase == "final":
+        return _daily_log_dict(row) or {}
+    row.phase = _daily_log_phase(row, requested_phase)
+    if status == "failed":
+        fail_daily_log(
+            db,
+            row=row,
+            error_message=str(payload.get("errorMessage") or "daily work log failed"),
+        )
+        db.refresh(row)
+        return _daily_log_dict(row) or {}
+    context = build_daily_context(db, device=device, log_date=row.logDate)
+    if status == "complete":
+        if payload.get("model") != "qwen3.7-plus":
+            raise ValueError("complete daily log must use qwen3.7-plus")
+        if payload.get("promptVersion") not in {PROMPT_VERSION, DAILY_PROMPT_VERSION}:
+            raise ValueError("unsupported prompt version")
     row.status = status
+    phase = row.phase
     row.title = _validate_text(payload.get("title"), max_length=10, required=status == "complete")
     row.summary = _validate_text(
         payload.get("summary"), max_length=1200, required=status == "complete"
     )
+    if row.summary and ("\n" in str(payload.get("summary") or "") or row.summary.startswith("#")):
+        raise ValueError("daily summary must be one paragraph without Markdown headings")
+    if row.title and row.summary and row.summary.startswith(row.title):
+        raise ValueError("daily title must independently summarize instead of prefixing summary")
     row.topics = _validate_topics(payload.get("topics"))
     allowed_plan_ids = {
         str(item.get("evtId"))
-        for hour in context["hours"]
-        for item in hour.get("planAssessments", [])
+        for source in [*context["hours"], *context["workBlocks"]]
+        for item in source.get("planAssessments", [])
         if item.get("evtId")
     }
     row.planAssessments = _validate_plan_assessments(
@@ -536,11 +742,39 @@ def store_daily_log(db: Session, *, user_id: str, payload: dict[str, Any]) -> di
         payload.get("reminderSummary") if isinstance(payload.get("reminderSummary"), list) else []
     )
     row.hourlyAnalysisIds = [str(value)[:32] for value in payload.get("hourlyAnalysisIds", [])][:48]
+    allowed_block_ids = {item["blockId"] for item in context["workBlocks"]}
+    supplied_block_ids = [str(value)[:32] for value in payload.get("workBlockIds", [])][:100]
+    if any(value not in allowed_block_ids for value in supplied_block_ids):
+        raise ValueError("daily log references a work block outside the context")
+    row.workBlockIds = supplied_block_ids or [item["blockId"] for item in context["workBlocks"]]
+    if status == "complete":
+        source = [
+            {
+                "blockId": item["blockId"],
+                "status": item["status"],
+                "title": item["title"],
+                "summary": item["summary"],
+                "generatedAt": item["generatedAt"],
+                "planStates": [
+                    (plan.get("evtId"), plan.get("state"), plan.get("semanticAlignment"))
+                    for plan in item.get("planAssessments", [])
+                ],
+            }
+            for item in context["workBlocks"]
+        ]
+        row.sourceFingerprint = hashlib.sha256(
+            json.dumps(source, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        if phase == "preview":
+            row.previewRevision += 1
+        row.finalizedAt = nowIso() if phase == "final" else None
     row.model = _validate_text(payload.get("model"), max_length=100, required=False)
     row.promptVersion = _validate_text(
-        payload.get("promptVersion") or PROMPT_VERSION, max_length=40, required=False
+        payload.get("promptVersion") or DAILY_PROMPT_VERSION, max_length=40, required=False
     )
     row.errorMessage = _validate_text(payload.get("errorMessage"), max_length=1000, required=False)
+    row.leaseExpiresAt = None
+    row.nextRetryAt = None
     row.generatedAt = nowIso() if status == "complete" else None
     row.updatedAt = nowIso()
     db.commit()
@@ -549,6 +783,8 @@ def store_daily_log(db: Session, *, user_id: str, payload: dict[str, Any]) -> di
 
 
 def insights_report(db: Session, *, device: LifeDevice, log_date: str) -> dict[str, Any]:
+    from app.server.computer.work_blocks import work_block_insights
+
     hours = list(
         db.scalars(
             select(ComputerHourlyAnalysis)
@@ -567,6 +803,7 @@ def insights_report(db: Session, *, device: LifeDevice, log_date: str) -> dict[s
             ComputerDailyWorkLog.logDate == log_date,
         )
     )
+    block_report = work_block_insights(db, device=device, log_date=log_date)
     topics: dict[str, dict[str, Any]] = {}
     plans: list[dict[str, Any]] = []
     for hour in hours:
@@ -577,13 +814,20 @@ def insights_report(db: Session, *, device: LifeDevice, log_date: str) -> dict[s
             item["activeSeconds"] += int(topic.get("activeSeconds") or 0)
             item["hourStarts"].append(hour.hourStart)
         plans.extend(hour.planAssessments or [])
+    if block_report["workBlocks"]:
+        topics = {str(item["name"]): item for item in block_report["topics"]}
+        plans = block_report["planAssessments"]
     return {
         "deviceId": device.deviceId,
         "date": log_date,
         "hours": [hourly_dict(row) for row in hours],
+        "legacyHours": [hourly_dict(row) for row in hours],
+        "currentBlock": block_report["currentBlock"],
+        "workBlocks": block_report["workBlocks"],
         "topics": list(topics.values()),
         "planAssessments": plans,
         "dailyLog": _daily_log_dict(log),
+        "analysisState": block_report["analysisState"],
         "reminders": build_daily_context(db, device=device, log_date=log_date)["reminders"],
     }
 

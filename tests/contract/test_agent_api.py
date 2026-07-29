@@ -52,6 +52,8 @@ def test_agent_tools_keep_stable_names_and_aliases() -> None:
     assert tools["computerHourlyAnalysisComplete"]["path"] == "/agent/computer/hourly-analysis"
     assert tools["computerDailyContext"]["path"] == "/agent/computer/daily-context"
     assert tools["computerDailyLogComplete"]["path"] == "/agent/computer/daily-log"
+    assert tools["computerWorkBlockContext"]["path"] == "/agent/computer/work-block-context"
+    assert tools["computerWorkBlockAnalysisComplete"]["path"] == "/agent/computer/work-block-analysis"
     assert "mediaImageOcr" not in tools
     assert "ocrEvidence" not in tools["ideaCapture"]["inputSchema"]["properties"]
     assert tools["ideaMediaJobComplete"]["inputSchema"]["required"] == [

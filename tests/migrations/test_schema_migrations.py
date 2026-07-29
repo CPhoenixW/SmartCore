@@ -129,12 +129,17 @@ def test_computer_activity_schema_is_additive_and_idempotent(app_env) -> None:
         "computerDailyAppUsage",
         "computerHourlyAnalysis",
         "computerDailyWorkLog",
+        "computerWorkBlock",
+        "computerWorkBlockAnalysisRun",
     }
     with sqlite3.connect(app_env) as conn:
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         indexes = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
         context_columns = {
             row[1] for row in conn.execute("PRAGMA table_info(computerActivityContext)")
+        }
+        daily_log_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(computerDailyWorkLog)")
         }
         quick_check = conn.execute("PRAGMA quick_check").fetchone()
         foreign_keys = conn.execute("PRAGMA foreign_key_check").fetchall()
@@ -143,7 +148,9 @@ def test_computer_activity_schema_is_additive_and_idempotent(app_env) -> None:
     assert "idx_computer_bucket_device_start" in indexes
     assert "idx_computer_hourly_user_date" in indexes
     assert "idx_computer_daily_log_user_date" in indexes
+    assert "idx_computer_work_block_user_date" in indexes
     assert {"contextKind", "domain", "workspace", "documentName"} <= context_columns
+    assert {"attemptCount", "lastAttemptAt", "leaseExpiresAt", "nextRetryAt"} <= daily_log_columns
     assert quick_check == ("ok",)
     assert [row for row in foreign_keys if str(row[0]).startswith("computer")] == []
 

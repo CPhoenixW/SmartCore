@@ -44,7 +44,7 @@ Server 内部按领域组织：
 - `agent/`：受 token 和短期 scope 保护的 OpenClaw 工具。
 - `feishu/`：回调验证、机器人、会话绑定、消息和卡片。
 - `user_device/`、`device/`：通用配对/分发与 Pi 状态/照片。
-- `computer/`：电脑活动写入、心跳、统计、Plan 时间重叠与明细清理。
+- `computer/`：电脑活动写入、心跳、统计、Plan 时间重叠、连续工作块注释与明细清理。
 - `scheduler/`：提醒、日报和天气任务。
 - `screen/`：手机副屏及 WebSocket。
 
@@ -81,6 +81,8 @@ APScheduler 运行在 Server 内：
 - 天气从 Open-Meteo 定时刷新；临时失败保留最后一次成功缓存。
 - 日报由 Server 创建有用户 scope 的任务，OpenClaw 生成内容，Adapter 验证后持久化
   并投递。
+- Computer 工作块边界由 Server 确定性维护；OpenClaw 仅按稳定任务补充主题、总结和
+  Plan 语义匹配，失败通过租约与退避恢复，不阻断原始活动上传。
 - 电脑活动明细每日清理，日汇总不随明细过期。
 
 外部模型、OpenClaw 或飞书失败不能阻断数据库、设备状态和核心提醒扫描。

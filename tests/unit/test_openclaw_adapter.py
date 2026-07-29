@@ -225,6 +225,92 @@ def test_computer_analysis_prompt_is_scoped_and_never_uses_ocr() -> None:
     assert "OCR" not in prompt
 
 
+def test_work_block_prompt_requires_semantic_actions_and_no_reply_is_forbidden() -> None:
+    prompt = adapter.build_prompt(
+        {
+            "event_type": "computer_work_block_analysis",
+            "runId": "run-1",
+            "deviceId": "computer-1",
+            "triggerType": "switch",
+        },
+        scope_file=".scope/task",
+    )
+
+    assert "computerWorkBlockContext" in prompt
+    assert "computerWorkBlockAnalysisComplete" in prompt
+    assert "computer-work-block-v1" in prompt
+    assert "aligned、partially_aligned、unrelated、unclear" in prompt
+    assert "不得返回 NO_REPLY" in prompt
+
+
+def test_work_block_no_reply_marks_run_failed(tmp_path, monkeypatch) -> None:
+    failed = []
+    monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
+    monkeypatch.setattr(
+        adapter.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=["openclaw"],
+            returncode=0,
+            stdout=json.dumps({"result": {"finalAssistantVisibleText": "NO_REPLY"}}),
+            stderr="",
+        ),
+    )
+    monkeypatch.setattr(
+        adapter,
+        "mark_computer_analysis_failed",
+        lambda event, error: failed.append((event["runId"], error)),
+    )
+    monkeypatch.setattr(adapter, "log", lambda *_args, **_kwargs: None)
+
+    adapter.run_openclaw(
+        {
+            "event_id": "computer-work-block:run-1:1",
+            "event_type": "computer_work_block_analysis",
+            "runId": "run-1",
+            "source": "web",
+            "agentScope": "scope",
+        }
+    )
+
+    assert failed and failed[0][0] == "run-1"
+
+
+def test_daily_work_log_no_reply_marks_log_failed(tmp_path, monkeypatch) -> None:
+    failed = []
+    monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
+    monkeypatch.setattr(
+        adapter.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=["openclaw"],
+            returncode=0,
+            stdout=json.dumps({"result": {"finalAssistantVisibleText": "NO_REPLY"}}),
+            stderr="",
+        ),
+    )
+    monkeypatch.setattr(
+        adapter,
+        "mark_computer_daily_log_failed",
+        lambda event, error: failed.append((event["deviceId"], event["logDate"], error)),
+    )
+    monkeypatch.setattr(adapter, "log", lambda *_args, **_kwargs: None)
+
+    adapter.run_openclaw(
+        {
+            "event_id": "computer-daily:computer-1:2026-07-29:preview:1:1",
+            "event_type": "computer_daily_work_log",
+            "deviceId": "computer-1",
+            "logDate": "2026-07-29",
+            "phase": "preview",
+            "source": "web",
+            "agentScope": "scope",
+        }
+    )
+
+    assert failed and failed[0][:2] == ("computer-1", "2026-07-29")
+
+
 def test_computer_analysis_failure_does_not_send_a_reply(tmp_path, monkeypatch) -> None:
     delivered = []
     monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))

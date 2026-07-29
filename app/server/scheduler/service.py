@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -15,6 +15,7 @@ from app.server.new_core.scheduler import runReminderTick
 from app.server.scheduler.computer_analysis import (
     dispatch_daily_work_logs,
     dispatch_hourly_analyses,
+    dispatch_work_block_analyses,
 )
 from app.server.scheduler.daily_summary import dispatch_daily_summaries
 from app.server.screen.manager import screenManager
@@ -32,6 +33,7 @@ def build_scheduler_service(
         and not settings.daily_summary_enabled
         and not settings.weather_enabled
         and not settings.computer_analysis_enabled
+        and not settings.computer_work_block_analysis_enabled
         and settings.computer_activity_retention_days < 1
     ):
         return None
@@ -102,6 +104,12 @@ class SchedulerService:
                 db,
                 retention_days=self._settings.computer_activity_retention_days,
             )
+            from app.server.computer.work_blocks import cleanup_work_blocks
+
+            cleanup_work_blocks(
+                db,
+                retention_days=self._settings.computer_activity_retention_days,
+            )
         finally:
             db.close()
 
@@ -123,6 +131,30 @@ class SchedulerService:
                 db,
                 settings=self._settings,
                 now=datetime.now(ZoneInfo(self._settings.computer_analysis_timezone)),
+                phase="final",
+            )
+        finally:
+            db.close()
+
+    def _computer_work_block_tick(self) -> None:
+        db = self._session_factory()
+        try:
+            now = datetime.now(ZoneInfo(self._settings.computer_analysis_timezone))
+            dispatch_work_block_analyses(db, settings=self._settings, now=now)
+            dispatch_daily_work_logs(
+                db,
+                settings=self._settings,
+                now=now,
+                phase="preview",
+            )
+            timezone = ZoneInfo(self._settings.computer_analysis_timezone)
+            previous_date = (now.astimezone(timezone).date() - timedelta(days=1)).isoformat()
+            dispatch_daily_work_logs(
+                db,
+                settings=self._settings,
+                now=now,
+                phase="final",
+                log_date=previous_date,
             )
         finally:
             db.close()
@@ -208,7 +240,11 @@ class SchedulerService:
                 max_instances=1,
                 misfire_grace_time=3600,
             )
-        if self._settings.computer_analysis_enabled:
+        computer_analysis_enabled = (
+            self._settings.computer_analysis_enabled
+            or self._settings.computer_work_block_analysis_enabled
+        )
+        if computer_analysis_enabled:
             if not 0 <= self._settings.computer_analysis_minute <= 59:
                 raise ValueError("COMPUTER_ANALYSIS_MINUTE must be between 0 and 59")
             ZoneInfo(self._settings.computer_analysis_timezone)
@@ -223,6 +259,16 @@ class SchedulerService:
                 max_instances=1,
                 misfire_grace_time=900,
             )
+            if self._settings.computer_work_block_analysis_enabled:
+                self._scheduler.add_job(
+                    self._computer_work_block_tick,
+                    trigger="interval",
+                    minutes=5,
+                    id="smartcore-computer-work-block-analysis",
+                    replace_existing=True,
+                    coalesce=True,
+                    max_instances=1,
+                )
             self._scheduler.add_job(
                 self._computer_daily_log_tick,
                 trigger="cron",

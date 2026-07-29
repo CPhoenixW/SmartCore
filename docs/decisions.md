@@ -127,11 +127,15 @@ Plan 关联只按时间区间并集求交，不从上下文推断任务，也不
 
 状态：已采用。
 
-小时总结和每日工作日志分别写入 `computerHourlyAnalysis` 与 `computerDailyWorkLog`，
-不改变分钟桶、会话、窗口标题或 Plan。调度器只在存在 active 事实或有效 Plan 时排队，
-OpenClaw 通过 scoped 聚合接口调用 `qwen3.7-plus`；服务端再次校验模型、Plan 引用、
-状态枚举和客观重叠阈值。提醒仍由 Server 根据 10 分钟未活跃和低于 30% 重叠规则产生，
-按用户现有 Screen/Feishu 路由并写入 `notifyLog`，AI 不直接发送小时消息或修改 Plan。
+分钟桶和小时客观快照保持不可变，用户可见分析以跨小时 `computerWorkBlock` 为主。
+Server 每 5 分钟确定性识别开始、20 分钟 idle、锁屏/休眠/暂停、跨日和候选主题切换；
+OpenClaw 只在开始、切换、结束或 Plan 语义变化时返回 `start/extend/switch/complete/ignore`。
+Plan 活跃覆盖率和最终状态由 Server 计算，AI 只返回语义匹配。任务运行单独保存租约、稳定
+trigger key 和退避重试，`NO_REPLY` 不能永久留下 queued 记录。每日工作日志由工作块增量
+预览、23:59 定稿；旧小时 AI 注释只读保留，不回填历史工作块。
+
+提醒仍由 Server 根据 10 分钟未活跃和低于 30% 重叠规则产生，按用户现有
+Screen/Feishu 路由并写入 `notifyLog`；AI 不直接发送小时消息或修改 Plan。
 
 ## 当前兼容与技术债
 

@@ -64,6 +64,7 @@ scope 分 `feishu` 与 `web` 用途。Web scope 不携带 bot/chat，不能调�
 - 捕获 Idea、把 Idea 转为事项、处理媒体任务；
 - 发送飞书文本/卡片和推送副屏；
 - 持久化日报、完成事项并追加完成总结。
+- 读取脱敏 Computer 工作块证据，提交工作块动作、Plan 语义匹配和每日工作日志。
 
 新调用的查询、创建和更新优先使用 `/agent/db/*`，反馈使用 `/agent/feedback/*`。
 仓库仍有 `evtQuery` 等兼容别名；唯一临时例外是删除应使用带 scope 的

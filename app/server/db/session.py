@@ -415,6 +415,56 @@ def _apply_sqlite_migrations(db_path: Path) -> None:
             _add_sqlite_column(conn, "computerActivityContext", "domain", "domain VARCHAR(253)")
             _add_sqlite_column(conn, "computerActivityContext", "workspace", "workspace VARCHAR(300)")
             _add_sqlite_column(conn, "computerActivityContext", "documentName", "documentName VARCHAR(300)")
+        if "computerDailyWorkLog" in tables:
+            _add_sqlite_column(conn, "computerDailyWorkLog", "workBlockIds", "workBlockIds JSON")
+            _add_sqlite_column(
+                conn,
+                "computerDailyWorkLog",
+                "phase",
+                "phase VARCHAR(20) NOT NULL DEFAULT 'final'",
+            )
+            _add_sqlite_column(
+                conn,
+                "computerDailyWorkLog",
+                "previewRevision",
+                "previewRevision INTEGER NOT NULL DEFAULT 0",
+            )
+            _add_sqlite_column(
+                conn,
+                "computerDailyWorkLog",
+                "sourceFingerprint",
+                "sourceFingerprint VARCHAR(64)",
+            )
+            _add_sqlite_column(
+                conn,
+                "computerDailyWorkLog",
+                "finalizedAt",
+                "finalizedAt VARCHAR(64)",
+            )
+            _add_sqlite_column(
+                conn,
+                "computerDailyWorkLog",
+                "attemptCount",
+                "attemptCount INTEGER NOT NULL DEFAULT 0",
+            )
+            _add_sqlite_column(
+                conn,
+                "computerDailyWorkLog",
+                "lastAttemptAt",
+                "lastAttemptAt VARCHAR(64)",
+            )
+            _add_sqlite_column(
+                conn,
+                "computerDailyWorkLog",
+                "leaseExpiresAt",
+                "leaseExpiresAt VARCHAR(64)",
+            )
+            _add_sqlite_column(
+                conn,
+                "computerDailyWorkLog",
+                "nextRetryAt",
+                "nextRetryAt VARCHAR(64)",
+            )
         conn.commit()
         conn.execute("PRAGMA foreign_keys = ON")
     finally:

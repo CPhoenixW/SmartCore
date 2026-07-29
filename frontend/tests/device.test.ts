@@ -91,6 +91,17 @@ describe("device routes", () => {
     expect(screenView).toContain('src="/screen?preview=1"');
   });
 
+  it("uses continuous work blocks as the primary computer insight", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/components/device/ComputerUsagePanel.vue"), "utf8");
+
+    expect(source).toContain("computer.currentWorkBlock");
+    expect(source).toContain("computer.recentWorkBlocks");
+    expect(source).toContain('.filter((block) => block.status === "closed")');
+    expect(source).toContain("showHourlyEvidence");
+    expect(source).toContain("computer.planExecution");
+    expect(source).toContain("computer.dailyWorkLog");
+  });
+
   it("uses interactive bars for all time-series charts", () => {
     const piView = readFileSync(resolve(process.cwd(), "src/views/RaspberryPiView.vue"), "utf8");
     const computerPanel = readFileSync(resolve(process.cwd(), "src/components/device/ComputerUsagePanel.vue"), "utf8");

@@ -9,10 +9,12 @@ from sqlalchemy import (
     CheckConstraint,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
@@ -637,6 +639,95 @@ class ComputerHourlyAnalysis(Base):
     updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
 
 
+class ComputerWorkBlock(Base):
+    __tablename__ = "computerWorkBlock"
+    __table_args__ = (
+        Index(
+            "uq_computer_work_block_open_device",
+            "userId",
+            "deviceId",
+            unique=True,
+            sqlite_where=text("status = 'open'"),
+            postgresql_where=text("status = 'open'"),
+        ),
+    )
+
+    blockId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    deviceId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), nullable=False
+    )
+    continuationOfId: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("computerWorkBlock.blockId", ondelete="SET NULL")
+    )
+    startAt: Mapped[str] = mapped_column(String(64), nullable=False)
+    endAt: Mapped[str | None] = mapped_column(String(64))
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False)
+    localDate: Mapped[str] = mapped_column(String(10), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="open", nullable=False)
+    topicKey: Mapped[str | None] = mapped_column(String(100))
+    title: Mapped[str | None] = mapped_column(String(40))
+    summary: Mapped[str | None] = mapped_column(Text)
+    progress: Mapped[str | None] = mapped_column(Text)
+    outcome: Mapped[str | None] = mapped_column(Text)
+    blocker: Mapped[str | None] = mapped_column(Text)
+    nextStep: Mapped[str | None] = mapped_column(Text)
+    activeSeconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    idleSeconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    plannedActiveSeconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    sessionIds: Mapped[list | None] = mapped_column(JSON)
+    contextIds: Mapped[list | None] = mapped_column(JSON)
+    hourStarts: Mapped[list | None] = mapped_column(JSON)
+    primaryApps: Mapped[list | None] = mapped_column(JSON)
+    planAssessments: Mapped[list | None] = mapped_column(JSON)
+    evidence: Mapped[dict | None] = mapped_column(JSON)
+    model: Mapped[str | None] = mapped_column(String(100))
+    promptVersion: Mapped[str | None] = mapped_column(String(40))
+    generatedAt: Mapped[str | None] = mapped_column(String(64))
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class ComputerWorkBlockAnalysisRun(Base):
+    __tablename__ = "computerWorkBlockAnalysisRun"
+    __table_args__ = (
+        UniqueConstraint(
+            "userId", "deviceId", "triggerKey", name="uq_computer_work_block_run_trigger"
+        ),
+    )
+
+    runId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    deviceId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), nullable=False
+    )
+    blockId: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("computerWorkBlock.blockId", ondelete="SET NULL")
+    )
+    triggerKey: Mapped[str] = mapped_column(String(200), nullable=False)
+    triggerType: Mapped[str] = mapped_column(String(30), nullable=False)
+    triggerData: Mapped[dict | None] = mapped_column(JSON)
+    windowStart: Mapped[str] = mapped_column(String(64), nullable=False)
+    windowEnd: Mapped[str] = mapped_column(String(64), nullable=False)
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False)
+    localDate: Mapped[str] = mapped_column(String(10), nullable=False)
+    inputFingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="queued", nullable=False)
+    attemptCount: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    lastAttemptAt: Mapped[str | None] = mapped_column(String(64))
+    leaseExpiresAt: Mapped[str | None] = mapped_column(String(64))
+    nextRetryAt: Mapped[str | None] = mapped_column(String(64))
+    action: Mapped[str | None] = mapped_column(String(20))
+    errorMessage: Mapped[str | None] = mapped_column(Text)
+    completedAt: Mapped[str | None] = mapped_column(String(64))
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
 class ComputerDailyWorkLog(Base):
     __tablename__ = "computerDailyWorkLog"
     __table_args__ = (
@@ -654,6 +745,15 @@ class ComputerDailyWorkLog(Base):
     planAssessments: Mapped[list | None] = mapped_column(JSON)
     reminderSummary: Mapped[list | None] = mapped_column(JSON)
     hourlyAnalysisIds: Mapped[list | None] = mapped_column(JSON)
+    workBlockIds: Mapped[list | None] = mapped_column(JSON)
+    phase: Mapped[str] = mapped_column(String(20), default="final", nullable=False)
+    previewRevision: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    sourceFingerprint: Mapped[str | None] = mapped_column(String(64))
+    finalizedAt: Mapped[str | None] = mapped_column(String(64))
+    attemptCount: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    lastAttemptAt: Mapped[str | None] = mapped_column(String(64))
+    leaseExpiresAt: Mapped[str | None] = mapped_column(String(64))
+    nextRetryAt: Mapped[str | None] = mapped_column(String(64))
     model: Mapped[str | None] = mapped_column(String(100))
     promptVersion: Mapped[str | None] = mapped_column(String(40))
     generatedAt: Mapped[str | None] = mapped_column(String(64))

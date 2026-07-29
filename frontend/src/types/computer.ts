@@ -104,6 +104,7 @@ export interface ComputerPlanAssessment {
   activeSeconds?: number;
   durationSeconds?: number;
   overlapRatio?: number;
+  semanticAlignment?: "aligned" | "partially_aligned" | "unrelated" | "unclear";
 }
 
 export interface ComputerWorkTopic {
@@ -113,6 +114,40 @@ export interface ComputerWorkTopic {
   sessionIds?: string[];
   contextIds?: string[];
   hourStarts?: string[];
+  blockIds?: string[];
+}
+
+export interface ComputerWorkBlock {
+  blockId: string;
+  continuationOfId: string | null;
+  startAt: string;
+  endAt: string | null;
+  status: "open" | "closed";
+  topicKey: string | null;
+  title: string | null;
+  summary: string | null;
+  progress: string | null;
+  outcome: string | null;
+  blocker: string | null;
+  nextStep: string | null;
+  activeSeconds: number;
+  idleSeconds: number;
+  plannedActiveSeconds: number;
+  primaryApps: Array<{ bundleId: string | null; appName: string; seconds: number }>;
+  planAssessments: ComputerPlanAssessment[];
+  hourStarts: string[];
+  generatedAt: string | null;
+  updatedAt: string;
+}
+
+export interface ComputerWorkBlockAnalysisState {
+  runId: string;
+  triggerType: string;
+  status: "queued" | "running" | "complete" | "failed";
+  attemptCount: number;
+  nextRetryAt: string | null;
+  errorMessage: string | null;
+  updatedAt: string;
 }
 
 export interface ComputerHourlyInsight {
@@ -142,6 +177,15 @@ export interface ComputerDailyWorkLog {
   topics: ComputerWorkTopic[];
   planAssessments: ComputerPlanAssessment[];
   reminderSummary: Array<Record<string, unknown>>;
+  workBlockIds: string[];
+  phase: "preview" | "final";
+  previewRevision: number;
+  sourceFingerprint: string | null;
+  finalizedAt: string | null;
+  attemptCount: number;
+  lastAttemptAt: string | null;
+  leaseExpiresAt: string | null;
+  nextRetryAt: string | null;
   generatedAt: string | null;
   errorMessage: string | null;
 }
@@ -150,8 +194,12 @@ export interface ComputerInsightsReport {
   deviceId: string;
   date: string;
   hours: ComputerHourlyInsight[];
+  legacyHours: ComputerHourlyInsight[];
+  currentBlock: ComputerWorkBlock | null;
+  workBlocks: ComputerWorkBlock[];
   topics: ComputerWorkTopic[];
   planAssessments: ComputerPlanAssessment[];
   reminders: Array<{ title: string; content: string; stat: string; dedupKey: string | null }>;
   dailyLog: ComputerDailyWorkLog | null;
+  analysisState: ComputerWorkBlockAnalysisState | null;
 }

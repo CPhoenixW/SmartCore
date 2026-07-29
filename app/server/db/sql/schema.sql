@@ -320,6 +320,15 @@ CREATE TABLE IF NOT EXISTS computerDailyWorkLog (
     planAssessments JSON,
     reminderSummary JSON,
     hourlyAnalysisIds JSON,
+    workBlockIds JSON,
+    phase VARCHAR(20) NOT NULL DEFAULT 'final',
+    previewRevision INTEGER NOT NULL DEFAULT 0,
+    sourceFingerprint VARCHAR(64),
+    finalizedAt VARCHAR(64),
+    attemptCount INTEGER NOT NULL DEFAULT 0,
+    lastAttemptAt VARCHAR(64),
+    leaseExpiresAt VARCHAR(64),
+    nextRetryAt VARCHAR(64),
     model VARCHAR(100),
     promptVersion VARCHAR(40),
     generatedAt VARCHAR(64),
@@ -328,8 +337,76 @@ CREATE TABLE IF NOT EXISTS computerDailyWorkLog (
     updatedAt VARCHAR(64) NOT NULL,
     UNIQUE(userId, deviceId, logDate)
 );
+
+CREATE TABLE IF NOT EXISTS computerWorkBlock (
+    blockId VARCHAR(32) PRIMARY KEY,
+    userId VARCHAR(32) NOT NULL,
+    deviceId VARCHAR(32) NOT NULL,
+    continuationOfId VARCHAR(32),
+    startAt VARCHAR(64) NOT NULL,
+    endAt VARCHAR(64),
+    timezone VARCHAR(64) NOT NULL,
+    localDate VARCHAR(10) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'open',
+    topicKey VARCHAR(100),
+    title VARCHAR(40),
+    summary TEXT,
+    progress TEXT,
+    outcome TEXT,
+    blocker TEXT,
+    nextStep TEXT,
+    activeSeconds INTEGER NOT NULL DEFAULT 0,
+    idleSeconds INTEGER NOT NULL DEFAULT 0,
+    plannedActiveSeconds INTEGER NOT NULL DEFAULT 0,
+    sessionIds JSON,
+    contextIds JSON,
+    hourStarts JSON,
+    primaryApps JSON,
+    planAssessments JSON,
+    evidence JSON,
+    model VARCHAR(100),
+    promptVersion VARCHAR(40),
+    generatedAt VARCHAR(64),
+    createdAt VARCHAR(64) NOT NULL,
+    updatedAt VARCHAR(64) NOT NULL,
+    FOREIGN KEY (userId) REFERENCES appUser(userId) ON DELETE CASCADE,
+    FOREIGN KEY (deviceId) REFERENCES lifeDevice(deviceId) ON DELETE CASCADE,
+    FOREIGN KEY (continuationOfId) REFERENCES computerWorkBlock(blockId) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS computerWorkBlockAnalysisRun (
+    runId VARCHAR(32) PRIMARY KEY,
+    userId VARCHAR(32) NOT NULL,
+    deviceId VARCHAR(32) NOT NULL,
+    blockId VARCHAR(32),
+    triggerKey VARCHAR(200) NOT NULL,
+    triggerType VARCHAR(30) NOT NULL,
+    triggerData JSON,
+    windowStart VARCHAR(64) NOT NULL,
+    windowEnd VARCHAR(64) NOT NULL,
+    timezone VARCHAR(64) NOT NULL,
+    localDate VARCHAR(10) NOT NULL,
+    inputFingerprint VARCHAR(64) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'queued',
+    attemptCount INTEGER NOT NULL DEFAULT 0,
+    lastAttemptAt VARCHAR(64),
+    leaseExpiresAt VARCHAR(64),
+    nextRetryAt VARCHAR(64),
+    action VARCHAR(20),
+    errorMessage TEXT,
+    completedAt VARCHAR(64),
+    createdAt VARCHAR(64) NOT NULL,
+    updatedAt VARCHAR(64) NOT NULL,
+    FOREIGN KEY (userId) REFERENCES appUser(userId) ON DELETE CASCADE,
+    FOREIGN KEY (deviceId) REFERENCES lifeDevice(deviceId) ON DELETE CASCADE,
+    FOREIGN KEY (blockId) REFERENCES computerWorkBlock(blockId) ON DELETE SET NULL,
+    UNIQUE (userId, deviceId, triggerKey)
+);
 CREATE INDEX IF NOT EXISTS idx_computer_hourly_user_date ON computerHourlyAnalysis(userId, localDate, hourStart);
 CREATE INDEX IF NOT EXISTS idx_computer_daily_log_user_date ON computerDailyWorkLog(userId, logDate);
+CREATE INDEX IF NOT EXISTS idx_computer_work_block_user_date ON computerWorkBlock(userId, deviceId, localDate, startAt);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_computer_work_block_open_device ON computerWorkBlock(userId, deviceId) WHERE status = 'open';
+CREATE INDEX IF NOT EXISTS idx_computer_work_block_run_status ON computerWorkBlockAnalysisRun(status, nextRetryAt, createdAt);
 -- User and device unified dispatch. This file is the auditable DDL source for
 -- the new tables; the SQLite migration runner applies it only once to an
 -- existing database.
