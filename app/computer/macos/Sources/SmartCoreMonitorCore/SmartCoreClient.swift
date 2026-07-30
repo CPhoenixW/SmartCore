@@ -37,6 +37,17 @@ private struct AcceptedPayload: Decodable {
     let acceptedBucketStarts: [Date]
 }
 
+public struct AcceptedCodexWorkReport: Decodable, Sendable {
+    public let reportId: String
+    public let sourceTaskId: String
+    public let reportDate: String
+    public let created: Bool
+}
+
+private struct AcceptedCodexWorkReportsPayload: Decodable {
+    let acceptedReports: [AcceptedCodexWorkReport]
+}
+
 public struct ActivatedDevice: Sendable {
     public let configuration: MonitorConfiguration
     public let token: String
@@ -137,6 +148,21 @@ public final class SmartCoreClient: @unchecked Sendable {
             body: heartbeat,
             token: token
         )
+    }
+
+    public func uploadCodexWorkReports(
+        _ batch: CodexWorkReportBatch,
+        configuration: MonitorConfiguration,
+        token: String
+    ) async throws -> [AcceptedCodexWorkReport] {
+        let envelope: Envelope<AcceptedCodexWorkReportsPayload> = try await request(
+            base: configuration.serverUrl,
+            path: "/api/computer/codex-reports/batch",
+            method: "POST",
+            body: batch,
+            token: token
+        )
+        return envelope.data.acceptedReports
     }
 
     private struct EmptyPayload: Decodable {}

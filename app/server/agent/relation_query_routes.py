@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.server.agent.routes import _done, _failed, requireAgentToken
-from app.server.agent.scope import AgentScope, require_agent_scope
+from app.server.agent.scope import AgentScope, filter_agent_tools, require_agent_scope
 from app.server.agent.v2_routes import _enhanced_tools, _normalize_query_body
 from app.server.db.session import get_db
 from app.server.new_core.event_relations import query_events
@@ -110,9 +110,9 @@ def createRelationQueryRouter() -> APIRouter:
     protected = [Depends(requireAgentToken), Depends(require_agent_scope)]
 
     @router.get("/tools", dependencies=protected)
-    def tools() -> dict[str, Any]:
+    def tools(scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
         now = datetime.now(ZoneInfo("Asia/Shanghai")).replace(microsecond=0)
-        definitions = _relation_tools()
+        definitions = filter_agent_tools(scope, _relation_tools())
         return {
             "ok": True,
             "stat": "done",

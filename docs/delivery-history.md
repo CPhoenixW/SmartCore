@@ -124,3 +124,13 @@ OpenClaw 周期请求。
 - 每日工作日志随工作块变化生成预览，并在 23:59 定稿；旧小时注释保留且不做历史回填。
 
 关键边界：生产由 `COMPUTER_WORK_BLOCK_ANALYSIS_ENABLED` 独立启用；回滚代码不删除新增表。
+
+## 2026-07-30：Codex 项目汇报与每日简报
+
+- macOS 监视器增加 `codex-report`，用 Computer token 幂等上传当天各 Codex 项目的结果摘要。
+- Server 将 Codex 报告、Computer 工作块和 Plan 人工结果保守聚合为项目投入，Computer 页优先展示项目。
+- Plan 结束后通过绑定的 primary Feishu 卡片回收结果；按钮可完成 Plan，卡片回复只追加 description。
+- 日报改为 23:59 按项目生成，23:50 Codex 汇报先提供素材；空段落不再生搬固定格式。
+
+关键边界：不上传 Codex 对话、代码或推理；归属歧义进入“其他工作”；投入时长只使用
+Computer active seconds；结果卡片必须匹配原 owner、bot、chat 和消息。

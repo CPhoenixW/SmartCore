@@ -52,8 +52,8 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = False
     scheduler_interval_seconds: int = 60
     daily_summary_enabled: bool = False
-    daily_summary_hour: int = 22
-    daily_summary_minute: int = 0
+    daily_summary_hour: int = 23
+    daily_summary_minute: int = 59
     daily_summary_timezone: str = "Asia/Shanghai"
     computer_analysis_enabled: bool = False
     computer_analysis_timezone: str = "Asia/Shanghai"

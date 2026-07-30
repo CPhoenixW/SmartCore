@@ -24,10 +24,12 @@ struct SmartCoreMonitorMain {
             configureStructuredContext()
         case "accessibility":
             configureAccessibility()
+        case "codex-report":
+            uploadCodexReportFromStandardInput()
         case "run", nil:
             runAgent()
         default:
-            fputs("Usage: SmartCoreMonitor [run|pair|status|migrate-token|structured-context on|off|status|accessibility status|open]\n", stderr)
+            fputs("Usage: SmartCoreMonitor [run|pair|status|migrate-token|structured-context on|off|status|accessibility status|open|codex-report]\n", stderr)
             exit(EXIT_FAILURE)
         }
     }
@@ -146,6 +148,41 @@ struct SmartCoreMonitorMain {
             fputs("Token migration failed: \(error.localizedDescription)\n", stderr)
             exit(EXIT_FAILURE)
         }
+    }
+
+    private static func uploadCodexReportFromStandardInput() -> Never {
+        guard let configuration = ConfigurationStore().load() else {
+            fputs("No paired computer configuration was found.\n", stderr)
+            exit(EXIT_FAILURE)
+        }
+        guard let token = try? FileTokenStorage().read(account: configuration.keychainAccount),
+              !token.isEmpty
+        else {
+            fputs("The paired computer token is unavailable.\n", stderr)
+            exit(EXIT_FAILURE)
+        }
+        let data = FileHandle.standardInput.readDataToEndOfFile()
+        guard let batch = try? MonitorCoding.decoder().decode(CodexWorkReportBatch.self, from: data),
+              !batch.reports.isEmpty
+        else {
+            fputs("Codex report batch JSON must be provided on standard input.\n", stderr)
+            exit(EXIT_FAILURE)
+        }
+        Task {
+            do {
+                let accepted = try await SmartCoreClient().uploadCodexWorkReports(
+                    batch,
+                    configuration: configuration,
+                    token: token
+                )
+                print("Uploaded \(accepted.count) Codex work report(s).")
+                exit(EXIT_SUCCESS)
+            } catch {
+                fputs("Codex report upload failed: \(error.localizedDescription)\n", stderr)
+                exit(EXIT_FAILURE)
+            }
+        }
+        dispatchMain()
     }
 }
 
@@ -343,7 +380,7 @@ final class MonitorAgentDelegate: NSObject, NSApplicationDelegate {
                     observedAt: Date(),
                     currentAppName: currentContext?.appName,
                     currentWindowTitle: currentContext?.windowTitle,
-                    appVersion: "0.3.3",
+                    appVersion: "0.4.0",
                     osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
                     accessibilityGranted: accessibilityGranted,
                     queueDepth: try outbox.count(deviceId: configuration.deviceId)

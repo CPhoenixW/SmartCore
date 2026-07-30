@@ -5,14 +5,17 @@ from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.server.agent.scope import (
+    SCOPE_HEADER,
     AgentScope,
+    enforce_restricted_agent_scope,
+    filter_agent_tools,
     issue_ocr_evidence,
     require_agent_scope,
 )
@@ -41,6 +44,20 @@ def _schema_object(properties: dict[str, Any], required: list[str] | None = None
 
 
 _AGENT_TOOLS: list[dict[str, Any]] = [
+    {
+        "name": "dailyWorkContext",
+        "method": "GET",
+        "path": "/agent/daily-work-context",
+        "riskLevel": "read",
+        "confirmationRequired": False,
+        "inputSchema": _schema_object(
+            {
+                "date": {"type": "string", "format": "date"},
+                "timezone": {"type": "string", "default": "Asia/Shanghai"},
+            },
+            ["date"],
+        ),
+    },
     {
         "name": "evtQuery",
         "method": "POST",
@@ -582,14 +599,15 @@ def _run_write(db: Session, operation: Callable[[], Any]) -> dict[str, Any]:
 
 
 def requireAgentToken(
+    request: Request,
     settings: Settings = Depends(get_settings),
     x_smartcore_agent_token: str | None = Header(default=None, alias=AGENT_TOKEN_HEADER),
+    x_smartcore_agent_scope: str | None = Header(default=None, alias=SCOPE_HEADER),
 ) -> None:
     expected = settings.agent_api_token
-    if not expected:
-        return
-    if x_smartcore_agent_token != expected:
+    if expected and x_smartcore_agent_token != expected:
         raise HTTPException(status_code=401, detail="invalid or missing agent token")
+    enforce_restricted_agent_scope(request, x_smartcore_agent_scope)
 
 
 def requireDeviceToken(
@@ -616,17 +634,18 @@ def createAgentRouter() -> APIRouter:
     protected = [Depends(requireAgentToken), Depends(require_agent_scope)]
 
     @router.get("/tools", dependencies=protected)
-    def listTools() -> dict[str, Any]:
+    def listTools(scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
+        tools = filter_agent_tools(scope, _AGENT_TOOLS)
         return {
             "ok": True,
             "stat": "done",
             "data": {
                 "version": "2026-07-07",
                 "authHeader": AGENT_TOKEN_HEADER,
-                "tools": _AGENT_TOOLS,
+                "tools": tools,
             },
             "errors": [],
-            "tools": _AGENT_TOOLS,
+            "tools": tools,
         }
 
     @router.post("/evtQuery", dependencies=protected)

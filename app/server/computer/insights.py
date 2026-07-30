@@ -784,6 +784,7 @@ def store_daily_log(db: Session, *, user_id: str, payload: dict[str, Any]) -> di
 
 def insights_report(db: Session, *, device: LifeDevice, log_date: str) -> dict[str, Any]:
     from app.server.computer.work_blocks import work_block_insights
+    from app.server.new_core.daily_work_context import build_daily_work_context
 
     hours = list(
         db.scalars(
@@ -817,6 +818,13 @@ def insights_report(db: Session, *, device: LifeDevice, log_date: str) -> dict[s
     if block_report["workBlocks"]:
         topics = {str(item["name"]): item for item in block_report["topics"]}
         plans = block_report["planAssessments"]
+    daily_work = build_daily_work_context(
+        db,
+        user_id=device.userId,
+        report_date=log_date,
+        timezone_name="Asia/Shanghai",
+        device_id=device.deviceId,
+    )
     return {
         "deviceId": device.deviceId,
         "date": log_date,
@@ -829,6 +837,8 @@ def insights_report(db: Session, *, device: LifeDevice, log_date: str) -> dict[s
         "dailyLog": _daily_log_dict(log),
         "analysisState": block_report["analysisState"],
         "reminders": build_daily_context(db, device=device, log_date=log_date)["reminders"],
+        "projects": daily_work["projects"],
+        "projectTotals": daily_work["totals"],
     }
 
 

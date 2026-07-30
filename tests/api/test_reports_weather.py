@@ -214,6 +214,8 @@ def test_scheduler_dispatches_once_per_bound_user_and_records_failures(app_env) 
         assert events[0]["event_type"] == "daily_summary"
         assert events[0]["reportDate"] == "2026-07-19"
         assert "agentScope" in events[0]
+        assert "deliveryScope" in events[0]
+        assert events[0]["agentScope"] != events[0]["deliveryScope"]
         assert dispatch_daily_summaries(
             db,
             settings=settings,
@@ -264,6 +266,7 @@ def test_scheduler_registers_daily_cron_at_configured_hour(app_env) -> None:
             scheduler_enabled=False,
             daily_summary_enabled=True,
             daily_summary_hour=22,
+            daily_summary_minute=0,
             daily_summary_timezone="Asia/Shanghai",
         ),
         session_factory=SessionLocal,
@@ -335,7 +338,7 @@ def test_adapter_saves_daily_report_before_delivering(tmp_path, monkeypatch) -> 
         ("deliver", report[report.index("📅") :]),
     ]
     prompt = adapter.build_prompt(event)
-    assert "不加状态过滤" in prompt
+    assert "dailyWorkContext" in prompt
     assert "禁止输出分析过程" in prompt
 
 
@@ -567,3 +570,10 @@ def test_scheduler_registers_weather_and_daily_summary_at_2359(app_env) -> None:
     assert jobs["smartcore-weather-refresh"]["minutes"] == 30
     assert jobs["smartcore-weather-daily"]["hour"] == 22
     assert jobs["smartcore-weather-daily"]["minute"] == 0
+
+
+def test_daily_summary_defaults_to_2359() -> None:
+    settings = Settings()
+
+    assert settings.daily_summary_hour == 23
+    assert settings.daily_summary_minute == 59

@@ -10,6 +10,7 @@ from app.server.new_core import crud
 from app.server.new_core.event_relations import mark_reminder_fired
 from app.server.new_core.models import AppUser, DdlEvt, EvtBase, PlanEvt, RemindEvt
 from app.server.new_core.notify import routeNotify
+from app.server.new_core.plan_completion import dispatch_plan_completion_prompts
 from app.server.new_core.relation_maintenance import (
     close_past_course_occurrences,
     ensure_missing_relations,
@@ -152,4 +153,5 @@ def runReminderTick(
         if result.get("stat") in {"sent", "deduped"}:
             sent += 1
 
-    return {"sent": sent}
+    completion = dispatch_plan_completion_prompts(db, now=nowDt)
+    return {"sent": sent + completion["sent"], "failed": completion["failed"]}

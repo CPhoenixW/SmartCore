@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.server.agent.routes import _AGENT_TOOLS, _done, _failed, requireAgentToken
+from app.server.agent.scope import require_agent_scope
 from app.server.db.session import get_db
 from app.server.new_core.ddl_service import create_ddl_event
 from app.server.new_core.event_relations import (
@@ -264,7 +265,7 @@ def _enhanced_tools() -> list[dict[str, Any]]:
 
 def createAgentV2Router() -> APIRouter:
     router = APIRouter(prefix="/agent", tags=["agent-v2"])
-    protected = [Depends(requireAgentToken)]
+    protected = [Depends(requireAgentToken), Depends(require_agent_scope)]
 
     @router.get("/context", dependencies=protected)
     def server_context() -> dict[str, Any]:

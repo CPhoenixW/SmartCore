@@ -131,6 +131,8 @@ def test_computer_activity_schema_is_additive_and_idempotent(app_env) -> None:
         "computerDailyWorkLog",
         "computerWorkBlock",
         "computerWorkBlockAnalysisRun",
+        "codexWorkReport",
+        "planCompletionPrompt",
     }
     with sqlite3.connect(app_env) as conn:
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -141,6 +143,9 @@ def test_computer_activity_schema_is_additive_and_idempotent(app_env) -> None:
         daily_log_columns = {
             row[1] for row in conn.execute("PRAGMA table_info(computerDailyWorkLog)")
         }
+        completion_prompt_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(planCompletionPrompt)")
+        }
         quick_check = conn.execute("PRAGMA quick_check").fetchone()
         foreign_keys = conn.execute("PRAGMA foreign_key_check").fetchall()
 
@@ -149,10 +154,101 @@ def test_computer_activity_schema_is_additive_and_idempotent(app_env) -> None:
     assert "idx_computer_hourly_user_date" in indexes
     assert "idx_computer_daily_log_user_date" in indexes
     assert "idx_computer_work_block_user_date" in indexes
+    assert "idx_codex_work_report_user_date" in indexes
+    assert "idx_plan_completion_prompt_outbound" in indexes
     assert {"contextKind", "domain", "workspace", "documentName"} <= context_columns
     assert {"attemptCount", "lastAttemptAt", "leaseExpiresAt", "nextRetryAt"} <= daily_log_columns
+    assert {"attemptCount", "lastAttemptAt", "outboundMessageId", "responseMessageId"} <= completion_prompt_columns
     assert quick_check == ("ok",)
     assert [row for row in foreign_keys if str(row[0]).startswith("computer")] == []
+
+
+def test_codex_work_report_schema_is_additive_and_preserves_rows(app_env) -> None:
+    init_db()
+    with sqlite3.connect(app_env) as conn:
+        conn.execute(
+            """
+            INSERT INTO appUser (
+                userId, loginName, role, stat, sessionVersion, displayName,
+                language, createdAt, updatedAt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "codex-owner",
+                "codex-owner",
+                "user",
+                "active",
+                1,
+                "Codex Owner",
+                "en",
+                "2026-07-30T00:00:00+00:00",
+                "2026-07-30T00:00:00+00:00",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO lifeDevice (
+                deviceId, userId, deviceName, deviceKind, stat, createdAt, updatedAt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "codex-computer",
+                "codex-owner",
+                "Codex Mac",
+                "computer",
+                "active",
+                "2026-07-30T00:00:00+00:00",
+                "2026-07-30T00:00:00+00:00",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO codexWorkReport (
+                reportId, userId, deviceId, sourceTaskId, reportDate, timezone,
+                projectKey, projectName, title, summary, status, evidence,
+                createdAt, updatedAt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "codex-report",
+                "codex-owner",
+                "codex-computer",
+                "task-1",
+                "2026-07-30",
+                "UTC",
+                "smartcore",
+                "SmartCore",
+                "Migration proof",
+                "Existing report survives repeated schema initialization.",
+                "completed",
+                "{}",
+                "2026-07-30T01:00:00+00:00",
+                "2026-07-30T01:00:00+00:00",
+            ),
+        )
+        conn.commit()
+
+    init_db()
+    init_db()
+
+    with sqlite3.connect(app_env) as conn:
+        row = conn.execute(
+            "SELECT sourceTaskId, title, status FROM codexWorkReport WHERE reportId = ?",
+            ("codex-report",),
+        ).fetchone()
+        indexes = {
+            item[0]
+            for item in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'codexWorkReport'"
+            )
+        }
+        quick_check = conn.execute("PRAGMA quick_check").fetchone()
+        foreign_keys = conn.execute("PRAGMA foreign_key_check(codexWorkReport)").fetchall()
+
+    assert row == ("task-1", "Migration proof", "completed")
+    assert "idx_codex_work_report_user_date" in indexes
+    assert quick_check == ("ok",)
+    assert foreign_keys == []
 
 
 def test_existing_computer_context_table_gets_optional_structured_columns(tmp_path) -> None:

@@ -53,6 +53,34 @@ def test_send_final_reply_uses_token_and_scope_without_target_ids(tmp_path, monk
     assert captured["timeout"] == 15
 
 
+def test_daily_summary_delivery_uses_scope_not_exposed_to_the_model(
+    tmp_path, monkeypatch
+) -> None:
+    token_file = tmp_path / "token"
+    token_file.write_text("agent-secret\n", encoding="utf-8")
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        return FakeResponse({"ok": True})
+
+    monkeypatch.setenv("SMARTCORE_AGENT_TOKEN_FILE", str(token_file))
+    monkeypatch.setattr(adapter.urllib.request, "urlopen", fake_urlopen)
+    event = {
+        "event_type": "daily_summary",
+        "agentScope": "restricted-analysis-scope",
+        "deliveryScope": "feishu-delivery-scope",
+    }
+
+    adapter.send_final_reply(event, "日报")
+
+    request = captured["request"]
+    assert request.headers["X-smartcore-agent-scope"] == "feishu-delivery-scope"
+    prompt = adapter.build_prompt(event, scope_file=".scope/daily")
+    assert "restricted-analysis-scope" not in prompt
+    assert "feishu-delivery-scope" not in prompt
+
+
 def test_reply_heading_is_card_title_not_card_body() -> None:
     assert adapter.split_reply_card("# 图片灵感总结\n\n- 已保存图片\n- 已完成理解") == (
         "图片灵感总结",
@@ -109,6 +137,20 @@ def test_daily_retry_prompt_requires_exact_unbracketed_title() -> None:
     assert "📅 **[YYYY年MM月DD日] 工作日报**" not in prompt
     assert "📅 **2026年07月22日 工作日报**" in prompt
     assert "日期不得使用方括号" in prompt
+
+
+def test_daily_summary_prompt_uses_project_context_and_evidence_priority() -> None:
+    prompt = adapter.build_prompt(
+        {"event_type": "daily_summary", "reportDate": "2026-07-29"},
+        scope_file=".scope/daily",
+    )
+
+    assert "dailyWorkContext" in prompt
+    assert "completed、partial 和 in_progress" in prompt
+    assert "人工结果 > Codex 项目汇报 > 电脑工作块推断" in prompt
+    assert "Codex 标题、摘要、证据、工作块以及 Plan 标题和 description" in prompt
+    assert "按项目投入归纳" in prompt
+    assert "不要把多个 Codex 任务墙钟时间相加" in prompt
 
 
 def test_daily_report_rejects_wrong_structure() -> None:

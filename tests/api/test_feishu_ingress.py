@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,7 +12,16 @@ from app.server.agent.scope import issue_agent_scope
 from app.server.db.session import SessionLocal
 from app.server.feishu.client import FeishuClient
 from app.server.main import create_app
-from app.server.new_core.models import FeishuBind, FeishuBot, LifeIdentity, MsgLog
+from app.server.new_core.event_relations import create_plan_event
+from app.server.new_core.models import (
+    EvtBase,
+    FeishuBind,
+    FeishuBot,
+    LifeIdentity,
+    MsgLog,
+    PlanCompletionPrompt,
+)
+from app.server.new_core.plan_completion import dispatch_plan_completion_prompts
 
 pytestmark = pytest.mark.api
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -249,6 +260,108 @@ def test_feishu_processing_ack_failure_does_not_block_openclaw_forward(
     assert response.json()["msg"] == "ok"
     assert forwarded["json"]["message_id"] == "om_ack_failure"
 
+
+def test_plan_completion_reply_is_bound_to_its_outbound_card(app_env, monkeypatch) -> None:
+    """Only a reply to the stored card appends a Plan result; no Agent call occurs."""
+
+    monkeypatch.setattr(
+        FeishuClient,
+        "send_interactive_card",
+        lambda *_args, **_kwargs: {"code": 0, "data": {"message_id": "om_plan_card"}},
+    )
+    client = TestClient(create_app())
+    _bind_default_chat("oc_plan_result")
+    now = datetime(2026, 7, 30, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    db = SessionLocal()
+    try:
+        plan = create_plan_event(
+            db,
+            title="完成日报",
+            stTime=(now - timedelta(minutes=30)).isoformat(),
+            durationMin=30,
+        )
+        assert dispatch_plan_completion_prompts(db, now=now) == {"sent": 1, "failed": 0}
+        prompt = db.query(PlanCompletionPrompt).one()
+        assert prompt.outboundMessageId == "om_plan_card"
+    finally:
+        db.close()
+
+    reply = _message_event("完成接口与回归测试", chat_id="oc_plan_result", message_id="om_result")
+    reply["event"]["message"]["parent_id"] = "om_plan_card"
+    response = client.post("/feishu/event", json=reply)
+    duplicate = client.post("/feishu/event", json=reply)
+
+    assert response.status_code == 200
+    assert response.json()["msg"] == "plan completion reply processed"
+    assert duplicate.status_code == 200
+    db = SessionLocal()
+    try:
+        prompt = db.query(PlanCompletionPrompt).one()
+        plan_base = db.get(EvtBase, plan["evtId"])
+        assert prompt.stat == "answered"
+        assert plan_base is not None and plan_base.desc == "执行结果：完成接口与回归测试"
+        assert plan_base.stat == "todo"
+    finally:
+        db.close()
+
+
+def test_plan_completion_card_action_marks_only_the_bound_plan_done(app_env, monkeypatch) -> None:
+    monkeypatch.setattr(
+        FeishuClient,
+        "send_interactive_card",
+        lambda *_args, **_kwargs: {"code": 0, "data": {"message_id": "om_plan_done"}},
+    )
+    client = TestClient(create_app())
+    _bind_default_chat("oc_plan_done")
+    now = datetime(2026, 7, 30, 13, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    db = SessionLocal()
+    try:
+        plan = create_plan_event(
+            db,
+            title="完成卡片",
+            stTime=(now - timedelta(minutes=30)).isoformat(),
+            durationMin=30,
+        )
+        dispatch_plan_completion_prompts(db, now=now)
+        prompt = db.query(PlanCompletionPrompt).one()
+    finally:
+        db.close()
+
+    action_event = {
+        "schema": "2.0",
+        "header": {
+            "event_type": "card.action.trigger",
+            "event_id": "evt_plan_done",
+            "token": "verify-token",
+        },
+        "event": {
+            "action": {
+                "value": {
+                    "kind": "planCompletionPrompt",
+                    "promptId": prompt.promptId,
+                    "evtId": plan["evtId"],
+                    "action": "complete",
+                }
+            },
+            "context": {"open_chat_id": "oc_plan_done", "open_message_id": "om_plan_done"},
+            "operator": {"operator_id": {"open_id": "ou_sender"}},
+        },
+    }
+    first = client.post("/feishu/event", json=action_event)
+    second = client.post("/feishu/event", json=action_event)
+
+    assert first.status_code == 200
+    assert first.json()["toast"]["type"] == "success"
+    assert second.json()["toast"]["type"] == "error"
+    db = SessionLocal()
+    try:
+        prompt = db.query(PlanCompletionPrompt).one()
+        plan_base = db.get(EvtBase, plan["evtId"])
+        assert prompt.stat == "answered"
+        assert plan_base is not None and plan_base.stat == "done"
+        assert plan_base.desc == "执行结果：已完成"
+    finally:
+        db.close()
 
 def test_feishu_image_is_forwarded_with_private_attachment(app_env, monkeypatch) -> None:
     forwarded: dict = {}

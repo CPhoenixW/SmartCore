@@ -454,6 +454,53 @@ class FeishuBind(Base):
     lastSeenAt: Mapped[str | None] = mapped_column(String(64))
 
 
+class PlanCompletionPrompt(Base):
+    """A Feishu-only request for a Plan result, bound to one exact endpoint.
+
+    The outbound message ID is deliberately persisted: only replies to that
+    message may update the Plan.  This prevents an unrelated Feishu message
+    from being interpreted as a completion note.
+    """
+
+    __tablename__ = "planCompletionPrompt"
+    __table_args__ = (
+        UniqueConstraint("planEvtId", "expectedEndAt", name="uq_plan_completion_prompt_end"),
+        CheckConstraint(
+            "stat IN ('queued', 'sent', 'answered', 'failed', 'expired')",
+            name="ck_plan_completion_prompt_stat",
+        ),
+        Index("idx_plan_completion_prompt_outbound", "outboundMessageId", "botId", "chatId"),
+        Index("idx_plan_completion_prompt_user_end", "userId", "expectedEndAt"),
+    )
+
+    promptId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    planEvtId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("planEvt.evtId", ondelete="CASCADE"), nullable=False
+    )
+    bindId: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("feishuBind.bindId", ondelete="SET NULL")
+    )
+    botId: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("feishuBot.botId", ondelete="SET NULL")
+    )
+    chatId: Mapped[str | None] = mapped_column(String(300))
+    expectedEndAt: Mapped[str] = mapped_column(String(64), nullable=False)
+    outboundMessageId: Mapped[str | None] = mapped_column(String(200), unique=True)
+    responseMessageId: Mapped[str | None] = mapped_column(String(200), unique=True)
+    responseText: Mapped[str | None] = mapped_column(Text)
+    stat: Mapped[str] = mapped_column(String(20), nullable=False)
+    attemptCount: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    lastAttemptAt: Mapped[str | None] = mapped_column(String(64))
+    failReason: Mapped[str | None] = mapped_column(Text)
+    sentAt: Mapped[str | None] = mapped_column(String(64))
+    answeredAt: Mapped[str | None] = mapped_column(String(64))
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
 class FeishuChatPair(Base):
     __tablename__ = "feishuChatPair"
 
@@ -758,5 +805,48 @@ class ComputerDailyWorkLog(Base):
     promptVersion: Mapped[str | None] = mapped_column(String(40))
     generatedAt: Mapped[str | None] = mapped_column(String(64))
     errorMessage: Mapped[str | None] = mapped_column(Text)
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class CodexWorkReport(Base):
+    __tablename__ = "codexWorkReport"
+    __table_args__ = (
+        UniqueConstraint(
+            "userId",
+            "sourceTaskId",
+            "reportDate",
+            name="uq_codex_work_report_user_task_date",
+        ),
+        CheckConstraint(
+            "status IN ('completed', 'partial', 'in_progress')",
+            name="ck_codex_work_report_status",
+        ),
+        Index(
+            "idx_codex_work_report_user_date",
+            "userId",
+            "reportDate",
+            "createdAt",
+        ),
+    )
+
+    reportId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    deviceId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), nullable=False
+    )
+    sourceTaskId: Mapped[str] = mapped_column(String(200), nullable=False)
+    reportDate: Mapped[str] = mapped_column(String(10), nullable=False)
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False)
+    projectKey: Mapped[str] = mapped_column(String(300), nullable=False)
+    projectName: Mapped[str] = mapped_column(String(200), nullable=False)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    startedAt: Mapped[str | None] = mapped_column(String(64))
+    endedAt: Mapped[str | None] = mapped_column(String(64))
+    evidence: Mapped[dict | list | None] = mapped_column(JSON)
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
     updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)

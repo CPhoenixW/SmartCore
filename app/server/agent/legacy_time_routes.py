@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.server.agent.routes import _done, _failed, requireAgentToken
+from app.server.agent.scope import require_agent_scope
 from app.server.agent.v2_routes import _normalize_query_body, _normalize_update_patch, _resolved_iso
 from app.server.db.session import get_db
 from app.server.new_core.ddl_service import create_ddl_event
@@ -23,7 +24,7 @@ def createLegacyTimeRouter() -> APIRouter:
     """Keep historical OpenClaw paths consistent with the modern agent contract."""
 
     router = APIRouter(prefix="/agent", tags=["agent-legacy-time"])
-    protected = [Depends(requireAgentToken)]
+    protected = [Depends(requireAgentToken), Depends(require_agent_scope)]
 
     @router.post("/evtQuery", dependencies=protected)
     def legacy_query(

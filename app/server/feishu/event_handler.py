@@ -31,6 +31,10 @@ from app.server.feishu.security import (
 )
 from app.server.new_core import crud
 from app.server.new_core.models import EvtBase, MsgLog
+from app.server.new_core.plan_completion import (
+    accept_plan_completion_action,
+    accept_plan_completion_reply,
+)
 from app.server.user_device.service import claimFeishuChatPair, feishuBinding
 
 logger = logging.getLogger(__name__)
@@ -91,11 +95,17 @@ class FeishuEventHandler:
             return 200, {"code": 0, "msg": "ignored event type"}
 
         if event_type == "card.action.trigger":
+            handled, response = self._handlePlanCompletionAction(payload, db, matched)
+            if handled:
+                return 200, response
             handled, response = self._handleSmartcoreReminderAction(payload, db, matched, now=now)
             if handled:
                 return 200, response
 
         if event_type == "im.message.receive_v1":
+            handled, response = self._handlePlanCompletionReply(payload, db, matched)
+            if handled:
+                return 200, response
             handled, response = self._handlePairCommand(payload, db, matched)
             if handled:
                 return 200, response
@@ -320,6 +330,83 @@ class FeishuEventHandler:
         except ValueError:
             return True, {"toast": {"type": "error", "content": "事件不存在或无法更新"}}
         return True, {"toast": {"type": "success", "content": "已更新"}}
+
+    def _handlePlanCompletionAction(
+        self,
+        payload: dict[str, Any],
+        db: Session,
+        bot: BotRuntime,
+    ) -> tuple[bool, dict[str, Any]]:
+        event_body = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+        action = event_body.get("action")
+        value = action.get("value") if isinstance(action, dict) else None
+        if not isinstance(value, dict) or value.get("kind") != "planCompletionPrompt":
+            return False, {}
+        if value.get("action") != "complete" or not isinstance(value.get("promptId"), str):
+            return True, {"toast": {"type": "error", "content": "无效的计划结果操作"}}
+        context = event_body.get("context") if isinstance(event_body.get("context"), dict) else {}
+        operator = event_body.get("operator") if isinstance(event_body.get("operator"), dict) else {}
+        operator_id = operator.get("operator_id") if isinstance(operator.get("operator_id"), dict) else {}
+        external_id = operator_id.get("open_id") or operator_id.get("user_id")
+        chat_id = context.get("open_chat_id")
+        if not isinstance(chat_id, str) or not chat_id:
+            return True, {"toast": {"type": "error", "content": "无法识别飞书会话"}}
+        binding = feishuBinding(db, botId=bot.botId, externalId=external_id, chatId=chat_id)
+        if binding is None:
+            return True, {"toast": {"type": "error", "content": "无权操作此计划"}}
+        header = payload.get("header") if isinstance(payload.get("header"), dict) else {}
+        outbound_id = context.get("open_message_id") or context.get("message_id")
+        accepted = accept_plan_completion_action(
+            db,
+            prompt_id=value["promptId"],
+            bot_id=bot.botId,
+            binding=binding,
+            chat_id=chat_id,
+            outbound_message_id=outbound_id if isinstance(outbound_id, str) else None,
+            action_event_id=header.get("event_id") if isinstance(header.get("event_id"), str) else None,
+        )
+        if not accepted:
+            return True, {"toast": {"type": "error", "content": "该计划结果已失效或已处理"}}
+        return True, {"toast": {"type": "success", "content": "计划已标记完成"}}
+
+    def _handlePlanCompletionReply(
+        self,
+        payload: dict[str, Any],
+        db: Session,
+        bot: BotRuntime,
+    ) -> tuple[bool, dict[str, Any]]:
+        """Keep verified Plan-card replies out of the general Agent channel."""
+
+        event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+        message = event.get("message") if isinstance(event.get("message"), dict) else {}
+        parent_id = message.get("parent_id")
+        root_id = message.get("root_id")
+        if not isinstance(parent_id, str) and not isinstance(root_id, str):
+            return False, {}
+        chat, user = extract_routing_context(payload)
+        chat_id = chat.get("chat_id")
+        binding = feishuBinding(
+            db,
+            botId=bot.botId,
+            externalId=user.get("open_id") or user.get("user_id"),
+            chatId=chat_id,
+        )
+        if binding is None or not chat_id:
+            return False, {}
+        message_id, text = extract_message_text(payload)
+        handled = accept_plan_completion_reply(
+            db,
+            bot_id=bot.botId,
+            binding=binding,
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parent_id=parent_id if isinstance(parent_id, str) else None,
+            root_id=root_id if isinstance(root_id, str) else None,
+        )
+        if not handled:
+            return False, {}
+        return True, {"code": 0, "msg": "plan completion reply processed"}
 
     def _forwardMessage(
         self,

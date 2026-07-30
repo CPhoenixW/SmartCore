@@ -9,10 +9,12 @@ from typing import Any
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.server.new_core.models import (
+    CodexWorkReport,
     ComputerActivityBucket,
     ComputerActivityContext,
     ComputerActivitySlice,
@@ -23,10 +25,12 @@ from app.server.new_core.models import (
     EvtBase,
     LifeDevice,
     PlanEvt,
+    newId,
     nowIso,
 )
 
 STATES = ("active", "idle", "locked", "sleeping", "paused")
+MAX_CODEX_REPORTS_PER_USER_DATE = 100
 SENSITIVE_APP_FRAGMENTS = (
     "1password",
     "bitwarden",
@@ -336,6 +340,122 @@ def ingest_activity(
         _recompute_daily(db, device=device, local_date=local_date)
     db.commit()
     return accepted
+
+
+def codex_work_report_dict(row: CodexWorkReport) -> dict[str, Any]:
+    return {
+        "reportId": row.reportId,
+        "deviceId": row.deviceId,
+        "sourceTaskId": row.sourceTaskId,
+        "reportDate": row.reportDate,
+        "timezone": row.timezone,
+        "projectKey": row.projectKey,
+        "projectName": row.projectName,
+        "title": row.title,
+        "summary": row.summary,
+        "status": row.status,
+        "startedAt": row.startedAt,
+        "endedAt": row.endedAt,
+        "evidence": row.evidence if row.evidence is not None else {},
+        "createdAt": row.createdAt,
+        "updatedAt": row.updatedAt,
+    }
+
+
+def upsert_codex_work_reports(
+    db: Session,
+    *,
+    device: LifeDevice,
+    reports: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    updated_at = nowIso()
+    acknowledged: list[dict[str, Any]] = []
+    for item in reports:
+        proposed_id = newId()
+        values = {
+            "reportId": proposed_id,
+            "userId": device.userId,
+            "deviceId": device.deviceId,
+            "sourceTaskId": str(item["sourceTaskId"]),
+            "reportDate": str(item["reportDate"]),
+            "timezone": str(item["timezone"]),
+            "projectKey": str(item["projectKey"]),
+            "projectName": str(item["projectName"]),
+            "title": str(item["title"]),
+            "summary": str(item["summary"]),
+            "status": str(item["status"]),
+            "startedAt": _utc_text(item["startedAt"]) if item.get("startedAt") else None,
+            "endedAt": _utc_text(item["endedAt"]) if item.get("endedAt") else None,
+            "evidence": item.get("evidence"),
+            "createdAt": updated_at,
+            "updatedAt": updated_at,
+        }
+        statement = sqlite_insert(CodexWorkReport).values(**values)
+        statement = statement.on_conflict_do_update(
+            index_elements=["userId", "sourceTaskId", "reportDate"],
+            set_={
+                key: getattr(statement.excluded, key)
+                for key in (
+                    "deviceId",
+                    "timezone",
+                    "projectKey",
+                    "projectName",
+                    "title",
+                    "summary",
+                    "status",
+                    "startedAt",
+                    "endedAt",
+                    "evidence",
+                    "updatedAt",
+                )
+            },
+        ).returning(CodexWorkReport.reportId)
+        report_id = str(db.execute(statement).scalar_one())
+        acknowledged.append(
+            {
+                "reportId": report_id,
+                "sourceTaskId": values["sourceTaskId"],
+                "reportDate": values["reportDate"],
+                "created": report_id == proposed_id,
+            }
+        )
+    for report_date in {str(item["reportDate"]) for item in reports}:
+        total = db.scalar(
+            select(func.count())
+            .select_from(CodexWorkReport)
+            .where(
+                CodexWorkReport.userId == device.userId,
+                CodexWorkReport.reportDate == report_date,
+            )
+        )
+        if int(total or 0) > MAX_CODEX_REPORTS_PER_USER_DATE:
+            db.rollback()
+            raise ValueError(
+                f"at most {MAX_CODEX_REPORTS_PER_USER_DATE} Codex reports are allowed per day"
+            )
+    db.commit()
+    return acknowledged
+
+
+def list_codex_work_reports(
+    db: Session, *, user_id: str, report_date: str
+) -> list[dict[str, Any]]:
+    rows = list(
+        db.scalars(
+            select(CodexWorkReport)
+            .where(
+                CodexWorkReport.userId == user_id,
+                CodexWorkReport.reportDate == report_date,
+            )
+            .order_by(
+                CodexWorkReport.projectName,
+                CodexWorkReport.startedAt,
+                CodexWorkReport.createdAt,
+            )
+            .limit(MAX_CODEX_REPORTS_PER_USER_DATE)
+        )
+    )
+    return [codex_work_report_dict(row) for row in rows]
 
 
 def record_heartbeat(db: Session, *, device: LifeDevice, payload: dict[str, Any]) -> dict[str, Any]:

@@ -131,12 +131,18 @@ def managed_feishu_bot(client: TestClient):
 
 @pytest.fixture
 def agent_headers():
-    def headers(user_id: str = "default", *, purpose: str = "web") -> dict[str, str]:
+    def headers(
+        user_id: str = "default",
+        *,
+        purpose: str = "web",
+        report_date: str | None = None,
+    ) -> dict[str, str]:
         return {
             "X-SmartCore-Agent-Token": "agent-secret",
             "X-SmartCore-Agent-Scope": issue_agent_scope(
                 userId=user_id,
                 purpose=purpose,
+                reportDate=report_date,
             ),
         }
 

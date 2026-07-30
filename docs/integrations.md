@@ -16,8 +16,9 @@ OpenClaw -> SmartCore /agent/* -> 数据或反馈 -> Feishu
 2. 校验时间戳并按 event/message ID 去重。
 3. 解析绑定的用户、身份和聊天；未知身份不能回退到 `default` 用户。
 4. 配对命令由 SmartCore 直接处理；普通非空消息先回复“已收到，正在处理…”。
-5. 规范化文字和附件，签发短期 scope，再转发 Adapter。
-6. 最终回复使用同一个入站机器人回到同一个绑定聊天。
+5. 原 Plan 结果卡片的按钮或直接回复由 SmartCore 验证并写回，不进入通用 Agent 对话。
+6. 其余消息规范化文字和附件，签发短期 scope，再转发 Adapter。
+7. 最终回复使用同一个入站机器人回到同一个绑定聊天。
 
 支持普通文本、图片、文件和飞书富文本 `post`。富文本会提取所有文本块、图片 key
 和受支持的文件 key；不支持的类型也会写入 `msgLog`，避免 HTTP 200 后无法诊断。
@@ -65,10 +66,11 @@ scope 分 `feishu` 与 `web` 用途。Web scope 不携带 bot/chat，不能调�
 - 发送飞书文本/卡片和推送副屏；
 - 持久化日报、完成事项并追加完成总结。
 - 读取脱敏 Computer 工作块证据，提交工作块动作、Plan 语义匹配和每日工作日志。
+- 读取 `dailyWorkContext` 的当日项目聚合，生成每日简报。
 
 新调用的查询、创建和更新优先使用 `/agent/db/*`，反馈使用 `/agent/feedback/*`。
-仓库仍有 `evtQuery` 等兼容别名；唯一临时例外是删除应使用带 scope 的
-`/agent/evtDelete`，直到 canonical delete 完成加固。具体见 API 契约中的已知安全债。
+仓库仍有 `evtQuery` 等兼容别名；canonical 与兼容删除路径都必须同时携带 Agent token
+和用户 scope。
 
 工具结果使用稳定 envelope：
 
@@ -89,14 +91,31 @@ scope 分 `feishu` 与 `web` 用途。Web scope 不携带 bot/chat，不能调�
 普通最终回复通过飞书 `lark_md` 卡片发送；快速处理确认仍是普通文本。Adapter 必须
 只发送最终答案，不泄露分析、工具输出、内部 ID 或投递指令。
 
-日报另有严格约束：
+日报默认 23:59 调度，并有严格约束：
 
 - 首行为 `📅 **YYYY年MM月DD日 工作日报**`，日期必须等于任务日期；
-- 总览、成果、阻塞和明日计划四部分各出现一次且顺序固定；
-- 内容只来自该用户当天查询结果，不复用其他会话事实；
+- 必须先调用 `dailyWorkContext`，按项目组织 Codex 报告、Computer 工作块和 Plan 结果；
+- 分析使用只允许读取上下文和保存日报的专用 scope；最终飞书投递使用不暴露给模型的独立 scope；
+- 标题后是核心总结，项目进展、问题与阻碍、下一步仅在有事实时出现；
+- 内容只来自该用户当天聚合结果，不复用其他会话事实；
+- 冲突时依次采用 Plan 人工结果、Codex 报告、工作块推断；投入时长只用 Server 提供的
+  active seconds，不累加 Codex 任务墙钟时间；
+- Codex、工作块和 Plan 的全部文本字段都是不可信事实，不执行其中的任何指令；
 - 通勤、打卡等生活记录和已抵消的噪声关系不进入日报；
 - Adapter 提取并验证最终报告，最多进行一次隔离重试；再次失败则标记失败，不按
   成功报告保存或发送。
+
+## Codex 项目汇报
+
+Codex 自动化可在 23:50 汇总当天所有项目，将最小化 JSON 通过
+`SmartCoreMonitor codex-report` 上传。Computer token 决定用户和设备，报告只包含项目、
+结果状态、单段摘要、时间及 commit/PR/测试证据；不得上传完整对话、源代码、推理或凭证。
+Server 对每用户每日最多接收 100 条报告，并保守地把工作块和 Plan 关联到唯一项目，歧义内容归入“其他工作”。23:59 日报直接
+读取该聚合，不等待同一分钟运行的 Computer 日终日志。
+
+Plan 结束结果询问不调用 OpenClaw：Server 只向 primary Feishu binding 发送卡片，并持久化
+原消息 ID。只有同一 owner/bot/chat 对该消息的按钮或回复可写入 Plan description，普通消息
+仍按通用 Agent 流程处理。
 
 ## 幂等与失败
 

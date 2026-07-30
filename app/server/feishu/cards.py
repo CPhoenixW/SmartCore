@@ -366,6 +366,39 @@ def build_reminder_card(
     )
 
 
+def build_plan_completion_card(
+    *,
+    prompt_id: str,
+    evt_id: str,
+    title: str,
+) -> dict[str, Any]:
+    """Ask for a Plan result without reusing normal reminder routing."""
+
+    return _base_card(
+        title="计划结束",
+        template="green",
+        elements=[
+            {"tag": "div", "text": _markdown(f"**{title or '计划'}** 已到结束时间。\n回复这张卡片可记录结果。")},
+            {
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": _plain_text("已完成"),
+                        "type": "primary",
+                        "value": {
+                            "kind": "planCompletionPrompt",
+                            "promptId": prompt_id,
+                            "evtId": evt_id,
+                            "action": "complete",
+                        },
+                    }
+                ],
+            },
+        ],
+    )
+
+
 def build_message_card(
     *,
     title: str = "SmartCore",

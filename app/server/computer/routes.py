@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
 from app.server.auth.security import require_authenticated_user_id
@@ -90,6 +90,107 @@ class ActivityBatchBody(BaseModel):
     buckets: list[ActivityBucketBody] = Field(min_length=1, max_length=120)
 
 
+class CodexWorkEvidenceBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    commits: list[str] = Field(default_factory=list, max_length=20)
+    pullRequests: list[str] = Field(default_factory=list, max_length=20)
+    tests: list[str] = Field(default_factory=list, max_length=30)
+
+    @field_validator("commits", "pullRequests", "tests")
+    @classmethod
+    def validate_evidence_items(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            item = " ".join(value.split())
+            if not item or "\n" in value or "\r" in value or len(item) > 200:
+                raise ValueError("evidence items must be non-empty single-line strings up to 200 characters")
+            normalized.append(item)
+        return normalized
+
+
+class CodexWorkReportBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    sourceTaskId: str = Field(min_length=1, max_length=200)
+    reportDate: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    timezone: str = Field(min_length=1, max_length=64)
+    projectKey: str = Field(min_length=1, max_length=300)
+    projectName: str = Field(min_length=1, max_length=200)
+    title: str = Field(min_length=1, max_length=300)
+    summary: str = Field(min_length=1, max_length=2000)
+    status: Literal["completed", "partial", "in_progress"]
+    startedAt: datetime | None = None
+    endedAt: datetime | None = None
+    evidence: CodexWorkEvidenceBody = Field(default_factory=CodexWorkEvidenceBody)
+
+    @field_validator(
+        "sourceTaskId", "timezone", "projectKey", "projectName", "title"
+    )
+    @classmethod
+    def validate_single_line_text(cls, value: str) -> str:
+        if "\n" in value or "\r" in value:
+            raise ValueError("text fields must be single-line")
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("text fields must not be blank")
+        return normalized
+
+    @field_validator("reportDate")
+    @classmethod
+    def validate_report_date(cls, value: str) -> str:
+        try:
+            parsed = date.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError("reportDate must be YYYY-MM-DD") from exc
+        if parsed.isoformat() != value:
+            raise ValueError("reportDate must be YYYY-MM-DD")
+        return value
+
+    @field_validator("startedAt", "endedAt", mode="before")
+    @classmethod
+    def validate_timestamp_input(cls, value: object) -> object:
+        if value is not None and not isinstance(value, str):
+            raise ValueError("timestamps must be ISO-8601 strings")
+        return value
+
+    @field_validator("summary")
+    @classmethod
+    def validate_summary(cls, value: str) -> str:
+        if "\n" in value or "\r" in value:
+            raise ValueError("summary must be one paragraph")
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("summary must not be blank")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_report(self) -> CodexWorkReportBody:
+        try:
+            ZoneInfo(self.timezone)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("timezone must be a valid IANA name") from exc
+        for field_name, value in (("startedAt", self.startedAt), ("endedAt", self.endedAt)):
+            if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+                raise ValueError(f"{field_name} must include an offset")
+        if self.startedAt and self.endedAt and self.endedAt < self.startedAt:
+            raise ValueError("endedAt must not be earlier than startedAt")
+        return self
+
+
+class CodexWorkReportBatchBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reports: list[CodexWorkReportBody] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_unique_reports(self) -> CodexWorkReportBatchBody:
+        keys = [(item.sourceTaskId, item.reportDate) for item in self.reports]
+        if len(keys) != len(set(keys)):
+            raise ValueError("batch contains duplicate sourceTaskId/reportDate entries")
+        return self
+
+
 class HeartbeatBody(BaseModel):
     currentState: ComputerState
     observedAt: datetime
@@ -159,6 +260,38 @@ def heartbeat(
         "ok": True,
         "data": service.record_heartbeat(db, device=device, payload=body.model_dump()),
     }
+
+
+@router.post("/codex-reports/batch")
+def codex_report_batch(
+    body: CodexWorkReportBatchBody,
+    device: LifeDevice = Depends(_computer_device),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        accepted = service.upsert_codex_work_reports(
+            db, device=device, reports=[item.model_dump(mode="json") for item in body.reports]
+        )
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"ok": True, "data": {"acceptedReports": accepted}}
+
+
+@router.get("/codex-reports")
+def codex_reports(
+    dateValue: Annotated[
+        str, Query(alias="date", min_length=10, max_length=10)
+    ],
+    userId: str = Depends(require_authenticated_user_id),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        report_date = date.fromisoformat(dateValue).isoformat()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="date must be YYYY-MM-DD") from exc
+    items = service.list_codex_work_reports(db, user_id=userId, report_date=report_date)
+    return {"ok": True, "data": {"items": items, "count": len(items)}}
 
 
 @router.get("/status")

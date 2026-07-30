@@ -40,6 +40,8 @@ class _FakeDb:
 def test_agent_tools_keep_stable_names_and_aliases() -> None:
     tools = {item["name"]: item for item in routes._AGENT_TOOLS}
 
+    assert tools["dailyWorkContext"]["path"] == "/agent/daily-work-context"
+    assert tools["dailyWorkContext"]["method"] == "GET"
     assert tools["evtQuery"]["path"] == "/agent/db/query_events"
     assert "/agent/evtQuery" in tools["evtQuery"]["legacyPaths"]
     assert tools["evtCreate"]["path"] == "/agent/db/create_event"

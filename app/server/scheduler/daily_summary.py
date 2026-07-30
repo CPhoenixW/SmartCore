@@ -75,8 +75,15 @@ def dispatch_daily_summaries(
         event_id = f"daily-summary:{user.userId}:{report_date}"
         scope = issue_agent_scope(
             userId=user.userId,
+            purpose="daily_summary",
+            reportDate=report_date,
+            ttl_seconds=1800,
+        )
+        delivery_scope = issue_agent_scope(
+            userId=user.userId,
             botId=bot.botId,
             chatId=binding.chatId,
+            purpose="feishu",
             ttl_seconds=1800,
         )
         event = {
@@ -85,8 +92,8 @@ def dispatch_daily_summaries(
             "event_type": "daily_summary",
             "reportDate": report_date,
             "text": (
-                f"生成 {report_date} 的每日总结。查询当天全部任务，重点阅读 description "
-                "中的完成情况、结果和心得。"
+                f"生成 {report_date} 的每日总结。按项目汇总 Codex 当日成果、电脑活跃投入和 Plan "
+                "description 中的人工结果。"
             ),
             "userId": user.userId,
             "sourceBindId": binding.bindId,
@@ -98,6 +105,7 @@ def dispatch_daily_summaries(
                 "language": user.language,
             },
             "agentScope": scope,
+            "deliveryScope": delivery_scope,
             "request": {
                 "timezone": settings.daily_summary_timezone,
                 "now": local_now.replace(microsecond=0).isoformat(),

@@ -74,9 +74,6 @@ current route registration in `app/server/main.py`.
 - `app/server/main.py` registers several Agent routers with overlapping paths. Registration order
   determines which `/agent/tools`, `/agent/db/*`, and legacy alias handler runs. Test the assembled
   app before removing or reordering routers.
-- In the assembled app, relation query/create/update routes are scope-protected, but
-  `/agent/db/delete_event` first resolves to the token-only v2 router. Treat this as a known
-  security debt; do not copy that pattern into new endpoints.
 - Modern paths are `/agent/db/*` and `/agent/feedback/*`; `evtQuery`, `evtCreate`, `evtUpdate`,
   `sendText`, and similar names are compatibility aliases.
 - Both `lifeDevice` and the older operational `device` records exist. Generic pairing/dispatch and

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,7 @@ from app.server.new_core.daily_summary_service import (
     complete_event_with_summary,
     store_daily_summary,
 )
+from app.server.new_core.daily_work_context import build_daily_work_context
 
 
 class DailySummaryWriteBody(BaseModel):
@@ -31,12 +32,35 @@ def createDailySummaryAgentRouter() -> APIRouter:
     router = APIRouter(prefix="/agent", tags=["agent-daily-summary"])
     protected = [Depends(requireAgentToken), Depends(require_agent_scope)]
 
+    @router.get("/daily-work-context", dependencies=protected)
+    def daily_work_context(
+        date: str = Query(pattern=r"^\d{4}-\d{2}-\d{2}$"),
+        timezone: str = Query(default="Asia/Shanghai", min_length=1, max_length=64),
+        db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
+    ) -> dict:
+        if scope.purpose == "daily_summary" and scope.reportDate != date:
+            raise HTTPException(status_code=403, detail="daily summary scope is bound to another date")
+        try:
+            return _done(
+                build_daily_work_context(
+                    db,
+                    user_id=scope.userId,
+                    report_date=date,
+                    timezone_name=timezone,
+                )
+            )
+        except ValueError as exc:
+            return _failed([str(exc)])
+
     @router.post("/daily-summary", dependencies=protected)
     def save_daily_summary(
         body: DailySummaryWriteBody,
         db: Session = Depends(get_db),
         scope: AgentScope = Depends(require_agent_scope),
     ) -> dict:
+        if scope.purpose == "daily_summary" and scope.reportDate != body.reportDate:
+            raise HTTPException(status_code=403, detail="daily summary scope is bound to another date")
         try:
             return _done(
                 store_daily_summary(

@@ -111,6 +111,7 @@ class FeishuClient:
             msg_type="text",
             content=json.dumps({"text": text}, ensure_ascii=False),
             receive_id_type=receive_id_type,
+            idempotency_key=None,
             force_refresh_token=force_refresh_token,
             retry_on_token_error=retry_on_token_error,
         )
@@ -121,12 +122,14 @@ class FeishuClient:
         card: dict[str, Any],
         *,
         receive_id_type: str = "chat_id",
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         return self._send_message_with_token(
             receive_id,
             msg_type="interactive",
             content=json.dumps(card, ensure_ascii=False),
             receive_id_type=receive_id_type,
+            idempotency_key=idempotency_key,
             force_refresh_token=False,
             retry_on_token_error=True,
         )
@@ -141,14 +144,18 @@ class FeishuClient:
         msg_type: str,
         content: str,
         receive_id_type: str,
+        idempotency_key: str | None,
         force_refresh_token: bool,
         retry_on_token_error: bool,
     ) -> dict[str, Any]:
         token = self.get_tenant_access_token(force_refresh=force_refresh_token)
         with self._client() as client:
+            params = {"receive_id_type": receive_id_type}
+            if idempotency_key:
+                params["uuid"] = idempotency_key
             response = client.post(
                 "/im/v1/messages",
-                params={"receive_id_type": receive_id_type},
+                params=params,
                 headers={"Authorization": f"Bearer {token}"},
                 json={
                     "receive_id": receive_id,
@@ -162,6 +169,7 @@ class FeishuClient:
                     msg_type=msg_type,
                     content=content,
                     receive_id_type=receive_id_type,
+                    idempotency_key=idempotency_key,
                     force_refresh_token=True,
                     retry_on_token_error=False,
                 )
@@ -176,6 +184,7 @@ class FeishuClient:
                 msg_type=msg_type,
                 content=content,
                 receive_id_type=receive_id_type,
+                idempotency_key=idempotency_key,
                 force_refresh_token=True,
                 retry_on_token_error=False,
             )

@@ -40,6 +40,9 @@ DDL Plan 和 Reminder 都使用关系表/外键表达，不在描述文本里隐
 提醒扫描、去重、天气刷新和投递路由由 APScheduler 与领域服务执行。OpenClaw 参与
 自然语言任务和日报生成，但不参与每分钟提醒判断。
 
+Plan 结束结果询问同样由 Server 确定性投递。只有 primary Feishu binding 对原卡片的
+按钮或直接回复可修改该 Plan；普通消息不会被猜测为执行结果。
+
 原因：模型延迟、费用或故障不能让提醒系统停止。任何新周期任务先判断能否用普通
 代码可靠完成，再决定是否调用模型。
 
@@ -137,13 +140,27 @@ trigger key 和退避重试，`NO_REPLY` 不能永久留下 queued 记录。每�
 提醒仍由 Server 根据 10 分钟未活跃和低于 30% 重叠规则产生，按用户现有
 Screen/Feishu 路由并写入 `notifyLog`；AI 不直接发送小时消息或修改 Plan。
 
+## D013 每日简报使用最小证据聚合
+
+状态：已采用。
+
+Codex 每个任务只提交项目、结果状态、摘要和 commit/PR/测试证据，不上传完整对话、代码或
+推理。Server 再以保守唯一匹配把 Computer 工作块和 Plan 归入项目，歧义证据进入“其他工作”。
+日报只读取该 owner-scoped 聚合；事实冲突依次采用 Plan 人工结果、Codex 报告和工作块推断，
+项目投入时长只来自 Computer active seconds，不累加 Codex 任务墙钟时间。
+
+无人值守日报的分析 scope 只允许读取聚合和保存日报，独立投递 scope 不进入模型上下文；
+设备报告使用原子 upsert 和每日配额，所有聚合文本均按不可信事实处理。
+
+原因：显式结果能补足仅靠窗口标题无法确认的产出，同时把隐私、错误归因和重复计时控制在
+可审计边界内。23:50 的 Codex 汇报先于 23:59 日报，日报不依赖同一分钟的 Computer 日终任务。
+
 ## 当前兼容与技术债
 
 这些不是可直接删除的“冗余”：
 
 1. `app/server/agent/` 有多个重叠 router。`main.py` 的注册顺序影响实际 handler；
-   应先建立 assembled-app 合约测试，再收敛别名。当前 canonical delete 首次命中
-   token-only v2 route，尚未具备与 query/create/update 相同的 scope 隔离。
+   应先建立 assembled-app 合约测试，再收敛别名。
 2. `lifeDevice` 与 `device` 两套设备记录分别承载配对/分发和 Pi 状态/照片。合并需要
    数据迁移、token 兼容和端侧升级计划。
 3. `relation_compat.py` 与启动维护保护旧数据库关系。移除前必须用生产 schema 副本

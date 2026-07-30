@@ -156,6 +156,76 @@ public struct MonitorHeartbeat: Codable, Sendable {
     }
 }
 
+public enum CodexWorkStatus: String, Codable, Sendable {
+    case completed
+    case partial
+    case inProgress = "in_progress"
+}
+
+public struct CodexWorkEvidence: Codable, Equatable, Sendable {
+    public let commits: [String]
+    public let pullRequests: [String]
+    public let tests: [String]
+
+    public init(
+        commits: [String] = [],
+        pullRequests: [String] = [],
+        tests: [String] = []
+    ) {
+        self.commits = commits
+        self.pullRequests = pullRequests
+        self.tests = tests
+    }
+}
+
+public struct CodexWorkReport: Codable, Equatable, Sendable {
+    public let sourceTaskId: String
+    public let reportDate: String
+    public let timezone: String
+    public let projectKey: String
+    public let projectName: String
+    public let title: String
+    public let summary: String
+    public let status: CodexWorkStatus
+    public let startedAt: String?
+    public let endedAt: String?
+    public let evidence: CodexWorkEvidence
+
+    public init(
+        sourceTaskId: String,
+        reportDate: String,
+        timezone: String,
+        projectKey: String,
+        projectName: String,
+        title: String,
+        summary: String,
+        status: CodexWorkStatus,
+        startedAt: String? = nil,
+        endedAt: String? = nil,
+        evidence: CodexWorkEvidence = .init()
+    ) {
+        self.sourceTaskId = sourceTaskId
+        self.reportDate = reportDate
+        self.timezone = timezone
+        self.projectKey = projectKey
+        self.projectName = projectName
+        self.title = title
+        self.summary = summary
+        self.status = status
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.evidence = evidence
+    }
+}
+
+public struct CodexWorkReportBatch: Codable, Equatable, Sendable {
+    public let reports: [CodexWorkReport]
+
+    public init(reports: [CodexWorkReport]) {
+        self.reports = reports
+    }
+}
+
 public enum MonitorCoding {
     public static func encoder() -> JSONEncoder {
         let encoder = JSONEncoder()

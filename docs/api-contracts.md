@@ -60,7 +60,7 @@ Agent 接口使用机器稳定的结果：
 | `/api/device` | 设备列表、配对、分发、照片请求 |
 | `/api/feishu` | 普通用户绑定默认机器人 |
 | `/api/devState` | 状态、历史和滚动用量 |
-| `/api/computer` | 电脑活动上传、心跳、客观状态与使用统计 |
+| `/api/computer` | 电脑活动与 Codex 项目报告上传、状态、统计和洞察 |
 | `/api/daily-summaries` | 当前用户日报 |
 | `/api/weather` | 登录用户读取共享天气缓存 |
 
@@ -96,26 +96,20 @@ scope 为 HMAC 签名、默认十分钟有效，purpose 为：
 
 - `feishu`：必须带 userId、botId、chatId，可进行绑定聊天反馈。
 - `web`：带 userId，不带 bot/chat，不能调用飞书投递。
+- `daily_summary`：绑定 userId 和 reportDate，只允许日报上下文与保存接口。
 
-`/agent/context` 等后注册的只读实现可能只声明 Agent token，但不要根据单个 router
-文件推断最终契约；修改前用 assembled `create_app()` 验证实际匹配路由。
-
-当前例外：`/agent/db/delete_event` 首次出现在随后注册的 v2 router，只校验 Agent
-token，且没有从 scope 派生用户。这是待收敛的安全债，不是新接口可沿用的设计。
-OpenClaw 当前应优先使用带 scope 的兼容删除路径 `/agent/evtDelete`；修复 canonical
-delete 前必须增加 assembled-app 鉴权与跨用户测试。
+包括 `/agent/context` 与 `/agent/db/delete_event` 在内的 assembled Agent 路由都要求
+Agent token 与用户 scope；不要根据单个 router 文件推断最终契约，修改前用 assembled
+`create_app()` 验证实际匹配路由。
 
 新客户端的查询和写入使用：
 
 - `/agent/db/query_events`
 - `/agent/db/create_event`
 - `/agent/db/update_event`
+- `/agent/db/delete_event`
 - `/agent/feedback/*`
 - `/agent/idea/*`
-
-删除暂时例外：在 canonical `/agent/db/delete_event` 完成 scope 加固前，调用方使用
-`/agent/evtDelete`，并同时携带 Agent token 与用户 scope。不要把 token-only canonical
-行为视为稳定契约。
 
 `evtQuery`、`evtCreate`、`evtUpdate`、`evtDelete`、`sendText`、`sendCard` 等是兼容
 别名。移除前必须核对 Adapter、OpenClaw skill、生产调用日志和对应测试。
@@ -157,10 +151,15 @@ Pi 状态与照片使用 `/dev/*`；通用设备列表/配对/分发使用 `/api
   字段为 `contextKind`、`domain`、`workspace` 和 `documentName`。
 - `GET /api/computer/insights?deviceId=...&date=YYYY-MM-DD`：登录 owner 读取当前/历史工作块、
   Server 客观 Plan 指标、AI 语义匹配、主题聚类、提醒、每日工作日志和只读小时证据；分析
-  状态为 `queued/running/complete/failed`。
+  状态为 `queued/running/complete/failed`。响应同时返回按项目聚合的 Codex 报告、唯一匹配
+  工作块和 Plan；歧义证据归入“其他工作”。
+- `POST /api/computer/codex-reports/batch`：computer token 每批、每用户每日最多 100 条 Codex
+  项目报告；状态为 `completed/partial/in_progress`，按 `(userId, sourceTaskId, reportDate)` 原子幂等。
+- `GET /api/computer/codex-reports?date=YYYY-MM-DD`：登录用户读取自己的当日报告。
 
 上传不接受 `userId` 或其他 owner 字段。非 computer token 返回 403，跨用户浏览器
-查询返回 404。Server 会再次执行敏感应用和认证/金融场景脱敏；会话的 `inference`
+查询返回 404。Codex 报告只接受项目、标题、单段摘要、时间以及 commit/PR/测试证据，
+不接受聊天正文、源代码、内部推理或任意扩展字段。Server 会再次执行敏感应用和认证/金融场景脱敏；会话的 `inference`
 和上下文的 `classification` 在 v1 恒为 null。
 
 工作块使用 `GET /agent/computer/work-block-context` 与
@@ -212,6 +211,12 @@ upload -> queued -> processing -> ready -> consumed
 
 - 提醒去重由稳定 dedup key 保证；只有真实投递结果写入通知状态。
 - Plan 开始提醒不提供完成/延时；结束、DDL 和独立提醒按现行卡片规则处理。
+- Plan 到达结束时间后的五分钟窗口内，Server 向当时有效的 primary Feishu binding 发送一次
+  结果卡片。只有绑定到同一 bot/chat/owner 和原卡片消息的按钮或回复可写入 description；
+  “已完成”按钮同时标记 done，自由文本只追加结果。卡片重试复用稳定飞书请求 UUID。
 - Screen 与 Feishu 的 done/snooze 最终都由 Server 修改同一事项。
 - `dailySummary` 以 `(userId, reportDate)` 唯一；Adapter 先验证并保存最终报告，再投递
-  Feishu。失败不能保存为 completed。
+  Feishu。默认每日 23:59 调度；OpenClaw 必须先调用 scope 保护的
+  `GET /agent/daily-work-context`，按项目使用 Codex 报告、Computer 工作块和 Plan 人工结果，
+  失败不能保存为 completed。事实冲突优先级为人工 Plan 结果、Codex 报告、工作块推断；
+  项目投入时长只使用 Server 汇总的 active seconds。

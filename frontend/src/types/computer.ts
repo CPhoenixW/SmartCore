@@ -190,6 +190,47 @@ export interface ComputerDailyWorkLog {
   errorMessage: string | null;
 }
 
+export type ComputerCodexWorkStatus = "completed" | "partial" | "in_progress";
+
+export interface ComputerCodexWorkReport {
+  reportId: string;
+  sourceTaskId: string;
+  projectKey: string;
+  projectName: string;
+  title: string;
+  summary: string;
+  status: ComputerCodexWorkStatus;
+  startedAt: string | null;
+  endedAt: string | null;
+  evidence: Record<string, unknown> | unknown[];
+}
+
+export interface ComputerProjectInvestment {
+  projectKey: string;
+  projectName: string;
+  status: ComputerCodexWorkStatus | null;
+  statusCounts: { completed: number; partial: number; inProgress: number };
+  activeSeconds: number;
+  plannedActiveSeconds: number;
+  codexReports: ComputerCodexWorkReport[];
+  workBlocks: ComputerWorkBlock[];
+  plans: Array<{
+    evtId: string;
+    title: string;
+    description: string | null;
+    status: string;
+    startAt: string;
+    endAt: string | null;
+  }>;
+}
+
+export interface ComputerProjectTotals {
+  activeSeconds: number;
+  plannedActiveSeconds: number;
+  codexReportCount: number;
+  projectCount: number;
+}
+
 export interface ComputerInsightsReport {
   deviceId: string;
   date: string;
@@ -202,4 +243,6 @@ export interface ComputerInsightsReport {
   reminders: Array<{ title: string; content: string; stat: string; dedupKey: string | null }>;
   dailyLog: ComputerDailyWorkLog | null;
   analysisState: ComputerWorkBlockAnalysisState | null;
+  projects: ComputerProjectInvestment[];
+  projectTotals: ComputerProjectTotals;
 }

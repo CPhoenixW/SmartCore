@@ -402,11 +402,35 @@ CREATE TABLE IF NOT EXISTS computerWorkBlockAnalysisRun (
     FOREIGN KEY (blockId) REFERENCES computerWorkBlock(blockId) ON DELETE SET NULL,
     UNIQUE (userId, deviceId, triggerKey)
 );
+
+CREATE TABLE IF NOT EXISTS codexWorkReport (
+    reportId VARCHAR(32) PRIMARY KEY,
+    userId VARCHAR(32) NOT NULL,
+    deviceId VARCHAR(32) NOT NULL,
+    sourceTaskId VARCHAR(200) NOT NULL,
+    reportDate VARCHAR(10) NOT NULL,
+    timezone VARCHAR(64) NOT NULL,
+    projectKey VARCHAR(300) NOT NULL,
+    projectName VARCHAR(200) NOT NULL,
+    title VARCHAR(300) NOT NULL,
+    summary TEXT NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    startedAt VARCHAR(64),
+    endedAt VARCHAR(64),
+    evidence JSON,
+    createdAt VARCHAR(64) NOT NULL,
+    updatedAt VARCHAR(64) NOT NULL,
+    FOREIGN KEY (userId) REFERENCES appUser(userId) ON DELETE CASCADE,
+    FOREIGN KEY (deviceId) REFERENCES lifeDevice(deviceId) ON DELETE CASCADE,
+    UNIQUE (userId, sourceTaskId, reportDate),
+    CHECK (status IN ('completed', 'partial', 'in_progress'))
+);
 CREATE INDEX IF NOT EXISTS idx_computer_hourly_user_date ON computerHourlyAnalysis(userId, localDate, hourStart);
 CREATE INDEX IF NOT EXISTS idx_computer_daily_log_user_date ON computerDailyWorkLog(userId, logDate);
 CREATE INDEX IF NOT EXISTS idx_computer_work_block_user_date ON computerWorkBlock(userId, deviceId, localDate, startAt);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_computer_work_block_open_device ON computerWorkBlock(userId, deviceId) WHERE status = 'open';
 CREATE INDEX IF NOT EXISTS idx_computer_work_block_run_status ON computerWorkBlockAnalysisRun(status, nextRetryAt, createdAt);
+CREATE INDEX IF NOT EXISTS idx_codex_work_report_user_date ON codexWorkReport(userId, reportDate, createdAt);
 -- User and device unified dispatch. This file is the auditable DDL source for
 -- the new tables; the SQLite migration runner applies it only once to an
 -- existing database.
@@ -503,6 +527,33 @@ CREATE TABLE IF NOT EXISTS deviceReceipt (
 CREATE INDEX IF NOT EXISTS idx_lifeDevice_user ON lifeDevice(userId, stat);
 CREATE INDEX IF NOT EXISTS idx_deviceDispatch_pending ON deviceDispatch(deviceId, stat, createdAt);
 CREATE INDEX IF NOT EXISTS idx_feishuBot_user_enabled ON feishuBot(userId, enabled);
+
+CREATE TABLE IF NOT EXISTS planCompletionPrompt (
+    promptId VARCHAR(32) PRIMARY KEY,
+    userId VARCHAR(32) NOT NULL REFERENCES appUser(userId) ON DELETE CASCADE,
+    planEvtId VARCHAR(32) NOT NULL REFERENCES planEvt(evtId) ON DELETE CASCADE,
+    bindId VARCHAR(32) REFERENCES feishuBind(bindId) ON DELETE SET NULL,
+    botId VARCHAR(32) REFERENCES feishuBot(botId) ON DELETE SET NULL,
+    chatId VARCHAR(300),
+    expectedEndAt VARCHAR(64) NOT NULL,
+    outboundMessageId VARCHAR(200) UNIQUE,
+    responseMessageId VARCHAR(200) UNIQUE,
+    responseText TEXT,
+    stat VARCHAR(20) NOT NULL,
+    attemptCount INTEGER NOT NULL DEFAULT 0,
+    lastAttemptAt VARCHAR(64),
+    failReason TEXT,
+    sentAt VARCHAR(64),
+    answeredAt VARCHAR(64),
+    createdAt VARCHAR(64) NOT NULL,
+    updatedAt VARCHAR(64) NOT NULL,
+    UNIQUE (planEvtId, expectedEndAt),
+    CHECK (stat IN ('queued', 'sent', 'answered', 'failed', 'expired'))
+);
+CREATE INDEX IF NOT EXISTS idx_plan_completion_prompt_outbound
+    ON planCompletionPrompt(outboundMessageId, botId, chatId);
+CREATE INDEX IF NOT EXISTS idx_plan_completion_prompt_user_end
+    ON planCompletionPrompt(userId, expectedEndAt);
 
 CREATE TABLE IF NOT EXISTS computerActivityContext (
     contextId VARCHAR(32) PRIMARY KEY,
