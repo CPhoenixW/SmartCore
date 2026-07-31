@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import { useQuery } from "@tanstack/vue-query";
+import { computed, ref, watch } from "vue";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
 import PageHeader from "@/components/base/PageHeader.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
 import { dailySummaryApi } from "@/api/dailySummary";
+import { useToast } from "@/composables/useToast";
 import { addDays, formatDateTime, todayKey } from "@/utils/date";
 
 interface InlinePart {
@@ -19,8 +20,12 @@ interface ReportLine {
 }
 
 const { t, locale } = useI18n();
+const toast = useToast();
+const queryClient = useQueryClient();
 const selectedDate = ref(todayKey());
 const search = ref("");
+const editing = ref(false);
+const draft = ref("");
 const reportsQuery = useQuery({
   queryKey: computed(() => [
     "daily-summaries",
@@ -44,6 +49,39 @@ const generatedAt = computed(() => (
     ? formatDateTime(report.value.generatedAt, locale.value)
     : ""
 ));
+
+watch(report, (value) => {
+  if (!editing.value) draft.value = String(value?.content ?? "");
+}, { immediate: true });
+
+watch(selectedDate, () => {
+  editing.value = false;
+});
+
+const save = useMutation({
+  mutationFn: () => dailySummaryApi.update(report.value!.summaryId, {
+    content: draft.value.trim(),
+    expectedUpdatedAt: report.value!.updatedAt,
+  }),
+  onSuccess: async (updated) => {
+    draft.value = String(updated.content ?? "");
+    editing.value = false;
+    await queryClient.invalidateQueries({ queryKey: ["daily-summaries"] });
+    toast.success(t("dailySummary.saved"));
+  },
+  onError: (error) => toast.error(error instanceof Error ? error.message : t("dailySummary.saveFailed")),
+});
+
+function startEdit() {
+  if (!report.value?.content) return;
+  draft.value = report.value.content;
+  editing.value = true;
+}
+
+function cancelEdit() {
+  draft.value = String(report.value?.content ?? "");
+  editing.value = false;
+}
 
 function inlineParts(value: string): InlinePart[] {
   const parts: InlinePart[] = [];
@@ -97,12 +135,20 @@ function moveDate(days: number) {
       <span v-if="report" class="summary-status" :class="`summary-status--${report.stat}`">
         {{ t(`dailySummary.status.${report.stat}`) }}
       </span>
+      <button v-if="report?.content && !editing" class="button" type="button" @click="startEdit">{{ t("common.edit") }}</button>
     </template>
     <div v-if="reportsQuery.isPending.value" class="daily-summary-state">{{ t("common.loading") }}</div>
     <div v-else-if="report?.stat === 'queued'" class="daily-summary-state">{{ t("dailySummary.queued") }}</div>
     <div v-else-if="report?.stat === 'failed'" class="daily-summary-state daily-summary-state--failed">
       {{ t("dailySummary.failed") }}
     </div>
+    <form v-else-if="editing && report" class="daily-summary-editor" @submit.prevent="save.mutate()">
+      <textarea v-model="draft" rows="18" :aria-label="t('dailySummary.editContent')" />
+      <div class="form-actions">
+        <button class="button" type="button" @click="cancelEdit">{{ t("common.cancel") }}</button>
+        <button class="button button--primary" :disabled="save.isPending.value || !draft.trim()">{{ save.isPending.value ? t("common.saving") : t("common.save") }}</button>
+      </div>
+    </form>
     <article v-else-if="report?.content" class="daily-summary-report">
       <template v-for="(line, index) in reportLines" :key="index">
         <div v-if="line.kind === 'blank'" class="report-space" />
@@ -173,6 +219,9 @@ function moveDate(days: number) {
   color: var(--color-text-muted);
 }
 .daily-summary-state--failed { color: var(--color-danger); }
+.daily-summary-editor { display: grid; gap: 14px; max-width: 980px; }
+.daily-summary-editor textarea { width: 100%; min-height: 420px; padding: 16px; border: 1px solid var(--border-color); border-radius: 8px; outline: 0; resize: vertical; color: var(--color-text); font: inherit; line-height: 1.65; }
+.daily-summary-editor textarea:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgb(96 165 250 / 15%); }
 .daily-summary-report {
   max-width: 860px;
   padding: 8px 2px;

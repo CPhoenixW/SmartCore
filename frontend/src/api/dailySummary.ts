@@ -16,4 +16,10 @@ export const dailySummaryApi = {
       `/api/daily-summaries${buildQuery(query)}`,
     );
   },
+  update(summaryId: string, payload: { content: string; expectedUpdatedAt?: string }) {
+    return apiRequest<DailySummaryReport>(
+      `/api/daily-summaries/${encodeURIComponent(summaryId)}`,
+      { method: "PATCH", body: JSON.stringify(payload) },
+    );
+  },
 };

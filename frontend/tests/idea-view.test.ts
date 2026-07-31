@@ -23,6 +23,21 @@ vi.mock("@tanstack/vue-query", () => ({
 }));
 
 describe("IdeaView", () => {
+  it("opens the new idea editor only after the user asks for it", async () => {
+    const wrapper = mount(IdeaView, { global: { plugins: [i18n] } });
+
+    expect(wrapper.find(".idea-detail .form-grid").exists()).toBe(false);
+    expect(wrapper.find(".idea-empty-detail").exists()).toBe(true);
+
+    await wrapper.get(".page-heading .button--primary").trigger("click");
+    expect(wrapper.find(".idea-detail .form-grid").exists()).toBe(true);
+    expect(wrapper.find(".idea-empty-detail").exists()).toBe(false);
+
+    await wrapper.get(".idea-detail .form-actions .button").trigger("click");
+    expect(wrapper.find(".idea-detail .form-grid").exists()).toBe(false);
+    expect(wrapper.find(".idea-empty-detail").exists()).toBe(true);
+  });
+
   it("shows either the detail or editor for a selected idea", async () => {
     const wrapper = mount(IdeaView, { global: { plugins: [i18n] } });
     await wrapper.get(".idea-card").trigger("click");
@@ -31,6 +46,14 @@ describe("IdeaView", () => {
     expect(wrapper.find(".idea-detail .form-grid").exists()).toBe(false);
 
     await wrapper.get(".idea-detail .card-actions .button").trigger("click");
+    expect(wrapper.find(".idea-detail-copy").exists()).toBe(false);
+    expect(wrapper.find(".idea-detail .form-grid").exists()).toBe(true);
+  });
+
+  it("opens the editor directly on a double click", async () => {
+    const wrapper = mount(IdeaView, { global: { plugins: [i18n] } });
+    await wrapper.get(".idea-card").trigger("dblclick");
+
     expect(wrapper.find(".idea-detail-copy").exists()).toBe(false);
     expect(wrapper.find(".idea-detail .form-grid").exists()).toBe(true);
   });

@@ -76,6 +76,20 @@ describe("event components", () => {
     },
   );
 
+  it("emits preview on click and edit on double click", async () => {
+    const event = eventOfType("plan");
+    const wrapper = mount(EventCard, {
+      props: { event },
+      global: { plugins: [i18n] },
+    });
+
+    await wrapper.get("button").trigger("click");
+    await wrapper.get("button").trigger("dblclick");
+
+    expect(wrapper.emitted("select")).toEqual([[event]]);
+    expect(wrapper.emitted("edit")).toEqual([[event]]);
+  });
+
   it("renders todo unchecked and emits done when checked", async () => {
     const wrapper = mount(EventStatusToggle, {
       props: {

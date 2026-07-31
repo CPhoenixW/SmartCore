@@ -32,7 +32,6 @@ const props = withDefaults(defineProps<{
 });
 
 const { t, locale } = useI18n();
-const icon = computed(() => ({ plan: "✓", remind: "◷", ddl: "!", course: "▦" })[props.type]);
 const timeText = computed(() => props.time
   ? formatDateTime(props.time, locale.value === "en-US" ? "en-US" : "zh-CN")
   : t("preview.notSet"));
@@ -40,37 +39,35 @@ const activePlans = computed(() => props.plans.filter((plan) => plan.enabled !==
 </script>
 
 <template>
-  <article class="visual-preview" :class="`visual-preview--${type}`">
-    <header class="visual-preview__header">
-      <span class="visual-preview__icon">{{ icon }}</span>
+  <article class="event-detail-preview" :class="`event-detail-preview--${type}`">
+    <header class="idea-detail-header event-detail-header">
       <div>
-        <small>{{ t(`event.type.${type}`) }}</small>
-        <h3>{{ title?.trim() || t("preview.enterTitle") }}</h3>
+        <span class="event-detail-kind">{{ t(`event.type.${type}`) }}</span>
+        <h2>{{ title?.trim() || t("preview.enterTitle") }}</h2>
+        <time class="idea-time">{{ timeText }}</time>
       </div>
-    </header>
-    <p class="visual-preview__description">{{ description?.trim() || t("preview.noDescription") }}</p>
-    <div class="visual-preview__timeline">
-      <span class="visual-preview__dot" />
-      <div>
-        <small>{{ type === "ddl" ? t("event.form.deadline") : type === "remind" ? t("event.form.triggerTime") : type === "course" ? t("course.nextClass") : t("event.form.startTime") }}</small>
-        <strong>{{ timeText }}</strong>
-      </div>
-    </div>
-    <div v-if="schedule || location || teacher" class="visual-preview__course-meta">
-      <span v-if="schedule">{{ schedule }}</span>
-      <span v-if="location">⌖ {{ location }}</span>
-      <span v-if="teacher">◎ {{ teacher }}</span>
-    </div>
-    <div class="visual-preview__tags">
-      <span class="tag" :class="`tag--${type}`">{{ t(`event.type.${type}`) }}</span>
-      <span class="tag" :class="`tag--prio-${priority}`">{{ t(`event.priority.${priority}`) }}</span>
       <span class="tag" :class="`tag--${status}`">{{ t(`event.status.${status}`) }}</span>
-      <span v-if="durationMin" class="tag tag--duration">{{ durationMin }} {{ t("common.minutes") }}</span>
+    </header>
+    <section class="idea-detail-copy event-detail-copy">
+      <p>{{ description?.trim() || t("preview.noDescription") }}</p>
+    </section>
+    <dl class="event-detail-meta">
+      <div>
+        <dt>{{ type === "ddl" ? t("event.form.deadline") : type === "remind" ? t("event.form.triggerTime") : type === "course" ? t("course.nextClass") : t("event.form.startTime") }}</dt>
+        <dd>{{ timeText }}</dd>
+      </div>
+      <div v-if="durationMin"><dt>{{ t("event.form.duration") }}</dt><dd>{{ durationMin }} {{ t("common.minutes") }}</dd></div>
+      <div v-if="schedule"><dt>{{ t("preview.schedule") }}</dt><dd>{{ schedule }}</dd></div>
+      <div v-if="location"><dt>{{ t("course.location") }}</dt><dd>{{ location }}</dd></div>
+      <div v-if="teacher"><dt>{{ t("course.teacher") }}</dt><dd>{{ teacher }}</dd></div>
+    </dl>
+    <div class="event-detail-tags">
+      <span class="tag" :class="`tag--prio-${priority}`">{{ t(`event.priority.${priority}`) }}</span>
       <span v-if="hardDdl" class="tag tag--hard">{{ t("event.form.hardDdl") }}</span>
     </div>
-    <div v-if="type === 'ddl'" class="visual-preview__plans">
+    <div v-if="type === 'ddl'" class="event-detail-plans">
       <strong>{{ t("event.form.plans") }}</strong>
-      <div v-if="activePlans.length" class="visual-preview__plan-list">
+      <div v-if="activePlans.length" class="event-detail-plan-list">
         <div v-for="(plan, index) in activePlans" :key="plan.planEvtId ?? index">
           <span>{{ plan.title || t(`preview.planRole.${plan.planRole}`) }}</span>
           <small>{{ formatDateTime(plan.stTime, locale === 'en-US' ? 'en-US' : 'zh-CN') }} · {{ plan.durationMin }} {{ t("common.minutes") }}</small>
@@ -80,3 +77,28 @@ const activePlans = computed(() => props.plans.filter((plan) => plan.enabled !==
     </div>
   </article>
 </template>
+
+<style scoped>
+.event-detail-preview { --event-accent: #2563eb; min-width: 0; }
+.event-detail-preview--remind { --event-accent: #9333ea; }
+.event-detail-preview--ddl { --event-accent: #ea580c; }
+.event-detail-preview--course { --event-accent: #0891b2; }
+.event-detail-header { border-top: 4px solid var(--event-accent); padding-top: 18px; }
+.event-detail-kind { display: block; margin-bottom: 5px; color: var(--event-accent); font-size: 12px; font-weight: 750; }
+.event-detail-copy { padding-bottom: 16px; }
+.event-detail-copy p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.event-detail-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid var(--border-color); border-radius: 8px; background: var(--border-color); }
+.event-detail-meta div { min-width: 0; padding: 12px; background: #fff; }
+.event-detail-meta dt { color: var(--color-text-muted); font-size: 11px; }
+.event-detail-meta dd { margin: 5px 0 0; overflow-wrap: anywhere; color: var(--color-text); font-weight: 700; }
+.event-detail-tags { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+.event-detail-plans { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-color); }
+.event-detail-plans > strong { font-size: 13px; }
+.event-detail-plan-list { display: grid; gap: 8px; margin-top: 10px; }
+.event-detail-plan-list > div { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border-color); }
+.event-detail-plan-list small { color: var(--color-text-muted); font-size: 11px; }
+@media (max-width: 640px) {
+  .event-detail-meta { grid-template-columns: 1fr; }
+  .event-detail-plan-list > div { align-items: flex-start; flex-direction: column; }
+}
+</style>

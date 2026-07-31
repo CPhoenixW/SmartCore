@@ -3,7 +3,6 @@ import { computed, nextTick, ref, watch } from "vue";
 import { useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
-import DeviceManagementPanel from "@/components/device/DeviceManagementPanel.vue";
 import DeviceMetricStrip, { type DeviceMetric } from "@/components/device/DeviceMetricStrip.vue";
 import DevicePairPanel from "@/components/device/DevicePairPanel.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
@@ -24,9 +23,11 @@ import { scrollToLatest } from "@/utils/scroll";
 
 const APP_COLORS = ["#2563eb", "#0891b2", "#db2777", "#d97706", "#16a34a", "#475569"];
 const OBJECTIVE_STATES = ["active", "idle", "locked", "sleeping", "paused"] as const;
+type ComputerPanelView = "overview" | "activity" | "management";
 
 const { t, locale } = useI18n();
 const range = ref<ComputerRange>("today");
+const activeView = ref<ComputerPanelView>("overview");
 const selectedDeviceId = ref("");
 const selectedDate = ref(todayKey());
 const selectedSession = ref<ComputerSession | null>(null);
@@ -39,6 +40,7 @@ watch(computers, (items) => {
   if (!items.some((item) => item.deviceId === selectedDeviceId.value)) selectedDeviceId.value = items[0]?.deviceId ?? "";
 }, { immediate: true });
 const enabled = computed(() => Boolean(selectedDeviceId.value));
+const usageEnabled = computed(() => enabled.value && activeView.value !== "management");
 const status = useQuery({
   queryKey: ["computer", "status", selectedDeviceId],
   queryFn: () => computerApi.status(selectedDeviceId.value),
@@ -48,19 +50,19 @@ const status = useQuery({
 const usage = useQuery({
   queryKey: ["computer", "usage", selectedDeviceId, range, timezone],
   queryFn: () => computerApi.usage(selectedDeviceId.value, range.value, timezone),
-  enabled,
+  enabled: usageEnabled,
   refetchInterval: 60_000,
 });
 const activityMapUsage = useQuery({
   queryKey: ["computer", "usage", selectedDeviceId, "24h", timezone],
   queryFn: () => computerApi.usage(selectedDeviceId.value, "24h", timezone),
-  enabled: computed(() => enabled.value && range.value === "today"),
+  enabled: computed(() => enabled.value && activeView.value === "activity" && range.value === "today"),
   refetchInterval: 60_000,
 });
 const insights = useQuery({
   queryKey: ["computer", "insights", selectedDeviceId, selectedDate],
   queryFn: () => computerApi.insights(selectedDeviceId.value, selectedDate.value),
-  enabled,
+  enabled: computed(() => enabled.value && activeView.value === "overview" && range.value === "today"),
   refetchInterval: 60_000,
 });
 const report = computed(() => usage.data.value);
@@ -111,6 +113,9 @@ watch([range, () => mapReport.value?.windowEnd], async ([selectedRange, windowEn
   await nextTick();
   scrollToLatest(activityMapScroll.value);
 });
+watch(range, (selectedRange) => {
+  if (selectedRange !== "today" && activeView.value === "activity") activeView.value = "overview";
+});
 function stateLabel(state: string) { return t(`computer.state.${state}`); }
 function timeLabel(value: string) {
   return new Date(value).toLocaleTimeString(locale.value === "en-US" ? "en-US" : "zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -160,13 +165,19 @@ function projectStatusLabel(project: ComputerProjectInvestment) {
         <div class="segmented" role="group" :aria-label="t('computer.range')"><button v-for="item in (['today', '7d', '30d'] as ComputerRange[])" :key="item" type="button" :class="{ active: range === item }" @click="range = item">{{ t(`computer.rangeOption.${item}`) }}</button></div>
       </div>
 
+      <nav class="segmented computer-view-tabs" role="tablist" :aria-label="t('computer.view')">
+        <button type="button" role="tab" :aria-selected="activeView === 'overview'" :class="{ active: activeView === 'overview' }" @click="activeView = 'overview'">{{ t("computer.viewOverview") }}</button>
+        <button v-if="range === 'today'" type="button" role="tab" :aria-selected="activeView === 'activity'" :class="{ active: activeView === 'activity' }" @click="activeView = 'activity'">{{ t("computer.viewActivity") }}</button>
+        <button type="button" role="tab" :aria-selected="activeView === 'management'" :class="{ active: activeView === 'management' }" @click="activeView = 'management'">{{ t("computer.viewManagement") }}</button>
+      </nav>
+
       <div v-if="monitor && (monitor.paused || monitor.state === 'offline' || monitor.queueDepth > 5 || !monitor.accessibilityGranted)" class="computer-alert" :class="`computer-alert--${monitor.state}`">
         {{ !monitor.accessibilityGranted ? t("computer.accessibilityMissing") : monitor.paused ? t("computer.paused") : monitor.state === "offline" ? t("computer.offline") : t("computer.syncDelayed", { count: monitor.queueDepth }) }}
       </div>
 
-      <DeviceMetricStrip :items="metrics" :label="t('computer.activitySummary')" />
+      <DeviceMetricStrip v-if="activeView === 'overview'" :items="metrics" :label="t('computer.activitySummary')" />
 
-      <section v-if="range === 'today'" class="computer-insights-grid">
+      <section v-if="activeView === 'overview' && range === 'today'" class="computer-insights-grid">
         <BaseCard class="computer-work-block-primary" :title="t('computer.currentWorkBlock')">
           <template v-if="insights.data.value?.currentBlock">
           <article class="computer-work-block computer-work-block--current">
@@ -208,35 +219,7 @@ function projectStatusLabel(project: ComputerProjectInvestment) {
           </div>
           <EmptyState v-else :text="t('computer.noProjectInvestment')" />
         </BaseCard>
-        <BaseCard :title="t('computer.recentWorkBlocks')">
-          <div v-if="recentWorkBlocks.length" class="computer-work-block-list computer-card-scroll">
-            <article v-for="block in recentWorkBlocks" :key="block.blockId" class="computer-work-block">
-              <header><div><strong>{{ block.title || t('computer.analysisPending') }}</strong><small>{{ duration(block.activeSeconds) }}</small></div><time>{{ timeLabel(block.startAt) }}–{{ blockEndLabel(block) }}</time></header>
-              <p v-if="block.summary">{{ block.summary }}</p>
-              <div class="computer-work-block__metrics"><span v-if="block.primaryApps.length">{{ block.primaryApps.map((item) => item.appName).slice(0, 3).join(t('common.listSeparator')) }}</span><span v-if="block.planAssessments.length">{{ t('computer.planCount', { count: block.planAssessments.length }) }}</span></div>
-            </article>
-          </div>
-          <EmptyState v-else :text="t('computer.noWorkBlocks')" />
-          <button v-if="insights.data.value?.legacyHours.length" class="button button--ghost computer-evidence-button" type="button" @click="showHourlyEvidence = true">{{ t('computer.viewHourlyEvidence') }}</button>
-        </BaseCard>
-        <BaseCard :title="t('computer.planExecution')">
-          <div v-if="insights.data.value?.planAssessments.length" class="computer-plan-assessments computer-card-scroll">
-            <article v-for="(item, index) in insights.data.value.planAssessments" :key="`${item.evtId}-${index}`">
-              <div><strong>{{ planStateLabel(item) }}</strong><span>{{ t(`computer.confidence.${item.confidence}`) }}</span></div>
-              <p>{{ item.title || item.note || item.evidenceCodes.join(t('common.listSeparator')) }}</p>
-              <small v-if="item.overlapRatio !== undefined">{{ t('computer.objectiveOverlap', { percent: Math.round(item.overlapRatio * 100) }) }}</small>
-              <small v-if="item.semanticAlignment"> · {{ semanticLabel(item.semanticAlignment) }}</small>
-            </article>
-          </div>
-          <EmptyState v-else :text="t('computer.noPlanAssessment')" />
-        </BaseCard>
-        <BaseCard :title="t('computer.workTopics')">
-          <div v-if="insights.data.value?.topics.length" class="computer-topic-list">
-            <article v-for="topic in insights.data.value.topics" :key="topic.name"><div><strong>{{ topic.name }}</strong><small>{{ duration(topic.activeSeconds) }} · {{ t('computer.blockEvidenceCount', { count: (topic.blockIds ?? []).length }) }}</small></div><p v-if="topic.summary">{{ topic.summary }}</p></article>
-          </div>
-          <EmptyState v-else :text="t('computer.noTopics')" />
-        </BaseCard>
-        <BaseCard :title="t('computer.dailyWorkLog')">
+        <BaseCard class="computer-daily-primary" :title="t('computer.dailyWorkLog')">
           <article v-if="insights.data.value?.dailyLog" class="computer-daily-log">
             <div><strong>{{ insights.data.value.dailyLog.title || insightStatusLabel(insights.data.value.dailyLog.status) }}</strong><span>{{ t(`computer.dailyLogPhase.${insights.data.value.dailyLog.phase}`) }} · {{ insightStatusLabel(insights.data.value.dailyLog.status) }}</span></div>
             <p>{{ insights.data.value.dailyLog.summary || insights.data.value.dailyLog.errorMessage || t('computer.analysisPending') }}</p>
@@ -244,18 +227,51 @@ function projectStatusLabel(project: ComputerProjectInvestment) {
           </article>
           <EmptyState v-else :text="t('computer.noDailyLog')" />
         </BaseCard>
-        <BaseCard :title="t('computer.smartReminders')">
-          <div v-if="insights.data.value?.reminders.length" class="computer-reminder-list">
-            <article v-for="(reminder, index) in insights.data.value.reminders" :key="`${reminder.dedupKey || reminder.title}-${index}`">
-              <div><strong>{{ reminder.title }}</strong><span :class="`insight-state insight-state--${reminder.stat}`">{{ reminder.stat }}</span></div>
-              <p>{{ reminder.content }}</p>
-            </article>
+        <details class="computer-more-insights">
+          <summary>{{ t("computer.moreInsights") }}</summary>
+          <div class="computer-insights-secondary">
+            <BaseCard :title="t('computer.recentWorkBlocks')">
+              <div v-if="recentWorkBlocks.length" class="computer-work-block-list computer-card-scroll">
+                <article v-for="block in recentWorkBlocks" :key="block.blockId" class="computer-work-block">
+                  <header><div><strong>{{ block.title || t('computer.analysisPending') }}</strong><small>{{ duration(block.activeSeconds) }}</small></div><time>{{ timeLabel(block.startAt) }}–{{ blockEndLabel(block) }}</time></header>
+                  <p v-if="block.summary">{{ block.summary }}</p>
+                  <div class="computer-work-block__metrics"><span v-if="block.primaryApps.length">{{ block.primaryApps.map((item) => item.appName).slice(0, 3).join(t('common.listSeparator')) }}</span><span v-if="block.planAssessments.length">{{ t('computer.planCount', { count: block.planAssessments.length }) }}</span></div>
+                </article>
+              </div>
+              <EmptyState v-else :text="t('computer.noWorkBlocks')" />
+              <button v-if="insights.data.value?.legacyHours.length" class="button button--ghost computer-evidence-button" type="button" @click="showHourlyEvidence = true">{{ t('computer.viewHourlyEvidence') }}</button>
+            </BaseCard>
+            <BaseCard :title="t('computer.planExecution')">
+              <div v-if="insights.data.value?.planAssessments.length" class="computer-plan-assessments computer-card-scroll">
+                <article v-for="(item, index) in insights.data.value.planAssessments" :key="`${item.evtId}-${index}`">
+                  <div><strong>{{ planStateLabel(item) }}</strong><span>{{ t(`computer.confidence.${item.confidence}`) }}</span></div>
+                  <p>{{ item.title || item.note || item.evidenceCodes.join(t('common.listSeparator')) }}</p>
+                  <small v-if="item.overlapRatio !== undefined">{{ t('computer.objectiveOverlap', { percent: Math.round(item.overlapRatio * 100) }) }}</small>
+                  <small v-if="item.semanticAlignment"> · {{ semanticLabel(item.semanticAlignment) }}</small>
+                </article>
+              </div>
+              <EmptyState v-else :text="t('computer.noPlanAssessment')" />
+            </BaseCard>
+            <BaseCard :title="t('computer.workTopics')">
+              <div v-if="insights.data.value?.topics.length" class="computer-topic-list">
+                <article v-for="topic in insights.data.value.topics" :key="topic.name"><div><strong>{{ topic.name }}</strong><small>{{ duration(topic.activeSeconds) }} · {{ t('computer.blockEvidenceCount', { count: (topic.blockIds ?? []).length }) }}</small></div><p v-if="topic.summary">{{ topic.summary }}</p></article>
+              </div>
+              <EmptyState v-else :text="t('computer.noTopics')" />
+            </BaseCard>
+            <BaseCard :title="t('computer.smartReminders')">
+              <div v-if="insights.data.value?.reminders.length" class="computer-reminder-list">
+                <article v-for="(reminder, index) in insights.data.value.reminders" :key="`${reminder.dedupKey || reminder.title}-${index}`">
+                  <div><strong>{{ reminder.title }}</strong><span :class="`insight-state insight-state--${reminder.stat}`">{{ reminder.stat }}</span></div>
+                  <p>{{ reminder.content }}</p>
+                </article>
+              </div>
+              <EmptyState v-else :text="t('computer.noSmartReminders')" />
+            </BaseCard>
           </div>
-          <EmptyState v-else :text="t('computer.noSmartReminders')" />
-        </BaseCard>
+        </details>
       </section>
 
-      <BaseCard v-if="range === 'today'" :title="t('computer.activityMap')" :subtitle="t('computer.activityMapNote')">
+      <BaseCard v-if="activeView === 'activity' && range === 'today'" :title="t('computer.activityMap')" :subtitle="t('computer.activityMapNote')">
         <div v-if="mapReport?.timeline.length" class="computer-activity-map-frame">
           <div class="computer-map-index" aria-hidden="true">
             <div class="computer-map-index__spacer" />
@@ -282,7 +298,7 @@ function projectStatusLabel(project: ComputerProjectInvestment) {
         <EmptyState v-else :text="t('computer.noUsage')" />
       </BaseCard>
 
-      <div v-if="range === 'today'" class="computer-two-column computer-two-column--scroll">
+      <div v-if="activeView === 'activity' && range === 'today'" class="computer-two-column computer-two-column--scroll">
         <BaseCard :title="t('computer.sessions')">
           <div v-if="report?.sessions.length" class="session-list computer-card-scroll">
             <button v-for="session in report.sessions" :key="session.sessionId" type="button" @click="selectedSession = session">
@@ -299,7 +315,7 @@ function projectStatusLabel(project: ComputerProjectInvestment) {
         </BaseCard>
       </div>
 
-      <div v-else class="computer-two-column">
+      <div v-if="activeView === 'overview' && range !== 'today'" class="computer-two-column">
         <BaseCard :title="t('computer.dailyTrend')">
           <BarChart v-if="report?.daily.length" :labels="dailyLabels" :series="dailySeries" :label="t('computer.dailyTrend')" />
           <EmptyState v-else :text="t('computer.noUsage')" />
@@ -310,15 +326,15 @@ function projectStatusLabel(project: ComputerProjectInvestment) {
         </BaseCard>
       </div>
 
-      <DeviceManagementPanel icon="Mac" :title="t('computer.managementTitle')" :summary="t('computer.managementSummary', { count: computers.length })">
+      <BaseCard v-if="activeView === 'management'" :title="t('computer.managementTitle')" :subtitle="t('computer.managementSummary', { count: computers.length })">
         <div v-if="monitor" class="computer-runtime-grid"><div><span>{{ t("computer.lastSync") }}</span><strong>{{ formatDateTime(monitor.lastHeartbeatAt, locale === 'en-US' ? 'en-US' : 'zh-CN') }}</strong></div><div><span>{{ t("computer.permission") }}</span><strong>{{ monitor.accessibilityGranted ? t("computer.granted") : t("computer.notGranted") }}</strong></div><div><span>{{ t("computer.queueLabel") }}</span><strong>{{ monitor.queueDepth }}</strong></div><div><span>{{ t("computer.version") }}</span><strong>{{ monitor.appVersion || t("common.notSet") }}</strong></div></div>
         <DevicePairPanel embedded :allowed-kinds="['computer']" :title="t('computer.pairTitle')" />
-      </DeviceManagementPanel>
+      </BaseCard>
     </template>
 
     <template v-else>
       <EmptyState :text="t('computer.noDevice')" />
-      <DeviceManagementPanel icon="Mac" :title="t('computer.managementTitle')" :summary="t('computer.managementSummary', { count: 0 })"><DevicePairPanel embedded :allowed-kinds="['computer']" :title="t('computer.pairTitle')" /></DeviceManagementPanel>
+      <BaseCard :title="t('computer.managementTitle')" :subtitle="t('computer.managementSummary', { count: 0 })"><DevicePairPanel embedded :allowed-kinds="['computer']" :title="t('computer.pairTitle')" /></BaseCard>
     </template>
 
     <div v-if="selectedSession" class="session-drawer-backdrop" @click.self="selectedSession = null">
@@ -349,8 +365,16 @@ function projectStatusLabel(project: ComputerProjectInvestment) {
   gap: 18px;
 }
 
+.computer-view-tabs { width: fit-content; max-width: 100%; }
 .computer-work-block-primary { grid-column: 1 / -1; }
 .computer-project-investment-card { grid-column: 1 / -1; }
+.computer-daily-primary { grid-column: 1 / -1; }
+.computer-more-insights { grid-column: 1 / -1; min-width: 0; }
+.computer-more-insights > summary { display: flex; align-items: center; justify-content: space-between; padding: 13px 2px; border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); color: #334155; cursor: pointer; font-weight: 700; list-style: none; }
+.computer-more-insights > summary::-webkit-details-marker { display: none; }
+.computer-more-insights > summary::after { content: "+"; color: #64748b; font-size: 20px; font-weight: 400; }
+.computer-more-insights[open] > summary::after { content: "-"; }
+.computer-insights-secondary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; padding-top: 18px; }
 .computer-project-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
 .computer-project { min-width: 0; padding: 15px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }
 .computer-project > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
@@ -490,6 +514,7 @@ function projectStatusLabel(project: ComputerProjectInvestment) {
 
 @media (max-width: 760px) {
   .computer-insights-grid { grid-template-columns: 1fr; }
+  .computer-insights-secondary { grid-template-columns: 1fr; }
   .computer-project-list { grid-template-columns: 1fr; }
   .computer-activity-map-frame {
     grid-template-columns: 82px minmax(0, 1fr);

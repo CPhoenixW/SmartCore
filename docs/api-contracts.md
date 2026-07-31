@@ -64,6 +64,11 @@ Agent 接口使用机器稳定的结果：
 | `/api/daily-summaries` | 当前用户日报 |
 | `/api/weather` | 登录用户读取共享天气缓存 |
 
+日报列表和修改均以浏览器会话中的 active user 为所有权来源。修改使用
+`PATCH /api/daily-summaries/{summaryId}`，提交 `content`，并可携带读取时的
+`expectedUpdatedAt`；资源不属于当前用户时返回 404，报告已被更新时返回 409，避免
+静默覆盖较新的内容。
+
 ## 事项契约
 
 现行事项类型：

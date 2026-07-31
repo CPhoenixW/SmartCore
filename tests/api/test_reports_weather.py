@@ -95,6 +95,7 @@ def test_completion_summary_appends_description_and_is_owner_scoped(
 
 def test_daily_summary_write_and_browser_read_are_user_scoped(
     app_env,
+    client,
     signed_client_factory,
 ) -> None:
     db = SessionLocal()
@@ -150,6 +151,36 @@ def test_daily_summary_write_and_browser_read_are_user_scoped(
         ).json()["data"]
         == []
     )
+
+    report = reports.json()["data"][0]
+    updated = owner.patch(
+        f"/api/daily-summaries/{report['summaryId']}",
+        json={
+            "content": "Updated by the owner",
+            "expectedUpdatedAt": report["updatedAt"],
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["data"]["content"] == "Updated by the owner"
+
+    stale = owner.patch(
+        f"/api/daily-summaries/{report['summaryId']}",
+        json={
+            "content": "Overwrite newer content",
+            "expectedUpdatedAt": report["updatedAt"],
+        },
+    )
+    assert stale.status_code == 409
+
+    other = signed_client_factory("other")
+    assert other.patch(
+        f"/api/daily-summaries/{report['summaryId']}",
+        json={"content": "Cross-user overwrite"},
+    ).status_code == 404
+    assert client.patch(
+        f"/api/daily-summaries/{report['summaryId']}",
+        json={"content": "Anonymous overwrite"},
+    ).status_code == 401
 
 
 def test_scheduler_dispatches_once_per_bound_user_and_records_failures(app_env) -> None:

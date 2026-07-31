@@ -51,6 +51,29 @@ describe("API clients", () => {
     );
   });
 
+  it("updates a daily summary with its current timestamp", async () => {
+    const fetchMock = mockJsonFetch({
+      summaryId: "summary-1",
+      reportDate: "2026-07-19",
+      content: "Updated summary",
+      stat: "complete",
+      createdAt: "2026-07-19T22:00:00+08:00",
+      updatedAt: "2026-07-19T22:05:00+08:00",
+    });
+
+    await dailySummaryApi.update("summary-1", {
+      content: "Updated summary",
+      expectedUpdatedAt: "2026-07-19T22:01:00+08:00",
+    });
+
+    expectFetch(fetchMock, "/api/daily-summaries/summary-1", "PATCH", {
+      body: JSON.stringify({
+        content: "Updated summary",
+        expectedUpdatedAt: "2026-07-19T22:01:00+08:00",
+      }),
+    });
+  });
+
   it("requests a rolling twelve-hour usage window", async () => {
     const fetchMock = mockJsonFetch({
       deviceId: "pi",

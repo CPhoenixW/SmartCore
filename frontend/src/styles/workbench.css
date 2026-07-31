@@ -191,3 +191,28 @@
 
 @media(max-width:1050px){.device-data-grid--pi{grid-template-columns:1fr}.device-data-grid--matched>.card{height:auto}.screen-live-preview{height:360px}}
 @media(max-width:640px){.bar-chart{min-width:560px}.device-data-grid--scroll-pair>.card{height:310px}.screen-preview-status{justify-content:flex-start}.screen-preview-status span{white-space:normal}.screen-live-preview{height:280px}}
+
+/* Keep long imported titles and identifiers inside the Ideas list column. */
+.idea-layout{grid-template-columns:minmax(0,.8fr) minmax(0,1.5fr)}
+.idea-list-pane,.idea-detail,.idea-list-pane>.card,.idea-detail>.stack,.idea-detail .card,.idea-cards{min-width:0}
+.idea-card{min-width:0;overflow:hidden;border-radius:8px}
+.idea-card strong,.idea-card p{overflow-wrap:anywhere;word-break:break-word}
+.idea-card footer{flex-wrap:wrap}
+.idea-card footer time{margin-left:auto}
+.idea-empty-detail .card-body{display:grid;min-height:300px;place-items:center}
+@media(max-width:900px){.idea-layout{grid-template-columns:1fr}}
+
+.split-scroll-layout--update{grid-template-columns:minmax(0,.8fr) minmax(0,1.5fr)}
+.event-list .event-card{min-width:0;overflow:hidden;border-left-width:4px;border-radius:8px;background:#fff}
+.event-list .event-card--type-plan{border-left-color:#3b82f6}
+.event-list .event-card--type-remind{border-left-color:#9333ea}
+.event-list .event-card--type-ddl{border-left-color:#ea580c}
+.event-list .event-card--type-course{border-left-color:#0891b2}
+.event-list .event-card--type-plan:hover,.event-list .event-card--type-plan.event-card--selected{background:#eff6ff}
+.event-list .event-card--type-remind:hover,.event-list .event-card--type-remind.event-card--selected{background:#faf5ff}
+.event-list .event-card--type-ddl:hover,.event-list .event-card--type-ddl.event-card--selected{background:#fff7ed}
+.event-list .event-card--type-course:hover,.event-list .event-card--type-course.event-card--selected{background:#ecfeff}
+.event-card footer{align-items:flex-end}
+.event-card__tags{display:flex;min-width:0;flex-wrap:wrap;gap:6px;margin:0}
+.event-card footer time{flex:0 0 auto}
+@media(max-width:1050px){.split-scroll-layout--update{grid-template-columns:1fr}}

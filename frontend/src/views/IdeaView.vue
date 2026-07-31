@@ -24,7 +24,7 @@ const { t, locale } = useI18n();
 const toast = useToast();
 const queryClient = useQueryClient();
 const selected = ref<Idea | null>(null);
-const editing = ref(true);
+const editing = ref(false);
 const title = ref("");
 const description = ref("");
 const uploads = ref<StagedUpload[]>([]);
@@ -49,13 +49,18 @@ function choose(idea: Idea) {
 
 function reset() {
   selected.value = null;
-  editing.value = true;
+  editing.value = false;
   title.value = "";
   description.value = "";
   uploads.value = [];
   removedAttachmentIds.value = [];
   processing.value = false;
   lightbox.value = null;
+}
+
+function startNew() {
+  reset();
+  editing.value = true;
 }
 
 function startEdit() {
@@ -67,9 +72,17 @@ function startEdit() {
   editing.value = true;
 }
 
+function editIdea(idea: Idea) {
+  choose(idea);
+  startEdit();
+}
+
 function cancelEdit() {
-  if (!selected.value) return;
-  choose(selected.value);
+  if (selected.value) {
+    choose(selected.value);
+    return;
+  }
+  reset();
 }
 
 function attachmentLabel(idea: Idea) {
@@ -199,12 +212,12 @@ const remove = useMutation({
 
 <template>
   <div class="dual-scroll-page idea-workspace">
-    <PageHeader :title="t('ideas.title')" :subtitle="t('ideas.subtitle')"><template #actions><button class="button button--primary" @click="reset">{{ t("ideas.new") }}</button></template></PageHeader>
+    <PageHeader :title="t('ideas.title')" :subtitle="t('ideas.subtitle')"><template #actions><button class="button button--primary" @click="startNew">{{ t("ideas.new") }}</button></template></PageHeader>
     <section class="idea-layout">
       <div class="idea-list-pane">
         <BaseCard :title="`${t('ideas.title')} · ${items.length}`">
           <div class="idea-cards">
-            <button v-for="idea in items" :key="idea.ideaId" class="idea-card" :class="{ selected: selected?.ideaId === idea.ideaId }" @click="choose(idea)">
+            <button v-for="idea in items" :key="idea.ideaId" class="idea-card" :class="{ selected: selected?.ideaId === idea.ideaId }" @click="choose(idea)" @dblclick="editIdea(idea)">
               <strong>{{ idea.title }}</strong><p>{{ idea.description || t("ideas.noDescription") }}</p>
               <footer><span v-if="idea.attachments.length">{{ attachmentLabel(idea) }}</span><time :datetime="idea.createdAt">{{ displayTime(idea.createdAt) }}</time></footer>
             </button>
@@ -237,7 +250,7 @@ const remove = useMutation({
           </template>
         </BaseCard>
 
-        <BaseCard v-else :title="selected ? t('ideas.edit') : t('ideas.new')">
+        <BaseCard v-else-if="editing" :title="selected ? t('ideas.edit') : t('ideas.new')">
           <form class="form-grid" @submit.prevent="save.mutate()">
             <label class="field field--wide"><span>{{ t("ideas.titleLabel") }}</span><input v-model="title" :placeholder="t('ideas.titlePlaceholder')" :required="!hasMedia" /></label>
             <label class="field field--wide"><span>{{ t("ideas.description") }}</span><textarea v-model="description" rows="7" :placeholder="t('ideas.descriptionPlaceholder')" /></label>
@@ -268,11 +281,12 @@ const remove = useMutation({
 
             <small v-if="processing" class="field--wide">{{ t("ideas.processing") }}</small>
             <div class="form-actions field--wide">
-              <button v-if="selected" class="button" type="button" @click="cancelEdit">{{ t("common.cancel") }}</button>
+              <button class="button" type="button" @click="cancelEdit">{{ t("common.cancel") }}</button>
               <button class="button button--primary" :disabled="save.isPending.value || processing || hasBlockingUploads || (!title.trim() && !hasMedia)">{{ t("common.save") }}</button>
             </div>
           </form>
         </BaseCard>
+        <BaseCard v-else class="idea-empty-detail"><EmptyState :text="t('ideas.select')" /></BaseCard>
       </div></aside>
     </section>
     <ImageViewer v-if="lightbox" :src="lightbox.url" :alt="lightbox.fileName" :file-name="lightbox.fileName" @close="lightbox = null" />

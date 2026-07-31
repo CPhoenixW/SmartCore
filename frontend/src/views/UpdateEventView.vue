@@ -24,7 +24,10 @@ const date = ref(String(route.query.date ?? todayKey()));
 const text = ref(String(route.query.q ?? ""));
 const status = ref<"all" | "active" | "cancelled">((String(route.query.stat ?? "active") as "all" | "active" | "cancelled"));
 const selected = ref<SmartCoreEvent | null>(null);
+const editing = ref(false);
 const directId = computed(() => String(route.query.evtId ?? route.query.event ?? ""));
+let pendingEventId = "";
+let pendingEventRequest: Promise<SmartCoreEvent> | null = null;
 
 const eventsQuery = useQuery({
   queryKey: computed(() => ["events", "day", date.value]),
@@ -66,6 +69,7 @@ async function openDirectEvent() {
   try {
     const event = await eventApi.read(directId.value);
     selected.value = event;
+    editing.value = false;
     const eventDate = eventDateKey(event);
     if (eventDate !== date.value) date.value = eventDate;
   } catch (error) {
@@ -73,10 +77,34 @@ async function openDirectEvent() {
   }
 }
 
-async function selectEvent(event: SmartCoreEvent) {
+async function loadEvent(event: SmartCoreEvent) {
+  if (selected.value?.evtId === event.evtId) return selected.value;
+  if (pendingEventId === event.evtId && pendingEventRequest) return pendingEventRequest;
+  pendingEventId = event.evtId;
+  pendingEventRequest = eventApi.read(event.evtId);
   try {
-    selected.value = await eventApi.read(event.evtId);
+    return await pendingEventRequest;
+  } finally {
+    pendingEventId = "";
+    pendingEventRequest = null;
+  }
+}
+
+async function selectEvent(event: SmartCoreEvent) {
+  editing.value = false;
+  try {
+    selected.value = await loadEvent(event);
   } catch (error) {
+    toast.error(error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function editEvent(event: SmartCoreEvent) {
+  try {
+    selected.value = await loadEvent(event);
+    editing.value = true;
+  } catch (error) {
+    editing.value = false;
     toast.error(error instanceof Error ? error.message : String(error));
   }
 }
@@ -86,17 +114,17 @@ watch(directId, () => { void openDirectEvent(); });
 
 const updateMutation = useMutation({
   mutationFn: ({ id, payload }: { id: string; payload: Record<string, unknown> }) => eventApi.update(id, payload),
-  onSuccess: async (event) => { selected.value = event; toast.success(t("event.updated")); await queryClient.invalidateQueries({ queryKey: ["events"] }); },
+  onSuccess: async (event) => { selected.value = event; editing.value = false; toast.success(t("event.updated")); await queryClient.invalidateQueries({ queryKey: ["events"] }); },
   onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
 });
 const cancelMutation = useMutation({
   mutationFn: (id: string) => eventApi.cancel(id),
-  onSuccess: async () => { toast.success(t("event.cancelled")); selected.value = null; await queryClient.invalidateQueries({ queryKey: ["events"] }); },
+  onSuccess: async () => { toast.success(t("event.cancelled")); selected.value = null; editing.value = false; await queryClient.invalidateQueries({ queryKey: ["events"] }); },
   onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
 });
 const busy = computed(() => updateMutation.isPending.value || cancelMutation.isPending.value);
 
-function move(days: number) { selected.value = null; date.value = addDays(date.value, days); }
+function move(days: number) { selected.value = null; editing.value = false; date.value = addDays(date.value, days); }
 function markDone() { if (selected.value) updateMutation.mutate({ id: selected.value.evtId, payload: { stat: "done" } }); }
 </script>
 
@@ -104,15 +132,15 @@ function markDone() { if (selected.value) updateMutation.mutate({ id: selected.v
   <div class="dual-scroll-page">
     <PageHeader :title="t('update.title')" :subtitle="t('update.subtitle')" />
     <section class="date-toolbar"><button class="button" @click="move(-1)">{{ t("common.previous") }}</button><input v-model="date" type="date" /><button class="button" @click="date = todayKey()">{{ t("common.today") }}</button><button class="button" @click="move(1)">{{ t("common.next") }}</button><input v-model="text" :placeholder="t('common.search')" /><select v-model="status"><option value="all">{{ t("common.all") }}</option><option value="active">{{ t("event.status.active") }}</option><option value="cancelled">{{ t("event.status.cancelled") }}</option></select></section>
-    <section class="split-scroll-layout">
+    <section class="split-scroll-layout split-scroll-layout--update">
       <div class="split-scroll-column split-scroll-column--main">
-        <BaseCard :title="`${t('update.events')} · ${filtered.length}`"><div class="event-list"><EventCard v-for="event in filtered" :key="event.evtId" :event="event" :selected="selected?.evtId === event.evtId" @select="selectEvent" /><div v-if="eventsQuery.isPending.value" class="empty-state">{{ t("common.loading") }}</div><EmptyState v-else-if="!filtered.length" /></div></BaseCard>
+        <BaseCard :title="`${t('update.events')} · ${filtered.length}`"><div class="idea-cards event-list"><EventCard v-for="event in filtered" :key="event.evtId" :event="event" :selected="selected?.evtId === event.evtId" @select="selectEvent" @edit="editEvent" /><div v-if="eventsQuery.isPending.value" class="empty-state">{{ t("common.loading") }}</div><EmptyState v-else-if="!filtered.length" /></div></BaseCard>
       </div>
       <aside class="split-scroll-column split-scroll-column--side">
         <div class="stack">
-          <BaseCard :title="t('preview.title')">
+          <BaseCard v-if="selected && !editing" :title="t('preview.title')">
+            <template #actions><button class="button" type="button" @click="editing = true">{{ t("common.edit") }}</button></template>
             <EventPreviewCard
-              v-if="selected"
               :type="selected.evtType"
               :title="selected.title"
               :description="selected.desc"
@@ -126,9 +154,12 @@ function markDone() { if (selected.value) updateMutation.mutate({ id: selected.v
               :teacher="selectedTeacher"
               :schedule="selectedSchedule"
             />
-            <EmptyState v-else :text="t('update.select')" />
           </BaseCard>
-          <BaseCard :title="t('update.editor')"><EventEditor v-if="selected" :event="selected" :busy="busy" @save="updateMutation.mutate({ id: selected!.evtId, payload: $event })" @done="markDone" @cancel="cancelMutation.mutate(selected!.evtId)" /><EmptyState v-else :text="t('update.select')" /></BaseCard>
+          <BaseCard v-else-if="selected" :title="t('update.editor')">
+            <template #actions><button class="button" type="button" @click="editing = false">{{ t("common.close") }}</button></template>
+            <EventEditor :event="selected" :busy="busy" @save="updateMutation.mutate({ id: selected!.evtId, payload: $event })" @done="markDone" @cancel="cancelMutation.mutate(selected!.evtId)" />
+          </BaseCard>
+          <BaseCard v-else><EmptyState :text="t('update.select')" /></BaseCard>
         </div>
       </aside>
     </section>

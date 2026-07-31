@@ -11,6 +11,7 @@ from app.server.new_core.models import DailySummary, EvtBase, newId, nowIso
 
 _SUMMARY_STATS = {"queued", "complete", "failed"}
 _MAX_COMPLETION_SUMMARY_LENGTH = 4000
+_MAX_DAILY_SUMMARY_CONTENT_LENGTH = 20000
 
 
 def _report_date(value: str) -> str:
@@ -126,6 +127,38 @@ def store_daily_summary(
     row.errorMessage = str(error_message or "").strip()[:1000] or None
     row.generatedAt = now if normalized_stat == "complete" else None
     row.updatedAt = now
+    db.commit()
+    db.refresh(row)
+    return daily_summary_dict(row)
+
+
+def update_daily_summary_content(
+    db: Session,
+    *,
+    user_id: str,
+    summary_id: str,
+    content: str,
+    expected_updated_at: str | None = None,
+) -> dict[str, Any]:
+    row = db.scalar(
+        select(DailySummary).where(
+            DailySummary.summaryId == summary_id,
+            DailySummary.userId == user_id,
+        )
+    )
+    if row is None:
+        raise ValueError("daily summary not found")
+    if expected_updated_at is not None and row.updatedAt != expected_updated_at:
+        raise ValueError("stale daily summary")
+    clean_content = str(content or "").strip()
+    if not clean_content:
+        raise ValueError("content is required")
+    if len(clean_content) > _MAX_DAILY_SUMMARY_CONTENT_LENGTH:
+        raise ValueError("content must not exceed 20000 characters")
+    row.content = clean_content
+    row.stat = "complete"
+    row.errorMessage = None
+    row.updatedAt = nowIso()
     db.commit()
     db.refresh(row)
     return daily_summary_dict(row)
