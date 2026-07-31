@@ -57,11 +57,11 @@
 @media(max-width:700px){.image-viewer{padding:0}.image-viewer__panel{border:0;border-radius:0}.image-viewer__toolbar{align-items:flex-start;flex-direction:column;gap:8px}.image-viewer__tools{width:100%;overflow-x:auto;padding-bottom:2px}.image-viewer__tools .button,.image-viewer__tools .icon-button{flex:0 0 auto}}
 
 /* Shared page chrome keeps headings, actions and cards aligned across workbench domains. */
-.page-heading{align-items:flex-start;gap:20px;margin-bottom:20px}
-.page-heading__copy{min-width:0}
+.page-heading{align-items:center;gap:20px;margin-bottom:14px}
+.page-heading__copy{display:flex;min-width:0;align-items:baseline;flex-wrap:wrap;gap:4px 12px}
 .page-heading h1{font-size:28px;line-height:1.2}
 .page-heading h2{font-size:21px;line-height:1.25}
-.page-heading p{max-width:760px;margin-top:6px;line-height:1.45}
+.page-heading p{max-width:760px;margin:0;font-size:12px;line-height:1.35}
 .page-heading__actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}
 .page-heading--compact{margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border-color)}
 .card-header{min-height:56px;padding:15px 18px}

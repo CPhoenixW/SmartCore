@@ -23,11 +23,12 @@ vi.mock("@tanstack/vue-query", () => ({
 }));
 
 describe("IdeaView", () => {
-  it("opens the new idea editor only after the user asks for it", async () => {
+  it("previews the first idea and opens the new editor only after the user asks", async () => {
     const wrapper = mount(IdeaView, { global: { plugins: [i18n] } });
 
     expect(wrapper.find(".idea-detail .form-grid").exists()).toBe(false);
-    expect(wrapper.find(".idea-empty-detail").exists()).toBe(true);
+    expect(wrapper.get(".idea-detail-copy").text()).toContain("Only one representation");
+    expect(wrapper.find(".idea-empty-detail").exists()).toBe(false);
 
     await wrapper.get(".page-heading .button--primary").trigger("click");
     expect(wrapper.find(".idea-detail .form-grid").exists()).toBe(true);
@@ -35,7 +36,7 @@ describe("IdeaView", () => {
 
     await wrapper.get(".idea-detail .form-actions .button").trigger("click");
     expect(wrapper.find(".idea-detail .form-grid").exists()).toBe(false);
-    expect(wrapper.find(".idea-empty-detail").exists()).toBe(true);
+    expect(wrapper.find(".idea-detail-copy").exists()).toBe(true);
   });
 
   it("shows either the detail or editor for a selected idea", async () => {

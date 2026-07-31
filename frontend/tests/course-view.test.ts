@@ -32,7 +32,7 @@ function course(evtId: string, stat: CourseEvent["stat"]): CourseEvent {
 
 describe("CourseView", () => {
   beforeEach(() => {
-    courses.splice(0, courses.length, course("active-course", "todo"), course("cancelled-course", "cancelled"));
+    courses.splice(0, courses.length, course("active-course", "todo"), course("second-course", "todo"), course("cancelled-course", "cancelled"));
   });
 
   it("does not render cancelled courses after deletion", () => {
@@ -40,6 +40,21 @@ describe("CourseView", () => {
 
     expect(wrapper.text()).toContain("active-course");
     expect(wrapper.text()).not.toContain("cancelled-course");
-    expect(wrapper.findAll(".course-row")).toHaveLength(1);
+    expect(wrapper.findAll(".course-row")).toHaveLength(2);
+  });
+
+  it("defaults to the first preview and opens editing on double click", async () => {
+    const wrapper = mount(CourseView, { global: { plugins: [i18n] } });
+    const rows = wrapper.findAll(".course-row__main");
+
+    expect(wrapper.get(".detail-preview h2").text()).toBe("active-course");
+    expect(wrapper.find(".split-scroll-column--side .form-grid").exists()).toBe(false);
+
+    await rows[1]!.trigger("click");
+    expect(wrapper.get(".detail-preview h2").text()).toBe("second-course");
+
+    await rows[1]!.trigger("dblclick");
+    expect(wrapper.find(".detail-preview").exists()).toBe(false);
+    expect(wrapper.find(".split-scroll-column--side .form-grid").exists()).toBe(true);
   });
 });

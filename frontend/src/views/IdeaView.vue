@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { Images, Paperclip } from "@lucide/vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
@@ -45,6 +45,16 @@ const selectedAttachmentLabel = computed(() => selectedImageCount.value
 const hasMedia = computed(() => uploads.value.length > 0);
 const hasBlockingUploads = computed(() => uploads.value.some((item) => item.stat !== "ready"));
 
+watch(items, (ideas) => {
+  if (!ideas.length) {
+    selected.value = null;
+    return;
+  }
+  if (editing.value) return;
+  const current = ideas.find((idea) => idea.ideaId === selected.value?.ideaId);
+  choose(current ?? ideas[0]!);
+}, { immediate: true });
+
 function choose(idea: Idea) {
   selected.value = idea;
   editing.value = false;
@@ -89,7 +99,9 @@ function cancelEdit() {
     choose(selected.value);
     return;
   }
-  reset();
+  const first = items.value[0];
+  if (first) choose(first);
+  else reset();
 }
 
 function displayTime(value?: string | null) {

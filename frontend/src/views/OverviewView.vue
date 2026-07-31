@@ -96,14 +96,14 @@ function moveSelectedDate(days: number) {
   </section>
   <section class="dashboard-grid">
     <div class="stack">
-    <BaseCard class="overview-today-card" :title="selectedDateTitle">
+    <BaseCard class="overview-today-card overview-scroll-card" :title="selectedDateTitle">
       <div class="overview-date-toolbar">
         <button class="button" type="button" @click="moveSelectedDate(-1)">{{ t("common.previous") }}</button>
         <input v-model="selectedDate" type="date" :aria-label="t('overview.selectDate')" />
         <button class="button" type="button" @click="selectedDate = todayKey()">{{ t("common.today") }}</button>
         <button class="button" type="button" @click="moveSelectedDate(1)">{{ t("common.next") }}</button>
       </div>
-      <div class="event-list">
+      <div class="overview-scroll-window event-list">
         <div v-for="event in selectedDateEvents" :key="event.evtId" class="overview-event-row">
           <EventStatusToggle
             :status="event.stat"
@@ -118,7 +118,7 @@ function moveSelectedDate(days: number) {
         <EmptyState v-else-if="!selectedDateEvents.length" class="overview-empty" :text="t('overview.emptySelectedDate')" />
       </div>
     </BaseCard>
-    <BaseCard :title="t('overview.recentIdeas')"><div class="idea-cards"><IdeaCard v-for="idea in recentIdeas" :key="idea.ideaId" :idea="idea" @select="$router.push({ name: 'ideas' })" /><EmptyState v-if="!recentIdeas.length" /></div></BaseCard>
+    <BaseCard class="overview-scroll-card" :title="t('overview.recentIdeas')"><div class="overview-scroll-window idea-cards"><IdeaCard v-for="idea in recentIdeas" :key="idea.ideaId" :idea="idea" @select="$router.push({ name: 'ideas' })" /><EmptyState v-if="!recentIdeas.length" /></div></BaseCard>
     </div>
     <div class="stack">
       <BaseCard :title="weather?.location.name ?? t('overview.weather')">
@@ -158,6 +158,27 @@ function moveSelectedDate(days: number) {
 </template>
 
 <style scoped>
+:deep(.overview-scroll-card) {
+  display: flex;
+  height: 430px;
+  min-height: 0;
+  flex-direction: column;
+}
+:deep(.overview-scroll-card > .card-body) {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+.overview-scroll-window {
+  min-height: 0;
+  flex: 1;
+  padding-right: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
 .overview-date-toolbar {
   display: grid;
   grid-template-columns: auto minmax(150px, 1fr) auto auto;
