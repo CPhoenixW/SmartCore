@@ -118,7 +118,7 @@ function moveSelectedDate(days: number) {
         <EmptyState v-else-if="!selectedDateEvents.length" class="overview-empty" :text="t('overview.emptySelectedDate')" />
       </div>
     </BaseCard>
-    <BaseCard class="overview-scroll-card" :title="t('overview.recentIdeas')"><div class="overview-scroll-window idea-cards"><IdeaCard v-for="idea in recentIdeas" :key="idea.ideaId" :idea="idea" @select="$router.push({ name: 'ideas' })" /><EmptyState v-if="!recentIdeas.length" /></div></BaseCard>
+    <BaseCard class="overview-scroll-card" :title="t('overview.recentIdeas')"><div class="overview-scroll-window overview-idea-window idea-cards"><IdeaCard v-for="idea in recentIdeas" :key="idea.ideaId" :idea="idea" @select="$router.push({ name: 'ideas' })" /><EmptyState v-if="!recentIdeas.length" /></div></BaseCard>
     </div>
     <div class="stack">
       <BaseCard :title="weather?.location.name ?? t('overview.weather')">
@@ -178,6 +178,10 @@ function moveSelectedDate(days: number) {
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+.overview-idea-window {
+  align-content: start;
+  grid-auto-rows: max-content;
 }
 .overview-date-toolbar {
   display: grid;

@@ -38,5 +38,6 @@ describe("OverviewView", () => {
     expect(wrapper.get(".idea-card").text()).toContain("Shared card treatment");
     expect(wrapper.findAll(".overview-scroll-card")).toHaveLength(2);
     expect(wrapper.findAll(".overview-scroll-window")).toHaveLength(2);
+    expect(wrapper.find(".overview-idea-window").exists()).toBe(true);
   });
 });
