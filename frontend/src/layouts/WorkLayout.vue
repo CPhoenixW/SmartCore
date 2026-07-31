@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import {
   BookOpen,
+  BrainCircuit,
   Calendar,
   CalendarPlus,
   House,
@@ -50,7 +51,7 @@ async function logout() {
 <template>
   <div class="app-shell">
     <aside class="sidebar" :class="{ 'sidebar--open': mobileOpen }">
-      <RouterLink class="brand" :to="{ name: 'overview' }" @click="mobileOpen = false"><span class="brand-mark">SC</span><span><strong>{{ t('app.name') }}</strong><small>{{ t('app.subtitle') }}</small></span></RouterLink>
+      <RouterLink class="brand" :to="{ name: 'overview' }" @click="mobileOpen = false"><span class="brand-mark"><BrainCircuit :size="23" :stroke-width="2" aria-hidden="true" /></span><span><strong>{{ t('app.name') }}</strong><small>{{ t('app.subtitle') }}</small></span></RouterLink>
       <nav class="nav-list" :aria-label="t('app.navigation')"><RouterLink v-for="item in nav" :key="item.key" class="nav-link" :class="{ 'nav-link--active': item.name === 'device' && route.path.startsWith('/device') }" :to="{ name: item.name }" @click="mobileOpen = false"><component :is="item.icon" class="nav-link__icon" :size="17" :stroke-width="1.8" aria-hidden="true" />{{ t(`nav.${item.key}`) }}</RouterLink></nav>
       <button class="sidebar-logout" type="button" :disabled="loggingOut" @click="logout">{{ logoutLabel }}</button>
     </aside>

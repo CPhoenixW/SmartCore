@@ -66,7 +66,7 @@ watch(selected, (event) => {
 });
 
 async function openDirectEvent() {
-  if (!directId.value) return;
+  if (!directId.value || selected.value?.evtId === directId.value) return;
   try {
     const event = await eventApi.read(directId.value);
     selected.value = event;
@@ -112,6 +112,11 @@ async function editEvent(event: SmartCoreEvent) {
 
 onMounted(() => { void openDirectEvent(); });
 watch(directId, () => { void openDirectEvent(); });
+watch([filtered, directId], ([events, eventId]) => {
+  if (eventId || editing.value || !events.length) return;
+  const current = events.find((event) => event.evtId === selected.value?.evtId);
+  if (!current) void selectEvent(events[0]!);
+}, { immediate: true });
 
 const updateMutation = useMutation({
   mutationFn: ({ id, payload }: { id: string; payload: Record<string, unknown> }) => eventApi.update(id, payload),

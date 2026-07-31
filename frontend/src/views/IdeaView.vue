@@ -227,8 +227,8 @@ const remove = useMutation({
 <template>
   <div class="dual-scroll-page idea-workspace">
     <PageHeader :title="t('ideas.title')" :subtitle="t('ideas.subtitle')"><template #actions><button class="button button--primary" @click="startNew">{{ t("ideas.new") }}</button></template></PageHeader>
-    <section class="idea-layout">
-      <div class="idea-list-pane">
+    <section class="split-scroll-layout idea-layout">
+      <div class="split-scroll-column split-scroll-column--main idea-list-pane">
         <BaseCard :title="`${t('ideas.title')} · ${items.length}`">
           <div class="idea-cards">
             <IdeaCard v-for="idea in items" :key="idea.ideaId" :idea="idea" :selected="selected?.ideaId === idea.ideaId" @select="choose" @edit="editIdea" />
@@ -236,7 +236,7 @@ const remove = useMutation({
           </div>
         </BaseCard>
       </div>
-      <aside class="idea-detail"><div class="stack">
+      <aside class="split-scroll-column split-scroll-column--side idea-detail"><div class="stack">
         <BaseCard v-if="selected && !editing" :title="t('ideas.detail')">
           <template #actions><PreviewActionButton :label="t('ideas.edit')" @click="startEdit" /></template>
           <DetailPreview

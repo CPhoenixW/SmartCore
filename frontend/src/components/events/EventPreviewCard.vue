@@ -49,7 +49,7 @@ const activePlans = computed(() => props.plans.filter((plan) => plan.enabled !==
   >
     <template #badge>
       <span class="tag" :class="`tag--${type}`">{{ t(`event.type.${type}`) }}</span>
-      <span class="tag" :class="`tag--${status}`">{{ t(`event.status.${status}`) }}</span>
+      <span v-if="status !== 'done'" class="tag" :class="`tag--${status}`">{{ t(`event.status.${status}`) }}</span>
     </template>
     <section v-if="durationMin || schedule || location || teacher || hardDdl" class="idea-attachment-section event-detail-section">
       <h3>{{ t("preview.details") }}</h3>

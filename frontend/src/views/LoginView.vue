@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { BrainCircuit } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { authApi } from "@/api/auth";
@@ -7,7 +8,7 @@ import { i18n } from "@/locales";
 const route = useRoute();
 const language = ref<"zh" | "en">((localStorage.getItem("smartcoreLanguage") as "zh" | "en") || "zh");
 const mode = ref<"loading" | "setup" | "login" | "register">("loading");
-const userId = ref("default");
+const userId = ref("");
 const displayName = ref("");
 const password = ref("");
 const confirmation = ref("");
@@ -64,14 +65,14 @@ function switchMode(next: "login" | "register") {
     userId.value = "";
     displayName.value = "";
   } else {
-    userId.value = "default";
+    userId.value = "";
   }
 }
 
 onMounted(async () => {
   try {
     const status = await authApi.status();
-    userId.value = status.defaultUserId;
+    userId.value = status.needsSetup ? status.defaultUserId : "";
     if (status.authenticated) {
       continueToWorkbench();
       return;
@@ -110,7 +111,7 @@ async function submit() {
 <template>
   <main class="login-page">
     <section class="login-panel">
-      <header class="login-brand"><span>SC</span><div><strong>SmartCore</strong><small>Personal student assistant</small></div></header>
+      <header class="login-brand"><span><BrainCircuit :size="25" :stroke-width="2" aria-hidden="true" /></span><div><strong>SmartCore</strong><small>Personal student assistant</small></div></header>
       <button class="language-switch" type="button" @click="switchLanguage">{{ copy.language }}</button>
       <div class="login-copy"><h1>{{ copy.title }}</h1><p>{{ copy.subtitle }}</p></div>
       <div v-if="mode === 'loading'" class="login-loading">Loading…</div>

@@ -107,6 +107,20 @@ describe("event components", () => {
     expect(wrapper.find(".idea-detail-copy").exists()).toBe(true);
   });
 
+  it("keeps the event type but omits the redundant complete badge", () => {
+    const wrapper = mount(EventPreviewCard, {
+      props: {
+        type: "plan",
+        title: "Finished event",
+        status: "done",
+      },
+      global: { plugins: [i18n] },
+    });
+
+    expect(wrapper.find(".tag--plan").exists()).toBe(true);
+    expect(wrapper.find(".tag--done").exists()).toBe(false);
+  });
+
   it("renders todo unchecked and emits done when checked", async () => {
     const wrapper = mount(EventStatusToggle, {
       props: {

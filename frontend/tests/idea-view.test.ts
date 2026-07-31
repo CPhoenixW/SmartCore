@@ -26,6 +26,9 @@ describe("IdeaView", () => {
   it("previews the first idea and opens the new editor only after the user asks", async () => {
     const wrapper = mount(IdeaView, { global: { plugins: [i18n] } });
 
+    expect(wrapper.get(".idea-layout").classes()).toContain("split-scroll-layout");
+    expect(wrapper.get(".idea-list-pane").classes()).toContain("split-scroll-column--main");
+    expect(wrapper.get(".idea-detail").classes()).toContain("split-scroll-column--side");
     expect(wrapper.find(".idea-detail .form-grid").exists()).toBe(false);
     expect(wrapper.get(".idea-detail-copy").text()).toContain("Only one representation");
     expect(wrapper.find(".idea-empty-detail").exists()).toBe(false);
