@@ -45,7 +45,7 @@ describe("IdeaView", () => {
     expect(wrapper.find(".idea-detail-copy").exists()).toBe(true);
     expect(wrapper.find(".idea-detail .form-grid").exists()).toBe(false);
 
-    await wrapper.get(".idea-detail .card-actions .button").trigger("click");
+    await wrapper.get(".idea-detail .card-actions .preview-action-button").trigger("click");
     expect(wrapper.find(".idea-detail-copy").exists()).toBe(false);
     expect(wrapper.find(".idea-detail .form-grid").exists()).toBe(true);
   });

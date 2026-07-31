@@ -5,6 +5,7 @@ import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
 import PageHeader from "@/components/base/PageHeader.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
+import PreviewActionButton from "@/components/base/PreviewActionButton.vue";
 import { dailySummaryApi } from "@/api/dailySummary";
 import { useToast } from "@/composables/useToast";
 import { addDays, formatDateTime, todayKey } from "@/utils/date";
@@ -135,7 +136,7 @@ function moveDate(days: number) {
       <span v-if="report" class="summary-status" :class="`summary-status--${report.stat}`">
         {{ t(`dailySummary.status.${report.stat}`) }}
       </span>
-      <button v-if="report?.content && !editing" class="button" type="button" @click="startEdit">{{ t("common.edit") }}</button>
+      <PreviewActionButton v-if="report?.content && !editing" :label="t('common.edit')" @click="startEdit" />
     </template>
     <div v-if="reportsQuery.isPending.value" class="daily-summary-state">{{ t("common.loading") }}</div>
     <div v-else-if="report?.stat === 'queued'" class="daily-summary-state">{{ t("dailySummary.queued") }}</div>
@@ -149,7 +150,7 @@ function moveDate(days: number) {
         <button class="button button--primary" :disabled="save.isPending.value || !draft.trim()">{{ save.isPending.value ? t("common.saving") : t("common.save") }}</button>
       </div>
     </form>
-    <article v-else-if="report?.content" class="daily-summary-report">
+    <article v-else-if="report?.content" class="daily-summary-report daily-summary-report--editable" @dblclick="startEdit">
       <template v-for="(line, index) in reportLines" :key="index">
         <div v-if="line.kind === 'blank'" class="report-space" />
         <h3 v-else-if="line.kind === 'heading'">
@@ -228,6 +229,7 @@ function moveDate(days: number) {
   color: var(--color-text);
   line-height: 1.75;
 }
+.daily-summary-report--editable { cursor: text; }
 .daily-summary-report h3 { margin: 18px 0 7px; font-size: 17px; }
 .daily-summary-report p { margin: 6px 0; }
 .daily-summary-report .report-bullet { position: relative; padding-left: 18px; }

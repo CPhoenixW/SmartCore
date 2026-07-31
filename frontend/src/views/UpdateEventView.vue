@@ -6,6 +6,7 @@ import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
 import PageHeader from "@/components/base/PageHeader.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
+import PreviewActionButton from "@/components/base/PreviewActionButton.vue";
 import EventCard from "@/components/events/EventCard.vue";
 import EventEditor from "@/components/events/EventEditor.vue";
 import EventPreviewCard from "@/components/events/EventPreviewCard.vue";
@@ -139,7 +140,7 @@ function markDone() { if (selected.value) updateMutation.mutate({ id: selected.v
       <aside class="split-scroll-column split-scroll-column--side">
         <div class="stack">
           <BaseCard v-if="selected && !editing" :title="t('preview.title')">
-            <template #actions><button class="button" type="button" @click="editing = true">{{ t("common.edit") }}</button></template>
+            <template #actions><PreviewActionButton :label="t('common.edit')" @click="editing = true" /></template>
             <EventPreviewCard
               :type="selected.evtType"
               :title="selected.title"
@@ -156,7 +157,7 @@ function markDone() { if (selected.value) updateMutation.mutate({ id: selected.v
             />
           </BaseCard>
           <BaseCard v-else-if="selected" :title="t('update.editor')">
-            <template #actions><button class="button" type="button" @click="editing = false">{{ t("common.close") }}</button></template>
+            <template #actions><PreviewActionButton action="close" :label="t('common.close')" @click="editing = false" /></template>
             <EventEditor :event="selected" :busy="busy" @save="updateMutation.mutate({ id: selected!.evtId, payload: $event })" @done="markDone" @cancel="cancelMutation.mutate(selected!.evtId)" />
           </BaseCard>
           <BaseCard v-else><EmptyState :text="t('update.select')" /></BaseCard>

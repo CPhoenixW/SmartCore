@@ -7,6 +7,7 @@ import PageHeader from "@/components/base/PageHeader.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
 import EventCard from "@/components/events/EventCard.vue";
 import EventStatusToggle from "@/components/events/EventStatusToggle.vue";
+import IdeaCard from "@/components/ideas/IdeaCard.vue";
 import { deviceApi } from "@/api/device";
 import { deviceRegistryApi } from "@/api/deviceRegistry";
 import { eventApi } from "@/api/event";
@@ -117,7 +118,7 @@ function moveSelectedDate(days: number) {
         <EmptyState v-else-if="!selectedDateEvents.length" class="overview-empty" :text="t('overview.emptySelectedDate')" />
       </div>
     </BaseCard>
-    <BaseCard :title="t('overview.recentIdeas')"><div class="idea-list compact-list"><article v-for="idea in recentIdeas" :key="idea.ideaId"><button @click="$router.push({ name: 'ideas' })"><strong>{{ idea.title }}</strong><small>{{ idea.createdAt }}</small></button></article><EmptyState v-if="!recentIdeas.length" /></div></BaseCard>
+    <BaseCard :title="t('overview.recentIdeas')"><div class="idea-cards"><IdeaCard v-for="idea in recentIdeas" :key="idea.ideaId" :idea="idea" @select="$router.push({ name: 'ideas' })" /><EmptyState v-if="!recentIdeas.length" /></div></BaseCard>
     </div>
     <div class="stack">
       <BaseCard :title="weather?.location.name ?? t('overview.weather')">

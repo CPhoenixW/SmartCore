@@ -2,6 +2,7 @@ import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 import DdlPlanEditor from "@/components/events/DdlPlanEditor.vue";
 import EventCard from "@/components/events/EventCard.vue";
+import EventPreviewCard from "@/components/events/EventPreviewCard.vue";
 import EventStatusToggle from "@/components/events/EventStatusToggle.vue";
 import { i18n } from "@/locales";
 import type { EventType, SmartCoreEvent } from "@/types/event";
@@ -88,6 +89,22 @@ describe("event components", () => {
 
     expect(wrapper.emitted("select")).toEqual([[event]]);
     expect(wrapper.emitted("edit")).toEqual([[event]]);
+  });
+
+  it("uses the shared detail preview structure", () => {
+    const wrapper = mount(EventPreviewCard, {
+      props: {
+        type: "plan",
+        title: "Shared preview",
+        description: "The same content hierarchy as an idea.",
+        time: "2026-07-20T09:00:00+08:00",
+      },
+      global: { plugins: [i18n] },
+    });
+
+    expect(wrapper.find(".detail-preview").exists()).toBe(true);
+    expect(wrapper.find(".idea-detail-header").exists()).toBe(true);
+    expect(wrapper.find(".idea-detail-copy").exists()).toBe(true);
   });
 
   it("renders todo unchecked and emits done when checked", async () => {

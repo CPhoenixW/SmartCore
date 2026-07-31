@@ -102,9 +102,12 @@ describe("device routes", () => {
     expect(source).toContain("project.codexReports");
     expect(source).toContain("computer.recentWorkBlocks");
     expect(source).toContain('.filter((block) => block.status === "closed")');
+    expect(source).toContain(".slice(0, 4)");
     expect(source).toContain("showHourlyEvidence");
-    expect(source).toContain("computer.planExecution");
+    expect(source).not.toContain("computer.moreInsights");
+    expect(source).not.toContain("computer.planExecution");
     expect(source).toContain("computer.dailyWorkLog");
+    expect(source).toContain("DeviceManagementPanel");
   });
 
   it("uses interactive bars for all time-series charts", () => {

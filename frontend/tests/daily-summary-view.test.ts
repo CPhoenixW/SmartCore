@@ -36,7 +36,7 @@ describe("DailySummaryView", () => {
   it("edits the current owner-scoped summary", async () => {
     const wrapper = mount(DailySummaryView, { global: { plugins: [i18n] } });
 
-    await wrapper.get(".card-actions .button").trigger("click");
+    await wrapper.get(".card-actions .preview-action-button").trigger("click");
     const editor = wrapper.get(".daily-summary-editor textarea");
     expect((editor.element as HTMLTextAreaElement).value).toBe("Original summary");
 
@@ -47,5 +47,14 @@ describe("DailySummaryView", () => {
       content: "Revised summary",
       expectedUpdatedAt: "2026-07-31T23:59:00+08:00",
     });
+  });
+
+  it("opens the editor when the report is double clicked", async () => {
+    const wrapper = mount(DailySummaryView, { global: { plugins: [i18n] } });
+
+    await wrapper.get(".daily-summary-report").trigger("dblclick");
+
+    expect(wrapper.find(".daily-summary-report").exists()).toBe(false);
+    expect(wrapper.find(".daily-summary-editor textarea").exists()).toBe(true);
   });
 });

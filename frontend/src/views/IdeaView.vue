@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { Images, Paperclip } from "@lucide/vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
+import DetailPreview from "@/components/base/DetailPreview.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
-import MarkdownContent from "@/components/base/MarkdownContent.vue";
 import ImageViewer from "@/components/base/ImageViewer.vue";
 import PageHeader from "@/components/base/PageHeader.vue";
+import PreviewActionButton from "@/components/base/PreviewActionButton.vue";
+import IdeaCard from "@/components/ideas/IdeaCard.vue";
 import { ideaApi } from "@/api/idea";
 import { useToast } from "@/composables/useToast";
 import type { Idea, IdeaAttachment, IdeaMediaJob, IdeaUpload } from "@/types/idea";
@@ -35,6 +38,10 @@ const lightbox = ref<IdeaAttachment | null>(null);
 const query = useQuery({ queryKey: ["ideas"], queryFn: ideaApi.list });
 const items = computed(() => [...(query.data.value ?? [])].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))));
 const visibleAttachments = computed(() => selected.value?.attachments.filter((item) => !removedAttachmentIds.value.includes(item.attachmentId)) ?? []);
+const selectedImageCount = computed(() => selected.value?.attachments.filter((item) => item.mimeType.startsWith("image/")).length ?? 0);
+const selectedAttachmentLabel = computed(() => selectedImageCount.value
+  ? `${selectedImageCount.value} ${t("ideas.images")}`
+  : `${selected.value?.attachments.length ?? 0} ${t("ideas.attachments")}`);
 const hasMedia = computed(() => uploads.value.length > 0);
 const hasBlockingUploads = computed(() => uploads.value.some((item) => item.stat !== "ready"));
 
@@ -83,11 +90,6 @@ function cancelEdit() {
     return;
   }
   reset();
-}
-
-function attachmentLabel(idea: Idea) {
-  const images = idea.attachments.filter((item) => item.mimeType.startsWith("image/")).length;
-  return images ? `🖼️ ${images} ${t("ideas.images")}` : `📎 ${idea.attachments.length} ${t("ideas.attachments")}`;
 }
 
 function displayTime(value?: string | null) {
@@ -217,23 +219,28 @@ const remove = useMutation({
       <div class="idea-list-pane">
         <BaseCard :title="`${t('ideas.title')} · ${items.length}`">
           <div class="idea-cards">
-            <button v-for="idea in items" :key="idea.ideaId" class="idea-card" :class="{ selected: selected?.ideaId === idea.ideaId }" @click="choose(idea)" @dblclick="editIdea(idea)">
-              <strong>{{ idea.title }}</strong><p>{{ idea.description || t("ideas.noDescription") }}</p>
-              <footer><span v-if="idea.attachments.length">{{ attachmentLabel(idea) }}</span><time :datetime="idea.createdAt">{{ displayTime(idea.createdAt) }}</time></footer>
-            </button>
+            <IdeaCard v-for="idea in items" :key="idea.ideaId" :idea="idea" :selected="selected?.ideaId === idea.ideaId" @select="choose" @edit="editIdea" />
             <EmptyState v-if="!items.length" />
           </div>
         </BaseCard>
       </div>
       <aside class="idea-detail"><div class="stack">
         <BaseCard v-if="selected && !editing" :title="t('ideas.detail')">
-          <template #actions><button class="button" type="button" @click="startEdit">{{ t("ideas.edit") }}</button></template>
-          <template v-if="selected">
-            <header class="idea-detail-header">
-              <div><h2>{{ selected.title }}</h2><time class="idea-time" :datetime="selected.createdAt">{{ displayTime(selected.createdAt) }}</time></div>
-              <span v-if="selected.attachments.length" class="idea-attachment-count">{{ attachmentLabel(selected) }}</span>
-            </header>
-            <section class="idea-detail-copy"><MarkdownContent :content="selected.description" /></section>
+          <template #actions><PreviewActionButton :label="t('ideas.edit')" @click="startEdit" /></template>
+          <DetailPreview
+            :title="selected.title"
+            :description="selected.description"
+            :empty-description="t('ideas.noDescription')"
+            :time="displayTime(selected.createdAt)"
+            :datetime="selected.createdAt"
+          >
+            <template #badge>
+              <span v-if="selected.attachments.length" class="idea-attachment-count">
+                <Images v-if="selectedImageCount" :size="14" aria-hidden="true" />
+                <Paperclip v-else :size="14" aria-hidden="true" />
+                {{ selectedAttachmentLabel }}
+              </span>
+            </template>
             <section v-if="selected.attachments.length" class="idea-attachment-section" :aria-label="t('ideas.existingAttachments')">
               <h3>{{ t("ideas.existingAttachments") }}</h3>
               <div class="attachment-grid">
@@ -247,7 +254,7 @@ const remove = useMutation({
               </div>
             </section>
             <div class="idea-danger-zone"><button class="button button--danger" @click="remove.mutate(selected.ideaId)">{{ t("common.delete") }}</button></div>
-          </template>
+          </DetailPreview>
         </BaseCard>
 
         <BaseCard v-else-if="editing" :title="selected ? t('ideas.edit') : t('ideas.new')">

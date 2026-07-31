@@ -1,9 +1,11 @@
 <script setup lang="ts">
-defineProps<{ title: string; summary: string; icon: string }>();
+withDefaults(defineProps<{ title: string; summary: string; icon: string; initiallyOpen?: boolean }>(), {
+  initiallyOpen: false,
+});
 </script>
 
 <template>
-  <details class="device-management-panel">
+  <details class="device-management-panel" :open="initiallyOpen">
     <summary>
       <span class="device-management-panel__copy">
         <i>{{ icon }}</i>
