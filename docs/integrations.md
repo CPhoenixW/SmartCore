@@ -68,8 +68,9 @@ scope 分 `feishu` 与 `web` 用途。Web scope 不携带 bot/chat，不能调�
 - 读取脱敏 Computer 工作块证据，提交工作块动作、Plan 语义匹配和每日工作日志。
 - 读取 `dailyWorkContext` 的当日项目聚合，生成每日简报。
 
-Computer 后台分析的正常路径由 Server 直接调用 `deepseek-v4-flash` 并保存结构化结果；
-上述 Computer Agent 工具保留为模型不可用或两次结构化结果均未通过校验时的回退路径。
+Computer 后台分析由 Server 直接调用一次 `deepseek-v4-flash` 并保存结构化结果；默认不把
+无人值守 Computer 任务转交 OpenClaw。上述 Computer Agent 工具只保留为部署时显式开启的
+兼容回退路径。
 
 新调用的查询、创建和更新优先使用 `/agent/db/*`，反馈使用 `/agent/feedback/*`。
 仓库仍有 `evtQuery` 等兼容别名；canonical 与兼容删除路径都必须同时携带 Agent token

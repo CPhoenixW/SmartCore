@@ -82,8 +82,9 @@ APScheduler 运行在 Server 内：
 - 日报由 Server 创建有用户 scope 的任务，OpenClaw 生成内容，Adapter 验证后持久化
   并投递。
 - Computer 工作块边界由 Server 确定性维护；Server 将脱敏聚合直接交给
-  `deepseek-v4-flash` 做单次结构化主题、总结和 Plan 语义匹配，最多修复一次。
-  模型或校验失败时才回退到受限 OpenClaw 任务，租约与退避不阻断原始活动上传。
+  `deepseek-v4-flash` 做一次结构化主题、总结和 Plan 语义匹配。
+  模型或校验失败时记录失败，不默认回退到 OpenClaw；兼容回退必须由部署配置显式开启。
+  租约与退避不阻断原始活动上传。
 - 电脑活动明细每日清理，日汇总不随明细过期。
 
 外部模型、OpenClaw 或飞书失败不能阻断数据库、设备状态和核心提醒扫描。

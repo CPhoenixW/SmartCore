@@ -141,12 +141,13 @@ class SchedulerService:
         try:
             now = datetime.now(ZoneInfo(self._settings.computer_analysis_timezone))
             dispatch_work_block_analyses(db, settings=self._settings, now=now)
-            dispatch_daily_work_logs(
-                db,
-                settings=self._settings,
-                now=now,
-                phase="preview",
-            )
+            if self._settings.computer_daily_preview_enabled:
+                dispatch_daily_work_logs(
+                    db,
+                    settings=self._settings,
+                    now=now,
+                    phase="preview",
+                )
             timezone = ZoneInfo(self._settings.computer_analysis_timezone)
             previous_date = (now.astimezone(timezone).date() - timedelta(days=1)).isoformat()
             dispatch_daily_work_logs(

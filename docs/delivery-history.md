@@ -144,3 +144,11 @@ Computer active seconds；结果卡片必须匹配原 owner、bot、chat 和消�
 
 关键边界：工作块边界、Plan 覆盖率、owner scope 和持久化仍由 Server 控制；无数据库迁移，
 回滚代码不会修改或删除已有日志。
+
+## 2026-08-01：Computer OpenClaw 调用收口
+
+- 关闭日间 Computer 日志预览，日志默认只在 23:59 生成一次。
+- Computer 结构化分析默认只请求一次 `deepseek-v4-flash`，失败不再自动转入多轮 OpenClaw。
+- OpenClaw 继续处理飞书自然语言、图片和每日简报；Computer Agent 工具仅作显式兼容回退。
+
+关键边界：不修改活动事实、工作块、已有日志或数据库结构；部署配置可显式恢复兼容行为。

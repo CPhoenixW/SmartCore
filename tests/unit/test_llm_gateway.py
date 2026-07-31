@@ -23,9 +23,10 @@ def test_default_natural_language_gateway_config() -> None:
     assert settings.vision_timeout_seconds == 60
     assert settings.computer_analysis_direct_llm_enabled is True
     assert settings.computer_analysis_model == "deepseek-v4-flash"
-    assert settings.computer_analysis_repair_attempts == 1
-    assert settings.computer_analysis_openclaw_fallback_enabled is True
-    assert settings.computer_daily_preview_min_interval_minutes == 60
+    assert settings.computer_analysis_repair_attempts == 0
+    assert settings.computer_analysis_openclaw_fallback_enabled is False
+    assert settings.computer_daily_preview_enabled is False
+    assert settings.computer_daily_preview_min_interval_minutes == 240
 
 
 def test_gateway_client_has_bounded_http_timeout(

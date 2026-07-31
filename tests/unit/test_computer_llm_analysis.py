@@ -22,6 +22,7 @@ from app.server.new_core.models import (
     LifeDevice,
 )
 from app.server.scheduler import computer_analysis
+from app.server.scheduler import service as scheduler_service
 from app.server.scheduler.computer_analysis import dispatch_hourly_analyses
 
 pytestmark = pytest.mark.unit
@@ -229,6 +230,61 @@ def test_direct_analysis_failure_falls_back_to_openclaw(
     )
 
     assert events == [event]
+
+
+def test_direct_analysis_failure_does_not_use_openclaw_by_default(
+    db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[dict] = []
+    monkeypatch.setattr(computer_analysis, "_post", lambda _settings, event: events.append(event))
+
+    with pytest.raises(RuntimeError, match="flash unavailable"):
+        computer_analysis._analyze_or_deliver(
+            db_session,
+            settings=Settings(),
+            post_event=None,
+            event={"event_type": "computer_daily_work_log", "event_id": "daily-1"},
+            analyze=lambda: (_ for _ in ()).throw(RuntimeError("flash unavailable")),
+        )
+
+    assert events == []
+
+
+@pytest.mark.parametrize(
+    ("preview_enabled", "expected_phases"),
+    [(False, ["final"]), (True, ["preview", "final"])],
+)
+def test_work_block_tick_only_generates_daytime_log_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    preview_enabled: bool,
+    expected_phases: list[str],
+) -> None:
+    class FakeSession:
+        def close(self) -> None:
+            pass
+
+    phases: list[str] = []
+    monkeypatch.setattr(
+        scheduler_service,
+        "dispatch_work_block_analyses",
+        lambda *_args, **_kwargs: {"queued": 0, "skipped": 0, "failed": 0},
+    )
+    monkeypatch.setattr(
+        scheduler_service,
+        "dispatch_daily_work_logs",
+        lambda *_args, **kwargs: phases.append(str(kwargs["phase"])),
+    )
+    service = scheduler_service.SchedulerService(
+        settings=Settings(
+            computer_work_block_analysis_enabled=True,
+            computer_daily_preview_enabled=preview_enabled,
+        ),
+        session_factory=FakeSession,
+    )
+
+    service._computer_work_block_tick()
+
+    assert phases == expected_phases
 
 
 def test_work_block_mode_keeps_hourly_snapshot_objective_without_ai(db_session) -> None:
