@@ -21,6 +21,7 @@ from app.server.new_core.ddl_service import (
     replace_ddl_reminders,
 )
 from app.server.new_core.event_relations import (
+    cancel_event,
     create_plan_event,
     update_commute_plan,
     update_event,
@@ -245,6 +246,19 @@ def createRelationWriteRouter() -> APIRouter:
             db.rollback()
             return _failed([str(exc)])
 
+    def delete(body: dict[str, Any], db: Session, scope: AgentScope) -> dict[str, Any]:
+        evt_id = body.get("evtId") or body.get("eventId")
+        if not evt_id:
+            return _failed(["evtId required"])
+        try:
+            base = db.get(EvtBase, str(evt_id))
+            if base is None or base.userId != scope.userId:
+                raise ValueError(f"evt not found: {evt_id}")
+            return _done(cancel_event(db, str(evt_id), src="openclaw"))
+        except (ValueError, TypeError, IntegrityError) as exc:
+            db.rollback()
+            return _failed([str(exc)])
+
     @router.post("/db/create_event", dependencies=protected)
     def create_modern(body: dict[str, Any], db: Session = Depends(get_db), scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
         return create(body, db, scope)
@@ -268,5 +282,21 @@ def createRelationWriteRouter() -> APIRouter:
         scope: AgentScope = Depends(require_agent_scope),
     ) -> dict[str, Any]:
         return update_commute(body, db, scope)
+
+    @router.post("/db/delete_event", dependencies=protected)
+    def delete_modern(
+        body: dict[str, Any],
+        db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
+    ) -> dict[str, Any]:
+        return delete(body, db, scope)
+
+    @router.post("/evtDelete", dependencies=protected)
+    def delete_legacy(
+        body: dict[str, Any],
+        db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
+    ) -> dict[str, Any]:
+        return delete(body, db, scope)
 
     return router

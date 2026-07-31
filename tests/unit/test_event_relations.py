@@ -5,6 +5,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.server.agent.relation_query_routes import _relation_tools, createRelationQueryRouter
+from app.server.agent.relation_write_routes import createRelationWriteRouter
 from app.server.api.ai_routes import _important_date_fallback, _normalize_event
 from app.server.db.session import Base
 from app.server.new_core import crud, event_relations, scheduler
@@ -488,6 +489,10 @@ def test_openclaw_tools_publish_course_and_reminder_relations() -> None:
     assert "/agent/tools" in paths
     assert "/agent/db/query_events" in paths
     assert "/agent/evtQuery" in paths
+
+    write_paths = {route.path for route in createRelationWriteRouter().routes}
+    assert "/agent/db/delete_event" in write_paths
+    assert "/agent/evtDelete" in write_paths
 
 
 def test_reminder_channel_defaults_to_screen_and_can_use_feishu() -> None:
