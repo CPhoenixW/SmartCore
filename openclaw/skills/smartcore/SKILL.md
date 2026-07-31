@@ -22,6 +22,8 @@ Use this skill for schedules, reminders, ideas, computer work analysis, daily re
 - Query events with `skills/smartcore/scripts/query_events.py --scope-file <path> ...`.
 - Call every other published tool with
   `skills/smartcore/scripts/call_tool.py --scope-file <path> --tool <name> --body-json '<json>'`.
+- The script CLIs documented here are complete. Do not list, inspect, `cat`, or `head` bundled
+  scripts, and do not probe a fake `list` tool before following a documented workflow.
 - Use the published tool name, not the URL path suffix: update an event with `--tool evtUpdate`
   (not `update_event`) after obtaining its `evtId` from a query.
 - Check `ok`, `stat`, `data`, and `errors`. Do not interpret a failed call as an empty result.
@@ -103,6 +105,9 @@ Use this skill for schedules, reminders, ideas, computer work analysis, daily re
   the relevant date with `--include-reminders`, identify both IDs, then call
   `commutePlanUpdate` exactly once with `planEvtId`, `reminderEvtId`, absolute `departureAt`,
   `commuteMinutes`, and absolute `endAt`.
+- The body keys are exact. Use
+  `{"planEvtId":"...","reminderEvtId":"...","departureAt":"YYYY-MM-DDTHH:MM:SS+08:00","commuteMinutes":90,"endAt":"YYYY-MM-DDTHH:MM:SS+08:00"}`
+  and do not guess aliases or send an arrival field; the Server computes arrival.
 - In that flow, do not call `evtUpdate` for either record and never call `evtCreate`. If either
   existing record cannot be identified unambiguously, ask for clarification instead of creating a
   replacement or claiming success.

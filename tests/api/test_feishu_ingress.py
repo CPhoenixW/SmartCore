@@ -695,6 +695,8 @@ def test_openclaw_skill_delegates_feishu_reply_to_adapter() -> None:
     assert "commutePlanUpdate" in skill
     assert "Departure time and Plan start time are different" in skill
     assert "never call `evtCreate`" in skill
+    assert "do not guess aliases" in skill
+    assert "do not probe a fake `list` tool" in skill
 
 
 def test_openclaw_adapter_prompt_owns_feishu_reply() -> None:
@@ -706,6 +708,6 @@ def test_openclaw_adapter_prompt_owns_feishu_reply() -> None:
     assert "data.items" in adapter_source
     assert "scripts/smartcore/scripts/query_events.py" not in adapter_source
     assert "skills/smartcore/scripts/query_events.py" in adapter_source
-    assert "departure time is not Plan start time" in adapter_source
-    assert "call commutePlanUpdate exactly once" in adapter_source
+    assert "数据操作只执行两步" in adapter_source
+    assert "禁止第二次调用 commutePlanUpdate" in adapter_source
     assert "OPENCLAW_MEDIA_MODEL" not in adapter_source

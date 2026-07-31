@@ -276,6 +276,22 @@ def build_prompt(
         "Use only bundled SmartCore scripts for SmartCore API calls; never construct curl or HTTP requests. "
         + scope_instruction
     )
+    event_text = str(event.get("text") or "").lower()
+    commute_edit_instructions = ""
+    if any(
+        keyword in event_text
+        for keyword in ("通勤", "出发", "到达", "路上", "commute", "departure", "arrival")
+    ):
+        commute_edit_instructions = (
+            "这是通勤事项更新。不要 ls、cat、head 或读取 bundled scripts，也不要调用不存在的 "
+            "list 工具；下列 CLI 契约已经完整，无需探查。数据操作只执行两步：先用 "
+            "query_events.py 加 --date 和 --include-reminders 查询一次，再用 call_tool.py 调用一次 "
+            "commutePlanUpdate。departureAt 是出发时间，Plan 开始时间由 Server 计算为 "
+            "departureAt + commuteMinutes。body 只能使用以下字段且拼写必须完全一致："
+            '{"planEvtId":"...","reminderEvtId":"...","departureAt":"YYYY-MM-DDTHH:MM:SS+08:00",'
+            '"commuteMinutes":90,"endAt":"YYYY-MM-DDTHH:MM:SS+08:00"}。'
+            "禁止试探字段、禁止第二次调用 commutePlanUpdate、禁止 evtUpdate 和 evtCreate。\n"
+        )
     daily_summary_instructions = ""
     if event.get("event_type") == "daily_summary":
         report_date = str(event.get("reportDate") or "").strip()
@@ -389,10 +405,7 @@ def build_prompt(
         "Check ok/errors and read results from data.items before answering.\n"
         "For event queries, use the bundled skills/smartcore/scripts/query_events.py helper "
         "instead of constructing curl commands.\n"
-        "For a commute edit, departure time is not Plan start time: Plan start means arrival or "
-        "work start. When updating an existing Plan together with an existing departure reminder, "
-        "query with --include-reminders and call commutePlanUpdate exactly once. Never call evtCreate "
-        "or separate evtUpdate calls for that operation.\n"
+        f"{commute_edit_instructions}"
         "Do not call Feishu feedback endpoints or sendFeishu tools; the Adapter owns final delivery.\n"
         "Return exactly one concise user-facing final answer in finalAssistantVisibleText.\n"
         f"{attachment_instructions}"

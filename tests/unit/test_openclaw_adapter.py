@@ -248,6 +248,28 @@ def test_prompt_does_not_embed_signed_scope() -> None:
     assert ".scope/task" in prompt
 
 
+def test_commute_prompt_gives_exact_two_step_contract_only_when_relevant() -> None:
+    prompt = adapter.build_prompt(
+        {
+            "eventType": "message",
+            "text": "14点出发，通勤90分钟后开始工作，更新现有提醒",
+        },
+        scope_file=".scope/task",
+    )
+
+    assert "数据操作只执行两步" in prompt
+    assert "不要 ls、cat、head" in prompt
+    assert '"reminderEvtId":"..."' in prompt
+    assert '"commuteMinutes":90' in prompt
+    assert "禁止第二次调用 commutePlanUpdate" in prompt
+
+    unrelated = adapter.build_prompt(
+        {"eventType": "message", "text": "把会议延后到下午三点"},
+        scope_file=".scope/task",
+    )
+    assert "数据操作只执行两步" not in unrelated
+
+
 def test_computer_analysis_prompt_is_scoped_and_never_uses_ocr() -> None:
     prompt = adapter.build_prompt(
         {
