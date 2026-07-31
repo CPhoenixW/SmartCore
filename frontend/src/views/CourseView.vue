@@ -45,9 +45,12 @@ function fillForm(course: CourseEvent | null) {
 }
 
 watch(selected, fillForm);
+const activeCourses = computed(() =>
+  (coursesQuery.data.value ?? []).filter((course) => course.stat !== "cancelled"),
+);
 const filteredCourses = computed(() => {
   const query = normalizeSearch(search.value);
-  return (coursesQuery.data.value ?? []).filter((course) => {
+  return activeCourses.value.filter((course) => {
     if (!query) return true;
     return normalizeSearch([course.courseName, course.title, course.teacher, course.location, course.desc, course.semesterStart, course.stDate, course.endDate, course.stTime, course.endTime, course.weekDay, course.weekMode].filter(Boolean).join(" ")).includes(query);
   });
@@ -105,7 +108,7 @@ const syncMutation = useMutation({
 });
 const syncAllMutation = useMutation({
   mutationFn: async () => {
-    for (const course of (coursesQuery.data.value ?? []).filter((item) => item.stat !== "cancelled")) await courseApi.sync(course.evtId);
+    for (const course of activeCourses.value) await courseApi.sync(course.evtId);
   },
   onSuccess: async () => { toast.success(t("course.syncAllSuccess")); await queryClient.invalidateQueries({ queryKey: ["courses"] }); await queryClient.invalidateQueries({ queryKey: ["events"] }); },
   onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),

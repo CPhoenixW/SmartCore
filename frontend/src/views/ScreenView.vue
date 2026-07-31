@@ -5,7 +5,6 @@ import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
 import DevicePairPanel from "@/components/device/DevicePairPanel.vue";
 import DeviceManagementPanel from "@/components/device/DeviceManagementPanel.vue";
-import DeviceMetricStrip, { type DeviceMetric } from "@/components/device/DeviceMetricStrip.vue";
 import { deviceRegistryApi } from "@/api/deviceRegistry";
 import { eventApi } from "@/api/event";
 import type { PlanEvent } from "@/types/event";
@@ -28,16 +27,6 @@ const currentPlan = computed(() => {
     return start <= now && start + plan.durationMin * 60_000 > now;
   }) ?? null;
 });
-const nextPlan = computed(() => plans.value.find((plan) => new Date(plan.stTime).getTime() > Date.now()) ?? null);
-const metrics = computed<DeviceMetric[]>(() => [
-  { label: t("screenDevice.registered"), value: String(screens.value.length), note: t("screenDevice.activeRecords"), tone: "success" },
-  { label: t("screenDevice.lastConnection"), value: lastSeenAt.value ? timeLabel(lastSeenAt.value) : t("pair.notReported"), note: lastSeenAt.value ? formatDateTime(lastSeenAt.value) : t("screenDevice.awaitingConnection") },
-  { label: t("screenDevice.todayPlans"), value: String(plans.value.length), note: currentPlan.value?.title ?? t("screenDevice.noCurrentPlan"), tone: "warning" },
-  { label: t("screenDevice.nextContent"), value: nextPlan.value ? timeLabel(nextPlan.value.stTime) : t("common.notSet"), note: nextPlan.value?.title ?? t("screenDevice.noNextPlan"), tone: "neutral" },
-]);
-function timeLabel(value: string) {
-  return new Date(value).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
-}
 function updateScreenPreview() {
   previewFrame.value?.contentWindow?.postMessage({
     kind: "smartcore-screen-preview",
@@ -50,20 +39,16 @@ watch([plans, currentPlan], updateScreenPreview, { flush: "post" });
 
 <template>
   <div class="device-data-page">
-    <DeviceMetricStrip :items="metrics" :label="t('screenDevice.dataSummary')" />
-    <section class="device-data-grid device-data-grid--matched device-data-grid--screen">
+    <section class="screen-overview">
       <BaseCard :title="t('screenDevice.displaySchedule')">
+        <template #actions>
+          <div class="screen-preview-status">
+            <span>{{ t("screenDevice.registered") }} <strong>{{ screens.length }}</strong></span>
+            <span>{{ t("screenDevice.lastConnection") }} <strong>{{ lastSeenAt ? formatDateTime(lastSeenAt) : t("pair.notReported") }}</strong></span>
+          </div>
+        </template>
         <div class="screen-live-preview">
           <iframe ref="previewFrame" src="/screen?preview=1" :title="t('screenDevice.previewTitle')" tabindex="-1" @load="updateScreenPreview" />
-        </div>
-      </BaseCard>
-      <BaseCard :title="t('screenDevice.parameters')">
-        <p class="device-data-note">{{ t("screenDevice.parameterNote") }}</p>
-        <div class="device-parameter-grid">
-          <div><span>{{ t("screenDevice.path") }}</span><strong>/screen</strong></div>
-          <div><span>{{ t("screenDevice.transport") }}</span><strong>WebSocket</strong></div>
-          <div><span>{{ t("screenDevice.channel") }}</span><strong>screen</strong></div>
-          <div><span>{{ t("screenDevice.credential") }}</span><strong>{{ t("screenDevice.deviceToken") }}</strong></div>
         </div>
       </BaseCard>
     </section>

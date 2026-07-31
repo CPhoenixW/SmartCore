@@ -24,6 +24,7 @@ const { t, locale } = useI18n();
 const toast = useToast();
 const queryClient = useQueryClient();
 const selected = ref<Idea | null>(null);
+const editing = ref(true);
 const title = ref("");
 const description = ref("");
 const uploads = ref<StagedUpload[]>([]);
@@ -39,6 +40,7 @@ const hasBlockingUploads = computed(() => uploads.value.some((item) => item.stat
 
 function choose(idea: Idea) {
   selected.value = idea;
+  editing.value = false;
   title.value = idea.title;
   description.value = idea.description;
   uploads.value = [];
@@ -47,12 +49,27 @@ function choose(idea: Idea) {
 
 function reset() {
   selected.value = null;
+  editing.value = true;
   title.value = "";
   description.value = "";
   uploads.value = [];
   removedAttachmentIds.value = [];
   processing.value = false;
   lightbox.value = null;
+}
+
+function startEdit() {
+  if (!selected.value) return;
+  title.value = selected.value.title;
+  description.value = selected.value.description;
+  uploads.value = [];
+  removedAttachmentIds.value = [];
+  editing.value = true;
+}
+
+function cancelEdit() {
+  if (!selected.value) return;
+  choose(selected.value);
 }
 
 function attachmentLabel(idea: Idea) {
@@ -196,7 +213,8 @@ const remove = useMutation({
         </BaseCard>
       </div>
       <aside class="idea-detail"><div class="stack">
-        <BaseCard :title="t('ideas.detail')">
+        <BaseCard v-if="selected && !editing" :title="t('ideas.detail')">
+          <template #actions><button class="button" type="button" @click="startEdit">{{ t("ideas.edit") }}</button></template>
           <template v-if="selected">
             <header class="idea-detail-header">
               <div><h2>{{ selected.title }}</h2><time class="idea-time" :datetime="selected.createdAt">{{ displayTime(selected.createdAt) }}</time></div>
@@ -217,10 +235,9 @@ const remove = useMutation({
             </section>
             <div class="idea-danger-zone"><button class="button button--danger" @click="remove.mutate(selected.ideaId)">{{ t("common.delete") }}</button></div>
           </template>
-          <EmptyState v-else :text="t('ideas.select')" />
         </BaseCard>
 
-        <BaseCard :title="selected ? t('ideas.edit') : t('ideas.new')">
+        <BaseCard v-else :title="selected ? t('ideas.edit') : t('ideas.new')">
           <form class="form-grid" @submit.prevent="save.mutate()">
             <label class="field field--wide"><span>{{ t("ideas.titleLabel") }}</span><input v-model="title" :placeholder="t('ideas.titlePlaceholder')" :required="!hasMedia" /></label>
             <label class="field field--wide"><span>{{ t("ideas.description") }}</span><textarea v-model="description" rows="7" :placeholder="t('ideas.descriptionPlaceholder')" /></label>
@@ -251,7 +268,7 @@ const remove = useMutation({
 
             <small v-if="processing" class="field--wide">{{ t("ideas.processing") }}</small>
             <div class="form-actions field--wide">
-              <button v-if="selected" class="button" type="button" @click="choose(selected)">{{ t("common.cancel") }}</button>
+              <button v-if="selected" class="button" type="button" @click="cancelEdit">{{ t("common.cancel") }}</button>
               <button class="button button--primary" :disabled="save.isPending.value || processing || hasBlockingUploads || (!title.trim() && !hasMedia)">{{ t("common.save") }}</button>
             </div>
           </form>

@@ -89,6 +89,9 @@ describe("device routes", () => {
     expect(styles).toContain(".computer-two-column--scroll>.card>.card-body{min-height:0;flex:1;overflow:hidden}");
     expect(styles).toContain(".computer-card-scroll{align-content:start;height:100%;overflow-y:auto");
     expect(screenView).toContain('src="/screen?preview=1"');
+    expect(screenView).toContain('class="screen-preview-status"');
+    expect(screenView).not.toContain("DeviceMetricStrip");
+    expect(screenView).not.toContain('t("screenDevice.parameters")');
   });
 
   it("uses continuous work blocks as the primary computer insight", () => {
