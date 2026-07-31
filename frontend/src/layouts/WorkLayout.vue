@@ -2,7 +2,6 @@
 import { computed, onMounted, ref, watch } from "vue";
 import {
   BookOpen,
-  BrainCircuit,
   Calendar,
   CalendarPlus,
   House,
@@ -17,6 +16,7 @@ import {
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { authApi } from "@/api/auth";
+import smartcoreMarkDark from "@/assets/smartcore-mark-dark.png";
 import { useUserStore } from "@/stores/user";
 
 const route = useRoute();
@@ -51,7 +51,7 @@ async function logout() {
 <template>
   <div class="app-shell">
     <aside class="sidebar" :class="{ 'sidebar--open': mobileOpen }">
-      <RouterLink class="brand" :to="{ name: 'overview' }" @click="mobileOpen = false"><span class="brand-mark"><BrainCircuit :size="23" :stroke-width="2" aria-hidden="true" /></span><span><strong>{{ t('app.name') }}</strong><small>{{ t('app.subtitle') }}</small></span></RouterLink>
+      <RouterLink class="brand" :to="{ name: 'overview' }" @click="mobileOpen = false"><span class="brand-mark"><img :src="smartcoreMarkDark" alt="" aria-hidden="true" /></span><span><strong>{{ t('app.name') }}</strong><small>{{ t('app.subtitle') }}</small></span></RouterLink>
       <nav class="nav-list" :aria-label="t('app.navigation')"><RouterLink v-for="item in nav" :key="item.key" class="nav-link" :class="{ 'nav-link--active': item.name === 'device' && route.path.startsWith('/device') }" :to="{ name: item.name }" @click="mobileOpen = false"><component :is="item.icon" class="nav-link__icon" :size="17" :stroke-width="1.8" aria-hidden="true" />{{ t(`nav.${item.key}`) }}</RouterLink></nav>
       <button class="sidebar-logout" type="button" :disabled="loggingOut" @click="logout">{{ logoutLabel }}</button>
     </aside>
@@ -64,5 +64,5 @@ async function logout() {
 </template>
 
 <style scoped>
-.nav-link--active{background:#1e293b;color:#fff}.nav-link__icon{flex:0 0 18px}.sidebar-logout{position:absolute;left:16px;right:16px;bottom:20px;min-height:40px;border:1px solid #334155;border-radius:10px;background:#111827;color:#cbd5e1;font-weight:700}.sidebar-logout:hover{background:#1e293b;color:#fff}.sidebar-logout:disabled{opacity:.55}
+.brand-mark{overflow:hidden;background:#000}.brand-mark img{width:100%;height:100%;object-fit:cover}.nav-link--active{background:#1e293b;color:#fff}.nav-link__icon{flex:0 0 18px}.sidebar-logout{position:absolute;left:16px;right:16px;bottom:20px;min-height:40px;border:1px solid #334155;border-radius:10px;background:#111827;color:#cbd5e1;font-weight:700}.sidebar-logout:hover{background:#1e293b;color:#fff}.sidebar-logout:disabled{opacity:.55}
 </style>

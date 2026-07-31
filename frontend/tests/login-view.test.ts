@@ -33,6 +33,7 @@ describe("LoginView", () => {
     const wrapper = mount(LoginView);
     await flushPromises();
 
+    expect(wrapper.get(".login-brand img").attributes("src")).toContain("smartcore-mark-light.png");
     expect((wrapper.get("input[autocomplete='username']").element as HTMLInputElement).value).toBe("");
   });
 

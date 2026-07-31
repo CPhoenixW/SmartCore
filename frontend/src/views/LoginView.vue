@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { BrainCircuit } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { authApi } from "@/api/auth";
+import smartcoreMarkLight from "@/assets/smartcore-mark-light.png";
 import { i18n } from "@/locales";
 
 const route = useRoute();
@@ -111,7 +111,7 @@ async function submit() {
 <template>
   <main class="login-page">
     <section class="login-panel">
-      <header class="login-brand"><span><BrainCircuit :size="25" :stroke-width="2" aria-hidden="true" /></span><div><strong>SmartCore</strong><small>Personal student assistant</small></div></header>
+      <header class="login-brand"><span><img :src="smartcoreMarkLight" alt="" aria-hidden="true" /></span><div><strong>SmartCore</strong><small>Personal student assistant</small></div></header>
       <button class="language-switch" type="button" @click="switchLanguage">{{ copy.language }}</button>
       <div class="login-copy"><h1>{{ copy.title }}</h1><p>{{ copy.subtitle }}</p></div>
       <div v-if="mode === 'loading'" class="login-loading">Loading…</div>
@@ -131,6 +131,6 @@ async function submit() {
 </template>
 
 <style scoped>
-.login-page{min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 15% 10%,#dbeafe 0,transparent 34%),radial-gradient(circle at 85% 90%,#e0e7ff 0,transparent 34%),#f8fafc}.login-panel{position:relative;width:min(460px,100%);padding:34px;border:1px solid #e2e8f0;border-radius:24px;background:rgba(255,255,255,.94);box-shadow:0 28px 80px rgba(15,23,42,.12)}.login-brand{display:flex;align-items:center;gap:12px}.login-brand>span{display:grid;place-items:center;width:46px;height:46px;border-radius:14px;background:#2563eb;color:#fff;font-weight:850}.login-brand strong,.login-brand small{display:block}.login-brand small{margin-top:3px;color:#64748b}.language-switch{position:absolute;top:30px;right:30px;border:0;background:transparent;color:#2563eb;font-weight:700}.login-copy{margin:34px 0 24px}.login-copy h1{font-size:30px}.login-copy p{margin-top:8px;color:#64748b;line-height:1.6}.login-form{display:grid;gap:16px}.login-form label{display:grid;gap:7px;color:#475569;font-size:13px;font-weight:700}.login-form input{width:100%;padding:12px 13px;border:1px solid #cbd5e1;border-radius:11px;outline:0}.login-form input:focus{border-color:#60a5fa;box-shadow:0 0 0 4px rgba(59,130,246,.12)}.security-note{padding:11px 12px;border-radius:10px;background:#eff6ff;color:#1d4ed8;font-size:13px;line-height:1.5}.login-error{padding:11px 12px;border-radius:10px;background:#fef2f2;color:#b91c1c;font-size:13px}.login-submit{min-height:46px;border:0;border-radius:11px;background:#2563eb;color:#fff;font-weight:800}.login-submit:disabled{opacity:.55}.login-loading{padding:40px;text-align:center;color:#64748b}@media(max-width:520px){.login-panel{padding:26px}.language-switch{top:24px;right:24px}}
+.login-page{min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 15% 10%,#dbeafe 0,transparent 34%),radial-gradient(circle at 85% 90%,#e0e7ff 0,transparent 34%),#f8fafc}.login-panel{position:relative;width:min(460px,100%);padding:34px;border:1px solid #e2e8f0;border-radius:24px;background:rgba(255,255,255,.94);box-shadow:0 28px 80px rgba(15,23,42,.12)}.login-brand{display:flex;align-items:center;gap:12px}.login-brand>span{display:grid;place-items:center;width:46px;height:46px;overflow:hidden;border:1px solid #e2e8f0;border-radius:12px;background:#fff}.login-brand>span img{width:100%;height:100%;object-fit:cover}.login-brand strong,.login-brand small{display:block}.login-brand small{margin-top:3px;color:#64748b}.language-switch{position:absolute;top:30px;right:30px;border:0;background:transparent;color:#2563eb;font-weight:700}.login-copy{margin:34px 0 24px}.login-copy h1{font-size:30px}.login-copy p{margin-top:8px;color:#64748b;line-height:1.6}.login-form{display:grid;gap:16px}.login-form label{display:grid;gap:7px;color:#475569;font-size:13px;font-weight:700}.login-form input{width:100%;padding:12px 13px;border:1px solid #cbd5e1;border-radius:11px;outline:0}.login-form input:focus{border-color:#60a5fa;box-shadow:0 0 0 4px rgba(59,130,246,.12)}.security-note{padding:11px 12px;border-radius:10px;background:#eff6ff;color:#1d4ed8;font-size:13px;line-height:1.5}.login-error{padding:11px 12px;border-radius:10px;background:#fef2f2;color:#b91c1c;font-size:13px}.login-submit{min-height:46px;border:0;border-radius:11px;background:#2563eb;color:#fff;font-weight:800}.login-submit:disabled{opacity:.55}.login-loading{padding:40px;text-align:center;color:#64748b}@media(max-width:520px){.login-panel{padding:26px}.language-switch{top:24px;right:24px}}
 .login-secondary{border:0;background:transparent;color:#2563eb;font-weight:700}
 </style>

@@ -79,9 +79,10 @@ async def lifespan(app: FastAPI):
             scheduler_service.shutdown()
 
 
-def _register_work_frontend(app: FastAPI) -> None:
-    frontend_dist = Path(__file__).resolve().parent / "web" / "dist"
+def _register_work_frontend(app: FastAPI, frontend_dist: Path | None = None) -> None:
+    frontend_dist = frontend_dist or Path(__file__).resolve().parent / "web" / "dist"
     frontend_assets = frontend_dist / "assets"
+    frontend_favicon = frontend_dist / "favicon.png"
 
     if frontend_dist.is_dir() and frontend_assets.is_dir():
         app.mount("/work/assets", StaticFiles(directory=frontend_assets), name="work_assets")
@@ -89,6 +90,8 @@ def _register_work_frontend(app: FastAPI) -> None:
         @app.get("/work", include_in_schema=False)
         @app.get("/work/{path:path}", include_in_schema=False)
         def serve_work(request: Request, path: str = "") -> Response:
+            if path == "favicon.png" and frontend_favicon.is_file():
+                return FileResponse(frontend_favicon, media_type="image/png")
             user_id = session_user_id_from_request(request)
             if path == "login":
                 if user_id:
