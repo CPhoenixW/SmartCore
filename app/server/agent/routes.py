@@ -133,7 +133,10 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
                 "nextStep": {"type": "string", "maxLength": 300},
                 "planSemanticAssessments": {"type": "array"},
                 "evidenceContextIds": {"type": "array"},
-                "model": {"type": "string", "enum": ["qwen3.7-plus"]},
+                "model": {
+                    "type": "string",
+                    "enum": ["qwen3.7-plus", "deepseek-v4-flash"],
+                },
                 "promptVersion": {
                     "type": "string",
                     "enum": ["computer-work-block-v1"],
@@ -174,7 +177,10 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
                 "planAssessments": {"type": "array"},
                 "topics": {"type": "array"},
                 "evidence": {"type": "object"},
-                "model": {"type": "string", "enum": ["qwen3.7-plus"]},
+                "model": {
+                    "type": "string",
+                    "enum": ["qwen3.7-plus", "deepseek-v4-flash"],
+                },
                 "promptVersion": {"type": "string", "enum": ["computer-analysis-v1"]},
             },
             ["deviceId", "hourStart", "status"],
@@ -210,7 +216,10 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
                 "hourlyAnalysisIds": {"type": "array"},
                 "workBlockIds": {"type": "array"},
                 "phase": {"type": "string", "enum": ["preview", "final"]},
-                "model": {"type": "string", "enum": ["qwen3.7-plus"]},
+                "model": {
+                    "type": "string",
+                    "enum": ["qwen3.7-plus", "deepseek-v4-flash"],
+                },
                 "promptVersion": {
                     "type": "string",
                     "enum": ["computer-analysis-v1", "computer-work-block-v1"],

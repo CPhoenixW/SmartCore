@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.server.computer.contracts import SUPPORTED_COMPUTER_ANALYSIS_MODELS
 from app.server.new_core.models import (
     ComputerActivityBucket,
     ComputerActivityContext,
@@ -407,8 +408,8 @@ def store_hourly_analysis(db: Session, *, user_id: str, payload: dict[str, Any])
         raise ValueError("status must be complete or failed")
     row.status = status
     if status == "complete":
-        if payload.get("model") != "qwen3.7-plus":
-            raise ValueError("complete analysis must use qwen3.7-plus")
+        if payload.get("model") not in SUPPORTED_COMPUTER_ANALYSIS_MODELS:
+            raise ValueError("complete analysis must use a supported Computer model")
         if payload.get("promptVersion") not in {None, PROMPT_VERSION}:
             raise ValueError("unsupported prompt version")
     row.title = _validate_text(payload.get("title"), max_length=10, required=status == "complete")
@@ -586,6 +587,7 @@ def queue_daily_log(
     log_date: str,
     phase: str = "final",
     now: datetime | None = None,
+    preview_min_interval_minutes: int = 0,
 ) -> tuple[ComputerDailyWorkLog | None, bool, dict[str, Any]]:
     if phase not in {"preview", "final"}:
         raise ValueError("daily log phase must be preview or final")
@@ -651,12 +653,16 @@ def queue_daily_log(
                 row.updatedAt = nowIso()
                 db.commit()
             return row, False, context
-        if (
-            phase == "preview"
-            and row.status == "complete"
-            and row.sourceFingerprint == source_fingerprint
-        ):
-            return row, False, context
+        if phase == "preview" and row.status == "complete":
+            if row.sourceFingerprint == source_fingerprint:
+                return row, False, context
+            if (
+                preview_min_interval_minutes > 0
+                and row.generatedAt
+                and _aware(row.generatedAt)
+                > current - timedelta(minutes=preview_min_interval_minutes)
+            ):
+                return row, False, context
     now_iso = nowIso()
     if row is None:
         row = ComputerDailyWorkLog(
@@ -714,8 +720,8 @@ def store_daily_log(db: Session, *, user_id: str, payload: dict[str, Any]) -> di
         return _daily_log_dict(row) or {}
     context = build_daily_context(db, device=device, log_date=row.logDate)
     if status == "complete":
-        if payload.get("model") != "qwen3.7-plus":
-            raise ValueError("complete daily log must use qwen3.7-plus")
+        if payload.get("model") not in SUPPORTED_COMPUTER_ANALYSIS_MODELS:
+            raise ValueError("complete daily log must use a supported Computer model")
         if payload.get("promptVersion") not in {PROMPT_VERSION, DAILY_PROMPT_VERSION}:
             raise ValueError("unsupported prompt version")
     row.status = status

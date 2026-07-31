@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 from functools import lru_cache
 from typing import Any
 
@@ -9,6 +10,8 @@ import openai
 from openai import OpenAI
 
 from app.server.config import Settings, get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class LLMConfigurationError(RuntimeError):
@@ -44,6 +47,10 @@ def complete_chat(
     *,
     temperature: float = 0,
     settings: Settings | None = None,
+    model: str | None = None,
+    max_tokens: int | None = None,
+    response_format: dict[str, Any] | None = None,
+    usage_label: str | None = None,
     extra_body: dict[str, Any] | None = None,
 ) -> str:
     """Run one natural-language request through the configured TokenDance gateway."""
@@ -61,10 +68,14 @@ def complete_chat(
         active_settings.llm_timeout_seconds,
     )
     request: dict[str, Any] = {
-        "model": active_settings.llm_model,
+        "model": model or active_settings.llm_model,
         "messages": messages,
         "temperature": temperature,
     }
+    if max_tokens is not None:
+        request["max_tokens"] = max_tokens
+    if response_format is not None:
+        request["response_format"] = response_format
     if extra_body is not None:
         request["extra_body"] = extra_body
 
@@ -82,6 +93,19 @@ def complete_chat(
 
     if not response.choices:
         raise LLMGatewayError("中转站没有返回候选结果")
+    usage = getattr(response, "usage", None)
+    if usage is not None:
+        prompt_details = getattr(usage, "prompt_tokens_details", None)
+        logger.info(
+            "llm_usage label=%s model=%s input_tokens=%s output_tokens=%s total_tokens=%s "
+            "cached_tokens=%s",
+            usage_label or "unspecified",
+            request["model"],
+            usage.prompt_tokens,
+            usage.completion_tokens,
+            usage.total_tokens,
+            getattr(prompt_details, "cached_tokens", 0) if prompt_details is not None else 0,
+        )
     content = response.choices[0].message.content
     if not isinstance(content, str) or not content.strip():
         raise LLMGatewayError("中转站返回了空内容")

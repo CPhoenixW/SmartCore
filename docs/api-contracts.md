@@ -166,8 +166,9 @@ Pi 状态与照片使用 `/dev/*`；通用设备列表/配对/分发使用 `/api
 `POST /agent/computer/work-block-analysis`；小时接口保留兼容读取，每日接口继续使用
 `daily-context/daily-log`。owner 从 scope 派生，run 以稳定 trigger key 幂等；Server
 拥有 Plan 活跃覆盖率和最终执行状态，AI 必须为上下文中的每个 Plan 返回语义匹配，不能
-提交或覆盖客观比例。工作块与每日日志固定使用 `qwen3.7-plus` 和
-`computer-work-block-v1`，不读取数据库、OCR、网页正文或聊天正文。
+提交或覆盖客观比例。Server 直连分析使用 `deepseek-v4-flash`，OpenClaw 回退使用
+`qwen3.7-plus`；两者提交 `computer-work-block-v1`，均只接收 Server 组装的脱敏聚合，
+不读取数据库、OCR、网页正文或聊天正文。
 
 ## Feishu 配对状态机
 

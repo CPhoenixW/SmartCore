@@ -1,111 +1,30 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app.server.agent.routes import requireAgentToken
 from app.server.agent.scope import AgentScope, require_agent_scope
+from app.server.computer.contracts import (
+    DailyLogBody,
+    HourlyAnalysisBody,
+    WorkBlockAnalysisBody,
+)
 from app.server.computer.insights import (
-    DAILY_PROMPT_VERSION,
-    PROMPT_VERSION,
     build_daily_context,
     build_hour_context,
     store_daily_log,
     store_hourly_analysis,
 )
 from app.server.computer.work_blocks import (
-    WORK_BLOCK_PROMPT_VERSION,
     build_work_block_context,
     store_work_block_analysis,
 )
 from app.server.db.session import get_db
 from app.server.new_core.models import LifeDevice
-
-
-class PlanAssessmentBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    evtId: str = Field(min_length=1, max_length=64)
-    state: Literal["not_started", "partial", "substantially_executed", "unclear"]
-    confidence: Literal["high", "medium", "low"]
-    evidenceCodes: list[str] = Field(default_factory=list, max_length=10)
-    note: str | None = Field(default=None, max_length=500)
-
-
-class TopicBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    name: str = Field(min_length=1, max_length=40)
-    summary: str | None = Field(default=None, max_length=300)
-    activeSeconds: int = Field(default=0, ge=0, le=86400)
-    sessionIds: list[str] = Field(default_factory=list, max_length=30)
-    contextIds: list[str] = Field(default_factory=list, max_length=30)
-
-
-class HourlyAnalysisBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    deviceId: str = Field(min_length=1, max_length=32)
-    hourStart: datetime
-    status: Literal["complete", "failed"]
-    title: str | None = Field(default=None, max_length=10)
-    summary: str | None = Field(default=None, max_length=800)
-    planAssessments: list[PlanAssessmentBody] = Field(default_factory=list, max_length=30)
-    topics: list[TopicBody] = Field(default_factory=list, max_length=10)
-    evidence: dict = Field(default_factory=dict)
-    model: Literal["qwen3.7-plus"] | None = None
-    promptVersion: Literal["computer-analysis-v1"] = PROMPT_VERSION
-    errorMessage: str | None = Field(default=None, max_length=1000)
-
-
-class DailyLogBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    deviceId: str = Field(min_length=1, max_length=32)
-    logDate: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
-    status: Literal["complete", "failed"]
-    title: str | None = Field(default=None, max_length=10)
-    summary: str | None = Field(default=None, max_length=1200)
-    topics: list[TopicBody] = Field(default_factory=list, max_length=10)
-    planAssessments: list[PlanAssessmentBody] = Field(default_factory=list, max_length=30)
-    reminderSummary: list[dict] = Field(default_factory=list, max_length=50)
-    hourlyAnalysisIds: list[str] = Field(default_factory=list, max_length=48)
-    workBlockIds: list[str] = Field(default_factory=list, max_length=100)
-    phase: Literal["preview", "final"] = "final"
-    model: Literal["qwen3.7-plus"] | None = None
-    promptVersion: Literal["computer-analysis-v1", "computer-work-block-v1"] = DAILY_PROMPT_VERSION
-    errorMessage: str | None = Field(default=None, max_length=1000)
-
-
-class PlanSemanticAssessmentBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    evtId: str = Field(min_length=1, max_length=64)
-    semanticAlignment: Literal["aligned", "partially_aligned", "unrelated", "unclear"]
-    confidence: Literal["high", "medium", "low"]
-    evidenceCodes: list[str] = Field(default_factory=list, max_length=10)
-    note: str | None = Field(default=None, max_length=500)
-
-
-class WorkBlockAnalysisBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    runId: str = Field(min_length=1, max_length=32)
-    status: Literal["complete", "failed"]
-    action: Literal["start", "extend", "switch", "complete", "ignore"] | None = None
-    topicKey: str | None = Field(default=None, max_length=100)
-    title: str | None = Field(default=None, max_length=10)
-    summary: str | None = Field(default=None, max_length=800)
-    progress: str | None = Field(default=None, max_length=300)
-    outcome: str | None = Field(default=None, max_length=300)
-    blocker: str | None = Field(default=None, max_length=300)
-    nextStep: str | None = Field(default=None, max_length=300)
-    planSemanticAssessments: list[PlanSemanticAssessmentBody] = Field(
-        default_factory=list, max_length=30
-    )
-    evidenceContextIds: list[str] = Field(default_factory=list, max_length=100)
-    model: Literal["qwen3.7-plus"] | None = None
-    promptVersion: Literal["computer-work-block-v1"] = WORK_BLOCK_PROMPT_VERSION
-    errorMessage: str | None = Field(default=None, max_length=1000)
 
 
 def _device(db: Session, scope: AgentScope, device_id: str) -> LifeDevice:

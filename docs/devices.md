@@ -122,6 +122,7 @@ Computer token 上传。它只承载项目名、结果状态、单段摘要、�
 Server 可结合当前 Plan、电脑状态与同用户新鲜 Pi 状态生成带 reason codes 的确定性
 判断，但不输出效率或分心结论。启用 `COMPUTER_WORK_BLOCK_ANALYSIS_ENABLED` 后，Server
 每 5 分钟根据 active、20 分钟 idle、锁屏/休眠/暂停和上下文变化维护连续工作块；小时任务
-只保存客观快照。OpenClaw 仅在工作块开始、切换、结束或 Plan 语义需要更新时使用
-`qwen3.7-plus`，失败按任务租约和退避重试，不影响原始上传。工作日志白天按工作块增量
-预览，并在 `Asia/Shanghai` 每日 23:59 定稿。
+只保存客观快照。工作块开始、切换、结束或 Plan 语义需要更新时，Server 使用
+`deepseek-v4-flash` 做一次结构化分析并最多修复一次；失败才回退到 OpenClaw
+`qwen3.7-plus`，任务租约和退避不影响原始上传。工作日志白天随工作块变化生成预览，
+但默认每 60 分钟最多一次，并在 `Asia/Shanghai` 每日 23:59 定稿。

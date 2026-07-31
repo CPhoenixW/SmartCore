@@ -56,6 +56,15 @@ def test_agent_tools_keep_stable_names_and_aliases() -> None:
     assert tools["computerDailyLogComplete"]["path"] == "/agent/computer/daily-log"
     assert tools["computerWorkBlockContext"]["path"] == "/agent/computer/work-block-context"
     assert tools["computerWorkBlockAnalysisComplete"]["path"] == "/agent/computer/work-block-analysis"
+    for name in (
+        "computerHourlyAnalysisComplete",
+        "computerDailyLogComplete",
+        "computerWorkBlockAnalysisComplete",
+    ):
+        assert tools[name]["inputSchema"]["properties"]["model"]["enum"] == [
+            "qwen3.7-plus",
+            "deepseek-v4-flash",
+        ]
     assert "mediaImageOcr" not in tools
     assert "ocrEvidence" not in tools["ideaCapture"]["inputSchema"]["properties"]
     assert tools["ideaMediaJobComplete"]["inputSchema"]["required"] == [

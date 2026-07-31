@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from app.server.computer.contracts import SUPPORTED_COMPUTER_ANALYSIS_MODELS
 from app.server.computer.insights import (
     _activity_rows,
     _aware,
@@ -860,7 +861,7 @@ def _apply_content(
         block.topicKey = topic_key
     elif not block.topicKey and block.title:
         block.topicKey = block.title.casefold()
-    block.model = "qwen3.7-plus"
+    block.model = _validate_text(payload.get("model"), max_length=100)
     block.promptVersion = WORK_BLOCK_PROMPT_VERSION
     block.generatedAt = nowIso()
     block.updatedAt = nowIso()
@@ -889,8 +890,8 @@ def store_work_block_analysis(
         return analysis_run_dict(run)
     if status != "complete":
         raise ValueError("status must be complete or failed")
-    if payload.get("model") != "qwen3.7-plus":
-        raise ValueError("complete analysis must use qwen3.7-plus")
+    if payload.get("model") not in SUPPORTED_COMPUTER_ANALYSIS_MODELS:
+        raise ValueError("complete analysis must use a supported Computer model")
     if payload.get("promptVersion") != WORK_BLOCK_PROMPT_VERSION:
         raise ValueError("unsupported prompt version")
     action = str(payload.get("action") or "")

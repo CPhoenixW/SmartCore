@@ -21,16 +21,29 @@ def test_default_natural_language_gateway_config() -> None:
     assert settings.vision_max_output_tokens == 128
     assert settings.vision_max_retries == 0
     assert settings.vision_timeout_seconds == 60
+    assert settings.computer_analysis_direct_llm_enabled is True
+    assert settings.computer_analysis_model == "deepseek-v4-flash"
+    assert settings.computer_analysis_repair_attempts == 1
+    assert settings.computer_analysis_openclaw_fallback_enabled is True
+    assert settings.computer_daily_preview_min_interval_minutes == 60
 
 
-def test_gateway_client_has_bounded_http_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gateway_client_has_bounded_http_timeout(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     captured: dict[str, object] = {}
 
     class FakeCompletions:
         def create(self, **kwargs):
             captured["request"] = kwargs
             return SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(content='{"ok": true}'))]
+                choices=[SimpleNamespace(message=SimpleNamespace(content='{"ok": true}'))],
+                usage=SimpleNamespace(
+                    prompt_tokens=120,
+                    completion_tokens=30,
+                    total_tokens=150,
+                    prompt_tokens_details=SimpleNamespace(cached_tokens=80),
+                ),
             )
 
     class FakeOpenAI:
@@ -46,10 +59,15 @@ def test_gateway_client_has_bounded_http_timeout(monkeypatch: pytest.MonkeyPatch
         llm_model="deepseek-v4-flash",
     )
 
-    result = gateway.complete_chat(
-        [{"role": "user", "content": "hello"}],
-        settings=settings,
-    )
+    with caplog.at_level("INFO"):
+        result = gateway.complete_chat(
+            [{"role": "user", "content": "hello"}],
+            settings=settings,
+            model="deepseek-v4-flash",
+            max_tokens=512,
+            response_format={"type": "json_object"},
+            usage_label="test_usage",
+        )
 
     assert result == '{"ok": true}'
     client_options = captured["client"]
@@ -64,6 +82,12 @@ def test_gateway_client_has_bounded_http_timeout(monkeypatch: pytest.MonkeyPatch
     request = captured["request"]
     assert isinstance(request, dict)
     assert request["model"] == "deepseek-v4-flash"
+    assert request["max_tokens"] == 512
+    assert request["response_format"] == {"type": "json_object"}
+    assert (
+        "llm_usage label=test_usage model=deepseek-v4-flash input_tokens=120 "
+        "output_tokens=30 total_tokens=150 cached_tokens=80"
+    ) in caplog.text
 
 
 def test_image_gateway_bounds_ocr_output_and_timeout(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
@@ -17,6 +18,11 @@ from app.server.computer.insights import (
     queue_hourly_analysis,
     record_hourly_evidence,
 )
+from app.server.computer.llm_analysis import (
+    analyze_daily_log,
+    analyze_hourly,
+    analyze_work_block,
+)
 from app.server.computer.work_blocks import (
     evaluate_work_block,
     fail_analysis_run,
@@ -26,6 +32,7 @@ from app.server.config import Settings
 from app.server.new_core.models import LifeDevice, nowIso
 
 PostEvent = Callable[[dict[str, Any]], None]
+logger = logging.getLogger(__name__)
 
 
 def _post(settings: Settings, event: dict[str, Any]) -> None:
@@ -49,13 +56,40 @@ def _devices(db: Session) -> list[LifeDevice]:
     )
 
 
+def _analyze_or_deliver(
+    db: Session,
+    *,
+    settings: Settings,
+    post_event: PostEvent | None,
+    event: dict[str, Any],
+    analyze: Callable[[], dict[str, Any]],
+) -> None:
+    deliver = post_event or (lambda payload: _post(settings, payload))
+    if not settings.computer_analysis_direct_llm_enabled or post_event is not None:
+        deliver(event)
+        return
+    try:
+        analyze()
+        return
+    except Exception as exc:
+        db.rollback()
+        logger.warning(
+            "direct Computer analysis failed; fallback=%s event_type=%s error=%s",
+            settings.computer_analysis_openclaw_fallback_enabled,
+            event.get("event_type"),
+            type(exc).__name__,
+        )
+        if not settings.computer_analysis_openclaw_fallback_enabled:
+            raise
+    deliver(event)
+
+
 def dispatch_hourly_analyses(
     db: Session, *, settings: Settings, now: datetime, post_event: PostEvent | None = None
 ) -> dict[str, int]:
     timezone = ZoneInfo(settings.computer_analysis_timezone)
     local_now = now.astimezone(timezone)
     hour_start = local_now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
-    deliver = post_event or (lambda event: _post(settings, event))
     result = {"queued": 0, "skipped": 0, "failed": 0}
     for device in _devices(db):
         if settings.computer_work_block_analysis_enabled:
@@ -87,11 +121,17 @@ def dispatch_hourly_analyses(
             "agentScope": issue_agent_scope(userId=device.userId, purpose="web", ttl_seconds=1800),
         }
         try:
-            deliver(event)
+            _analyze_or_deliver(
+                db,
+                settings=settings,
+                post_event=post_event,
+                event=event,
+                analyze=lambda: analyze_hourly(db, device=device, row=row, settings=settings),
+            )
             result["queued"] += 1
         except Exception as exc:
             row.status = "failed"
-            row.errorMessage = f"adapter dispatch failed: {type(exc).__name__}"
+            row.errorMessage = f"analysis dispatch failed: {type(exc).__name__}"
             row.updatedAt = nowIso()
             db.commit()
             result["failed"] += 1
@@ -101,7 +141,6 @@ def dispatch_hourly_analyses(
 def dispatch_work_block_analyses(
     db: Session, *, settings: Settings, now: datetime, post_event: PostEvent | None = None
 ) -> dict[str, int]:
-    deliver = post_event or (lambda event: _post(settings, event))
     result = {"queued": 0, "skipped": 0, "failed": 0}
     for device in _devices(db):
         row, should_dispatch = evaluate_work_block(
@@ -124,13 +163,21 @@ def dispatch_work_block_analyses(
             "agentScope": issue_agent_scope(userId=device.userId, purpose="web", ttl_seconds=1800),
         }
         try:
-            deliver(event)
+            _analyze_or_deliver(
+                db,
+                settings=settings,
+                post_event=post_event,
+                event=event,
+                analyze=lambda: analyze_work_block(
+                    db, device=device, run=row, settings=settings
+                ),
+            )
             result["queued"] += 1
         except Exception as exc:
             fail_analysis_run(
                 db,
                 row=row,
-                error_message=f"adapter dispatch failed: {type(exc).__name__}",
+                error_message=f"analysis dispatch failed: {type(exc).__name__}",
                 now=now,
             )
             result["failed"] += 1
@@ -148,11 +195,17 @@ def dispatch_daily_work_logs(
 ) -> dict[str, int]:
     timezone = ZoneInfo(settings.computer_analysis_timezone)
     resolved_log_date = log_date or now.astimezone(timezone).date().isoformat()
-    deliver = post_event or (lambda event: _post(settings, event))
     result = {"queued": 0, "skipped": 0, "failed": 0}
     for device in _devices(db):
         row, should_dispatch, _context = queue_daily_log(
-            db, device=device, log_date=resolved_log_date, phase=phase, now=now
+            db,
+            device=device,
+            log_date=resolved_log_date,
+            phase=phase,
+            now=now,
+            preview_min_interval_minutes=(
+                settings.computer_daily_preview_min_interval_minutes
+            ),
         )
         if row is None or not should_dispatch:
             result["skipped"] += 1
@@ -172,13 +225,21 @@ def dispatch_daily_work_logs(
             "agentScope": issue_agent_scope(userId=device.userId, purpose="web", ttl_seconds=1800),
         }
         try:
-            deliver(event)
+            _analyze_or_deliver(
+                db,
+                settings=settings,
+                post_event=post_event,
+                event=event,
+                analyze=lambda: analyze_daily_log(
+                    db, device=device, row=row, settings=settings
+                ),
+            )
             result["queued"] += 1
         except Exception as exc:
             fail_daily_log(
                 db,
                 row=row,
-                error_message=f"adapter dispatch failed: {type(exc).__name__}",
+                error_message=f"analysis dispatch failed: {type(exc).__name__}",
                 now=now,
             )
             result["failed"] += 1

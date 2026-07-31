@@ -132,10 +132,13 @@ Plan 关联只按时间区间并集求交，不从上下文推断任务，也不
 
 分钟桶和小时客观快照保持不可变，用户可见分析以跨小时 `computerWorkBlock` 为主。
 Server 每 5 分钟确定性识别开始、20 分钟 idle、锁屏/休眠/暂停、跨日和候选主题切换；
-OpenClaw 只在开始、切换、结束或 Plan 语义变化时返回 `start/extend/switch/complete/ignore`。
+Server 只在开始、切换、结束或 Plan 语义变化时调用一次 `deepseek-v4-flash` 结构化分析，
+最多允许一次格式修复；模型或校验失败时才由 OpenClaw 回退任务返回
+`start/extend/switch/complete/ignore`。
 Plan 活跃覆盖率和最终状态由 Server 计算，AI 只返回语义匹配。任务运行单独保存租约、稳定
-trigger key 和退避重试，`NO_REPLY` 不能永久留下 queued 记录。每日工作日志由工作块增量
-预览、23:59 定稿；旧小时 AI 注释只读保留，不回填历史工作块。
+trigger key 和退避重试，`NO_REPLY` 不能永久留下 queued 记录。每日工作日志随工作块变化
+生成预览，但默认每 60 分钟最多一次，并在 23:59 定稿；旧小时 AI 注释只读保留，不回填
+历史工作块。
 
 提醒仍由 Server 根据 10 分钟未活跃和低于 30% 重叠规则产生，按用户现有
 Screen/Feishu 路由并写入 `notifyLog`；AI 不直接发送小时消息或修改 Plan。
