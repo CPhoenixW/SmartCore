@@ -837,7 +837,7 @@ def update_commute_plan(
             db,
             user_id=user_id,
             src=src,
-            action="commute_update",
+            action="update",
             target_kind="evt",
             target_id=plan_evt_id,
         )
@@ -845,7 +845,7 @@ def update_commute_plan(
             db,
             user_id=user_id,
             src=src,
-            action="commute_update",
+            action="update",
             target_kind="evt",
             target_id=reminder_evt_id,
         )
