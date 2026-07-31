@@ -180,3 +180,11 @@ def test_agent_commute_update_is_scoped_atomic_and_does_not_duplicate_reminders(
     )
     assert naive.json()["ok"] is False
     assert "include a UTC offset" in naive.json()["errors"][0]
+
+    deleted_reminder = client.post(
+        "/agent/db/delete_event",
+        headers=headers,
+        json={"evtId": reminder["evtId"]},
+    )
+    assert deleted_reminder.json()["ok"] is True
+    assert deleted_reminder.json()["data"]["stat"] == "cancelled"

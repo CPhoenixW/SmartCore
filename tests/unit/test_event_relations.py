@@ -704,3 +704,21 @@ def test_commute_update_rolls_back_both_records_on_failure(monkeypatch) -> None:
         assert stored_reminder.triggerTime == "2026-08-01T09:00:00+08:00"
     finally:
         db.close()
+
+
+def test_cancelling_standalone_reminder_returns_cancelled_event() -> None:
+    db = _session()
+    try:
+        reminder = create_reminder_event(
+            db,
+            title="出发提醒",
+            triggerTime="2026-08-01T09:00:00+08:00",
+        )
+
+        result = cancel_event(db, reminder["evtId"], src="openclaw")
+
+        assert result["evtId"] == reminder["evtId"]
+        assert result["evtType"] == "remind"
+        assert result["stat"] == "cancelled"
+    finally:
+        db.close()

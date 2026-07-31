@@ -908,7 +908,7 @@ def cancel_event(db: Session, evt_id: str, *, src: str = "api") -> dict[str, Any
         target_id=evt_id,
     )
     db.commit()
-    return get_event(db, evt_id)
+    return get_event(db, evt_id, include_reminders=base.evtType == "remind")
 
 
 def get_event(db: Session, evt_id: str, *, include_reminders: bool = False) -> dict[str, Any]:
