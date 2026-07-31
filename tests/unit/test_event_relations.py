@@ -20,8 +20,8 @@ from app.server.new_core.event_relations import (
     expand_course_dates,
     get_event,
     list_events,
-    update_course_event,
     update_commute_plan,
+    update_course_event,
     update_event,
 )
 from app.server.new_core.models import (  # noqa: F401
