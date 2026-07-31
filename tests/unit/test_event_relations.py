@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.server.agent.relation_query_routes import _relation_tools, createRelationQueryRouter
 from app.server.api.ai_routes import _important_date_fallback, _normalize_event
 from app.server.db.session import Base
-from app.server.new_core import crud, scheduler
+from app.server.new_core import crud, event_relations, scheduler
 from app.server.new_core.ddl_service import (
     create_ddl_event,
     replace_ddl_plans,
@@ -21,6 +21,7 @@ from app.server.new_core.event_relations import (
     get_event,
     list_events,
     update_course_event,
+    update_commute_plan,
     update_event,
 )
 from app.server.new_core.models import (  # noqa: F401
@@ -545,5 +546,156 @@ def test_plan_owns_start_and_end_minus_ten_reminders(monkeypatch) -> None:
         assert len(calls) == 1
         assert calls[0]["phase"] == "notice"
         assert "结束前 10 分钟" in calls[0]["title"]
+    finally:
+        db.close()
+
+
+def test_commute_update_uses_arrival_for_plan_and_reuses_manual_reminder() -> None:
+    db = _session()
+    try:
+        plan = create_plan_event(
+            db,
+            title="晚间工作",
+            stTime="2026-08-01T14:00:00+08:00",
+            durationMin=480,
+        )
+        reminder = create_reminder_event(
+            db,
+            title="出发",
+            triggerTime="2026-08-01T08:30:00+08:00",
+        )
+        reminder_count = len(db.scalars(select(RemindEvt)).all())
+
+        result = update_commute_plan(
+            db,
+            plan_evt_id=plan["evtId"],
+            reminder_evt_id=reminder["evtId"],
+            departure_at="2026-08-01T14:00:00+08:00",
+            commute_minutes=90,
+            end_at="2026-08-01T22:00:00+08:00",
+            user_id="default",
+            src="openclaw",
+        )
+
+        assert result["arrivalAt"] == "2026-08-01T15:30:00+08:00"
+        assert result["plan"]["stTime"] == "2026-08-01T15:30:00+08:00"
+        assert result["plan"]["durationMin"] == 390
+        assert result["reminder"]["evtId"] == reminder["evtId"]
+        assert result["reminder"]["triggerTime"] == "2026-08-01T14:00:00+08:00"
+        assert len(db.scalars(select(RemindEvt)).all()) == reminder_count
+
+        repeated = update_commute_plan(
+            db,
+            plan_evt_id=plan["evtId"],
+            reminder_evt_id=reminder["evtId"],
+            departure_at="2026-08-01T14:00:00+08:00",
+            commute_minutes=90,
+            end_at="2026-08-01T22:00:00+08:00",
+            user_id="default",
+            src="openclaw",
+        )
+        assert repeated["plan"]["durationMin"] == 390
+        assert len(db.scalars(select(RemindEvt)).all()) == reminder_count
+    finally:
+        db.close()
+
+
+def test_commute_update_rejects_cross_owner_and_linked_reminder() -> None:
+    db = _session()
+    try:
+        plan = create_plan_event(
+            db,
+            title="通勤后工作",
+            stTime="2026-08-01T15:00:00+08:00",
+            durationMin=60,
+        )
+        reminder = create_reminder_event(
+            db,
+            title="出发",
+            triggerTime="2026-08-01T13:00:00+08:00",
+        )
+
+        with pytest.raises(ValueError, match="plan not found"):
+            update_commute_plan(
+                db,
+                plan_evt_id=plan["evtId"],
+                reminder_evt_id=reminder["evtId"],
+                departure_at="2026-08-01T14:00:00+08:00",
+                commute_minutes=60,
+                end_at="2026-08-01T18:00:00+08:00",
+                user_id="other-user",
+            )
+
+        with pytest.raises(ValueError, match="standalone manual reminder"):
+            update_commute_plan(
+                db,
+                plan_evt_id=plan["evtId"],
+                reminder_evt_id=plan["reminders"][0]["evtId"],
+                departure_at="2026-08-01T14:00:00+08:00",
+                commute_minutes=60,
+                end_at="2026-08-01T18:00:00+08:00",
+                user_id="default",
+            )
+
+        with pytest.raises(ValueError, match="event is not a plan"):
+            update_commute_plan(
+                db,
+                plan_evt_id=reminder["evtId"],
+                reminder_evt_id=reminder["evtId"],
+                departure_at="2026-08-01T14:00:00+08:00",
+                commute_minutes=60,
+                end_at="2026-08-01T18:00:00+08:00",
+                user_id="default",
+            )
+
+        stored_plan = db.get(PlanEvt, plan["evtId"])
+        stored_reminder = db.get(RemindEvt, reminder["evtId"])
+        assert stored_plan is not None
+        assert stored_plan.stTime == "2026-08-01T15:00:00+08:00"
+        assert stored_reminder is not None
+        assert stored_reminder.triggerTime == "2026-08-01T13:00:00+08:00"
+    finally:
+        db.close()
+
+
+def test_commute_update_rolls_back_both_records_on_failure(monkeypatch) -> None:
+    db = _session()
+    try:
+        plan = create_plan_event(
+            db,
+            title="原子更新",
+            stTime="2026-08-01T10:00:00+08:00",
+            durationMin=60,
+        )
+        reminder = create_reminder_event(
+            db,
+            title="原提醒",
+            triggerTime="2026-08-01T09:00:00+08:00",
+        )
+        monkeypatch.setattr(
+            event_relations,
+            "sync_plan_reminders",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("forced failure")),
+        )
+
+        with pytest.raises(RuntimeError, match="forced failure"):
+            update_commute_plan(
+                db,
+                plan_evt_id=plan["evtId"],
+                reminder_evt_id=reminder["evtId"],
+                departure_at="2026-08-01T12:00:00+08:00",
+                commute_minutes=30,
+                end_at="2026-08-01T15:00:00+08:00",
+                user_id="default",
+            )
+
+        db.expire_all()
+        stored_plan = db.get(PlanEvt, plan["evtId"])
+        stored_reminder = db.get(RemindEvt, reminder["evtId"])
+        assert stored_plan is not None
+        assert stored_plan.stTime == "2026-08-01T10:00:00+08:00"
+        assert stored_plan.durationMin == 60
+        assert stored_reminder is not None
+        assert stored_reminder.triggerTime == "2026-08-01T09:00:00+08:00"
     finally:
         db.close()

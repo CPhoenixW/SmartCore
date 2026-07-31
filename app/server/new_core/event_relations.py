@@ -769,6 +769,101 @@ def update_event(db: Session, evt_id: str, *, src: str = "api", **fields: Any) -
     return get_event(db, evt_id)
 
 
+def update_commute_plan(
+    db: Session,
+    *,
+    plan_evt_id: str,
+    reminder_evt_id: str,
+    departure_at: str,
+    commute_minutes: int,
+    end_at: str,
+    user_id: str,
+    src: str = "api",
+) -> dict[str, Any]:
+    plan_base = db.get(EvtBase, plan_evt_id)
+    if plan_base is None or plan_base.userId != user_id:
+        raise ValueError(f"plan not found: {plan_evt_id}")
+    plan = db.get(PlanEvt, plan_evt_id)
+    if plan_base.evtType != "plan" or plan is None:
+        raise ValueError(f"event is not a plan: {plan_evt_id}")
+    if plan_base.stat == "cancelled":
+        raise ValueError("commute plan is cancelled")
+
+    reminder_base = db.get(EvtBase, reminder_evt_id)
+    if reminder_base is None or reminder_base.userId != user_id:
+        raise ValueError(f"reminder not found: {reminder_evt_id}")
+    reminder = db.get(RemindEvt, reminder_evt_id)
+    if reminder_base.evtType != "remind" or reminder is None:
+        raise ValueError(f"event is not a reminder: {reminder_evt_id}")
+    if (
+        reminder.planEvtId is not None
+        or reminder.ddlEvtId is not None
+        or reminder.remindKind != "manual"
+    ):
+        raise ValueError("departure reminder must be an existing standalone manual reminder")
+    if reminder_base.stat == "cancelled":
+        raise ValueError("departure reminder is cancelled")
+
+    if isinstance(commute_minutes, bool):
+        raise ValueError("commuteMinutes must be an integer")
+    minutes = int(commute_minutes)
+    if isinstance(commute_minutes, float) and commute_minutes != minutes:
+        raise ValueError("commuteMinutes must be an integer")
+    if minutes < 0 or minutes > 1440:
+        raise ValueError("commuteMinutes must be between 0 and 1440")
+    departure = _parse_datetime(departure_at)
+    arrival = departure + timedelta(minutes=minutes)
+    end = _parse_datetime(end_at)
+    if end <= arrival:
+        raise ValueError("endAt must be later than departureAt plus commuteMinutes")
+    duration_seconds = int((end - arrival).total_seconds())
+    if duration_seconds % 60:
+        raise ValueError("endAt and arrival time must align to whole minutes")
+
+    try:
+        plan_changed = plan.stTime != arrival.isoformat() or plan.durationMin != duration_seconds // 60
+        plan.stTime = arrival.isoformat()
+        plan.durationMin = duration_seconds // 60
+        plan_base.updatedAt = nowIso()
+        sync_plan_reminders(db, plan_evt_id, reset_fired=plan_changed)
+
+        reminder.triggerTime = departure.isoformat()
+        reminder.firedAt = None
+        if reminder_base.stat == "done":
+            reminder_base.stat = "todo"
+        reminder_base.updatedAt = nowIso()
+
+        _record_action(
+            db,
+            user_id=user_id,
+            src=src,
+            action="commute_update",
+            target_kind="evt",
+            target_id=plan_evt_id,
+        )
+        _record_action(
+            db,
+            user_id=user_id,
+            src=src,
+            action="commute_update",
+            target_kind="evt",
+            target_id=reminder_evt_id,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return {
+        "departureAt": departure.isoformat(),
+        "arrivalAt": arrival.isoformat(),
+        "endAt": end.isoformat(),
+        "commuteMinutes": minutes,
+        "plan": get_event(db, plan_evt_id),
+        "reminder": get_event(db, reminder_evt_id, include_reminders=True),
+    }
+
+
 def cancel_event(db: Session, evt_id: str, *, src: str = "api") -> dict[str, Any]:
     base = db.get(EvtBase, evt_id)
     if base is None:

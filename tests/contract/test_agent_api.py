@@ -7,7 +7,11 @@ from typing import Any
 import pytest
 
 from app.server.agent import routes
-from app.server.agent.v2_routes import _normalize_query_body, _resolved_iso
+from app.server.agent.v2_routes import (
+    _normalize_query_body,
+    _resolved_absolute_iso,
+    _resolved_iso,
+)
 from openclaw.skills.smartcore.scripts import call_tool, query_events
 
 pytestmark = pytest.mark.contract
@@ -46,6 +50,14 @@ def test_agent_tools_keep_stable_names_and_aliases() -> None:
     assert "/agent/evtQuery" in tools["evtQuery"]["legacyPaths"]
     assert tools["evtCreate"]["path"] == "/agent/db/create_event"
     assert tools["evtUpdate"]["path"] == "/agent/db/update_event"
+    assert tools["commutePlanUpdate"]["path"] == "/agent/db/update_commute_plan"
+    assert tools["commutePlanUpdate"]["inputSchema"]["required"] == [
+        "planEvtId",
+        "reminderEvtId",
+        "departureAt",
+        "commuteMinutes",
+        "endAt",
+    ]
     assert tools["evtDelete"]["path"] == "/agent/db/delete_event"
     assert tools["sendFeishuText"]["path"] == "/agent/feedback/send_text"
     assert tools["sendFeishuCard"]["path"] == "/agent/feedback/send_card"
@@ -216,6 +228,16 @@ def test_agent_rejects_unresolved_relative_text() -> None:
             },
             "stTime",
         )
+
+
+def test_commute_times_require_absolute_offsets() -> None:
+    body = {"timezone": "Asia/Shanghai"}
+    assert (
+        _resolved_absolute_iso("2026-08-01T14:00:00+08:00", body, "departureAt")
+        == "2026-08-01T14:00:00+08:00"
+    )
+    with pytest.raises(ValueError, match="include a UTC offset"):
+        _resolved_absolute_iso("2026-08-01T14:00:00", body, "departureAt")
 
 
 def test_query_normalization_rejects_undocumented_range_fields() -> None:

@@ -117,7 +117,7 @@ def createRelationQueryRouter() -> APIRouter:
             "ok": True,
             "stat": "done",
             "data": {
-                "version": "2026-07-09-standalone-reminder-ddl-plans-v8",
+                "version": "2026-08-01-commute-plan-v9",
                 "authHeader": "X-SmartCore-Agent-Token",
                 "requestContext": {
                     "timezone": "Asia/Shanghai",

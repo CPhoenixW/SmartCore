@@ -116,6 +116,19 @@ def _resolved_iso(value: Any, body: dict[str, Any], field_name: str) -> str:
     return _resolve_datetime(value, body, field_name=field_name).isoformat()
 
 
+def _resolved_absolute_iso(value: Any, body: dict[str, Any], field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} must be an absolute date-time with a UTC offset")
+    normalized = value.strip().replace(" ", "T", 1).replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be an absolute date-time with a UTC offset") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(f"{field_name} must include a UTC offset")
+    return _resolve_datetime(value, body, field_name=field_name).isoformat()
+
+
 def _normalize_query_body(body: dict[str, Any]) -> dict[str, Any]:
     unknown = sorted(set(body) - _QUERY_FIELDS)
     if unknown:

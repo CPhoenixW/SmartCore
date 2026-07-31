@@ -8,7 +8,11 @@ from sqlalchemy.orm import Session
 
 from app.server.agent.routes import _done, _failed, requireAgentToken
 from app.server.agent.scope import AgentScope, require_agent_scope
-from app.server.agent.v2_routes import _normalize_update_patch, _resolved_iso
+from app.server.agent.v2_routes import (
+    _normalize_update_patch,
+    _resolved_absolute_iso,
+    _resolved_iso,
+)
 from app.server.db.session import get_db
 from app.server.new_core.course_semester import create_course_event, update_course_event
 from app.server.new_core.ddl_service import (
@@ -16,7 +20,11 @@ from app.server.new_core.ddl_service import (
     replace_ddl_plans,
     replace_ddl_reminders,
 )
-from app.server.new_core.event_relations import create_plan_event, update_event
+from app.server.new_core.event_relations import (
+    create_plan_event,
+    update_commute_plan,
+    update_event,
+)
 from app.server.new_core.models import EvtBase
 from app.server.new_core.reminder_service import create_reminder_event, update_reminder_event
 
@@ -203,6 +211,40 @@ def createRelationWriteRouter() -> APIRouter:
             db.rollback()
             return _failed([str(exc)])
 
+    def update_commute(
+        body: dict[str, Any],
+        db: Session,
+        scope: AgentScope,
+    ) -> dict[str, Any]:
+        required = ("planEvtId", "reminderEvtId", "departureAt", "commuteMinutes", "endAt")
+        missing = [key for key in required if body.get(key) in (None, "")]
+        if missing:
+            return _failed([f"required fields missing: {', '.join(missing)}"])
+        try:
+            raw_minutes = body["commuteMinutes"]
+            if isinstance(raw_minutes, bool):
+                raise ValueError("commuteMinutes must be an integer")
+            minutes = int(raw_minutes)
+            if isinstance(raw_minutes, float) and raw_minutes != minutes:
+                raise ValueError("commuteMinutes must be an integer")
+            return _done(
+                update_commute_plan(
+                    db,
+                    plan_evt_id=str(body["planEvtId"]),
+                    reminder_evt_id=str(body["reminderEvtId"]),
+                    departure_at=_resolved_absolute_iso(
+                        body["departureAt"], body, "departureAt"
+                    ),
+                    commute_minutes=minutes,
+                    end_at=_resolved_absolute_iso(body["endAt"], body, "endAt"),
+                    user_id=scope.userId,
+                    src="openclaw",
+                )
+            )
+        except (ValueError, TypeError, IntegrityError) as exc:
+            db.rollback()
+            return _failed([str(exc)])
+
     @router.post("/db/create_event", dependencies=protected)
     def create_modern(body: dict[str, Any], db: Session = Depends(get_db), scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
         return create(body, db, scope)
@@ -218,5 +260,13 @@ def createRelationWriteRouter() -> APIRouter:
     @router.post("/evtUpdate", dependencies=protected)
     def update_legacy(body: dict[str, Any], db: Session = Depends(get_db), scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
         return update(body, db, scope)
+
+    @router.post("/db/update_commute_plan", dependencies=protected)
+    def update_commute_modern(
+        body: dict[str, Any],
+        db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
+    ) -> dict[str, Any]:
+        return update_commute(body, db, scope)
 
     return router

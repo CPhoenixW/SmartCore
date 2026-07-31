@@ -276,6 +276,40 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         ),
     },
     {
+        "name": "commutePlanUpdate",
+        "method": "POST",
+        "path": "/agent/db/update_commute_plan",
+        "riskLevel": "write",
+        "confirmationRequired": False,
+        "description": (
+            "Atomically update an existing commute Plan and its existing standalone departure "
+            "reminder. Plan start is computed as departureAt plus commuteMinutes; this tool never "
+            "creates a departure reminder."
+        ),
+        "inputSchema": _schema_object(
+            {
+                "planEvtId": {"type": "string", "minLength": 1},
+                "reminderEvtId": {"type": "string", "minLength": 1},
+                "departureAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Absolute departure date-time with a UTC offset.",
+                },
+                "commuteMinutes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1440,
+                },
+                "endAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Absolute Plan end date-time with a UTC offset.",
+                },
+            },
+            ["planEvtId", "reminderEvtId", "departureAt", "commuteMinutes", "endAt"],
+        ),
+    },
+    {
         "name": "evtComplete",
         "method": "POST",
         "path": "/agent/db/complete_event",

@@ -80,3 +80,87 @@ def test_natural_language_event_shapes_are_loaded_into_the_form(
     assert parsed["evtType"] == expected_type
     assert parsed["title"]
     assert parsed[time_key].endswith("+08:00")
+
+
+def test_agent_commute_update_is_scoped_atomic_and_does_not_duplicate_reminders(
+    client, agent_headers
+) -> None:
+    headers = agent_headers("default")
+    tools = {
+        item["name"]: item
+        for item in client.get("/agent/tools", headers=headers).json()["data"]["tools"]
+    }
+    assert tools["commutePlanUpdate"]["path"] == "/agent/db/update_commute_plan"
+    plan_response = client.post(
+        "/agent/db/create_event",
+        headers=headers,
+        json={
+            "evtType": "plan",
+            "title": "通勤复测工作",
+            "stTime": "2026-08-01T14:00:00+08:00",
+            "durationMin": 480,
+        },
+    )
+    reminder_response = client.post(
+        "/agent/db/create_event",
+        headers=headers,
+        json={
+            "evtType": "remind",
+            "title": "通勤复测出发",
+            "triggerTime": "2026-08-01T08:30:00+08:00",
+        },
+    )
+    assert plan_response.json()["ok"] is True
+    assert reminder_response.json()["ok"] is True
+    plan = plan_response.json()["data"]
+    reminder = reminder_response.json()["data"]
+
+    payload = {
+        "planEvtId": plan["evtId"],
+        "reminderEvtId": reminder["evtId"],
+        "departureAt": "2026-08-01T14:00:00+08:00",
+        "commuteMinutes": 90,
+        "endAt": "2026-08-01T22:00:00+08:00",
+    }
+    updated = client.post(
+        "/agent/db/update_commute_plan",
+        headers=headers,
+        json=payload,
+    )
+    repeated = client.post(
+        "/agent/db/update_commute_plan",
+        headers=headers,
+        json=payload,
+    )
+
+    assert updated.json()["ok"] is True
+    assert repeated.json()["ok"] is True
+    result = repeated.json()["data"]
+    assert result["plan"]["stTime"] == "2026-08-01T15:30:00+08:00"
+    assert result["plan"]["durationMin"] == 390
+    assert result["reminder"]["evtId"] == reminder["evtId"]
+    assert result["reminder"]["triggerTime"] == "2026-08-01T14:00:00+08:00"
+
+    reminders = client.post(
+        "/agent/db/query_events",
+        headers=headers,
+        json={"date": "2026-08-01", "includeReminders": True},
+    ).json()["data"]["items"]
+    standalone = [item for item in reminders if item["evtType"] == "remind"]
+    assert [item["evtId"] for item in standalone] == [reminder["evtId"]]
+
+    denied = client.post(
+        "/agent/db/update_commute_plan",
+        headers=agent_headers("other-user"),
+        json=payload,
+    )
+    assert denied.json()["ok"] is False
+    assert "plan not found" in denied.json()["errors"][0]
+
+    naive = client.post(
+        "/agent/db/update_commute_plan",
+        headers=headers,
+        json={**payload, "departureAt": "2026-08-01T14:00:00"},
+    )
+    assert naive.json()["ok"] is False
+    assert "include a UTC offset" in naive.json()["errors"][0]

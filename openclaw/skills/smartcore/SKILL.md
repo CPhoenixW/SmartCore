@@ -94,3 +94,15 @@ Use this skill for schedules, reminders, ideas, computer work analysis, daily re
 - Clear authorized requests execute directly through the scoped tool.
 - Ask one concise clarification when the target or required time is genuinely ambiguous.
 - Preserve server ownership rules and use only fields published by `GET /agent/tools`.
+
+### Commute Plan Updates
+
+- Departure time and Plan start time are different. Plan start is the arrival or work-start time,
+  computed as departure time plus commute duration; never store departure time as `stTime`.
+- When one request updates both an existing commute Plan and an existing departure reminder, query
+  the relevant date with `--include-reminders`, identify both IDs, then call
+  `commutePlanUpdate` exactly once with `planEvtId`, `reminderEvtId`, absolute `departureAt`,
+  `commuteMinutes`, and absolute `endAt`.
+- In that flow, do not call `evtUpdate` for either record and never call `evtCreate`. If either
+  existing record cannot be identified unambiguously, ask for clarification instead of creating a
+  replacement or claiming success.
