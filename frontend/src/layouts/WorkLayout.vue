@@ -16,7 +16,7 @@ import {
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { authApi } from "@/api/auth";
-import smartcoreMarkDark from "@/assets/smartcore-mark-dark.png";
+import smartcoreMarkBlue from "@/assets/smartcore-mark-blue.png";
 import { useUserStore } from "@/stores/user";
 
 const route = useRoute();
@@ -51,7 +51,7 @@ async function logout() {
 <template>
   <div class="app-shell">
     <aside class="sidebar" :class="{ 'sidebar--open': mobileOpen }">
-      <RouterLink class="brand" :to="{ name: 'overview' }" @click="mobileOpen = false"><span class="brand-mark"><img :src="smartcoreMarkDark" alt="" aria-hidden="true" /></span><span><strong>{{ t('app.name') }}</strong><small>{{ t('app.subtitle') }}</small></span></RouterLink>
+      <RouterLink class="brand" :to="{ name: 'overview' }" @click="mobileOpen = false"><span class="brand-mark"><img :src="smartcoreMarkBlue" alt="" aria-hidden="true" /></span><span><strong>{{ t('app.name') }}</strong><small>{{ t('app.subtitle') }}</small></span></RouterLink>
       <nav class="nav-list" :aria-label="t('app.navigation')"><RouterLink v-for="item in nav" :key="item.key" class="nav-link" :class="{ 'nav-link--active': item.name === 'device' && route.path.startsWith('/device') }" :to="{ name: item.name }" @click="mobileOpen = false"><component :is="item.icon" class="nav-link__icon" :size="17" :stroke-width="1.8" aria-hidden="true" />{{ t(`nav.${item.key}`) }}</RouterLink></nav>
       <button class="sidebar-logout" type="button" :disabled="loggingOut" @click="logout">{{ logoutLabel }}</button>
     </aside>

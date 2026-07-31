@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { authApi } from "@/api/auth";
-import smartcoreMarkLight from "@/assets/smartcore-mark-light.png";
+import smartcoreMarkBlue from "@/assets/smartcore-mark-blue.png";
 import { i18n } from "@/locales";
 
 const route = useRoute();
@@ -111,7 +111,7 @@ async function submit() {
 <template>
   <main class="login-page">
     <section class="login-panel">
-      <header class="login-brand"><span><img :src="smartcoreMarkLight" alt="" aria-hidden="true" /></span><div><strong>SmartCore</strong><small>Personal student assistant</small></div></header>
+      <header class="login-brand"><span><img :src="smartcoreMarkBlue" alt="" aria-hidden="true" /></span><div><strong>SmartCore</strong><small>Personal student assistant</small></div></header>
       <button class="language-switch" type="button" @click="switchLanguage">{{ copy.language }}</button>
       <div class="login-copy"><h1>{{ copy.title }}</h1><p>{{ copy.subtitle }}</p></div>
       <div v-if="mode === 'loading'" class="login-loading">Loading…</div>
