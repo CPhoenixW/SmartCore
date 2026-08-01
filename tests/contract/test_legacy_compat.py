@@ -3,9 +3,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from app.server.agent import routes
-from app.server.agent.legacy_time_routes import createLegacyTimeRouter
-from app.server.agent.v2_routes import createAgentV2Router
+from app.server.agent.assembly import createAssembledAgentRouter
 from app.server.db.session import SessionLocal
 from app.server.new_core.event_relations import create_plan_event
 from app.server.new_core.models import EvtBase
@@ -15,7 +13,7 @@ pytestmark = pytest.mark.contract
 
 
 def test_router_exposes_canonical_and_legacy_paths() -> None:
-    paths = {route.path for route in routes.createAgentRouter().routes}
+    paths = {route.path for route in createAssembledAgentRouter().routes}
     expected = {
         "/agent/tools",
         "/agent/db/query_events",
@@ -44,8 +42,7 @@ def test_router_sets_and_scoped_legacy_delete_remain_compatible(
     client: TestClient,
     agent_headers,
 ) -> None:
-    modern_paths = {route.path for route in createAgentV2Router().routes}
-    legacy_paths = {route.path for route in createLegacyTimeRouter().routes}
+    paths = {route.path for route in createAssembledAgentRouter().routes}
 
     assert {
         "/agent/context",
@@ -53,8 +50,8 @@ def test_router_sets_and_scoped_legacy_delete_remain_compatible(
         "/agent/db/query_events",
         "/agent/db/create_event",
         "/agent/db/update_event",
-    }.issubset(modern_paths)
-    assert {"/agent/evtQuery", "/agent/evtCreate", "/agent/evtUpdate"}.issubset(legacy_paths)
+    }.issubset(paths)
+    assert {"/agent/evtQuery", "/agent/evtCreate", "/agent/evtUpdate"}.issubset(paths)
 
     with SessionLocal() as db:
         create_user(db, user_id="other")

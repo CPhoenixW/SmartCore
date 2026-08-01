@@ -89,6 +89,9 @@ WebP，大小由 `DEVICE_PHOTO_MAX_BYTES` 控制。Pi 必须按 `requestId` 去�
 `lifeDevice`，再写同 ID 的旧状态外键镜像；它不再自动创建归属 `default` 的旧设备。
 新 Pi 使用配对设备 token 和 `POST /dev/heartbeat`。
 
+浏览器读取 `/api/devState*` 时必须有可撤销 Session，且 `devId` 必须属于当前
+active user；未指定设备的兼容列表也只返回该用户 `lifeDevice` 对应的状态。
+
 ## Pi 本地数据
 
 `known_faces/`、`captures/`、`output/`、`logs/`、`.venv/`、模型和环境文件都不进入

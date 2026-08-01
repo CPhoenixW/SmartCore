@@ -92,8 +92,8 @@ Agent 接口使用机器稳定的结果：
 
 ## Agent API
 
-组装应用由 `app/server/agent/assembly.py` 显式声明重复 operation 的 owner，不再依赖
-router 注册顺序。assembled-app 快照位于
+组装应用由 `app/server/agent/assembly.py` 要求每个 operation 只能来自一个 Router，
+发现重复实现即拒绝启动，不再依赖 router 注册顺序。assembled-app 快照位于
 `tests/contract/snapshots/assembled_agent_routes.json`；任何同 method+path 的重复 handler
 都会使合约测试失败。`/agent/tools`、`/agent/db/query_events`、
 `/agent/db/create_event`、`/agent/db/update_event` 需要：

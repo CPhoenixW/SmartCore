@@ -38,6 +38,7 @@ from app.server.new_core.models import (
     Idea,
     IdeaMediaJob,
     IdeaUpload,
+    LifeDevice,
     MsgLog,
     NotifyLog,
     nowIso,
@@ -684,10 +685,15 @@ def delete_idea(
 def list_dev_state(
     devId: str | None = None,
     limit: int = Query(default=240, ge=1, le=5000),
+    userId: str = Depends(require_authenticated_user_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    query = select(DeviceStateLog)
+    owned_device_ids = select(LifeDevice.deviceId).where(LifeDevice.userId == userId)
+    query = select(DeviceStateLog).where(DeviceStateLog.deviceId.in_(owned_device_ids))
     if devId:
+        device = db.get(LifeDevice, devId)
+        if device is None or device.userId != userId:
+            raise HTTPException(status_code=404, detail="device not found")
         query = query.where(DeviceStateLog.deviceId == devId)
     rows = db.scalars(
         query.order_by(DeviceStateLog.seenAt.desc()).limit(limit)

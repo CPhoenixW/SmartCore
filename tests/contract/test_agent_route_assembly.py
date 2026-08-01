@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from fastapi.routing import APIRoute
 
+from app.server.agent.assembly import LEGACY_AGENT_PATHS
 from app.server.db.session import SessionLocal
 from app.server.main import create_app
 from app.server.new_core.models import AgentRouteUsage
@@ -50,6 +51,7 @@ def test_assembled_agent_routes_match_snapshot_and_are_unique(app_env) -> None:
 
     assert actual == expected
     assert all(count == 1 for count in counts.values())
+    assert {str(row["path"]) for row in actual if row["deprecated"]} == LEGACY_AGENT_PATHS
 
 
 def test_agent_route_usage_is_persisted_without_request_payload(client) -> None:

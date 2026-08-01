@@ -29,29 +29,8 @@ _SOURCES = (
     _RouterSource("daily_summary", createDailySummaryAgentRouter),
     _RouterSource("computer", createComputerAgentRouter),
     _RouterSource("v2", createAgentV2Router),
-    _RouterSource("general", createAgentRouter),
+    _RouterSource("idea_and_screen", createAgentRouter),
 )
-
-# Duplicate operations must always name their authoritative implementation here.
-# This makes handler ownership reviewable instead of relying on include order.
-_OPERATION_OWNERS: dict[tuple[str, str], str] = {
-    ("GET", "/agent/tools"): "relation_query",
-    ("POST", "/agent/db/query_events"): "relation_query",
-    ("POST", "/agent/evtQuery"): "relation_query",
-    ("POST", "/agent/db/create_event"): "relation_write",
-    ("POST", "/agent/db/update_event"): "relation_write",
-    ("POST", "/agent/db/delete_event"): "relation_write",
-    ("POST", "/agent/evtCreate"): "relation_write",
-    ("POST", "/agent/evtUpdate"): "relation_write",
-    ("POST", "/agent/evtDelete"): "relation_write",
-    ("POST", "/agent/feedback/send_text"): "feedback",
-    ("POST", "/agent/feedback/send_card"): "feedback",
-    ("POST", "/agent/feedback/send_query_result_card"): "feedback",
-    ("POST", "/agent/feedback/send_operation_success_card"): "feedback",
-    ("POST", "/agent/feedback/send_reminder_card"): "feedback",
-    ("POST", "/agent/sendText"): "feedback",
-    ("POST", "/agent/sendCard"): "feedback",
-}
 
 LEGACY_AGENT_PATHS = frozenset(
     {
@@ -84,26 +63,17 @@ def createAssembledAgentRouter() -> APIRouter:
             source_routes.append((source.name, route))
             counts.update(_operations(route))
 
-    undeclared_duplicates = {
-        operation for operation, count in counts.items()
-        if count > 1 and operation not in _OPERATION_OWNERS
-    }
-    if undeclared_duplicates:
+    duplicates = {operation for operation, count in counts.items() if count > 1}
+    if duplicates:
         raise RuntimeError(
-            f"Agent operation owners are not declared: {sorted(undeclared_duplicates)}"
+            f"Agent operations must have exactly one implementation: {sorted(duplicates)}"
         )
 
     assembled = APIRouter()
     selected: set[tuple[str, str]] = set()
-    for source_name, route in source_routes:
+    for _source_name, route in source_routes:
         operations = _operations(route)
         if not operations:
-            continue
-        if any(
-            counts[operation] > 1
-            and _OPERATION_OWNERS.get(operation) != source_name
-            for operation in operations
-        ):
             continue
         for operation in operations:
             if operation in selected:
@@ -112,7 +82,4 @@ def createAssembledAgentRouter() -> APIRouter:
         assembled.routes.append(route)
         selected.update(operations)
 
-    missing = set(_OPERATION_OWNERS) - selected
-    if missing:
-        raise RuntimeError(f"declared Agent operations are missing: {sorted(missing)}")
     return assembled

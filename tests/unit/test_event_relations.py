@@ -21,6 +21,7 @@ from app.server.new_core.event_relations import (
     expand_course_dates,
     get_event,
     list_events,
+    query_events,
     update_commute_plan,
     update_course_event,
     update_event,
@@ -100,6 +101,28 @@ def test_course_creates_one_plan_per_class_and_two_reminders_per_plan() -> None:
             is not None
         )
         assert len(db.scalars(select(RemindEvt)).all()) == 6
+    finally:
+        db.close()
+
+
+def test_query_events_controls_linked_plan_visibility() -> None:
+    db = _session()
+    try:
+        ddl = create_ddl_event(
+            db,
+            title="Submit report",
+            endTime="2026-09-10T20:00:00+08:00",
+        )
+
+        visible = query_events(db, {"includeLinkedPlans": True})["items"]
+        linked = [item for item in visible if item.get("generatedBy") == "ddl"]
+        assert {item["evtId"] for item in linked} == {
+            plan["evtId"] for plan in ddl["plans"]
+        }
+        assert all(item["ddlEvtId"] == ddl["evtId"] for item in linked)
+
+        hidden = query_events(db, {"includeLinkedPlans": False})["items"]
+        assert not any(item.get("generatedBy") == "ddl" for item in hidden)
     finally:
         db.close()
 

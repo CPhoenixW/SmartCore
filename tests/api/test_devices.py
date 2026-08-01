@@ -232,6 +232,31 @@ def test_legacy_state_route_requires_life_device_and_preserves_owner(app_env) ->
     )
     assert written.status_code == 200
 
+    for path in (
+        f"/api/devState/latest?devId={device_id}",
+        f"/api/devState/recent?devId={device_id}",
+        f"/api/devState/usage/today?devId={device_id}",
+        f"/api/devState/usage/recent?devId={device_id}",
+        f"/api/devState?devId={device_id}",
+    ):
+        assert client.get(path).status_code == 200
+
+    anonymous = TestClient(create_app())
+    assert anonymous.get(f"/api/devState/latest?devId={device_id}").status_code == 401
+    assert anonymous.get(f"/api/devState?devId={device_id}").status_code == 401
+
+    other = TestClient(create_app())
+    assert other.post(
+        "/api/auth/register",
+        json={"loginName": "device-state-other", "password": "correct-horse-battery-staple"},
+    ).status_code == 200
+    assert other.get(f"/api/devState/latest?devId={device_id}").status_code == 404
+    assert other.get(f"/api/devState/recent?devId={device_id}").status_code == 404
+    assert other.get(f"/api/devState/usage/today?devId={device_id}").status_code == 404
+    assert other.get(f"/api/devState/usage/recent?devId={device_id}").status_code == 404
+    assert other.get(f"/api/devState?devId={device_id}").status_code == 404
+    assert other.get("/api/devState").json()["data"] == []
+
     db = SessionLocal()
     try:
         assert db.get(Device, "unknown-pi") is None

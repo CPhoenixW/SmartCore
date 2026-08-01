@@ -71,8 +71,8 @@ current route registration in `app/server/main.py`.
 
 ## Compatibility Hazards
 
-- `app/server/agent/assembly.py` explicitly selects one owner for every formerly overlapping Agent
-  operation. Keep its assembled-app snapshot unique when changing routers.
+- `app/server/agent/assembly.py` rejects any operation implemented by more than one Agent router.
+  Keep every source operation unique and the assembled-app snapshot current when changing routers.
 - Modern paths are `/agent/db/*` and `/agent/feedback/*`; `evtQuery`, `evtCreate`, `evtUpdate`,
   `sendText`, and similar names are deprecated compatibility aliases. Check persisted production
   usage before removing one.

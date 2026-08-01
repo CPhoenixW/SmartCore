@@ -15,6 +15,7 @@ from app.server.api.device_state_routes import (
 )
 from app.server.db.session import Base
 from app.server.device import service
+from app.server.device.compatibility import ensure_legacy_device
 from app.server.device.routes import router
 from app.server.new_core import (
     crud,
@@ -31,9 +32,25 @@ def _session() -> Session:
     return Session(engine)
 
 
+def _add_owned_pi(db: Session) -> None:
+    crud.getCurrentUser(db)
+    db.add(
+        LifeDevice(
+            deviceId="pi",
+            userId="default",
+            deviceName="Pi",
+            deviceKind="pi",
+        )
+    )
+    db.flush()
+    ensure_legacy_device(db, "pi")
+    db.commit()
+
+
 def test_latest_state_is_read_directly_from_database() -> None:
     db = _session()
     try:
+        _add_owned_pi(db)
         now = datetime.now(ZoneInfo("Asia/Shanghai")).replace(microsecond=0)
         db.add_all(
             [
@@ -55,7 +72,7 @@ def test_latest_state_is_read_directly_from_database() -> None:
         )
         db.commit()
 
-        payload = latest_device_state(devId="pi", db=db)
+        payload = latest_device_state(devId="pi", user_id="default", db=db)
         assert payload["ok"] is True
         assert payload["data"]["state"] == "working"
         assert payload["data"]["meta"]["present"] is True
@@ -66,6 +83,7 @@ def test_latest_state_is_read_directly_from_database() -> None:
 def test_hourly_usage_is_aggregated_server_side() -> None:
     db = _session()
     try:
+        _add_owned_pi(db)
         tz = ZoneInfo("Asia/Shanghai")
         now = datetime.now(tz).replace(second=0, microsecond=0)
         start = now.replace(hour=max(0, now.hour - 1), minute=0)
@@ -92,6 +110,7 @@ def test_hourly_usage_is_aggregated_server_side() -> None:
         payload = today_device_usage(
             devId="pi",
             timezone="Asia/Shanghai",
+            user_id="default",
             db=db,
         )
         data = payload["data"]
@@ -107,6 +126,7 @@ def test_hourly_usage_is_aggregated_server_side() -> None:
 def test_recent_usage_returns_twelve_points_across_midnight(monkeypatch) -> None:
     db = _session()
     try:
+        _add_owned_pi(db)
         tz = ZoneInfo("Asia/Shanghai")
         fixed_now = datetime(2026, 7, 20, 1, 30, tzinfo=tz)
 
@@ -141,6 +161,7 @@ def test_recent_usage_returns_twelve_points_across_midnight(monkeypatch) -> None
             devId="pi",
             timezone="Asia/Shanghai",
             hours=12,
+            user_id="default",
             db=db,
         )
         data = payload["data"]
@@ -170,16 +191,7 @@ def test_device_router_exposes_heartbeat_and_photo_contract() -> None:
 def test_heartbeat_and_async_photo_request_lifecycle() -> None:
     db = _session()
     try:
-        crud.getCurrentUser(db)
-        db.add(
-            LifeDevice(
-                deviceId="pi",
-                userId="default",
-                deviceName="Pi",
-                deviceKind="pi",
-            )
-        )
-        db.commit()
+        _add_owned_pi(db)
         state = service.record_heartbeat(
             db,
             device_id="pi",

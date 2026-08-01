@@ -7,25 +7,9 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
 
-from app.server.agent.routes import _AGENT_TOOLS, _done, _failed, requireAgentToken
+from app.server.agent.routes import _AGENT_TOOLS, _done, requireAgentToken
 from app.server.agent.scope import require_agent_scope
-from app.server.db.session import get_db
-from app.server.new_core.ddl_service import create_ddl_event
-from app.server.new_core.event_relations import (
-    cancel_event,
-    create_course_event,
-    create_plan_event,
-)
-from app.server.new_core.event_relations import (
-    query_events as query_relation_events,
-)
-from app.server.new_core.event_relations import (
-    update_event as update_relation_event,
-)
-from app.server.new_core.models import EvtBase
 
 _DEFAULT_TZ_NAME = "Asia/Shanghai"
 _TIME_ONLY_RE = re.compile(r"^(?P<hour>[01]?\d|2[0-3]):(?P<minute>[0-5]\d)(?::(?P<second>[0-5]\d))?$")
@@ -152,6 +136,11 @@ def _normalize_query_body(body: dict[str, Any]) -> dict[str, Any]:
             resolved_range["start"] = _resolved_iso(time_range["start"], body, "timeRange.start")
         if time_range.get("end") not in (None, ""):
             resolved_range["end"] = _resolved_iso(time_range["end"], body, "timeRange.end")
+        if resolved_range.get("start") and resolved_range.get("end"):
+            if datetime.fromisoformat(resolved_range["start"]) > datetime.fromisoformat(
+                resolved_range["end"]
+            ):
+                raise ValueError("timeRange.start must be before timeRange.end")
         normalized["timeRange"] = resolved_range
         normalized.setdefault("includeCourseTemplates", False)
     if body.get("date"):
@@ -304,142 +293,5 @@ def createAgentV2Router() -> APIRouter:
                 },
             }
         )
-
-    @router.get("/tools", dependencies=protected)
-    def list_tools() -> dict[str, Any]:
-        timezone = ZoneInfo(_DEFAULT_TZ_NAME)
-        now = datetime.now(timezone).replace(microsecond=0)
-        tools = _enhanced_tools()
-        return {
-            "ok": True,
-            "stat": "done",
-            "data": {
-                "version": "2026-07-09-course-reminder-v4",
-                "authHeader": "X-SmartCore-Agent-Token",
-                "requestContext": {"timezone": _DEFAULT_TZ_NAME, "now": now.isoformat()},
-                "tools": tools,
-            },
-            "errors": [],
-            "tools": tools,
-        }
-
-    @router.post("/db/query_events", dependencies=protected)
-    def query_events(
-        body: dict[str, Any] | None = None,
-        db: Session = Depends(get_db),
-    ) -> dict[str, Any]:
-        try:
-            return _done(query_relation_events(db, _normalize_query_body(body or {})))
-        except (ValueError, TypeError) as exc:
-            return _failed([str(exc)])
-
-    @router.post("/db/create_event", dependencies=protected)
-    def create_event(body: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
-        try:
-            evt_type = str(body.get("evtType") or body.get("type") or "").lower()
-            if evt_type == "life":
-                evt_type = "plan"
-            title = str(body.get("title") or body.get("courseName") or "").strip()
-            if not title:
-                raise ValueError("title required")
-            if evt_type == "plan":
-                raw_time = body.get("stTime") or body.get("dueAt") or body.get("at")
-                if raw_time in (None, ""):
-                    raise ValueError("stTime required")
-                return _done(
-                    create_plan_event(
-                        db,
-                        title=title,
-                        stTime=_resolved_iso(raw_time, body, "stTime"),
-                        durationMin=int(body.get("durationMin") or 30),
-                        desc=body.get("desc") or body.get("description"),
-                        prio=body.get("prio") or body.get("priority") or "mid",
-                        src="openclaw",
-                    )
-                )
-            if evt_type == "ddl":
-                raw_time = body.get("endTime") or body.get("ddlAt") or body.get("at")
-                if raw_time in (None, ""):
-                    raise ValueError("endTime required")
-                plans = body.get("plans")
-                normalized_plans = None
-                if isinstance(plans, list):
-                    normalized_plans = []
-                    for index, plan in enumerate(plans):
-                        if not isinstance(plan, dict):
-                            raise ValueError(f"plans[{index}] must be an object")
-                        normalized_plan = dict(plan)
-                        if plan.get("stTime") not in (None, ""):
-                            normalized_plan["stTime"] = _resolved_iso(plan["stTime"], body, f"plans[{index}].stTime")
-                        normalized_plans.append(normalized_plan)
-                return _done(
-                    create_ddl_event(
-                        db,
-                        title=title,
-                        endTime=_resolved_iso(raw_time, body, "endTime"),
-                        hardDdl=bool(body.get("hardDdl", False)),
-                        desc=body.get("desc") or body.get("description"),
-                        prio=body.get("prio") or body.get("priority") or "high",
-                        plans=normalized_plans,
-                        src="openclaw",
-                    )
-                )
-            if evt_type == "course":
-                required = ("courseName", "stTime", "endTime", "stDate", "endDate", "weekDay")
-                missing = [key for key in required if body.get(key) in (None, "")]
-                if missing:
-                    raise ValueError(f"required fields missing: {', '.join(missing)}")
-                return _done(
-                    create_course_event(
-                        db,
-                        title=title,
-                        courseName=str(body["courseName"]),
-                        teacher=body.get("teacher"),
-                        location=body.get("location") or body.get("room"),
-                        stTime=str(body["stTime"]),
-                        endTime=str(body["endTime"]),
-                        stDate=str(body["stDate"]),
-                        endDate=str(body["endDate"]),
-                        weekDay=body["weekDay"],
-                        startWeek=int(body["startWeek"]) if body.get("startWeek") is not None else None,
-                        endWeek=int(body["endWeek"]) if body.get("endWeek") is not None else None,
-                        weekMode=str(body.get("weekMode") or "all"),
-                        desc=body.get("desc") or body.get("description"),
-                        prio=body.get("prio") or body.get("priority") or "mid",
-                        src="openclaw",
-                    )
-                )
-            raise ValueError("unsupported evtType")
-        except (ValueError, TypeError, IntegrityError) as exc:
-            db.rollback()
-            return _failed([str(exc)])
-
-    @router.post("/db/update_event", dependencies=protected)
-    def update_event(body: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
-        evt_id = body.get("evtId") or body.get("eventId")
-        if not evt_id:
-            return _failed(["evtId required"])
-        try:
-            base = db.get(EvtBase, str(evt_id))
-            if base is None:
-                raise ValueError(f"evt not found: {evt_id}")
-            patch = _normalize_update_patch(body, evt_type=base.evtType)
-            if not patch:
-                raise ValueError("no supported update fields")
-            return _done(update_relation_event(db, str(evt_id), src="openclaw", **patch))
-        except (ValueError, TypeError, IntegrityError) as exc:
-            db.rollback()
-            return _failed([str(exc)])
-
-    @router.post("/db/delete_event", dependencies=protected)
-    def delete_event(body: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
-        evt_id = body.get("evtId") or body.get("eventId")
-        if not evt_id:
-            return _failed(["evtId required"])
-        try:
-            return _done(cancel_event(db, str(evt_id), src="openclaw"))
-        except (ValueError, TypeError, IntegrityError) as exc:
-            db.rollback()
-            return _failed([str(exc)])
 
     return router

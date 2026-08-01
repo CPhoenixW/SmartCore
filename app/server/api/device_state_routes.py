@@ -4,14 +4,22 @@ from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.server.auth.security import require_authenticated_user_id
 from app.server.db.session import get_db
-from app.server.new_core.models import DeviceStateLog
+from app.server.new_core.models import DeviceStateLog, LifeDevice
 
 router = APIRouter(prefix="/api", tags=["device-state"])
+
+
+def _require_owned_device(db: Session, device_id: str, user_id: str) -> LifeDevice:
+    device = db.get(LifeDevice, device_id)
+    if device is None or device.userId != user_id:
+        raise HTTPException(status_code=404, detail="device not found")
+    return device
 
 
 def _row_dict(row: DeviceStateLog | None) -> dict[str, Any] | None:
@@ -145,8 +153,10 @@ def _usage_window(
 @router.get("/devState/latest")
 def latest_device_state(
     devId: str = Query(default="pi", min_length=1, max_length=50),
+    user_id: str = Depends(require_authenticated_user_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    _require_owned_device(db, devId, user_id)
     row = db.scalar(
         select(DeviceStateLog)
         .where(DeviceStateLog.deviceId == devId)
@@ -160,8 +170,10 @@ def latest_device_state(
 def recent_device_states(
     devId: str = Query(default="pi", min_length=1, max_length=50),
     limit: int = Query(default=240, ge=1, le=500),
+    user_id: str = Depends(require_authenticated_user_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    _require_owned_device(db, devId, user_id)
     rows = db.scalars(
         select(DeviceStateLog)
         .where(DeviceStateLog.deviceId == devId)
@@ -175,8 +187,10 @@ def recent_device_states(
 def today_device_usage(
     devId: str = Query(default="pi", min_length=1, max_length=50),
     timezone: str = Query(default="Asia/Shanghai", min_length=1, max_length=64),
+    user_id: str = Depends(require_authenticated_user_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    _require_owned_device(db, devId, user_id)
     try:
         tz = ZoneInfo(timezone)
     except ZoneInfoNotFoundError:
@@ -217,8 +231,10 @@ def recent_device_usage(
     devId: str = Query(default="pi", min_length=1, max_length=50),
     timezone: str = Query(default="Asia/Shanghai", min_length=1, max_length=64),
     hours: int = Query(default=12, ge=2, le=48),
+    user_id: str = Depends(require_authenticated_user_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    _require_owned_device(db, devId, user_id)
     try:
         tz = ZoneInfo(timezone)
     except ZoneInfoNotFoundError:

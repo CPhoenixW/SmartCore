@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -14,7 +12,7 @@ from app.server.agent.routes import (
     _failed,
     requireAgentToken,
 )
-from app.server.agent.scope import AgentScope, filter_agent_tools, require_agent_scope
+from app.server.agent.scope import AgentScope, require_agent_scope
 from app.server.db.session import get_db
 from app.server.feishu.bot_service import runtime
 from app.server.feishu.cards import (
@@ -223,32 +221,6 @@ def createFeedbackRouter() -> APIRouter:
     ensure_feedback_tools()
     router = APIRouter(prefix="/agent", tags=["agent-feedback"])
     protected = [Depends(requireAgentToken), Depends(require_agent_scope)]
-
-    @router.get("/tools", dependencies=protected)
-    def list_tools(scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
-        from app.server.agent.v2_routes import _enhanced_tools
-
-        now = datetime.now(ZoneInfo("Asia/Shanghai")).replace(microsecond=0)
-        tools = filter_agent_tools(scope, _enhanced_tools())
-        return {
-            "ok": True,
-            "stat": "done",
-            "data": {
-                "version": "2026-07-08-feishu-card-v3",
-                "authHeader": "X-SmartCore-Agent-Token",
-                "requestContext": {
-                    "timezone": "Asia/Shanghai",
-                    "now": now.isoformat(),
-                },
-                "feedbackPolicy": {
-                    "default": "Use structured Feishu card tools for user-facing query and operation results.",
-                    "rawCardJson": "Optional; SmartCore normalizes Card JSON 2.0 to the interactive message format.",
-                },
-                "tools": tools,
-            },
-            "errors": [],
-            "tools": tools,
-        }
 
     @router.post("/sendCard", dependencies=protected)
     @router.post("/feedback/send_card", dependencies=protected)
