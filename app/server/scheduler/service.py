@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy.orm import Session
 
+from app.server.computer.attention_service import dispatch_attention_reminders
 from app.server.computer.insights import dispatch_smart_plan_reminders
 from app.server.computer.service import cleanup_activity
 from app.server.config import Settings
@@ -33,6 +34,7 @@ def build_scheduler_service(
         and not settings.weather_enabled
         and not settings.computer_analysis_enabled
         and not settings.computer_work_block_analysis_enabled
+        and not settings.computer_attention_reminders_enabled
         and settings.computer_activity_retention_days < 1
     ):
         return None
@@ -134,6 +136,16 @@ class SchedulerService:
     def _computer_smart_reminder_tick(self) -> None:
         db = self._session_factory()
         try:
+            if self._settings.computer_attention_reminders_enabled:
+                dispatch_attention_reminders(
+                    db,
+                    now=datetime.now(ZoneInfo(self._settings.computer_analysis_timezone)),
+                    screen_online=screenManager.online,
+                    idle_minutes=self._settings.computer_attention_idle_minutes,
+                    implicit_focus_active_minutes=(
+                        self._settings.computer_implicit_focus_active_minutes
+                    ),
+                )
             dispatch_smart_plan_reminders(
                 db,
                 now=datetime.now(ZoneInfo(self._settings.computer_analysis_timezone)),
@@ -235,12 +247,21 @@ class SchedulerService:
                 self._scheduler.add_job(
                     self._computer_work_block_tick,
                     trigger="interval",
-                    minutes=5,
+                    seconds=60,
                     id="smartcore-computer-work-block-analysis",
                     replace_existing=True,
                     coalesce=True,
                     max_instances=1,
                 )
+        computer_reminders_enabled = (
+            computer_analysis_enabled or self._settings.computer_attention_reminders_enabled
+        )
+        if computer_reminders_enabled:
+            if self._settings.computer_attention_idle_minutes < 1:
+                raise ValueError("COMPUTER_ATTENTION_IDLE_MINUTES must be at least 1")
+            if self._settings.computer_implicit_focus_active_minutes < 1:
+                raise ValueError("COMPUTER_IMPLICIT_FOCUS_ACTIVE_MINUTES must be at least 1")
+            ZoneInfo(self._settings.computer_analysis_timezone)
             self._scheduler.add_job(
                 self._computer_smart_reminder_tick,
                 trigger="interval",

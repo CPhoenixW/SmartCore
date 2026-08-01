@@ -152,3 +152,11 @@ Computer active seconds；结果卡片必须匹配原 owner、bot、chat 和消�
 - OpenClaw 继续处理飞书自然语言、图片和每日简报；Computer Agent 工具仅作显式兼容回退。
 
 关键边界：不修改活动事实、工作块、已有日志或数据库结构；部署配置可显式恢复兼容行为。
+
+## 2026-08-01：Computer 注意力提醒与滚动总结
+
+- Work Block 在累计 active 二十分钟后更新同一标题与总结，此后每新增六十分钟 active 滚动更新。
+- 当前 Plan 连续 idle 五分钟触发中性提醒；无 Plan 时需 open Block 先累计 active 二十分钟。
+- 提醒使用 Computer `stateSince` 和稳定 dedup key，不调用模型；锁屏、休眠、暂停与离线跳过。
+
+关键边界：idle 五分钟只提醒，idle 二十分钟才关闭工作块；不新增报告、Project 实体或数据库表。

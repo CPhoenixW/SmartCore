@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     computer_analysis_timezone: str = "Asia/Shanghai"
     computer_analysis_minute: int = 5
     computer_work_block_analysis_enabled: bool = False
+    computer_attention_reminders_enabled: bool = False
+    computer_attention_idle_minutes: int = 5
+    computer_implicit_focus_active_minutes: int = 20
     computer_analysis_direct_llm_enabled: bool = True
     computer_analysis_model: str = "deepseek-v4-flash-0731"
     computer_analysis_max_output_tokens: int = 2048

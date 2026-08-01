@@ -417,6 +417,37 @@ def test_scheduler_does_not_register_daily_work_log_job() -> None:
     job_ids = {str(job["id"]) for job in fake.jobs}
     assert "smartcore-computer-work-block-analysis" in job_ids
     assert "smartcore-computer-daily-work-log" not in job_ids
+    work_block_job = next(
+        job for job in fake.jobs if job["id"] == "smartcore-computer-work-block-analysis"
+    )
+    assert work_block_job["seconds"] == 60
+
+
+def test_attention_only_registers_reminder_tick_without_ai_jobs() -> None:
+    class FakeScheduler:
+        def __init__(self) -> None:
+            self.jobs: list[dict[str, object]] = []
+
+        def add_job(self, _function, **kwargs) -> None:
+            self.jobs.append(kwargs)
+
+        def start(self) -> None:
+            pass
+
+    fake = FakeScheduler()
+    service = scheduler_service.SchedulerService(
+        settings=Settings(
+            computer_attention_reminders_enabled=True,
+            computer_activity_retention_days=0,
+        ),
+        session_factory=lambda: None,  # type: ignore[return-value]
+        scheduler=fake,  # type: ignore[arg-type]
+    )
+
+    service.start()
+
+    assert [job["id"] for job in fake.jobs] == ["smartcore-computer-smart-reminders"]
+    assert fake.jobs[0]["seconds"] == 60
 
 
 def test_work_block_mode_keeps_hourly_snapshot_objective_without_ai(db_session) -> None:

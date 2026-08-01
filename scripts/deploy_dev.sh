@@ -68,6 +68,7 @@ verify_runtime_image() (
         --env AUTH_SECRET=smartcore-candidate-only-secret \
         --env SCHEDULER_ENABLED=false \
         --env COMPUTER_WORK_BLOCK_ANALYSIS_ENABLED=true \
+        --env COMPUTER_ATTENTION_REMINDERS_ENABLED=true \
         "$APP_IMAGE_REPO:$tag" >/dev/null
 
     cleanup_candidate() {

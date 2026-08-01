@@ -48,6 +48,10 @@ Use this skill for schedules, reminders, ideas, computer work analysis, daily re
   prefix of the one-paragraph summary. Summaries synthesize intent, progress, or outcome instead of
   listing time slots, apps, or windows. Omit optional progress, outcome, blocker, or next-step fields
   when evidence is absent.
+- A `refresh` trigger only allows `extend` and must return a complete replacement title and summary
+  for the same open block. Preserve supported facts from `currentBlock`, incorporate
+  `incrementalContexts`, clear optional claims no longer supported by evidence, and keep the current
+  title unless the accumulated evidence makes it materially inaccurate.
 - For every Plan in work-block context, return semantic alignment as `aligned`,
   `partially_aligned`, `unrelated`, or `unclear`, with confidence and evidence codes. The Server owns
   objective overlap and final Plan state. Do not create, update, complete or delete Plans.

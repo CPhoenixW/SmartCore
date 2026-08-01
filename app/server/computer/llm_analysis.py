@@ -243,6 +243,8 @@ def _compact_work_block_context(context: dict[str, Any]) -> dict[str, Any]:
             "activeSeconds": context["facts"]["activeSeconds"],
             "idleSeconds": context["facts"]["idleSeconds"],
             "contexts": context["facts"]["contexts"],
+            "incrementalActiveSeconds": context["facts"].get("incrementalActiveSeconds", 0),
+            "incrementalContexts": context["facts"].get("incrementalContexts", []),
             "plans": context["facts"]["plans"],
             "contextIds": context["facts"]["contextIds"],
         },
@@ -437,6 +439,13 @@ def analyze_work_block(
             db, user_id=user_id, payload=body.model_dump(mode="json")
         )
 
+    refresh_instructions = (
+        " For refresh, return a complete replacement snapshot that preserves prior supported facts, "
+        "incorporates the incremental evidence, removes optional claims that are no longer supported, "
+        "and keeps the existing title unless the accumulated evidence makes it materially inaccurate."
+        if run.triggerType == "refresh"
+        else ""
+    )
     return _generate_and_store(
         db=db,
         settings=settings,
@@ -448,6 +457,7 @@ def analyze_work_block(
             "and one summary paragraph; other optional fields must be omitted without evidence. Return a "
             "semantic assessment for every plan in evidence, using aligned, partially_aligned, unrelated, "
             "or unclear, and reference only evidence context IDs supplied by the Server."
+            f"{refresh_instructions}"
         ),
         usage_label="computer_work_block_analysis",
         context=_compact_work_block_context(context),

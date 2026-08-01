@@ -871,24 +871,6 @@ def dispatch_smart_plan_reminders(db: Session, *, now: datetime, screen_online: 
                 _aware(plan.stTime),
                 _aware(plan.stTime) + timedelta(minutes=plan.durationMin),
             )
-            if start + timedelta(minutes=10) <= now < end:
-                active = sum(
-                    row["seconds"]
-                    for row in _activity_rows(db, device=device, start=start, end=now)
-                    if row["state"] == "active"
-                )
-                if active == 0:
-                    result = routeNotify(
-                        db,
-                        title="计划尚未开始",
-                        content=f"「{base.title}」开始后 10 分钟仍未检测到电脑活跃。",
-                        screenOnline=screen_online(device.userId),
-                        dedupKey=f"computer-plan-start:{device.deviceId}:{base.evtId}:{_iso(start)}",
-                        evtId=base.evtId,
-                        phase="notice",
-                        userId=device.userId,
-                    )
-                    sent += result["stat"] == "sent"
             if end <= now <= end + timedelta(minutes=10):
                 active = sum(
                     row["seconds"]

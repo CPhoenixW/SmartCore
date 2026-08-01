@@ -121,13 +121,17 @@ Computer token 上传。它只承载项目名、结果状态、单段摘要、�
 设备管理页按 Computer、RaspberryPi、Screen 和 Feishu Bot 四类隔离配对、管理与参数。
 Server 可结合当前 Plan、电脑状态与同用户新鲜 Pi 状态生成带 reason codes 的确定性
 判断，但不输出效率或分心结论。启用 `COMPUTER_WORK_BLOCK_ANALYSIS_ENABLED` 后，Server
-每 5 分钟根据 active、20 分钟 idle、锁屏/休眠/暂停和上下文变化维护连续工作块；小时任务
+每分钟根据 active、20 分钟 idle、锁屏/休眠/暂停和上下文变化维护连续工作块；小时任务
 只保存客观快照。工作块开始、切换、结束或 Plan 语义需要更新时，Server 使用
 正式版 `deepseek-v4-flash-0731` 做一次结构化分析；展示文本由 Server 限长清洗，
 Schema 错误不会重复请求，且失败不默认回退到 OpenClaw
 `qwen3.7-plus`，任务租约和退避不影响原始上传。工作日志不再作为独立的 Computer 日终
 模型任务或前端卡片生成；Daily summary 直接使用 Codex 汇报、Computer 工作块和 Plan
 证据。历史 `ComputerDailyWorkLog` 记录与兼容接口保留，但不会由调度器继续创建。
+工作块累计 active 二十分钟时滚动更新同一标题与总结，以后每新增六十分钟 active 再更新；
+只有新增活动证据才调用模型。`COMPUTER_ATTENTION_REMINDERS_ENABLED` 独立控制注意力提醒：
+当前 Plan 下连续 idle 五分钟提醒；无 Plan 时需 open 工作块先累计 active 二十分钟。提醒只
+说明电脑操作已暂停，不判断用户是否在使用手机；锁屏、休眠、暂停和离线均跳过。
 
 ## Windows 使用监视器
 

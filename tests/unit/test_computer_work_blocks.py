@@ -20,8 +20,10 @@ from app.server.computer.work_blocks import (
     store_work_block_analysis,
 )
 from app.server.config import Settings
+from app.server.new_core.daily_work_context import build_daily_work_context
 from app.server.new_core.models import (
     AppUser,
+    CodexWorkReport,
     ComputerActivityBucket,
     ComputerActivityContext,
     ComputerActivitySlice,
@@ -153,6 +155,261 @@ def test_active_five_minutes_queues_start_and_creates_one_block(db_session) -> N
     )
     assert duplicate["workBlock"]["title"] == "接口开发"
     assert db_session.query(ComputerWorkBlock).count() == 1
+
+
+def test_open_block_refreshes_at_twenty_active_minutes_and_then_hourly(db_session) -> None:
+    _user, device = _fixture_db(db_session)
+    start = datetime(2026, 8, 1, 9, tzinfo=UTC)
+    _add_context(db_session, device, "ctx-a", app="Cursor")
+    for offset in range(5):
+        _add_activity(
+            db_session,
+            device,
+            start + timedelta(minutes=offset),
+            60,
+            context_id="ctx-a",
+        )
+    start_run = _start_run(db_session, device, start + timedelta(minutes=5))
+    started = store_work_block_analysis(
+        db_session,
+        user_id=device.userId,
+        payload={
+            "runId": start_run.runId,
+            "status": "complete",
+            "action": "start",
+            "title": "接口开发",
+            "summary": "开始实现接口并核对现有调用约束。",
+            "blocker": "证据仍少",
+            "topicKey": "smartcore",
+            "evidenceContextIds": ["ctx-a"],
+            "planSemanticAssessments": [],
+            "model": "qwen3.7-plus",
+            "promptVersion": "computer-work-block-v1",
+        },
+    )
+    block_id = started["workBlock"]["blockId"]
+    block = db_session.get(ComputerWorkBlock, block_id)
+    assert block is not None
+    assert block.evidence["summaryRevision"] == 1
+    assert block.evidence["nextSummaryActiveSeconds"] == 1200
+
+    for offset in range(5, 20):
+        _add_activity(
+            db_session,
+            device,
+            start + timedelta(minutes=offset),
+            60,
+            context_id="ctx-a",
+        )
+    refresh, should_dispatch = evaluate_work_block(
+        db_session,
+        device=device,
+        now=start + timedelta(minutes=20),
+        timezone_name="UTC",
+    )
+    assert refresh is not None and should_dispatch
+    assert refresh.triggerType == "refresh"
+    assert refresh.triggerData["activeThreshold"] == 1200
+    context = build_work_block_context(db_session, device=device, run=refresh, claim=False)
+    assert context["currentBlock"]["title"] == "接口开发"
+    assert context["facts"]["incrementalActiveSeconds"] == 900
+
+    refreshed = store_work_block_analysis(
+        db_session,
+        user_id=device.userId,
+        payload={
+            "runId": refresh.runId,
+            "status": "complete",
+            "action": "extend",
+            "title": "注意力提醒",
+            "summary": "已完成空闲提醒规则设计并开始补充滚动总结。",
+            "progress": "确定二十分钟与每小时刷新节点。",
+            "blocker": None,
+            "topicKey": "smartcore",
+            "evidenceContextIds": ["ctx-a"],
+            "planSemanticAssessments": [],
+            "model": "qwen3.7-plus",
+            "promptVersion": "computer-work-block-v1",
+        },
+    )
+    assert refreshed["workBlock"]["blockId"] == block_id
+    block = db_session.get(ComputerWorkBlock, block_id)
+    assert block is not None
+    assert block.title == "注意力提醒"
+    assert block.blocker is None
+    assert block.evidence["summaryRevision"] == 2
+    assert block.evidence["lastSummarizedActiveSeconds"] == 1200
+    assert block.evidence["nextSummaryActiveSeconds"] == 4800
+
+    for offset in range(20, 80):
+        _add_activity(
+            db_session,
+            device,
+            start + timedelta(minutes=offset),
+            60,
+            context_id="ctx-a",
+        )
+    hourly, hourly_dispatch = evaluate_work_block(
+        db_session,
+        device=device,
+        now=start + timedelta(minutes=80),
+        timezone_name="UTC",
+    )
+    assert hourly is not None and hourly_dispatch
+    assert hourly.triggerType == "refresh"
+    assert hourly.triggerData["activeThreshold"] == 4800
+    assert db_session.query(ComputerWorkBlock).count() == 1
+
+
+def test_wall_clock_idle_does_not_advance_work_block_refresh(db_session) -> None:
+    _user, device = _fixture_db(db_session)
+    start = datetime(2026, 8, 1, 9, tzinfo=UTC)
+    block = ComputerWorkBlock(
+        userId=device.userId,
+        deviceId=device.deviceId,
+        startAt=start.isoformat(),
+        timezone="UTC",
+        localDate=start.date().isoformat(),
+        status="open",
+        title="接口开发",
+        summary="继续处理接口。",
+        activeSeconds=1200,
+        generatedAt=start.isoformat(),
+        evidence={
+            "summaryRevision": 2,
+            "lastSummarizedActiveSeconds": 1200,
+            "nextSummaryActiveSeconds": 4800,
+        },
+    )
+    db_session.add(block)
+    db_session.commit()
+    for offset in range(20):
+        _add_activity(
+            db_session,
+            device,
+            start + timedelta(minutes=offset),
+            60,
+        )
+    for offset in range(20, 30):
+        _add_activity(
+            db_session,
+            device,
+            start + timedelta(minutes=offset),
+            60,
+            state="idle",
+        )
+
+    run, should_dispatch = evaluate_work_block(
+        db_session,
+        device=device,
+        now=start + timedelta(minutes=30),
+        timezone_name="UTC",
+    )
+    assert run is None and not should_dispatch
+    assert db_session.query(ComputerWorkBlockAnalysisRun).count() == 0
+
+
+def test_refresh_waits_for_an_inflight_higher_priority_run(db_session) -> None:
+    _user, device = _fixture_db(db_session)
+    start = datetime(2026, 8, 1, 9, tzinfo=UTC)
+    block = ComputerWorkBlock(
+        userId=device.userId,
+        deviceId=device.deviceId,
+        startAt=start.isoformat(),
+        timezone="UTC",
+        localDate=start.date().isoformat(),
+        status="open",
+        title="接口开发",
+        summary="继续处理接口。",
+        generatedAt=start.isoformat(),
+        evidence={"summaryRevision": 1, "nextSummaryActiveSeconds": 1200},
+    )
+    db_session.add(block)
+    db_session.flush()
+    db_session.add(
+        ComputerWorkBlockAnalysisRun(
+            userId=device.userId,
+            deviceId=device.deviceId,
+            blockId=block.blockId,
+            triggerKey="plan-change-inflight",
+            triggerType="plan_change",
+            triggerData={},
+            windowStart=start.isoformat(),
+            windowEnd=(start + timedelta(minutes=20)).isoformat(),
+            timezone="UTC",
+            localDate=start.date().isoformat(),
+            inputFingerprint="fingerprint",
+            status="queued",
+            attemptCount=1,
+            lastAttemptAt=(start + timedelta(minutes=20)).isoformat(),
+        )
+    )
+    db_session.commit()
+    for offset in range(20):
+        _add_activity(db_session, device, start + timedelta(minutes=offset), 60)
+
+    run, should_dispatch = evaluate_work_block(
+        db_session,
+        device=device,
+        now=start + timedelta(minutes=20),
+        timezone_name="UTC",
+    )
+    assert run is None and not should_dispatch
+    assert db_session.query(ComputerWorkBlockAnalysisRun).count() == 1
+
+
+def test_latest_work_block_summary_can_reassign_project_investment(db_session) -> None:
+    user, device = _fixture_db(db_session)
+    db_session.add(
+        CodexWorkReport(
+            userId=user.userId,
+            deviceId=device.deviceId,
+            sourceTaskId="task-smartcore",
+            reportDate="2026-08-01",
+            timezone="UTC",
+            projectKey="/workspace/SmartCore",
+            projectName="SmartCore",
+            title="完成提醒设计",
+            summary="完成注意力提醒设计。",
+            status="completed",
+        )
+    )
+    block = ComputerWorkBlock(
+        userId=user.userId,
+        deviceId=device.deviceId,
+        startAt="2026-08-01T09:00:00+00:00",
+        timezone="UTC",
+        localDate="2026-08-01",
+        status="open",
+        title="接口开发",
+        summary="处理服务逻辑。",
+        activeSeconds=1200,
+    )
+    db_session.add(block)
+    db_session.commit()
+
+    before = build_daily_work_context(
+        db_session,
+        user_id=user.userId,
+        report_date="2026-08-01",
+        timezone_name="UTC",
+    )
+    assert {item["projectName"]: item["activeSeconds"] for item in before["projects"]} == {
+        "SmartCore": 0,
+        "其他工作": 1200,
+    }
+
+    block.title = "SmartCore注意力提醒"
+    block.summary = "持续更新SmartCore的Computer工作块与注意力提醒。"
+    db_session.commit()
+    after = build_daily_work_context(
+        db_session,
+        user_id=user.userId,
+        report_date="2026-08-01",
+        timezone_name="UTC",
+    )
+    assert [item["projectName"] for item in after["projects"]] == ["SmartCore"]
+    assert after["projects"][0]["activeSeconds"] == 1200
 
 
 def test_idle_twenty_minutes_queues_complete(db_session) -> None:

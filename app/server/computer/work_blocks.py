@@ -32,6 +32,9 @@ WORK_BLOCK_ACTIONS = {"start", "extend", "switch", "complete", "ignore"}
 SEMANTIC_ALIGNMENTS = {"aligned", "partially_aligned", "unrelated", "unclear"}
 RETRY_DELAYS = (60, 300, 900, 3600)
 MAX_ATTEMPTS = 5
+INITIAL_SUMMARY_ACTIVE_SECONDS = 5 * 60
+FIRST_REFRESH_ACTIVE_SECONDS = 20 * 60
+REFRESH_INTERVAL_ACTIVE_SECONDS = 60 * 60
 
 
 def _fingerprint(value: Any) -> str:
@@ -41,6 +44,15 @@ def _fingerprint(value: Any) -> str:
 
 def _now_iso(value: datetime) -> str:
     return _iso(_aware(value))
+
+
+def _next_refresh_threshold(active_seconds: int) -> int:
+    if active_seconds < FIRST_REFRESH_ACTIVE_SECONDS:
+        return FIRST_REFRESH_ACTIVE_SECONDS
+    completed_intervals = (
+        active_seconds - FIRST_REFRESH_ACTIVE_SECONDS
+    ) // REFRESH_INTERVAL_ACTIVE_SECONDS
+    return FIRST_REFRESH_ACTIVE_SECONDS + (completed_intervals + 1) * REFRESH_INTERVAL_ACTIVE_SECONDS
 
 
 def _open_block(db: Session, device: LifeDevice) -> ComputerWorkBlock | None:
@@ -146,7 +158,7 @@ def _active_streak_start(rows: list[dict[str, Any]], *, now: datetime) -> dateti
         active_seconds += states["active"]
         streak_start = bucket_start
         next_start = bucket_start
-    return streak_start if active_seconds >= 300 else None
+    return streak_start if active_seconds >= INITIAL_SUMMARY_ACTIVE_SECONDS else None
 
 
 def _objective_plan_state(active_seconds: int, elapsed_seconds: int, alignment: str) -> str:
@@ -362,6 +374,8 @@ def _queue_run(
         trigger_identity.update(
             {"closeAt": trigger_data.get("closeAt"), "reason": trigger_data.get("reason")}
         )
+    elif trigger_type == "refresh":
+        trigger_identity["activeThreshold"] = int(trigger_data.get("activeThreshold") or 0)
     trigger_fingerprint = _fingerprint(trigger_identity)
     trigger_key = (
         f"{trigger_type}:{block.blockId if block else device.deviceId}:{trigger_fingerprint[:24]}"
@@ -452,6 +466,22 @@ def _next_dispatchable_run(
         if _prepare_run_for_dispatch(db, row=row, now=now):
             return row
     return None
+
+
+def _has_inflight_run(
+    db: Session, *, device: LifeDevice, block: ComputerWorkBlock
+) -> bool:
+    return (
+        db.scalar(
+            select(ComputerWorkBlockAnalysisRun.runId).where(
+                ComputerWorkBlockAnalysisRun.userId == device.userId,
+                ComputerWorkBlockAnalysisRun.deviceId == device.deviceId,
+                ComputerWorkBlockAnalysisRun.blockId == block.blockId,
+                ComputerWorkBlockAnalysisRun.status.in_({"queued", "running"}),
+            )
+        )
+        is not None
+    )
 
 
 def _queued_result(
@@ -698,7 +728,40 @@ def evaluate_work_block(
             ),
         )
     pending = _next_dispatchable_run(db, device=device, now=now)
-    return (pending, True) if pending is not None else (None, False)
+    if pending is not None:
+        return pending, True
+    if _has_inflight_run(db, device=device, block=block):
+        return None, False
+    evidence = dict(block.evidence or {})
+    next_refresh = int(
+        evidence.get("nextSummaryActiveSeconds") or FIRST_REFRESH_ACTIVE_SECONDS
+    )
+    if (
+        block.status == "open"
+        and block.generatedAt
+        and next_refresh >= FIRST_REFRESH_ACTIVE_SECONDS
+        and block.activeSeconds >= next_refresh
+    ):
+        return _queued_result(
+            db,
+            device=device,
+            now=now,
+            candidate=_queue_run(
+                db,
+                device=device,
+                block=block,
+                trigger_type="refresh",
+                trigger_data={
+                    "activeThreshold": next_refresh,
+                    "summaryRevision": int(evidence.get("summaryRevision") or 1) + 1,
+                },
+                window_start=start,
+                window_end=now,
+                timezone_name=timezone_name,
+                now=now,
+            ),
+        )
+    return None, False
 
 
 def mark_run_dispatched(db: Session, row: ComputerWorkBlockAnalysisRun, *, now: datetime) -> None:
@@ -768,6 +831,15 @@ def build_work_block_context(
     rows = _activity_rows(db, device=device, start=start, end=end)
     contexts = _context_summary(rows)
     block = db.get(ComputerWorkBlock, run.blockId) if run.blockId else None
+    evidence = dict(block.evidence or {}) if block else {}
+    last_summarized_at = evidence.get("lastSummarizedAt")
+    incremental_rows = rows
+    if last_summarized_at:
+        summarized_at = _aware(last_summarized_at)
+        incremental_rows = [
+            row for row in rows if _aware(row["startAt"]) >= summarized_at
+        ]
+    incremental_contexts = _context_summary(incremental_rows)
     semantic = {
         str(item.get("evtId")): item
         for item in (block.planAssessments if block else []) or []
@@ -792,6 +864,10 @@ def build_work_block_context(
                 dict.fromkeys(row["sessionId"] for row in rows if row.get("sessionId"))
             ),
             "contextIds": [item["contextId"] for item in contexts],
+            "incrementalActiveSeconds": sum(
+                row["seconds"] for row in incremental_rows if row["state"] == "active"
+            ),
+            "incrementalContexts": incremental_contexts,
         },
         "constraints": {
             "actions": sorted(WORK_BLOCK_ACTIONS),
@@ -800,6 +876,7 @@ def build_work_block_context(
                 "switch": ["switch", "extend", "ignore"],
                 "complete": ["complete"],
                 "plan_change": ["extend"],
+                "refresh": ["extend"],
             }.get(run.triggerType, []),
             "semanticAlignments": sorted(SEMANTIC_ALIGNMENTS),
             "promptVersion": WORK_BLOCK_PROMPT_VERSION,
@@ -854,10 +931,14 @@ def _validated_content(payload: dict[str, Any], *, required: bool) -> dict[str, 
 
 
 def _apply_content(
-    block: ComputerWorkBlock, content: dict[str, str | None], payload: dict[str, Any]
+    block: ComputerWorkBlock,
+    content: dict[str, str | None],
+    payload: dict[str, Any],
+    *,
+    replace_optional: bool = False,
 ) -> None:
     for field, value in content.items():
-        if value is not None:
+        if value is not None or replace_optional:
             setattr(block, field, value)
     topic_key = _validate_text(payload.get("topicKey"), max_length=100, required=False)
     if topic_key:
@@ -905,13 +986,14 @@ def store_work_block_analysis(
         "switch": {"switch", "extend", "ignore"},
         "complete": {"complete"},
         "plan_change": {"extend"},
+        "refresh": {"extend"},
     }
     if action not in allowed_actions.get(run.triggerType, set()):
         raise ValueError("work block action does not match the analysis trigger")
     if not run.blockId:
         raise ValueError("action requires an existing work block")
     context = build_work_block_context(db, device=device, run=run, claim=False)
-    required_content = action in {"start", "switch"}
+    required_content = action in {"start", "switch"} or run.triggerType == "refresh"
     content = _validated_content(payload, required=required_content)
     semantics = _validate_semantic_assessments(
         payload.get("planSemanticAssessments", []),
@@ -955,7 +1037,12 @@ def store_work_block_analysis(
         block = new_block
         run.blockId = new_block.blockId
     elif action in {"extend", "complete"}:
-        _apply_content(block, content, payload)
+        _apply_content(
+            block,
+            content,
+            payload,
+            replace_optional=run.triggerType == "refresh",
+        )
         if action == "extend" and block.status != "open":
             raise ValueError("extend analysis requires an open work block")
         if action == "complete" and block.status != "closed":
@@ -995,6 +1082,15 @@ def store_work_block_analysis(
         if action in {"start", "switch"} or run.triggerType == "switch":
             evidence["topicContextIds"] = (
                 evidence_context_ids or context["facts"]["contextIds"][:8]
+            )
+        if run.triggerType in {"start", "refresh"} or action == "switch":
+            previous_revision = int(evidence.get("summaryRevision") or 0)
+            requested_revision = int((run.triggerData or {}).get("summaryRevision") or 0)
+            evidence["summaryRevision"] = max(previous_revision + 1, requested_revision, 1)
+            evidence["lastSummarizedAt"] = run.windowEnd
+            evidence["lastSummarizedActiveSeconds"] = int(block.activeSeconds or 0)
+            evidence["nextSummaryActiveSeconds"] = _next_refresh_threshold(
+                int(block.activeSeconds or 0)
             )
         block.evidence = evidence
     run.status = "complete"

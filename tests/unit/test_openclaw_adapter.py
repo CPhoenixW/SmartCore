@@ -369,6 +369,8 @@ def test_work_block_prompt_requires_semantic_actions_and_no_reply_is_forbidden()
     assert "computerWorkBlockContext" in prompt
     assert "computerWorkBlockAnalysisComplete" in prompt
     assert "computer-work-block-v1" in prompt
+    assert "refresh" in prompt
+    assert "incrementalContexts" in prompt
     assert "aligned、partially_aligned、unrelated、unclear" in prompt
     assert "不得返回 NO_REPLY" in prompt
 
