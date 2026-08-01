@@ -234,6 +234,35 @@ def test_scheduler_dispatches_once_per_bound_user_and_records_failures(app_env) 
             daily_summary_hour=22,
             daily_summary_timezone="Asia/Shanghai",
         )
+        empty_day = datetime(2026, 7, 18, 22, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+        assert dispatch_daily_summaries(
+            db,
+            settings=settings,
+            now=empty_day,
+            post_event=events.append,
+        ) == {"queued": 0, "skipped": 1, "failed": 0}
+        assert events == []
+        assert db.scalar(
+            select(DailySummary).where(
+                DailySummary.userId == "bound",
+                DailySummary.reportDate == "2026-07-18",
+            )
+        ) is None
+
+        create_plan_event(
+            db,
+            userId="bound",
+            title="Write daily report",
+            stTime="2026-07-19T20:00:00+08:00",
+            durationMin=30,
+        )
+        create_plan_event(
+            db,
+            userId="bound",
+            title="Continue daily report",
+            stTime="2026-07-20T20:00:00+08:00",
+            durationMin=30,
+        )
         now = datetime(2026, 7, 19, 22, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
         first = dispatch_daily_summaries(
             db,

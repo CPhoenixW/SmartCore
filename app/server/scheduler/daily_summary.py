@@ -15,9 +15,17 @@ from app.server.new_core.daily_summary_service import (
     queue_daily_summary,
     store_daily_summary,
 )
+from app.server.new_core.daily_work_context import build_daily_work_context
 from app.server.new_core.models import AppUser, FeishuBind, FeishuBot
 
 PostEvent = Callable[[dict[str, Any]], None]
+
+
+def _has_daily_work_evidence(context: dict[str, Any]) -> bool:
+    if any(context.get(key) for key in ("codexReports", "computerWorkBlocks", "plans")):
+        return True
+    totals = context.get("totals")
+    return isinstance(totals, dict) and int(totals.get("activeSeconds") or 0) > 0
 
 
 def _post_openclaw_event(settings: Settings, event: dict[str, Any]) -> None:
@@ -64,6 +72,15 @@ def dispatch_daily_summaries(
     result = {"queued": 0, "skipped": 0, "failed": 0}
 
     for user, binding, bot in _primary_bindings(db):
+        context = build_daily_work_context(
+            db,
+            user_id=user.userId,
+            report_date=report_date,
+            timezone_name=settings.daily_summary_timezone,
+        )
+        if not _has_daily_work_evidence(context):
+            result["skipped"] += 1
+            continue
         _row, should_dispatch = queue_daily_summary(
             db,
             user_id=user.userId,

@@ -116,7 +116,7 @@ def test_daily_report_extraction_drops_reasoning_preamble() -> None:
     assert "Now let me" not in normalized
 
 
-def test_daily_report_rejects_bracketed_title() -> None:
+def test_daily_report_normalizes_bracketed_title() -> None:
     report = (
         "📅 **[2026年07月22日] 工作日报**\n\n"
         "### 📝 本日工作概述\n> 完成核心工作。\n\n"
@@ -125,18 +125,44 @@ def test_daily_report_rejects_bracketed_title() -> None:
         "### 📅 明日规划\n- 延续已记录工作。"
     )
     normalized, error = adapter.normalize_daily_report(report, "2026-07-22")
+    assert error is None
+    assert normalized.startswith("📅 **2026年07月22日 工作日报**\n\n")
+    assert "[2026年07月22日]" not in normalized
+
+
+def test_daily_report_adds_title_to_chinese_body() -> None:
+    body = "今天完成了核心开发，版本已经部署并通过验证。"
+    normalized, error = adapter.normalize_daily_report(body, "2026-07-22")
+    assert error is None
+    assert normalized == f"📅 **2026年07月22日 工作日报**\n\n{body}"
+
+
+def test_daily_report_normalizes_markdown_heading_title() -> None:
+    report = "# 📅 2026年7月22日 工作日报\n\n今天完成了核心开发。"
+    normalized, error = adapter.normalize_daily_report(report, "2026-07-22")
+    assert error is None
+    assert normalized == "📅 **2026年07月22日 工作日报**\n\n今天完成了核心开发。"
+
+
+def test_daily_report_rejects_wrong_date_without_retry() -> None:
+    normalized, error = adapter.normalize_daily_report(
+        "📅 **2026年07月21日 工作日报**\n\n今天完成了核心开发。",
+        "2026-07-22",
+    )
     assert normalized == ""
-    assert error == "missing exact report title"
+    assert error == "report title date does not match task date"
+    assert adapter.should_retry_daily_report(error) is False
 
 
-def test_daily_retry_prompt_requires_exact_unbracketed_title() -> None:
+def test_daily_retry_prompt_leaves_fixed_title_to_adapter() -> None:
     prompt = adapter.build_daily_retry_prompt(
         {"event_type": "daily_summary", "reportDate": "2026-07-22"},
         scope_file=".smartcore-task-scopes/retry",
     )
     assert "📅 **[YYYY年MM月DD日] 工作日报**" not in prompt
-    assert "📅 **2026年07月22日 工作日报**" in prompt
-    assert "日期不得使用方括号" in prompt
+    assert "📅 **2026年07月22日 工作日报**" not in prompt
+    assert "标题由 Adapter 根据任务日期生成" in prompt
+    assert "不要输出日报标题" in prompt
 
 
 def test_daily_summary_prompt_uses_project_context_and_evidence_priority() -> None:
@@ -151,6 +177,46 @@ def test_daily_summary_prompt_uses_project_context_and_evidence_priority() -> No
     assert "Codex 标题、摘要、证据、工作块以及 Plan 标题和 description" in prompt
     assert "按项目投入归纳" in prompt
     assert "不要把多个 Codex 任务墙钟时间相加" in prompt
+
+
+def test_adapter_does_not_retry_recoverable_daily_title_format(
+    tmp_path, monkeypatch
+) -> None:
+    report = "# 📅 **[2026年7月22日] 工作日报**\n\n今天完成了核心开发。"
+    runs: list[list[str]] = []
+    saved: list[str] = []
+
+    def fake_run(args, **_kwargs):
+        runs.append(args)
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout=json.dumps({"finalAssistantVisibleText": report}, ensure_ascii=False),
+            stderr="",
+        )
+
+    monkeypatch.setattr(adapter.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        adapter,
+        "save_daily_summary",
+        lambda _event, **kwargs: saved.append(str(kwargs["content"])),
+    )
+    monkeypatch.setattr(adapter, "deliver_reply", lambda *_args: True)
+    monkeypatch.setattr(adapter, "log", lambda *_args, **_kwargs: None)
+    monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
+
+    adapter.run_openclaw(
+        {
+            "event_id": "daily-summary:owner:2026-07-22",
+            "event_type": "daily_summary",
+            "reportDate": "2026-07-22",
+            "agentScope": "signed",
+            "chat_id": "chat-owner",
+        }
+    )
+
+    assert len(runs) == 1
+    assert saved == ["📅 **2026年07月22日 工作日报**\n\n今天完成了核心开发。"]
 
 
 def test_daily_report_rejects_wrong_structure() -> None:
