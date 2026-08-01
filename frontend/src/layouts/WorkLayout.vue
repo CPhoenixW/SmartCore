@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   BookOpen,
   Calendar,
@@ -18,6 +18,7 @@ import { useI18n } from "vue-i18n";
 import { authApi } from "@/api/auth";
 import smartcoreMarkBlue from "@/assets/smartcore-mark-blue.png";
 import { useUserStore } from "@/stores/user";
+import { bindStagedWheelScroll } from "@/utils/scroll";
 
 const route = useRoute();
 const router = useRouter();
@@ -26,6 +27,8 @@ const userStore = useUserStore();
 const search = ref(String(route.query.q ?? ""));
 const mobileOpen = ref(false);
 const loggingOut = ref(false);
+const pageRoot = ref<HTMLElement | null>(null);
+let stopStagedWheelScroll: (() => void) | undefined;
 const nav = [
   { key: "overview", name: "overview", icon: House },
   { key: "dailySummary", name: "dailySummary", icon: Calendar },
@@ -40,7 +43,11 @@ const nav = [
 const initials = computed(() => userStore.user.displayName?.slice(0, 2).toUpperCase() || "SC");
 const logoutLabel = computed(() => userStore.user.language === "en" ? "Log out" : "退出登录");
 watch(() => route.query.q, (value) => { search.value = String(value ?? ""); });
-onMounted(() => { if (!userStore.loaded) void userStore.load(); });
+onMounted(() => {
+  if (!userStore.loaded) void userStore.load();
+  if (pageRoot.value) stopStagedWheelScroll = bindStagedWheelScroll(pageRoot.value);
+});
+onBeforeUnmount(() => stopStagedWheelScroll?.());
 function submitSearch() { void router.push({ name: "update", query: { q: search.value || undefined } }); }
 async function logout() {
   loggingOut.value = true;
@@ -58,7 +65,7 @@ async function logout() {
     <div v-if="mobileOpen" class="sidebar-backdrop" @click="mobileOpen = false" />
     <section class="workspace">
       <header class="topbar"><button class="mobile-menu" type="button" :aria-label="t('app.menu')" @click="mobileOpen = true"><Menu :size="20" aria-hidden="true" /></button><form class="global-search" @submit.prevent="submitSearch"><Search :size="16" aria-hidden="true" /><input v-model="search" :placeholder="t('common.search')" /></form><div class="topbar-user"><span class="api-pill" :class="{ 'api-pill--loading': !userStore.loaded }">{{ userStore.loaded ? t('app.apiReady') : t('common.loading') }}</span><RouterLink class="avatar" :to="{ name: 'settings' }"><img v-if="userStore.user.avatarUrl" :src="userStore.user.avatarUrl" :alt="t('settings.avatarPreview')" /><span v-else>{{ initials }}</span></RouterLink></div></header>
-      <main class="page"><RouterView /></main>
+      <main ref="pageRoot" class="page"><RouterView /></main>
     </section>
   </div>
 </template>

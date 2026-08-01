@@ -102,7 +102,7 @@ function deleteDevice(deviceId: string, name: string) {
 <template>
   <component :is="embedded ? 'section' : BaseCard" :title="embedded ? undefined : title ?? t('pair.title')" :class="{ 'device-pair-panel--embedded': embedded }">
     <header v-if="embedded" class="device-pair-panel__header"><h3>{{ title ?? t('pair.title') }}</h3></header>
-    <div class="device-pair-list">
+    <div class="device-pair-list" data-staged-wheel-scroll>
       <article v-for="item in visibleDevices" :key="item.deviceId" class="device-pair-row">
         <div class="device-pair-identity"><strong>{{ item.deviceName }}</strong><small>{{ t(`pair.kind.${item.deviceKind}`) }} · {{ item.stat }}</small></div>
         <div class="device-pair-actions"><small>{{ item.deviceKind === 'feishuBot' ? t('pair.bound') : item.lastSeenAt ? t('pair.updated') : t('pair.notReported') }}</small><button class="icon-button" type="button" :aria-label="t('pair.delete')" :title="t('pair.delete')" :disabled="remove.isPending.value" @click="deleteDevice(item.deviceId, item.deviceName)">×</button></div>

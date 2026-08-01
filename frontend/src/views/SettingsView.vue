@@ -79,7 +79,7 @@ function clearAvatar() {
 <template>
   <PageHeader :title="t('settings.title')" :subtitle="t('settings.subtitle')" />
   <section class="settings-scroll-layout">
-    <div class="settings-scroll-column">
+    <div class="settings-scroll-column" data-staged-wheel-scroll>
       <BaseCard :title="t('settings.title')">
       <form class="form-grid" @submit.prevent="save">
         <label class="field field--wide"><span>{{ t("settings.displayName") }}</span><input v-model="form.displayName" required /></label>
@@ -102,7 +102,7 @@ function clearAvatar() {
         <div class="admin-user-list"><button v-for="user in adminUsers.data.value ?? []" :key="user.userId" class="admin-user-row" type="button" :disabled="switchUser.isPending.value || user.userId === store.user.userId" @click="switchUser.mutate(user.userId)"><span><strong>{{ user.displayName }}</strong><small>{{ user.loginName || user.userId }} · {{ user.role }}</small></span><span>{{ user.userId === store.user.userId ? t('settings.currentUser') : t('settings.switchUser') }}</span></button></div>
       </BaseCard>
     </div>
-    <aside class="settings-scroll-column settings-scroll-column--preview">
+    <aside class="settings-scroll-column settings-scroll-column--preview" data-staged-wheel-scroll>
       <BaseCard :title="t('settings.avatarPreview')"><div class="profile-preview"><div class="avatar large"><img v-if="previewUrl" :src="previewUrl" :alt="t('settings.avatarPreview')" /><span v-else>{{ initials }}</span></div><strong>{{ form.displayName || 'SmartCore' }}</strong><span>{{ form.language === 'en' ? 'English' : t('settings.chinese') }} · {{ form.reminderChannel === 'feishu' ? t('settings.feishuReminder') : t('settings.screenReminder') }}</span></div></BaseCard>
     </aside>
   </section>

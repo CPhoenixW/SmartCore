@@ -267,7 +267,7 @@ function projectStatusLabel(project: ComputerProjectInvestment) {
 
       <div v-if="activeView === 'activity' && range === 'today'" class="computer-two-column computer-two-column--scroll">
         <BaseCard :title="t('computer.sessions')">
-          <div v-if="report?.sessions.length" class="session-list computer-card-scroll">
+          <div v-if="report?.sessions.length" class="session-list computer-card-scroll" data-staged-wheel-scroll>
             <button v-for="session in report.sessions" :key="session.sessionId" type="button" @click="selectedSession = session">
               <i class="session-app-mark" :style="{ background: stableColor(session.contexts[0]?.bundleId || session.sessionId) }">{{ appInitial(session.contexts[0]?.appName) }}</i>
               <span class="session-main"><strong>{{ session.contexts[0]?.appName || t("common.notSet") }}</strong><small>{{ timeLabel(session.startAt) }}–{{ timeLabel(session.endAt) }}</small></span>
@@ -277,7 +277,7 @@ function projectStatusLabel(project: ComputerProjectInvestment) {
           <EmptyState v-else :text="t('computer.noSessions')" />
         </BaseCard>
         <BaseCard :title="t('computer.applications')">
-          <div v-if="report?.applications.length" class="app-ranking computer-card-scroll"><div v-for="(app, index) in report.applications" :key="app.bundleId"><span class="app-ranking__label"><b>{{ index + 1 }}</b><strong>{{ app.appName }}</strong><small>{{ duration(app.seconds) }}</small></span><i><b :style="{ width: `${app.seconds / maxApp * 100}%`, background: stableColor(app.bundleId) }" /></i></div></div>
+          <div v-if="report?.applications.length" class="app-ranking computer-card-scroll" data-staged-wheel-scroll><div v-for="(app, index) in report.applications" :key="app.bundleId"><span class="app-ranking__label"><b>{{ index + 1 }}</b><strong>{{ app.appName }}</strong><small>{{ duration(app.seconds) }}</small></span><i><b :style="{ width: `${app.seconds / maxApp * 100}%`, background: stableColor(app.bundleId) }" /></i></div></div>
           <EmptyState v-else :text="t('computer.noUsage')" />
         </BaseCard>
       </div>

@@ -103,7 +103,7 @@ function moveSelectedDate(days: number) {
         <button class="button" type="button" @click="selectedDate = todayKey()">{{ t("common.today") }}</button>
         <button class="button" type="button" @click="moveSelectedDate(1)">{{ t("common.next") }}</button>
       </div>
-      <div class="overview-scroll-window event-list">
+      <div class="overview-scroll-window event-list" data-staged-wheel-scroll>
         <div v-for="event in selectedDateEvents" :key="event.evtId" class="overview-event-row">
           <EventStatusToggle
             :status="event.stat"
@@ -118,7 +118,7 @@ function moveSelectedDate(days: number) {
         <EmptyState v-else-if="!selectedDateEvents.length" class="overview-empty" :text="t('overview.emptySelectedDate')" />
       </div>
     </BaseCard>
-    <BaseCard class="overview-scroll-card" :title="t('overview.recentIdeas')"><div class="overview-scroll-window overview-idea-window idea-cards"><IdeaCard v-for="idea in recentIdeas" :key="idea.ideaId" :idea="idea" @select="$router.push({ name: 'ideas' })" /><EmptyState v-if="!recentIdeas.length" /></div></BaseCard>
+    <BaseCard class="overview-scroll-card" :title="t('overview.recentIdeas')"><div class="overview-scroll-window overview-idea-window idea-cards" data-staged-wheel-scroll><IdeaCard v-for="idea in recentIdeas" :key="idea.ideaId" :idea="idea" @select="$router.push({ name: 'ideas' })" /><EmptyState v-if="!recentIdeas.length" /></div></BaseCard>
     </div>
     <div class="stack">
       <BaseCard :title="weather?.location.name ?? t('overview.weather')">

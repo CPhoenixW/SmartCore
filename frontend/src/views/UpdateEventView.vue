@@ -139,10 +139,10 @@ function markDone() { if (selected.value) updateMutation.mutate({ id: selected.v
     <PageHeader :title="t('update.title')" :subtitle="t('update.subtitle')" />
     <section class="date-toolbar"><button class="button" @click="move(-1)">{{ t("common.previous") }}</button><input v-model="date" type="date" /><button class="button" @click="date = todayKey()">{{ t("common.today") }}</button><button class="button" @click="move(1)">{{ t("common.next") }}</button><input v-model="text" :placeholder="t('common.search')" /><select v-model="status"><option value="all">{{ t("common.all") }}</option><option value="active">{{ t("event.status.active") }}</option><option value="cancelled">{{ t("event.status.cancelled") }}</option></select></section>
     <section class="split-scroll-layout split-scroll-layout--update">
-      <div class="split-scroll-column split-scroll-column--main">
+      <div class="split-scroll-column split-scroll-column--main" data-staged-wheel-scroll>
         <BaseCard :title="`${t('update.events')} · ${filtered.length}`"><div class="idea-cards event-list"><EventCard v-for="event in filtered" :key="event.evtId" :event="event" :selected="selected?.evtId === event.evtId" @select="selectEvent" @edit="editEvent" /><div v-if="eventsQuery.isPending.value" class="empty-state">{{ t("common.loading") }}</div><EmptyState v-else-if="!filtered.length" /></div></BaseCard>
       </div>
-      <aside class="split-scroll-column split-scroll-column--side">
+      <aside class="split-scroll-column split-scroll-column--side" data-staged-wheel-scroll>
         <div class="stack">
           <BaseCard v-if="selected && !editing" :title="t('preview.title')">
             <template #actions><PreviewActionButton :label="t('common.edit')" @click="editing = true" /></template>

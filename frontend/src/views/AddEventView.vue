@@ -106,7 +106,7 @@ function applyTemplate(kind: "homework" | "plan" | "exam" | "project") {
   <div class="dual-scroll-page">
     <PageHeader :title="t('add.title')" :subtitle="t('add.subtitle')" />
     <section class="split-scroll-layout">
-      <div class="split-scroll-column split-scroll-column--main">
+      <div class="split-scroll-column split-scroll-column--main" data-staged-wheel-scroll>
         <div class="stack">
           <BaseCard :title="t('add.natural')"><div class="natural-input"><textarea v-model="natural" rows="3" :placeholder="t('add.placeholder')" /><button class="button button--primary" type="button" :disabled="!natural.trim() || busy" @click="parseMutation.mutate()">{{ t("add.parse") }}</button></div></BaseCard>
           <BaseCard :title="t('add.formTitle')">
@@ -117,7 +117,7 @@ function applyTemplate(kind: "homework" | "plan" | "exam" | "project") {
           </BaseCard>
         </div>
       </div>
-      <aside class="split-scroll-column split-scroll-column--side">
+      <aside class="split-scroll-column split-scroll-column--side" data-staged-wheel-scroll>
         <div class="stack">
           <BaseCard :title="t('preview.title')">
             <EventPreviewCard
