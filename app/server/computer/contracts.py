@@ -5,8 +5,14 @@ from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field
 
-ComputerAnalysisModel: TypeAlias = Literal["qwen3.7-plus", "deepseek-v4-flash"]
-SUPPORTED_COMPUTER_ANALYSIS_MODELS = {"qwen3.7-plus", "deepseek-v4-flash"}
+ComputerAnalysisModel: TypeAlias = Literal[
+    "qwen3.7-plus", "deepseek-v4-flash", "deepseek-v4-flash-0731"
+]
+SUPPORTED_COMPUTER_ANALYSIS_MODELS = {
+    "qwen3.7-plus",
+    "deepseek-v4-flash",
+    "deepseek-v4-flash-0731",
+}
 
 
 class PlanAssessmentBody(BaseModel):
@@ -77,7 +83,7 @@ class WorkBlockAnalysisBody(BaseModel):
     status: Literal["complete", "failed"]
     action: Literal["start", "extend", "switch", "complete", "ignore"] | None = None
     topicKey: str | None = Field(default=None, max_length=100)
-    title: str | None = Field(default=None, max_length=10)
+    title: str | None = Field(default=None, max_length=20)
     summary: str | None = Field(default=None, max_length=800)
     progress: str | None = Field(default=None, max_length=300)
     outcome: str | None = Field(default=None, max_length=300)
@@ -112,7 +118,7 @@ class WorkBlockInference(BaseModel):
     model_config = ConfigDict(extra="forbid")
     action: Literal["start", "extend", "switch", "complete", "ignore"]
     topicKey: str | None = Field(default=None, max_length=100)
-    title: str | None = Field(default=None, max_length=10)
+    title: str | None = Field(default=None, max_length=20)
     summary: str | None = Field(default=None, max_length=800)
     progress: str | None = Field(default=None, max_length=300)
     outcome: str | None = Field(default=None, max_length=300)

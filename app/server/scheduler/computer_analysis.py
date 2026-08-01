@@ -19,6 +19,7 @@ from app.server.computer.insights import (
     record_hourly_evidence,
 )
 from app.server.computer.llm_analysis import (
+    ComputerAnalysisError,
     analyze_daily_log,
     analyze_hourly,
     analyze_work_block,
@@ -33,6 +34,12 @@ from app.server.new_core.models import LifeDevice, nowIso
 
 PostEvent = Callable[[dict[str, Any]], None]
 logger = logging.getLogger(__name__)
+
+
+def _analysis_error_message(exc: Exception) -> str:
+    detail = " ".join(str(exc).split())[:800]
+    prefix = f"analysis dispatch failed: {type(exc).__name__}"
+    return f"{prefix}: {detail}" if detail else prefix
 
 
 def _post(settings: Settings, event: dict[str, Any]) -> None:
@@ -131,7 +138,7 @@ def dispatch_hourly_analyses(
             result["queued"] += 1
         except Exception as exc:
             row.status = "failed"
-            row.errorMessage = f"analysis dispatch failed: {type(exc).__name__}"
+            row.errorMessage = _analysis_error_message(exc)
             row.updatedAt = nowIso()
             db.commit()
             result["failed"] += 1
@@ -177,8 +184,9 @@ def dispatch_work_block_analyses(
             fail_analysis_run(
                 db,
                 row=row,
-                error_message=f"analysis dispatch failed: {type(exc).__name__}",
+                error_message=_analysis_error_message(exc),
                 now=now,
+                retryable=not isinstance(exc, ComputerAnalysisError),
             )
             result["failed"] += 1
     return result
@@ -239,8 +247,9 @@ def dispatch_daily_work_logs(
             fail_daily_log(
                 db,
                 row=row,
-                error_message=f"analysis dispatch failed: {type(exc).__name__}",
+                error_message=_analysis_error_message(exc),
                 now=now,
+                retryable=not isinstance(exc, ComputerAnalysisError),
             )
             result["failed"] += 1
     return result

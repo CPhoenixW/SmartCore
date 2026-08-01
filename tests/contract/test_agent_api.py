@@ -76,7 +76,14 @@ def test_agent_tools_keep_stable_names_and_aliases() -> None:
         assert tools[name]["inputSchema"]["properties"]["model"]["enum"] == [
             "qwen3.7-plus",
             "deepseek-v4-flash",
+            "deepseek-v4-flash-0731",
         ]
+    assert (
+        tools["computerWorkBlockAnalysisComplete"]["inputSchema"]["properties"]["title"][
+            "maxLength"
+        ]
+        == 20
+    )
     assert "mediaImageOcr" not in tools
     assert "ocrEvidence" not in tools["ideaCapture"]["inputSchema"]["properties"]
     assert tools["ideaMediaJobComplete"]["inputSchema"]["required"] == [

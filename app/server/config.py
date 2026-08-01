@@ -60,9 +60,8 @@ class Settings(BaseSettings):
     computer_analysis_minute: int = 5
     computer_work_block_analysis_enabled: bool = False
     computer_analysis_direct_llm_enabled: bool = True
-    computer_analysis_model: str = "deepseek-v4-flash"
+    computer_analysis_model: str = "deepseek-v4-flash-0731"
     computer_analysis_max_output_tokens: int = 2048
-    computer_analysis_repair_attempts: int = 0
     computer_analysis_openclaw_fallback_enabled: bool = False
     computer_daily_preview_enabled: bool = False
     computer_daily_preview_min_interval_minutes: int = 240

@@ -46,6 +46,75 @@ class ComputerAnalysisError(RuntimeError):
     """Raised when direct Computer analysis cannot produce a valid persisted result."""
 
 
+_DISPLAY_FIELD_LIMITS: dict[type[BaseModel], dict[str, int]] = {
+    HourlyInference: {"title": 10, "summary": 800},
+    DailyInference: {"title": 10, "summary": 1200},
+    WorkBlockInference: {
+        "topicKey": 100,
+        "title": 20,
+        "summary": 800,
+        "progress": 300,
+        "outcome": 300,
+        "blocker": 300,
+        "nextStep": 300,
+    },
+}
+
+
+def _clean_display_text(value: Any, *, max_length: int) -> Any:
+    if not isinstance(value, str):
+        return value
+    cleaned = " ".join(value.split()).lstrip("#").strip()
+    return cleaned[:max_length]
+
+
+def _clean_display_fields(
+    inference_type: type[InferenceT], value: dict[str, Any]
+) -> dict[str, Any]:
+    """Bound model-authored prose while leaving actions, IDs and enums untouched."""
+    cleaned = dict(value)
+    for field, max_length in _DISPLAY_FIELD_LIMITS[inference_type].items():
+        if field in cleaned:
+            cleaned[field] = _clean_display_text(cleaned[field], max_length=max_length)
+
+    for collection in ("planAssessments", "planSemanticAssessments"):
+        items = cleaned.get(collection)
+        if isinstance(items, list):
+            cleaned[collection] = [
+                {
+                    **item,
+                    "note": _clean_display_text(item.get("note"), max_length=500),
+                }
+                if isinstance(item, dict) and "note" in item
+                else item
+                for item in items
+            ]
+
+    topics = cleaned.get("topics")
+    if isinstance(topics, list):
+        cleaned["topics"] = [
+            {
+                **item,
+                "name": _clean_display_text(item.get("name"), max_length=40),
+                **(
+                    {"summary": _clean_display_text(item.get("summary"), max_length=300)}
+                    if "summary" in item
+                    else {}
+                ),
+            }
+            if isinstance(item, dict) and "name" in item
+            else item
+            for item in topics
+        ]
+
+    title, summary = cleaned.get("title"), cleaned.get("summary")
+    if isinstance(title, str) and title and isinstance(summary, str) and summary.startswith(title):
+        independent_summary = summary[len(title) :].lstrip(" ：:，,。.-—")
+        if independent_summary:
+            cleaned["summary"] = independent_summary
+    return cleaned
+
+
 def _parse_object(raw: str) -> dict[str, Any]:
     text = raw.strip()
     if text.startswith("```"):
@@ -218,39 +287,25 @@ def _generate_and_store(
             ),
         },
     ]
-    attempts = 1 + min(1, max(0, settings.computer_analysis_repair_attempts))
-    last_error = "unknown validation error"
-    for attempt in range(attempts):
-        raw = completion(
-            messages,
-            temperature=0,
-            settings=settings,
-            model=model,
-            max_tokens=settings.computer_analysis_max_output_tokens,
-            response_format={"type": "json_object"},
-            usage_label=usage_label,
+    raw = completion(
+        messages,
+        temperature=0,
+        settings=settings,
+        model=model,
+        max_tokens=settings.computer_analysis_max_output_tokens,
+        response_format={"type": "json_object"},
+        usage_label=usage_label,
+    )
+    try:
+        inferred = inference_type.model_validate(
+            _clean_display_fields(inference_type, _parse_object(raw))
         )
-        try:
-            inferred = inference_type.model_validate(_parse_object(raw))
-            return finalize(inferred)
-        except (ValidationError, ValueError) as exc:
-            db.rollback()
-            last_error = _error_summary(exc)
-            if attempt + 1 >= attempts:
-                break
-            messages.extend(
-                [
-                    {"role": "assistant", "content": raw},
-                    {
-                        "role": "user",
-                        "content": (
-                            f"The response was rejected: {last_error}. Return one corrected JSON object "
-                            "matching the same schema. Do not explain the correction."
-                        ),
-                    },
-                ]
-            )
-    raise ComputerAnalysisError(f"Computer analysis validation failed: {last_error}")
+        return finalize(inferred)
+    except (ValidationError, ValueError) as exc:
+        db.rollback()
+        raise ComputerAnalysisError(
+            f"Computer analysis validation failed: {_error_summary(exc)}"
+        ) from exc
 
 
 def analyze_hourly(

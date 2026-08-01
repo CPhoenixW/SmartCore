@@ -5,10 +5,12 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.server.computer.insights import (
+    fail_daily_log,
     mark_daily_log_dispatched,
     queue_daily_log,
     store_daily_log,
 )
+from app.server.computer.llm_analysis import ComputerAnalysisError
 from app.server.computer.work_blocks import (
     build_work_block_context,
     cleanup_work_blocks,
@@ -542,6 +544,49 @@ def test_failed_run_retries_with_stable_trigger_key(db_session) -> None:
     assert retry.triggerKey == trigger_key
 
 
+def test_schema_failure_is_terminal_and_not_dispatched_again(
+    db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _user, device = _fixture_db(db_session)
+    start = datetime(2026, 7, 29, 9, tzinfo=UTC)
+    for offset in range(0, 10):
+        _add_activity(db_session, device, start + timedelta(minutes=offset), 60)
+
+    calls = 0
+
+    def reject_schema(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise ComputerAnalysisError("Computer analysis validation failed: action invalid")
+
+    monkeypatch.setattr(
+        "app.server.scheduler.computer_analysis.analyze_work_block", reject_schema
+    )
+    settings = Settings(
+        computer_analysis_timezone="UTC",
+        computer_work_block_analysis_enabled=True,
+    )
+
+    first = dispatch_work_block_analyses(
+        db_session,
+        settings=settings,
+        now=start + timedelta(minutes=5),
+    )
+    later = dispatch_work_block_analyses(
+        db_session,
+        settings=settings,
+        now=start + timedelta(minutes=6),
+    )
+
+    run = db_session.query(ComputerWorkBlockAnalysisRun).one()
+    assert first == {"queued": 0, "skipped": 0, "failed": 1}
+    assert later == {"queued": 0, "skipped": 1, "failed": 0}
+    assert calls == 1
+    assert run.status == "failed"
+    assert run.nextRetryAt is None
+    assert "action invalid" in (run.errorMessage or "")
+
+
 def test_work_block_scheduler_does_not_duplicate_an_inflight_run(db_session) -> None:
     _user, device = _fixture_db(db_session)
     start = datetime(2026, 7, 29, 9, tzinfo=UTC)
@@ -760,6 +805,50 @@ def test_daily_log_failure_retries_and_finalization_promotes_inflight_preview(db
     )
     assert retry is not None and retry_queued
     assert retry.phase == "final"
+
+
+def test_non_retryable_daily_schema_failure_stays_terminal(db_session) -> None:
+    _user, device = _fixture_db(db_session)
+    start = datetime(2026, 7, 29, 9, tzinfo=UTC)
+    db_session.add(
+        ComputerWorkBlock(
+            userId=device.userId,
+            deviceId=device.deviceId,
+            startAt=start.isoformat(),
+            timezone="UTC",
+            localDate=start.date().isoformat(),
+            status="open",
+        )
+    )
+    db_session.commit()
+    row, queued, _ = queue_daily_log(
+        db_session,
+        device=device,
+        log_date=start.date().isoformat(),
+        phase="final",
+        now=start,
+    )
+    assert row is not None and queued
+    mark_daily_log_dispatched(db_session, row=row, now=start)
+    fail_daily_log(
+        db_session,
+        row=row,
+        error_message="Computer analysis validation failed: title invalid",
+        now=start,
+        retryable=False,
+    )
+
+    terminal, terminal_queued, _ = queue_daily_log(
+        db_session,
+        device=device,
+        log_date=start.date().isoformat(),
+        phase="final",
+        now=start + timedelta(days=1),
+    )
+
+    assert terminal is not None and not terminal_queued
+    assert terminal.status == "failed"
+    assert terminal.nextRetryAt is None
 
 
 def test_daily_final_dispatch_promotes_preview_and_late_preview_cannot_downgrade_it(

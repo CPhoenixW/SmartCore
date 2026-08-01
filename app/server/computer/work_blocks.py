@@ -414,8 +414,10 @@ def _prepare_run_for_dispatch(
         row.status == "running"
         and (not row.leaseExpiresAt or _aware(row.leaseExpiresAt) <= now)
     )
-    retry_due = row.status == "failed" and (
-        not row.nextRetryAt or _aware(row.nextRetryAt) <= now
+    retry_due = (
+        row.status == "failed"
+        and row.nextRetryAt is not None
+        and _aware(row.nextRetryAt) <= now
     )
     if row.status == "queued" and row.attemptCount == 0:
         db.commit()
@@ -718,11 +720,12 @@ def fail_analysis_run(
     row: ComputerWorkBlockAnalysisRun,
     error_message: str,
     now: datetime | None = None,
+    retryable: bool = True,
 ) -> None:
     current = _aware(now or datetime.now(UTC))
     row.status = "failed"
     row.leaseExpiresAt = None
-    if row.attemptCount >= MAX_ATTEMPTS:
+    if not retryable or row.attemptCount >= MAX_ATTEMPTS:
         row.nextRetryAt = None
     else:
         delay_index = min(max(0, row.attemptCount - 1), len(RETRY_DELAYS) - 1)
@@ -834,7 +837,7 @@ def _validate_semantic_assessments(
 
 
 def _validated_content(payload: dict[str, Any], *, required: bool) -> dict[str, str | None]:
-    title = _validate_text(payload.get("title"), max_length=10, required=required)
+    title = _validate_text(payload.get("title"), max_length=20, required=required)
     summary = _validate_text(payload.get("summary"), max_length=800, required=required)
     if summary and ("\n" in str(payload.get("summary") or "") or summary.startswith("#")):
         raise ValueError("summary must be one paragraph without Markdown headings")

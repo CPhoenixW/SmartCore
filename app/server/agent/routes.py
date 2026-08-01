@@ -125,7 +125,7 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
                     "enum": ["start", "extend", "switch", "complete", "ignore"],
                 },
                 "topicKey": {"type": "string", "maxLength": 100},
-                "title": {"type": "string", "maxLength": 10},
+                "title": {"type": "string", "maxLength": 20},
                 "summary": {"type": "string", "maxLength": 800},
                 "progress": {"type": "string", "maxLength": 300},
                 "outcome": {"type": "string", "maxLength": 300},
@@ -135,7 +135,11 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
                 "evidenceContextIds": {"type": "array"},
                 "model": {
                     "type": "string",
-                    "enum": ["qwen3.7-plus", "deepseek-v4-flash"],
+                    "enum": [
+                        "qwen3.7-plus",
+                        "deepseek-v4-flash",
+                        "deepseek-v4-flash-0731",
+                    ],
                 },
                 "promptVersion": {
                     "type": "string",
@@ -179,7 +183,11 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
                 "evidence": {"type": "object"},
                 "model": {
                     "type": "string",
-                    "enum": ["qwen3.7-plus", "deepseek-v4-flash"],
+                    "enum": [
+                        "qwen3.7-plus",
+                        "deepseek-v4-flash",
+                        "deepseek-v4-flash-0731",
+                    ],
                 },
                 "promptVersion": {"type": "string", "enum": ["computer-analysis-v1"]},
             },
@@ -218,7 +226,11 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
                 "phase": {"type": "string", "enum": ["preview", "final"]},
                 "model": {
                     "type": "string",
-                    "enum": ["qwen3.7-plus", "deepseek-v4-flash"],
+                    "enum": [
+                        "qwen3.7-plus",
+                        "deepseek-v4-flash",
+                        "deepseek-v4-flash-0731",
+                    ],
                 },
                 "promptVersion": {
                     "type": "string",

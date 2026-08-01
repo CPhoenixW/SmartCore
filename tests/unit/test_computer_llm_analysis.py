@@ -10,7 +10,11 @@ from app.server.computer.insights import (
     queue_daily_log,
     store_daily_log,
 )
-from app.server.computer.llm_analysis import analyze_daily_log, analyze_work_block
+from app.server.computer.llm_analysis import (
+    ComputerAnalysisError,
+    analyze_daily_log,
+    analyze_work_block,
+)
 from app.server.config import Settings
 from app.server.new_core.models import (
     AppUser,
@@ -54,7 +58,9 @@ def _closed_block(db_session, device, start: datetime) -> ComputerWorkBlock:
     return block
 
 
-def test_daily_direct_analysis_uses_flash_and_allows_one_schema_repair(db_session) -> None:
+def test_daily_direct_analysis_uses_formal_flash_and_cleans_display_fields_once(
+    db_session,
+) -> None:
     _user, device = _fixture_db(db_session)
     start = datetime(2026, 7, 31, 9, tzinfo=UTC)
     block = _closed_block(db_session, device, start)
@@ -71,12 +77,10 @@ def test_daily_direct_analysis_uses_flash_and_allows_one_schema_repair(db_sessio
 
     def completion(messages, **kwargs):
         requests.append({"messages": messages, **kwargs})
-        if len(requests) == 1:
-            return "{}"
         return json.dumps(
             {
-                "title": "接口推进",
-                "summary": "当天围绕服务接口持续开发，并形成了可以继续验证的实现结果。",
+                "title": "# 接口开发持续推进",
+                "summary": "# 当天围绕服务接口持续开发，\n并形成了可以继续验证的实现结果。",
                 "topics": [],
                 "planAssessments": [],
             },
@@ -87,15 +91,12 @@ def test_daily_direct_analysis_uses_flash_and_allows_one_schema_repair(db_sessio
         db_session,
         device=device,
         row=row,
-        settings=Settings(
-            computer_analysis_model="deepseek-v4-flash",
-            computer_analysis_repair_attempts=1,
-        ),
+        settings=Settings(computer_analysis_model="deepseek-v4-flash-0731"),
         completion=completion,
     )
 
-    assert len(requests) == 2
-    assert requests[0]["model"] == "deepseek-v4-flash"
+    assert len(requests) == 1
+    assert requests[0]["model"] == "deepseek-v4-flash-0731"
     assert requests[0]["max_tokens"] == 2048
     assert requests[0]["response_format"] == {"type": "json_object"}
     assert requests[0]["usage_label"] == "computer_daily_work_log"
@@ -104,7 +105,9 @@ def test_daily_direct_analysis_uses_flash_and_allows_one_schema_repair(db_sessio
     assert device.deviceId not in submitted_prompt
     assert block.blockId not in submitted_prompt
     assert stored["status"] == "complete"
-    assert stored["model"] == "deepseek-v4-flash"
+    assert stored["title"] == "接口开发持续推进"
+    assert "\n" not in stored["summary"]
+    assert stored["model"] == "deepseek-v4-flash-0731"
     assert stored["workBlockIds"] == [block.blockId]
     assert stored["previewRevision"] == 1
 
@@ -144,7 +147,7 @@ def test_work_block_direct_analysis_uses_server_fixed_action(db_session) -> None
         db_session,
         device=device,
         run=run,
-        settings=Settings(computer_analysis_model="deepseek-v4-flash"),
+        settings=Settings(computer_analysis_model="deepseek-v4-flash-0731"),
         completion=lambda _messages, **_kwargs: json.dumps(
             {
                 "action": "ignore",
@@ -156,7 +159,119 @@ def test_work_block_direct_analysis_uses_server_fixed_action(db_session) -> None
 
     assert stored["run"]["action"] == "complete"
     assert stored["workBlock"]["status"] == "closed"
-    assert stored["workBlock"]["model"] == "deepseek-v4-flash"
+    assert stored["workBlock"]["model"] == "deepseek-v4-flash-0731"
+
+
+def test_work_block_accepts_twenty_character_title_and_cleans_display_fields(
+    db_session,
+) -> None:
+    _user, device = _fixture_db(db_session)
+    start = datetime(2026, 7, 31, 9, tzinfo=UTC)
+    block = ComputerWorkBlock(
+        userId=device.userId,
+        deviceId=device.deviceId,
+        startAt=start.isoformat(),
+        timezone="UTC",
+        localDate=start.date().isoformat(),
+        status="open",
+    )
+    db_session.add(block)
+    db_session.flush()
+    run = ComputerWorkBlockAnalysisRun(
+        userId=device.userId,
+        deviceId=device.deviceId,
+        blockId=block.blockId,
+        triggerKey="start-display-cleaning",
+        triggerType="start",
+        triggerData={},
+        windowStart=start.isoformat(),
+        windowEnd=(start + timedelta(minutes=6)).isoformat(),
+        timezone="UTC",
+        localDate=start.date().isoformat(),
+        inputFingerprint="display-cleaning",
+        status="queued",
+        attemptCount=1,
+    )
+    db_session.add(run)
+    db_session.commit()
+    requests: list[dict] = []
+
+    def completion(messages, **kwargs):
+        requests.append({"messages": messages, **kwargs})
+        return json.dumps(
+            {
+                "action": "start",
+                "title": "# 检查SmartCore",
+                "summary": "# 检查并验证\nSmartCore 工作块分析。",
+                "progress": "进" * 350,
+                "planSemanticAssessments": [],
+                "evidenceContextIds": [],
+            },
+            ensure_ascii=False,
+        )
+
+    stored = analyze_work_block(
+        db_session,
+        device=device,
+        run=run,
+        settings=Settings(computer_analysis_model="deepseek-v4-flash-0731"),
+        completion=completion,
+    )
+
+    assert len(requests) == 1
+    assert "at most 10 characters" in requests[0]["messages"][1]["content"]
+    assert stored["workBlock"]["title"] == "检查SmartCore"
+    assert stored["workBlock"]["summary"] == "检查并验证 SmartCore 工作块分析。"
+    assert len(stored["workBlock"]["progress"]) == 300
+
+
+def test_work_block_schema_error_calls_model_once(db_session) -> None:
+    _user, device = _fixture_db(db_session)
+    start = datetime(2026, 7, 31, 9, tzinfo=UTC)
+    block = ComputerWorkBlock(
+        userId=device.userId,
+        deviceId=device.deviceId,
+        startAt=start.isoformat(),
+        timezone="UTC",
+        localDate=start.date().isoformat(),
+        status="open",
+    )
+    db_session.add(block)
+    db_session.flush()
+    run = ComputerWorkBlockAnalysisRun(
+        userId=device.userId,
+        deviceId=device.deviceId,
+        blockId=block.blockId,
+        triggerKey="invalid-control",
+        triggerType="start",
+        triggerData={},
+        windowStart=start.isoformat(),
+        windowEnd=(start + timedelta(minutes=6)).isoformat(),
+        timezone="UTC",
+        localDate=start.date().isoformat(),
+        inputFingerprint="invalid-control",
+        status="queued",
+        attemptCount=1,
+    )
+    db_session.add(run)
+    db_session.commit()
+    requests = 0
+
+    def completion(_messages, **_kwargs):
+        nonlocal requests
+        requests += 1
+        return '{"action":"launch","title":"开发","summary":"继续开发"}'
+
+    with pytest.raises(ComputerAnalysisError, match="validation failed"):
+        analyze_work_block(
+            db_session,
+            device=device,
+            run=run,
+            settings=Settings(),
+            completion=completion,
+        )
+
+    assert requests == 1
 
 
 def test_daily_preview_throttles_changed_source_until_interval_expires(db_session) -> None:

@@ -553,14 +553,18 @@ def fail_daily_log(
     row: ComputerDailyWorkLog,
     error_message: str,
     now: datetime | None = None,
+    retryable: bool = True,
 ) -> None:
     current = _aware(now or datetime.now(UTC))
-    delay = DAILY_LOG_RETRY_DELAYS[
-        min(max(0, row.attemptCount - 1), len(DAILY_LOG_RETRY_DELAYS) - 1)
-    ]
     row.status = "failed"
     row.leaseExpiresAt = None
-    row.nextRetryAt = _iso(current + timedelta(seconds=delay))
+    if retryable:
+        delay = DAILY_LOG_RETRY_DELAYS[
+            min(max(0, row.attemptCount - 1), len(DAILY_LOG_RETRY_DELAYS) - 1)
+        ]
+        row.nextRetryAt = _iso(current + timedelta(seconds=delay))
+    else:
+        row.nextRetryAt = None
     row.errorMessage = _validate_text(error_message, max_length=1000, required=False)
     row.updatedAt = nowIso()
     db.commit()
@@ -647,12 +651,17 @@ def queue_daily_log(
                 error_message="daily work log lease expired before completion",
                 now=current,
             )
-        if row.status == "failed" and row.nextRetryAt and _aware(row.nextRetryAt) > current:
-            if row.phase != desired_phase:
-                row.phase = desired_phase
-                row.updatedAt = nowIso()
-                db.commit()
-            return row, False, context
+        if row.status == "failed":
+            terminal_same_phase = not row.nextRetryAt and row.phase == desired_phase
+            retry_waiting = bool(
+                row.nextRetryAt and _aware(row.nextRetryAt) > current
+            )
+            if terminal_same_phase or retry_waiting:
+                if row.phase != desired_phase:
+                    row.phase = desired_phase
+                    row.updatedAt = nowIso()
+                    db.commit()
+                return row, False, context
         if phase == "preview" and row.status == "complete":
             if row.sourceFingerprint == source_fingerprint:
                 return row, False, context
