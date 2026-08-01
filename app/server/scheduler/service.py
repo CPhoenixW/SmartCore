@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -13,7 +13,6 @@ from app.server.config import Settings
 from app.server.db.session import SessionLocal
 from app.server.new_core.scheduler import runReminderTick
 from app.server.scheduler.computer_analysis import (
-    dispatch_daily_work_logs,
     dispatch_hourly_analyses,
     dispatch_work_block_analyses,
 )
@@ -124,39 +123,11 @@ class SchedulerService:
         finally:
             db.close()
 
-    def _computer_daily_log_tick(self) -> None:
-        db = self._session_factory()
-        try:
-            dispatch_daily_work_logs(
-                db,
-                settings=self._settings,
-                now=datetime.now(ZoneInfo(self._settings.computer_analysis_timezone)),
-                phase="final",
-            )
-        finally:
-            db.close()
-
     def _computer_work_block_tick(self) -> None:
         db = self._session_factory()
         try:
             now = datetime.now(ZoneInfo(self._settings.computer_analysis_timezone))
             dispatch_work_block_analyses(db, settings=self._settings, now=now)
-            if self._settings.computer_daily_preview_enabled:
-                dispatch_daily_work_logs(
-                    db,
-                    settings=self._settings,
-                    now=now,
-                    phase="preview",
-                )
-            timezone = ZoneInfo(self._settings.computer_analysis_timezone)
-            previous_date = (now.astimezone(timezone).date() - timedelta(days=1)).isoformat()
-            dispatch_daily_work_logs(
-                db,
-                settings=self._settings,
-                now=now,
-                phase="final",
-                log_date=previous_date,
-            )
         finally:
             db.close()
 
@@ -270,18 +241,6 @@ class SchedulerService:
                     coalesce=True,
                     max_instances=1,
                 )
-            self._scheduler.add_job(
-                self._computer_daily_log_tick,
-                trigger="cron",
-                hour=23,
-                minute=59,
-                timezone=self._settings.computer_analysis_timezone,
-                id="smartcore-computer-daily-work-log",
-                replace_existing=True,
-                coalesce=True,
-                max_instances=1,
-                misfire_grace_time=900,
-            )
             self._scheduler.add_job(
                 self._computer_smart_reminder_tick,
                 trigger="interval",

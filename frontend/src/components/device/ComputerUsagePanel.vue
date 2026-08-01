@@ -217,15 +217,7 @@ function projectStatusLabel(project: ComputerProjectInvestment) {
           </div>
           <EmptyState v-else :text="t('computer.noProjectInvestment')" />
         </BaseCard>
-        <BaseCard class="computer-daily-primary" :title="t('computer.dailyWorkLog')">
-          <article v-if="insights.data.value?.dailyLog" class="computer-daily-log">
-            <div><strong>{{ insights.data.value.dailyLog.title || insightStatusLabel(insights.data.value.dailyLog.status) }}</strong><span>{{ t(`computer.dailyLogPhase.${insights.data.value.dailyLog.phase}`) }} · {{ insightStatusLabel(insights.data.value.dailyLog.status) }}</span></div>
-            <p>{{ insights.data.value.dailyLog.summary || insights.data.value.dailyLog.errorMessage || t('computer.analysisPending') }}</p>
-            <small>{{ t('computer.smartReminderCount', { count: insights.data.value.reminders.length }) }}</small>
-          </article>
-          <EmptyState v-else :text="t('computer.noDailyLog')" />
-        </BaseCard>
-        <BaseCard class="computer-work-history" :title="t('computer.recentWorkBlocks')">
+        <BaseCard class="computer-work-history" :title="t('computer.recentWorkBlocks')" :subtitle="t('computer.recentWorkBlocksNote')">
           <div v-if="recentWorkBlocks.length" class="computer-work-block-list">
             <article v-for="block in recentWorkBlocks" :key="block.blockId" class="computer-work-block">
               <header><div><strong>{{ block.title || t('computer.analysisPending') }}</strong><small>{{ duration(block.activeSeconds) }}</small></div><time>{{ timeLabel(block.startAt) }}–{{ blockEndLabel(block) }}</time></header>
@@ -335,7 +327,6 @@ function projectStatusLabel(project: ComputerProjectInvestment) {
 .computer-view-tabs { width: fit-content; max-width: 100%; }
 .computer-work-block-primary { grid-column: 1 / -1; }
 .computer-project-investment-card { grid-column: 1 / -1; }
-.computer-daily-primary { grid-column: 1 / -1; }
 .computer-work-history { grid-column: 1 / -1; }
 .computer-project-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
 .computer-project { min-width: 0; padding: 15px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }
@@ -389,8 +380,7 @@ function projectStatusLabel(project: ComputerProjectInvestment) {
   background: #fff;
 }
 
-.computer-insight-list header,
-.computer-daily-log > div {
+.computer-insight-list header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -398,21 +388,16 @@ function projectStatusLabel(project: ComputerProjectInvestment) {
 }
 
 .computer-insight-list time,
-.computer-insight-list small,
-.computer-daily-log span,
-.computer-daily-log small {
+.computer-insight-list small {
   color: var(--color-text-muted);
   font-size: 10px;
 }
 
 .computer-insight-list strong { display: block; margin-top: 8px; }
-.computer-insight-list p,
-.computer-daily-log p { margin: 6px 0; color: #475569; line-height: 1.65; }
+.computer-insight-list p { margin: 6px 0; color: #475569; line-height: 1.65; }
 .insight-state { padding: 2px 6px; border-radius: 4px; background: #f1f5f9; color: #475569; font-size: 10px; }
 .insight-state--complete { background: #dcfce7; color: #166534; }
 .insight-state--failed { background: #fee2e2; color: #991b1b; }
-.computer-daily-log { padding: 4px 0; }
-.computer-daily-log > div strong { font-size: 17px; }
 
 .computer-activity-map-frame {
   display: grid;

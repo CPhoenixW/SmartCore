@@ -365,41 +365,58 @@ def test_direct_analysis_failure_does_not_use_openclaw_by_default(
     assert events == []
 
 
-@pytest.mark.parametrize(
-    ("preview_enabled", "expected_phases"),
-    [(False, ["final"]), (True, ["preview", "final"])],
-)
-def test_work_block_tick_only_generates_daytime_log_when_enabled(
+def test_work_block_tick_only_dispatches_work_block_analysis(
     monkeypatch: pytest.MonkeyPatch,
-    preview_enabled: bool,
-    expected_phases: list[str],
 ) -> None:
     class FakeSession:
         def close(self) -> None:
             pass
 
-    phases: list[str] = []
+    calls: list[dict[str, object]] = []
     monkeypatch.setattr(
         scheduler_service,
         "dispatch_work_block_analyses",
-        lambda *_args, **_kwargs: {"queued": 0, "skipped": 0, "failed": 0},
-    )
-    monkeypatch.setattr(
-        scheduler_service,
-        "dispatch_daily_work_logs",
-        lambda *_args, **kwargs: phases.append(str(kwargs["phase"])),
+        lambda *_args, **kwargs: calls.append(kwargs) or {"queued": 0, "skipped": 0, "failed": 0},
     )
     service = scheduler_service.SchedulerService(
         settings=Settings(
             computer_work_block_analysis_enabled=True,
-            computer_daily_preview_enabled=preview_enabled,
         ),
         session_factory=FakeSession,
     )
 
     service._computer_work_block_tick()
 
-    assert phases == expected_phases
+    assert len(calls) == 1
+
+
+def test_scheduler_does_not_register_daily_work_log_job() -> None:
+    class FakeScheduler:
+        def __init__(self) -> None:
+            self.jobs: list[dict[str, object]] = []
+
+        def add_job(self, _function, **kwargs) -> None:
+            self.jobs.append(kwargs)
+
+        def start(self) -> None:
+            pass
+
+    fake = FakeScheduler()
+    service = scheduler_service.SchedulerService(
+        settings=Settings(
+            computer_analysis_enabled=True,
+            computer_work_block_analysis_enabled=True,
+            computer_activity_retention_days=0,
+        ),
+        session_factory=lambda: None,  # type: ignore[return-value]
+        scheduler=fake,  # type: ignore[arg-type]
+    )
+
+    service.start()
+
+    job_ids = {str(job["id"]) for job in fake.jobs}
+    assert "smartcore-computer-work-block-analysis" in job_ids
+    assert "smartcore-computer-daily-work-log" not in job_ids
 
 
 def test_work_block_mode_keeps_hourly_snapshot_objective_without_ai(db_session) -> None:

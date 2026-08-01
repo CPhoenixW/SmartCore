@@ -106,7 +106,8 @@ describe("device routes", () => {
     expect(source).toContain("showHourlyEvidence");
     expect(source).not.toContain("computer.moreInsights");
     expect(source).not.toContain("computer.planExecution");
-    expect(source).toContain("computer.dailyWorkLog");
+    expect(source).not.toContain("computer.dailyWorkLog");
+    expect(source).toContain("computer.recentWorkBlocksNote");
     expect(source).toContain("DeviceManagementPanel");
   });
 
