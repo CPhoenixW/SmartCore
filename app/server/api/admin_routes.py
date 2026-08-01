@@ -2,21 +2,27 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.server.auth.security import (
-    create_session_token,
     require_authenticated_actor_id,
     require_authenticated_user_id,
+    switch_active_browser_user,
 )
-from app.server.config import get_settings
 from app.server.db.session import get_db
 from app.server.feishu.bot_service import botDict, open_sealed, seal
 from app.server.feishu.client import FeishuAPIError, FeishuClient
-from app.server.new_core.models import ActLog, AppUser, FeishuBind, FeishuBot, nowIso
+from app.server.new_core.models import (
+    ActLog,
+    AgentRouteUsage,
+    AppUser,
+    FeishuBind,
+    FeishuBot,
+    nowIso,
+)
 from app.server.user_device.service import confirmFeishuChatPair, startFeishuChatPair
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -80,16 +86,48 @@ def users(userId: str = Depends(require_authenticated_actor_id), db: Session = D
 
 
 @router.post("/activeUser")
-def activeUser(body: ActiveUserBody, response: Response, userId: str = Depends(require_authenticated_actor_id), db: Session = Depends(get_db)) -> dict[str, Any]:
+def activeUser(body: ActiveUserBody, request: Request, userId: str = Depends(require_authenticated_actor_id), db: Session = Depends(get_db)) -> dict[str, Any]:
     actor = _actor(db, userId)
     selected = db.get(AppUser, body.userId)
     if selected is None or selected.stat != "active":
         raise HTTPException(status_code=404, detail="target user not found")
     db.add(ActLog(userId=selected.userId, actorKind="user", actorId=actor.userId, action="update", targetKind="user", targetId=selected.userId))
     db.commit()
-    settings = get_settings()
-    response.set_cookie(key=settings.auth_cookie_name, value=create_session_token(selected.userId, actor_user_id=actor.userId), max_age=settings.auth_session_hours * 3600, httponly=True, secure=settings.auth_cookie_secure, samesite="lax", path="/")
+    switch_active_browser_user(request, db, selected.userId)
     return {"ok": True, "data": {"actorUserId": actor.userId, "activeUser": _public(selected), "switchedAt": nowIso()}}
+
+
+@router.get("/agentRouteUsage")
+def agentRouteUsage(
+    actorId: str = Depends(require_authenticated_actor_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    _actor(db, actorId)
+    rows = db.scalars(
+        select(AgentRouteUsage).order_by(
+            AgentRouteUsage.compatibility.desc(),
+            AgentRouteUsage.lastCalledAt.desc(),
+        )
+    ).all()
+    return {
+        "ok": True,
+        "data": [
+            {
+                "method": row.method,
+                "path": row.path,
+                "endpoint": row.endpoint,
+                "compatibility": row.compatibility,
+                "callCount": row.callCount,
+                "successCount": row.successCount,
+                "clientErrorCount": row.clientErrorCount,
+                "serverErrorCount": row.serverErrorCount,
+                "firstCalledAt": row.firstCalledAt,
+                "lastCalledAt": row.lastCalledAt,
+                "lastStatusCode": row.lastStatusCode,
+            }
+            for row in rows
+        ],
+    }
 
 
 @router.get("/feishuBots")

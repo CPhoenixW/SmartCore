@@ -16,7 +16,7 @@ HTTP/WebSocket 协议，不能导入 `app.server` 或直接访问 SQLite。
 
 状态：已采用。
 
-浏览器使用签名 session Cookie，设备使用设备 token，Feishu 使用 bot/identity/chat
+浏览器使用可撤销的服务端 session，设备使用设备 token，Feishu 使用 bot/identity/chat
 binding，OpenClaw 使用 Agent token + 短期 scope。客户端提交的 `userId` 不决定
 owner。
 
@@ -169,18 +169,14 @@ Computer 工作块或 Plan 证据的日期不调度日报；固定标题由 Adap
 
 这些不是可直接删除的“冗余”：
 
-1. `app/server/agent/` 有多个重叠 router。`main.py` 的注册顺序影响实际 handler；
-   应先建立 assembled-app 合约测试，再收敛别名。
-2. `lifeDevice` 与 `device` 两套设备记录分别承载配对/分发和 Pi 状态/照片。合并需要
-   数据迁移、token 兼容和端侧升级计划。
+1. Agent 旧别名仍需保留一个有调用统计的兼容期；handler 已显式组装，不再依赖注册顺序。
+2. `device` 仍作为状态/照片外键镜像存在；`lifeDevice` 已成为事实源，最终删表仍需正式
+   外键迁移和旧端退出证明。
 3. `relation_compat.py` 与启动维护保护旧数据库关系。移除前必须用生产 schema 副本
    验证迁移幂等。
-4. 浏览器 session 当前是签名 Cookie，`userSession` 表没有成为请求鉴权权威。
-   若要支持服务端撤销，需要完整切换而非只写表。
-5. Pi 照片的部分 Server/Web 路由只依赖内网边界，缺少逐路由 session/owner 校验。
-6. `app/server/new_core/event_relations.py`、`crud.py` 和 Agent route 文件职责较重。
+4. `app/server/new_core/event_relations.py`、`crud.py` 和 Agent route 文件职责较重。
    拆分应按事务/领域边界进行，不能机械按文件行数拆。
-7. `DASHBOARD_BASE_URL` 是历史命名；配置示例指向现行 `/work`，删除该设置前应检查
+5. `DASHBOARD_BASE_URL` 是历史命名；配置示例指向现行 `/work`，删除该设置前应检查
    生产环境与飞书卡片调用方。
 
 处理这些债务时，优先增加能证明现状的测试，再做迁移或删除。

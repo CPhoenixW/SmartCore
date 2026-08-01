@@ -57,7 +57,7 @@ current route registration in `app/server/main.py`.
 - Every user-owned read and write derives `userId` from a verified browser session, device token,
   Feishu binding, or Agent scope. Ignore caller-supplied ownership fields.
 - Ordinary users operate only on themselves. Admin active-user switching preserves the real actor
-  in the signed session and audit log.
+  in the server-side session and audit log.
 - Event types are `plan`, `ddl`, `course`, and `remind`. Subtype ownership comes from `evtBase`.
 - A Plan owns start-minus-10-minute and end-minus-10-minute push reminders.
 - A DDL may own multiple Plans and standalone reminders. Cross-user relations are invalid.
@@ -71,19 +71,20 @@ current route registration in `app/server/main.py`.
 
 ## Compatibility Hazards
 
-- `app/server/main.py` registers several Agent routers with overlapping paths. Registration order
-  determines which `/agent/tools`, `/agent/db/*`, and legacy alias handler runs. Test the assembled
-  app before removing or reordering routers.
+- `app/server/agent/assembly.py` explicitly selects one owner for every formerly overlapping Agent
+  operation. Keep its assembled-app snapshot unique when changing routers.
 - Modern paths are `/agent/db/*` and `/agent/feedback/*`; `evtQuery`, `evtCreate`, `evtUpdate`,
-  `sendText`, and similar names are compatibility aliases.
+  `sendText`, and similar names are deprecated compatibility aliases. Check persisted production
+  usage before removing one.
 - Both `lifeDevice` and the older operational `device` records exist. Generic pairing/dispatch and
-  Pi state/photo flows touch different parts of this boundary.
+  Pi state/photo flows touch different parts of this boundary. `lifeDevice` is authoritative;
+  `device` is a compatibility mirror until its historical foreign keys migrate.
 - `relation_compat.py` and startup relation maintenance protect existing databases. Do not remove
   them without a migration and production-data compatibility proof.
-- Browser auth currently uses an HMAC-signed Cookie containing active and actor IDs. A
-  `userSession` model exists but is not the request-authentication authority.
-- Pi photo Server/Web endpoints are internal-network routes and do not all declare a browser
-  session dependency. Do not expose them publicly or describe them as owner-authenticated.
+- Browser auth uses an opaque Cookie whose hash and actor/active-user context are stored in the
+  revocable `userSession` table. Do not reintroduce self-contained browser identity cookies.
+- Pi photo Server/Web endpoints require browser session and `lifeDevice` owner checks. Pi upload
+  endpoints remain device-token authenticated; the Tailscale boundary is still required.
 
 More detail is in `docs/api-contracts.md` and `docs/decisions.md`.
 

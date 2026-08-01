@@ -8,16 +8,20 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.server.auth.security import (
-    create_session_token,
+    create_browser_session,
+    current_session_id_from_request,
     hash_password,
+    require_authenticated_actor_id,
     require_authenticated_user_id,
+    revoke_all_browser_sessions,
+    revoke_browser_session,
     session_user_id_from_request,
     verify_password,
 )
 from app.server.config import get_settings
 from app.server.db.session import get_db
 from app.server.new_core import crud
-from app.server.new_core.models import AppUser, nowIso
+from app.server.new_core.models import AppUser, UserSession, nowIso
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -36,6 +40,11 @@ class RegisterBody(BaseModel):
     loginName: str
     password: str
     displayName: str | None = None
+
+
+class PasswordBody(BaseModel):
+    currentPassword: str
+    newPassword: str
 
 
 def _user_row(db: Session, user_id: str) -> dict[str, Any] | None:
@@ -65,17 +74,31 @@ def _public_user(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _set_session_cookie(response: Response, user_id: str) -> None:
+def _set_session_cookie(
+    response: Response,
+    request: Request,
+    db: Session,
+    actor_user_id: str,
+    *,
+    active_user_id: str | None = None,
+) -> UserSession:
     settings = get_settings()
+    token, row = create_browser_session(
+        db,
+        actor_user_id,
+        active_user_id=active_user_id,
+        user_agent=request.headers.get("user-agent"),
+    )
     response.set_cookie(
         key=settings.auth_cookie_name,
-        value=create_session_token(user_id),
+        value=token,
         max_age=settings.auth_session_hours * 3600,
         httponly=True,
         secure=settings.auth_cookie_secure,
         samesite="lax",
         path="/",
     )
+    return row
 
 
 def _normalized_login_name(value: str) -> str:
@@ -106,6 +129,7 @@ def auth_status(request: Request, db: Session = Depends(get_db)) -> dict[str, An
 @router.post("/setup")
 def setup_password(
     body: SetupBody,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -129,7 +153,7 @@ def setup_password(
             {"passwd": encoded, "user_id": user["userId"]},
         )
     db.commit()
-    _set_session_cookie(response, str(user["userId"]))
+    _set_session_cookie(response, request, db, str(user["userId"]))
     current = _user_row(db, str(user["userId"]))
     assert current is not None
     return {"ok": True, "data": _public_user(current)}
@@ -138,6 +162,7 @@ def setup_password(
 @router.post("/register")
 def register(
     body: RegisterBody,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -161,7 +186,7 @@ def register(
     db.add(user)
     db.commit()
     db.refresh(user)
-    _set_session_cookie(response, user.userId)
+    _set_session_cookie(response, request, db, user.userId)
     return {"ok": True, "data": _public_user({
         "userId": user.userId, "loginName": user.loginName, "role": user.role,
         "displayName": user.displayName, "language": user.language, "avatarUrl": user.avatarUrl,
@@ -171,6 +196,7 @@ def register(
 @router.post("/login")
 def login(
     body: LoginBody,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -178,14 +204,112 @@ def login(
     user = _user_row(db, user_id)
     if user is None or not verify_password(body.password, str(user.get("passwd") or "")):
         raise HTTPException(status_code=401, detail="invalid user ID or password")
-    _set_session_cookie(response, str(user["userId"]))
+    _set_session_cookie(response, request, db, str(user["userId"]))
     return {"ok": True, "data": _public_user(user)}
 
 
 @router.post("/logout")
-def logout(response: Response) -> dict[str, Any]:
+def logout(request: Request, response: Response, db: Session = Depends(get_db)) -> dict[str, Any]:
+    session_id = current_session_id_from_request(request)
+    if session_id:
+        revoke_browser_session(db, session_id)
     response.delete_cookie(get_settings().auth_cookie_name, path="/")
     return {"ok": True, "data": {"loggedOut": True}}
+
+
+def _session_dict(row: UserSession, current_session_id: str | None) -> dict[str, Any]:
+    return {
+        "sessionId": row.sessionId,
+        "actorUserId": row.actorUserId,
+        "activeUserId": row.activeUserId,
+        "userAgent": row.userAgent,
+        "createdAt": row.createdAt,
+        "lastSeenAt": row.lastSeenAt,
+        "expiresAt": row.expiresAt,
+        "current": row.sessionId == current_session_id,
+    }
+
+
+@router.get("/sessions")
+def sessions(
+    request: Request,
+    actor_user_id: str = Depends(require_authenticated_actor_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    current_id = current_session_id_from_request(request)
+    rows = db.scalars(
+        select(UserSession)
+        .where(
+            UserSession.actorUserId == actor_user_id,
+            UserSession.revokedAt.is_(None),
+            UserSession.expiresAt > nowIso(),
+        )
+        .order_by(UserSession.lastSeenAt.desc(), UserSession.createdAt.desc())
+    ).all()
+    return {"ok": True, "data": [_session_dict(row, current_id) for row in rows]}
+
+
+@router.delete("/sessions/{session_id}")
+def revoke_session(
+    session_id: str,
+    request: Request,
+    response: Response,
+    actor_user_id: str = Depends(require_authenticated_actor_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    row = db.get(UserSession, session_id)
+    if row is None or row.actorUserId != actor_user_id or row.revokedAt is not None:
+        raise HTTPException(status_code=404, detail="session not found")
+    current_id = current_session_id_from_request(request)
+    revoke_browser_session(db, session_id)
+    if current_id == session_id:
+        response.delete_cookie(get_settings().auth_cookie_name, path="/")
+    return {"ok": True, "data": {"sessionId": session_id, "revoked": True}}
+
+
+@router.post("/logout-all")
+def logout_all(
+    response: Response,
+    actor_user_id: str = Depends(require_authenticated_actor_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    count = revoke_all_browser_sessions(db, actor_user_id)
+    response.delete_cookie(get_settings().auth_cookie_name, path="/")
+    return {"ok": True, "data": {"loggedOut": True, "revokedSessions": count}}
+
+
+@router.post("/password")
+def change_password(
+    body: PasswordBody,
+    request: Request,
+    response: Response,
+    actor_user_id: str = Depends(require_authenticated_actor_id),
+    active_user_id: str = Depends(require_authenticated_user_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    if active_user_id != actor_user_id:
+        raise HTTPException(
+            status_code=409,
+            detail="switch to your own workspace before changing your password",
+        )
+    actor = db.get(AppUser, actor_user_id)
+    if actor is None or not verify_password(body.currentPassword, actor.passwd):
+        raise HTTPException(status_code=401, detail="current password is incorrect")
+    try:
+        actor.passwd = hash_password(body.newPassword)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    actor.updatedAt = nowIso()
+    db.commit()
+    revoked = revoke_all_browser_sessions(db, actor_user_id)
+    _set_session_cookie(
+        response,
+        request,
+        db,
+        actor_user_id,
+        active_user_id=active_user_id,
+    )
+    return {"ok": True, "data": {"passwordChanged": True, "revokedSessions": revoked}}
 
 
 @router.get("/me")

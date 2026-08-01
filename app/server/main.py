@@ -6,13 +6,10 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.server.agent.daily_summary_routes import createDailySummaryAgentRouter
-from app.server.agent.feedback_routes import createFeedbackRouter, ensure_feedback_tools
-from app.server.agent.legacy_time_routes import createLegacyTimeRouter
-from app.server.agent.relation_query_routes import createRelationQueryRouter
-from app.server.agent.relation_write_routes import createRelationWriteRouter
-from app.server.agent.routes import createAgentRouter, createDevRouter
-from app.server.agent.v2_routes import createAgentV2Router
+from app.server.agent.assembly import createAssembledAgentRouter
+from app.server.agent.feedback_routes import ensure_feedback_tools
+from app.server.agent.routes import createDevRouter
+from app.server.agent.usage import record_agent_route_usage
 from app.server.api.admin_routes import router as adminApiRouter
 from app.server.api.auth_routes import router as authApiRouter
 from app.server.api.avatar_routes import router as avatarApiRouter
@@ -24,11 +21,11 @@ from app.server.api.routes import router as apiRouter
 from app.server.api.weather_routes import router as weatherApiRouter
 from app.server.auth.security import session_user_id_from_request
 from app.server.auth.storage import ensure_auth_schema
-from app.server.computer.agent_routes import createComputerAgentRouter
 from app.server.computer.routes import router as computerRouter
 from app.server.computer.service import cleanup_activity
 from app.server.config import get_settings
 from app.server.db.session import SessionLocal, init_db
+from app.server.device.compatibility import migrate_device_compatibility_on_startup
 from app.server.device.routes import router as deviceRouter
 from app.server.feishu.event_handler import create_feishu_router
 from app.server.feishu.pair_routes import router as feishuPairRouter
@@ -61,6 +58,7 @@ def _sync_event_relations() -> None:
 def _initialize_database() -> None:
     init_db()
     ensure_auth_schema()
+    migrate_device_compatibility_on_startup()
     install_relation_compat()
     _sync_event_relations()
 
@@ -124,6 +122,17 @@ def create_app() -> FastAPI:
     ensure_feedback_tools()
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
+    @app.middleware("http")
+    async def agent_route_usage(request: Request, call_next):
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        finally:
+            if request.url.path == "/agent" or request.url.path.startswith("/agent/"):
+                record_agent_route_usage(request, status_code)
+
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
@@ -144,14 +153,7 @@ def create_app() -> FastAPI:
     app.include_router(userDeviceRouter)
     app.include_router(computerRouter)
     app.include_router(feishuPairRouter)
-    app.include_router(createRelationQueryRouter())
-    app.include_router(createRelationWriteRouter())
-    app.include_router(createFeedbackRouter())
-    app.include_router(createDailySummaryAgentRouter())
-    app.include_router(createComputerAgentRouter())
-    app.include_router(createAgentV2Router())
-    app.include_router(createLegacyTimeRouter())
-    app.include_router(createAgentRouter())
+    app.include_router(createAssembledAgentRouter())
     app.include_router(create_feishu_router())
     app.include_router(screenRouter)
 

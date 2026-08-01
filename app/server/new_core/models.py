@@ -367,11 +367,34 @@ class UserSession(Base):
     __tablename__ = "userSession"
 
     sessionId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    tokenHash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     actorUserId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
     activeUserId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
     expiresAt: Mapped[str] = mapped_column(String(64), nullable=False)
     revokedAt: Mapped[str | None] = mapped_column(String(64))
+    userAgent: Mapped[str | None] = mapped_column(String(300))
+    lastSeenAt: Mapped[str | None] = mapped_column(String(64))
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class AgentRouteUsage(Base):
+    __tablename__ = "agentRouteUsage"
+    __table_args__ = (
+        UniqueConstraint("method", "path", "endpoint", name="uq_agent_route_usage_operation"),
+    )
+
+    usageId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    method: Mapped[str] = mapped_column(String(10), nullable=False)
+    path: Mapped[str] = mapped_column(String(200), nullable=False)
+    endpoint: Mapped[str] = mapped_column(String(300), nullable=False)
+    compatibility: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    callCount: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    successCount: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    clientErrorCount: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    serverErrorCount: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    firstCalledAt: Mapped[str] = mapped_column(String(64), nullable=False)
+    lastCalledAt: Mapped[str] = mapped_column(String(64), nullable=False)
+    lastStatusCode: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
 class LifeDevice(Base):

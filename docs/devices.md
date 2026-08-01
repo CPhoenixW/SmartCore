@@ -71,8 +71,19 @@ GET  /api/device/photoRequest/{requestId}/image Server/Web 读取图片
 上传包含 `devId`、`capturedAt`、可选 recognition JSON 和 image。只允许 JPEG、PNG、
 WebP，大小由 `DEVICE_PHOTO_MAX_BYTES` 控制。Pi 必须按 `requestId` 去重，设备 token
 与 `devId` 必须匹配。图片存入私有目录，不由 Caddy 静态公开。当前 Server/Web 照片
-路由依赖 Tailscale 网络边界，因此不能暴露到公网；通用用户设备接口另有 session
-所有权校验。
+创建、列表、状态和图片读取路由要求浏览器 Session，并通过 `lifeDevice` 校验 Pi owner；
+匿名请求返回 401，跨用户请求返回 404。Tailscale 继续作为纵深网络边界，但不替代该
+应用层所有权校验。
+
+## 设备模型兼容期
+
+`lifeDevice` 是设备 owner、kind 和激活状态的唯一事实源。旧 `device` 暂时只服务
+`deviceStateLog`、`devicePhotoRequest` 及其他历史外键；新 Pi/Screen 配对会创建同 ID、
+同 owner 的镜像。启动迁移会把仅存在于旧表的记录补到 `lifeDevice`，并为需要状态/照片
+外键的非 Computer `lifeDevice` 补旧镜像。迁移幂等，任何 owner 冲突都明确失败。
+
+兼容表只有在生产数据无冲突、所有读写已切到 `lifeDevice`、旧端版本退出且外键完成正式
+迁移后才能删除；本阶段不直接合表、不改设备 token，也不删除历史状态或照片。
 
 ## Pi 本地数据
 

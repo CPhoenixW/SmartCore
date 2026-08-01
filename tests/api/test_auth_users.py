@@ -104,6 +104,53 @@ def test_login_name_session_uses_internal_user_id(app_env) -> None:
     assert client.get("/api/user/me").json()["data"]["displayName"] == "Phoenix"
 
 
+def test_server_sessions_can_be_listed_revoked_and_invalidated_by_password_change(app_env) -> None:
+    first = TestClient(create_app())
+    registered = first.post(
+        "/api/auth/register",
+        json={
+            "loginName": "session-user",
+            "password": "correct-horse-battery-staple",
+        },
+    )
+    assert registered.status_code == 200
+    old_first_token = first.cookies.get("smartcore_session")
+
+    second = TestClient(create_app())
+    assert second.post(
+        "/api/auth/login",
+        json={"userId": "session-user", "password": "correct-horse-battery-staple"},
+    ).status_code == 200
+    second_token = second.cookies.get("smartcore_session")
+
+    sessions = first.get("/api/auth/sessions")
+    assert sessions.status_code == 200
+    rows = sessions.json()["data"]
+    assert len(rows) == 2
+    second_row = next(row for row in rows if row["current"] is False)
+    assert first.delete(f"/api/auth/sessions/{second_row['sessionId']}").status_code == 200
+    assert second.get("/api/auth/me").status_code == 401
+
+    changed = first.post(
+        "/api/auth/password",
+        json={
+            "currentPassword": "correct-horse-battery-staple",
+            "newPassword": "updated-horse-battery-staple",
+        },
+    )
+    assert changed.status_code == 200
+    assert first.cookies.get("smartcore_session") != old_first_token
+    assert first.get("/api/auth/me").status_code == 200
+
+    stale = TestClient(create_app())
+    stale.cookies.set("smartcore_session", old_first_token)
+    assert stale.get("/api/auth/me").status_code == 401
+    stale.cookies.set("smartcore_session", second_token)
+    assert stale.get("/api/auth/me").status_code == 401
+    assert first.post("/api/auth/logout-all").status_code == 200
+    assert first.get("/api/auth/me").status_code == 401
+
+
 def test_paired_device_token_can_poll_photo_requests(app_env) -> None:
     client = _setup_client()
     activated = _paired_device(client, "pi")
@@ -120,6 +167,30 @@ def test_paired_device_token_can_poll_photo_requests(app_env) -> None:
         == 200
     )
     assert client.get(f"/dev/photo/request?devId={device_id}").status_code == 401
+
+
+def test_pi_photo_web_routes_are_owner_scoped(app_env) -> None:
+    owner = _setup_client()
+    activated = _paired_device(owner, "pi")
+    device_id = activated["device"]["deviceId"]
+    created = owner.post(f"/api/device/{device_id}/photoRequest", json={"reason": "owner"})
+    assert created.status_code == 200
+    request_id = created.json()["data"]["requestId"]
+
+    anonymous = TestClient(create_app())
+    assert anonymous.post(f"/api/device/{device_id}/photoRequest", json={}).status_code == 401
+    assert anonymous.get(f"/api/device/photoRequest/{request_id}").status_code == 401
+    assert anonymous.get(f"/api/device/photoRequest/{request_id}/image").status_code == 401
+
+    other = TestClient(create_app())
+    assert other.post(
+        "/api/auth/register",
+        json={"loginName": "photo-other", "password": "correct-horse-battery-staple"},
+    ).status_code == 200
+    assert other.post(f"/api/device/{device_id}/photoRequest", json={}).status_code == 404
+    assert other.get(f"/api/device/{device_id}/photoRequests").status_code == 404
+    assert other.get(f"/api/device/photoRequest/{request_id}").status_code == 404
+    assert other.get(f"/api/device/photoRequest/{request_id}/image").status_code == 404
 
 
 def test_screen_websocket_requires_its_device_credential(app_env) -> None:

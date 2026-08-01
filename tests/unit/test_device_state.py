@@ -16,8 +16,11 @@ from app.server.api.device_state_routes import (
 from app.server.db.session import Base
 from app.server.device import service
 from app.server.device.routes import router
-from app.server.new_core import models  # noqa: F401
-from app.server.new_core.models import DeviceStateLog
+from app.server.new_core import (
+    crud,
+    models,  # noqa: F401
+)
+from app.server.new_core.models import DeviceStateLog, LifeDevice
 
 pytestmark = pytest.mark.unit
 
@@ -167,6 +170,16 @@ def test_device_router_exposes_heartbeat_and_photo_contract() -> None:
 def test_heartbeat_and_async_photo_request_lifecycle() -> None:
     db = _session()
     try:
+        crud.getCurrentUser(db)
+        db.add(
+            LifeDevice(
+                deviceId="pi",
+                userId="default",
+                deviceName="Pi",
+                deviceKind="pi",
+            )
+        )
+        db.commit()
         state = service.record_heartbeat(
             db,
             device_id="pi",

@@ -4,9 +4,50 @@ import sqlite3
 
 import pytest
 
+from app.server.auth.storage import ensure_auth_schema
 from app.server.db.session import _apply_sqlite_migrations, init_db
 
 pytestmark = pytest.mark.migration
+
+
+def test_legacy_browser_sessions_are_revoked_during_opaque_token_migration(app_env) -> None:
+    init_db()
+    with sqlite3.connect(app_env) as conn:
+        conn.execute("DROP TABLE userSession")
+        conn.executescript(
+            """
+            CREATE TABLE userSession (
+                sessionId VARCHAR(32) PRIMARY KEY,
+                actorUserId VARCHAR(32) NOT NULL,
+                activeUserId VARCHAR(32) NOT NULL,
+                expiresAt VARCHAR(64) NOT NULL,
+                revokedAt VARCHAR(64),
+                createdAt VARCHAR(64) NOT NULL
+            );
+            INSERT INTO userSession (
+                sessionId, actorUserId, activeUserId, expiresAt, createdAt
+            ) VALUES (
+                'legacy-session', 'default', 'default',
+                '2099-01-01T00:00:00+08:00', '2026-08-01T00:00:00+08:00'
+            );
+            """
+        )
+        conn.commit()
+
+    ensure_auth_schema()
+    ensure_auth_schema()
+
+    with sqlite3.connect(app_env) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(userSession)")}
+        row = conn.execute(
+            "SELECT tokenHash, revokedAt FROM userSession WHERE sessionId = 'legacy-session'"
+        ).fetchone()
+        indexes = {row[1] for row in conn.execute("PRAGMA index_list(userSession)")}
+
+    assert {"tokenHash", "userAgent", "lastSeenAt"} <= columns
+    assert row is not None and len(row[0]) == 64
+    assert row[1] == "2026-08-01T00:00:00+08:00"
+    assert "uq_userSession_tokenHash" in indexes
 
 
 def test_existing_evt_base_is_rebuilt_for_reminder_type(tmp_path) -> None:

@@ -6,13 +6,14 @@
 
 ## 用户与会话
 
-`appUser` 保存稳定 `userId`、唯一登录名、密码哈希、展示信息、角色和状态。当前
-浏览器认证由 HMAC 签名 Cookie 保存 active user、actor 和过期时间；`userSession`
-模型存在，但尚未成为请求认证的事实源。
+`appUser` 保存稳定 `userId`、唯一登录名、密码哈希、展示信息、角色和状态。
+`userSession` 保存 token hash、actor、active user、过期/撤销时间、截断的 user agent
+和最近使用时间，是浏览器请求认证的事实源；Cookie 只保存 opaque token。
 
-- 密码只存哈希；登录必须解析到数据库内部 `userId` 后再签发 Cookie。
+- 密码只存哈希；登录必须解析到数据库内部 `userId` 后再创建 Session。
 - 普通用户只能以自己作为 active user。
-- 管理员切换 active user 只改变业务视角，Cookie 与写操作仍保留 actor 审计。
+- 管理员切换 active user 只改变当前 Session 的业务视角，写操作仍保留 actor 审计。
+- 注销、全端注销、单 Session 撤销和密码修改都立即使对应 token 失效。
 - 浏览器请求不能用 body/query 中的 `userId` 改变资源归属。
 
 ## 事项与关系
@@ -65,8 +66,9 @@ Web 主接口位于 `/api/evt`、`/api/planEvt`、`/api/ddlEvt`、`/api/courseEv
 ## 设备
 
 通用配对与命令分发使用 `lifeDevice`、`deviceKey`、`devicePair`、
-`deviceDispatch` 和 `deviceReceipt`。Pi 的状态与按需照片沿用 `device`、
-`deviceStateLog` 和 `devicePhotoRequest` 运行记录。
+`deviceDispatch` 和 `deviceReceipt`。兼容期内 `lifeDevice` 是所有权、kind 与激活状态的
+事实源；Pi 的 `deviceStateLog` 和 `devicePhotoRequest` 仍通过旧 `device` 外键运行，旧表
+只保留同 ID、同 owner 的镜像。启动迁移双向补齐缺失镜像，owner 冲突会终止迁移。
 
 - 一个设备只属于一个用户；撤销后 token 立即失效。
 - token 只在激活时返回一次，数据库只保存哈希。
@@ -118,8 +120,8 @@ AI 注释；`computerWorkBlock` 保存跨小时连续主题，`computerWorkBlock
 `/work` 是 Vue 工作台，主要视图包括总览、事项、课程、Idea、设备、日报、日志和
 设置。设备页按 Computer、RaspberryPi、Screen、Feishu Bot 分隔管理。Computer 统计先展示
 客观状态、Plan 时间交集、会话和应用，再以当前/最近工作块展示主题、Plan 判断、提醒和每日
-工作日志；“今日项目投入”将 Codex 项目报告与唯一匹配的工作块、Plan 合并，歧义归入
-“其他工作”，小时事实只在证据抽屉中按需查看。
+工作日志；小时事实只在证据抽屉中按需查看。Codex 项目报告和项目聚合继续作为 23:59
+日报证据保留，不再在当日 Computer 页面单独展示。
 Server 根据当前 Plan、电脑状态和同用户的新鲜 Pi 状态生成可解释的客观判断；AI 只追加注释，
 不修改 Plan 或原始活动。
 工作块连续 active 五分钟后建立并生成初始标题与总结；累计 active 二十分钟后更新同一记录，

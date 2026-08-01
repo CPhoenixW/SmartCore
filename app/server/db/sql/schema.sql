@@ -436,12 +436,32 @@ CREATE INDEX IF NOT EXISTS idx_codex_work_report_user_date ON codexWorkReport(us
 -- existing database.
 CREATE TABLE IF NOT EXISTS userSession (
     sessionId VARCHAR(32) PRIMARY KEY,
+    tokenHash VARCHAR(64) NOT NULL UNIQUE,
     actorUserId VARCHAR(32) NOT NULL REFERENCES appUser(userId) ON DELETE CASCADE,
     activeUserId VARCHAR(32) NOT NULL REFERENCES appUser(userId) ON DELETE CASCADE,
     expiresAt VARCHAR(64) NOT NULL,
     revokedAt VARCHAR(64),
+    userAgent VARCHAR(300),
+    lastSeenAt VARCHAR(64),
     createdAt VARCHAR(64) NOT NULL
 );
+CREATE TABLE IF NOT EXISTS agentRouteUsage (
+    usageId VARCHAR(32) PRIMARY KEY,
+    method VARCHAR(10) NOT NULL,
+    path VARCHAR(200) NOT NULL,
+    endpoint VARCHAR(300) NOT NULL,
+    compatibility BOOLEAN NOT NULL DEFAULT 0,
+    callCount INTEGER NOT NULL DEFAULT 0,
+    successCount INTEGER NOT NULL DEFAULT 0,
+    clientErrorCount INTEGER NOT NULL DEFAULT 0,
+    serverErrorCount INTEGER NOT NULL DEFAULT 0,
+    firstCalledAt VARCHAR(64) NOT NULL,
+    lastCalledAt VARCHAR(64) NOT NULL,
+    lastStatusCode INTEGER NOT NULL,
+    UNIQUE(method, path, endpoint)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_route_usage_last_called
+ON agentRouteUsage(lastCalledAt);
 CREATE TABLE IF NOT EXISTS lifeDevice (
     deviceId VARCHAR(32) PRIMARY KEY,
     userId VARCHAR(32) NOT NULL REFERENCES appUser(userId) ON DELETE CASCADE,

@@ -10,7 +10,7 @@ import EmptyState from "@/components/base/EmptyState.vue";
 import BarChart, { type BarChartSeries } from "@/components/base/BarChart.vue";
 import { computerApi } from "@/api/computer";
 import { deviceRegistryApi } from "@/api/deviceRegistry";
-import type { ComputerProjectInvestment, ComputerRange, ComputerSession, ComputerWorkBlock } from "@/types/computer";
+import type { ComputerRange, ComputerSession, ComputerWorkBlock } from "@/types/computer";
 import {
   dominantComputerState,
   durationLabel,
@@ -74,7 +74,6 @@ const recentWorkBlocks = computed(() =>
     .reverse()
     .slice(0, 4),
 );
-const maxProjectActive = computed(() => Math.max(1, ...(insights.data.value?.projects ?? []).map((item) => item.activeSeconds)));
 const maxApp = computed(() => Math.max(1, ...(report.value?.applications ?? []).map((item) => item.seconds)));
 const dailyLabels = computed(() => (report.value?.daily ?? []).map((item) => item.date.slice(5)));
 const dailySeries = computed<BarChartSeries[]>(() => [
@@ -147,10 +146,6 @@ function insightStatusLabel(statusValue: string) { return t(`computer.insightSta
 function blockEndLabel(block: ComputerWorkBlock) {
   return block.endAt ? timeLabel(block.endAt) : t("computer.ongoing");
 }
-function codexStatusLabel(value: string) { return t(`computer.codexStatus.${value}`); }
-function projectStatusLabel(project: ComputerProjectInvestment) {
-  return project.status ? codexStatusLabel(project.status) : t("computer.observedOnly");
-}
 </script>
 
 <template>
@@ -188,34 +183,6 @@ function projectStatusLabel(project: ComputerProjectInvestment) {
           </template>
           <div v-else-if="insights.data.value?.analysisState && ['queued', 'running', 'failed'].includes(insights.data.value.analysisState.status)" class="computer-analysis-state"><strong>{{ insightStatusLabel(insights.data.value.analysisState.status) }}</strong><p v-if="insights.data.value.analysisState.errorMessage">{{ insights.data.value.analysisState.errorMessage }}</p><small v-if="insights.data.value.analysisState.nextRetryAt">{{ formatDateTime(insights.data.value.analysisState.nextRetryAt, locale === 'en-US' ? 'en-US' : 'zh-CN') }}</small></div>
           <EmptyState v-else :text="t('computer.noCurrentWorkBlock')" />
-        </BaseCard>
-        <BaseCard class="computer-project-investment-card" :title="t('computer.projectInvestment')" :subtitle="t('computer.projectInvestmentNote')">
-          <div v-if="insights.data.value?.projects?.length" class="computer-project-list">
-            <article v-for="project in insights.data.value?.projects ?? []" :key="project.projectKey" class="computer-project">
-              <header>
-                <div>
-                  <strong>{{ project.projectName }}</strong>
-                  <span>{{ projectStatusLabel(project) }}</span>
-                </div>
-                <b>{{ duration(project.activeSeconds) }}</b>
-              </header>
-              <div class="computer-project__bar" aria-hidden="true"><i :style="{ width: `${project.activeSeconds / maxProjectActive * 100}%` }" /></div>
-              <div class="computer-project__meta">
-                <span v-if="project.statusCounts.completed">{{ t('computer.codexStatusCount.completed', { count: project.statusCounts.completed }) }}</span>
-                <span v-if="project.statusCounts.partial">{{ t('computer.codexStatusCount.partial', { count: project.statusCounts.partial }) }}</span>
-                <span v-if="project.statusCounts.inProgress">{{ t('computer.codexStatusCount.in_progress', { count: project.statusCounts.inProgress }) }}</span>
-                <span v-if="project.workBlocks.length">{{ t('computer.blockEvidenceCount', { count: project.workBlocks.length }) }}</span>
-                <span v-if="project.plans.length">{{ t('computer.planCount', { count: project.plans.length }) }}</span>
-              </div>
-              <div v-if="project.codexReports.length" class="computer-project__reports">
-                <article v-for="reportItem in project.codexReports" :key="reportItem.reportId">
-                  <div><strong>{{ reportItem.title }}</strong><span :class="`computer-codex-status computer-codex-status--${reportItem.status}`">{{ codexStatusLabel(reportItem.status) }}</span></div>
-                  <p>{{ reportItem.summary }}</p>
-                </article>
-              </div>
-            </article>
-          </div>
-          <EmptyState v-else :text="t('computer.noProjectInvestment')" />
         </BaseCard>
         <BaseCard class="computer-work-history" :title="t('computer.recentWorkBlocks')" :subtitle="t('computer.recentWorkBlocksNote')">
           <div v-if="recentWorkBlocks.length" class="computer-work-block-list">
@@ -326,27 +293,7 @@ function projectStatusLabel(project: ComputerProjectInvestment) {
 
 .computer-view-tabs { width: fit-content; max-width: 100%; }
 .computer-work-block-primary { grid-column: 1 / -1; }
-.computer-project-investment-card { grid-column: 1 / -1; }
 .computer-work-history { grid-column: 1 / -1; }
-.computer-project-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
-.computer-project { min-width: 0; padding: 15px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }
-.computer-project > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.computer-project > header strong,.computer-project > header span { display: block; }
-.computer-project > header strong { color: #0f172a; font-size: 16px; }
-.computer-project > header span { margin-top: 4px; color: #64748b; font-size: 10px; }
-.computer-project > header b { color: #0f172a; font-size: 18px; }
-.computer-project__bar { height: 5px; margin: 12px 0 10px; overflow: hidden; border-radius: 4px; background: #e2e8f0; }
-.computer-project__bar i { display: block; min-width: 3px; height: 100%; border-radius: inherit; background: #2563eb; }
-.computer-project__meta { display: flex; flex-wrap: wrap; gap: 6px 14px; color: #64748b; font-size: 10px; }
-.computer-project__reports { display: grid; gap: 8px; margin-top: 12px; }
-.computer-project__reports article { padding: 10px 11px; border-radius: 7px; background: #f8fafc; }
-.computer-project__reports article > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.computer-project__reports strong { overflow: hidden; color: #334155; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.computer-project__reports p { margin: 6px 0 0; color: #64748b; font-size: 11px; line-height: 1.55; }
-.computer-codex-status { flex: 0 0 auto; padding: 2px 6px; border-radius: 999px; background: #dbeafe; color: #1d4ed8; font-size: 9px; font-weight: 700; }
-.computer-codex-status--completed { background: #dcfce7; color: #15803d; }
-.computer-codex-status--partial { background: #fef3c7; color: #a16207; }
-.computer-codex-status--in_progress { background: #dbeafe; color: #1d4ed8; }
 .computer-work-block-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 .computer-work-block { padding: 14px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }
 .computer-work-block--current { border-color: #bfdbfe; background: linear-gradient(135deg, #f8fbff, #fff); }
@@ -447,7 +394,6 @@ function projectStatusLabel(project: ComputerProjectInvestment) {
 
 @media (max-width: 760px) {
   .computer-insights-grid { grid-template-columns: 1fr; }
-  .computer-project-list { grid-template-columns: 1fr; }
   .computer-work-block-list { grid-template-columns: 1fr; }
   .computer-activity-map-frame {
     grid-template-columns: 82px minmax(0, 1fr);

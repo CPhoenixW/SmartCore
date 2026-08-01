@@ -98,8 +98,8 @@ describe("device routes", () => {
     const source = readFileSync(resolve(process.cwd(), "src/components/device/ComputerUsagePanel.vue"), "utf8");
 
     expect(source).toContain("computer.currentWorkBlock");
-    expect(source).toContain("computer.projectInvestment");
-    expect(source).toContain("project.codexReports");
+    expect(source).not.toContain("computer.projectInvestment");
+    expect(source).not.toContain("project.codexReports");
     expect(source).toContain("computer.recentWorkBlocks");
     expect(source).toContain('.filter((block) => block.status === "closed")');
     expect(source).toContain(".slice(0, 4)");

@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.server.new_core import crud
+from app.server.device.compatibility import ensure_legacy_device
 from app.server.new_core.models import Device, DevicePhotoRequest, DeviceStateLog, nowIso
 
 _DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
@@ -23,19 +23,7 @@ def _parse_iso(value: str) -> datetime:
 
 
 def _ensure_device(db: Session, device_id: str) -> Device:
-    crud.getCurrentUser(db)
-    device = db.get(Device, device_id)
-    if device is None:
-        device = Device(
-            deviceId=device_id,
-            userId=crud.DEFAULT_USER_ID,
-            deviceName=device_id,
-            deviceKind="screen",
-            isActive=True,
-        )
-        db.add(device)
-        db.flush()
-    return device
+    return ensure_legacy_device(db, device_id)
 
 
 def _state_dict(row: DeviceStateLog) -> dict[str, Any]:

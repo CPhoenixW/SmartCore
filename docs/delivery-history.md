@@ -160,3 +160,15 @@ Computer active seconds；结果卡片必须匹配原 owner、bot、chat 和消�
 - 提醒使用 Computer `stateSince` 和稳定 dedup key，不调用模型；锁屏、休眠、暂停与离线跳过。
 
 关键边界：idle 五分钟只提醒，idle 二十分钟才关闭工作块；不新增报告、Project 实体或数据库表。
+
+## 2026-08-01：权限与兼容治理
+
+- Agent routers 改为显式唯一组装，增加 assembled-app 路由快照和无正文的调用统计；旧别名
+  标记 deprecated，在完成生产统计兼容期前不删除。
+- 浏览器切换为 opaque、可撤销的服务端 Session，支持当前/全端注销、会话撤销和密码修改失效。
+- `lifeDevice` 成为设备事实源，旧 `device` 进入幂等镜像兼容期；不直接合表或删除历史数据。
+- Pi 照片 Web 路由增加 Session 与 owner 校验；Computer 当日页移除项目投入卡，聚合继续供
+  23:59 日报使用。
+
+关键边界：旧 HMAC Cookie 在升级后需重新登录；设备 owner 冲突阻止迁移；生产旧别名只有在
+新统计覆盖完整兼容期且所有调用方迁移后才可删除。

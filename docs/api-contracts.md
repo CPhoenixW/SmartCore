@@ -25,8 +25,8 @@ Agent 接口使用机器稳定的结果：
 | 调用方 | 凭证 | 主要入口 | 所有权来源 |
 |---|---|---|---|
 | 匿名浏览器 | 无 | `/api/auth/status|setup|register|login` | 尚未建立或新建用户 |
-| 登录浏览器 | HMAC 签名 Cookie | `/api/*`、`/api/device/*`、`/api/feishu/*` | Cookie active user |
-| 管理员 | 同一 Cookie，另含 actor | `/api/admin/*` | actor 鉴权，active user 定资源范围 |
+| 登录浏览器 | opaque Session Cookie | `/api/*`、`/api/device/*`、`/api/feishu/*` | `userSession` active user |
+| 管理员 | 同一服务端 Session | `/api/admin/*` | actor 鉴权，active user 定资源范围 |
 | Feishu | callback token/签名/加密 | `POST /feishu/event` | 匹配 bot + identity + chat binding |
 | OpenClaw | Agent token；用户操作通常另需短期 scope | `/agent/*` | scope 中的 user/bot/chat；例外见下文 |
 | 配对中客户端 | `pairId` + `claimCode` | 设备 claim/status/activate | 配对记录用户 |
@@ -40,14 +40,18 @@ Agent 接口使用机器稳定的结果：
 
 当前认证实现位于 `app/server/auth/security.py`：
 
-- Cookie 内容包含 active `userId`、实际 actor ID、版本和过期时间，并由 HMAC 签名。
+- Cookie 只包含高熵 opaque token；数据库只保存 SHA-256 hash，不保存可直接复用的 token。
 - 登录名或内部 ID 验证成功后，Cookie 必须写入数据库匹配行的内部 `userId`。
 - 普通用户的 actor 与 active user 相同。
-- 管理员调用 `POST /api/admin/activeUser` 后 active user 改变，actor 保持管理员。
+- 管理员调用 `POST /api/admin/activeUser` 后只更新当前 `userSession.activeUserId`，actor
+  保持管理员且 token 不变。
 - 资源 owner 由依赖注入，不接受 body/query 提交的 `userId`。
 
-`userSession` 表目前不是请求认证的事实源。若未来切换到可撤销服务端 session，必须
-同时迁移 Cookie 解码、密码变更失效、注销行为和测试，不能只改模型。
+`userSession` 是请求认证的事实源。`POST /api/auth/logout` 撤销当前 Session；
+`GET /api/auth/sessions`、`DELETE /api/auth/sessions/{sessionId}` 和
+`POST /api/auth/logout-all` 用于设备会话管理；`POST /api/auth/password` 验证旧密码后
+撤销 actor 的全部旧 Session，并为当前客户端签发新 Session。部署此版本时旧 HMAC Cookie
+明确失效，用户需要重新登录。
 
 主要浏览器域：
 
@@ -88,9 +92,11 @@ Agent 接口使用机器稳定的结果：
 
 ## Agent API
 
-组装应用中，优先注册的是 relation query/write 和 feedback routers，因此当前
-`/agent/tools`、`/agent/db/query_events`、`/agent/db/create_event`、
-`/agent/db/update_event` 需要：
+组装应用由 `app/server/agent/assembly.py` 显式声明重复 operation 的 owner，不再依赖
+router 注册顺序。assembled-app 快照位于
+`tests/contract/snapshots/assembled_agent_routes.json`；任何同 method+path 的重复 handler
+都会使合约测试失败。`/agent/tools`、`/agent/db/query_events`、
+`/agent/db/create_event`、`/agent/db/update_event` 需要：
 
 ```text
 X-SmartCore-Agent-Token
@@ -117,7 +123,10 @@ Agent token 与用户 scope；不要根据单个 router 文件推断最终契约
 - `/agent/idea/*`
 
 `evtQuery`、`evtCreate`、`evtUpdate`、`evtDelete`、`sendText`、`sendCard` 等是兼容
-别名。移除前必须核对 Adapter、OpenClaw skill、生产调用日志和对应测试。
+别名，并在 OpenAPI 中标记 deprecated。每次实际 `/agent/*` 调用会按 method、匹配 path、
+endpoint 与状态码累计到 `agentRouteUsage`，不保存 token、scope 或 body；管理员可通过
+`GET /api/admin/agentRouteUsage` 检查。旧生产日志不含匹配 path，不能反推历史调用；别名
+只有在新统计覆盖完整兼容期且 Adapter/skill 已迁移后才能删除。
 
 ## 设备配对状态机
 
@@ -135,12 +144,11 @@ created -> claimed -> userConfirmed -> paired
 设备 token 只能操作绑定 device。dispatch 的 GET/receipt 不能读取或确认其他设备的
 记录。Screen 的 HTTP/WS 同样校验 device owner。
 
-Pi 状态与照片使用 `/dev/*`；通用设备列表/配对/分发使用 `/api/device/*`。两者目前
-跨 `device` 与 `lifeDevice` 两组模型，修改时必须运行两组测试。
-
-注意：`app/server/device/routes.py` 中 Server/Web 照片创建、查询和读取路由目前没有
-逐个声明浏览器 session 依赖，依靠 Tailscale/反向代理边界。它们不得进入公网路由；
-若补 owner 鉴权，需要同步前端、测试和旧 Pi/Screen 调用方。
+Pi 状态与照片使用 `/dev/*`；通用设备列表/配对/分发使用 `/api/device/*`。兼容期内
+`lifeDevice` 是 owner、kind 和激活状态事实源，旧 `device` 只作为状态/照片外键镜像；
+启动迁移会双向补齐缺失记录且拒绝 owner 冲突。Server/Web 照片创建、列表、查询和图片
+读取均要求浏览器 Session，并验证请求所属 Pi 的 `lifeDevice.userId`；匿名返回 401，
+跨用户返回 404。Tailscale 仍是额外网络边界，不替代应用层鉴权。
 
 ## 电脑活动
 

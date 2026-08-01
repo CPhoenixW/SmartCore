@@ -48,13 +48,15 @@ Server 内部按领域组织：
 - `scheduler/`：提醒、日报和天气任务。
 - `screen/`：手机副屏及 WebSocket。
 
-`app/server/main.py` 是唯一组装点。当前仍注册少量旧 Agent 路由别名以兼容已有
-调用方；新集成必须以 `GET /agent/tools` 返回的契约为准，不依赖内部模块或旧别名。
+`app/server/main.py` 是唯一组装点，`agent/assembly.py` 为每个重复 Agent operation
+显式指定唯一 handler。当前仍保留少量标记 deprecated 的旧别名；新集成必须以
+`GET /agent/tools` 返回的契约为准，不依赖内部模块或旧别名。Agent path/status 调用量
+持久化用于决定兼容入口何时可安全移除，统计不包含请求正文或凭证。
 
 ## 权威与所有权
 
 - Server 是唯一数据库写入方，所有业务记录都归属一个 `userId`。
-- 浏览器归属来自已验证 session；普通用户的 actor 和 active user 相同。
+- 浏览器归属来自数据库验证且可撤销的 opaque session；普通用户的 actor 和 active user 相同。
 - 管理员可切换 active user，但审计仍记录实际 actor。
 - 设备归属来自完成的配对和设备 token，不接受请求体自报 owner。
 - 飞书归属来自已验证机器人、身份和聊天绑定。

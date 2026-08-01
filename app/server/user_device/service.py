@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.server.device.compatibility import ensure_legacy_device
 from app.server.new_core.models import (
     Device,
     DeviceDispatch,
@@ -230,15 +231,7 @@ def activatePair(db: Session, pairId: str, claimCode: str) -> tuple[LifeDevice, 
     db.add(device)
     db.flush()
     if device.deviceKind != "computer":
-        db.add(
-            Device(
-                deviceId=device.deviceId,
-                userId=device.userId,
-                deviceName=device.deviceName,
-                deviceKind=device.deviceKind if device.deviceKind in {"screen", "browser", "mobile", "bot", "server"} else "browser",
-                isActive=True,
-            )
-        )
+        ensure_legacy_device(db, device.deviceId)
     db.add(DeviceKey(deviceId=device.deviceId, tokenHash=tokenHash(token)))
     pair.deviceId = device.deviceId
     pair.stat = "paired"
