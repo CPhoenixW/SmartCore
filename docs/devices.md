@@ -1,4 +1,4 @@
-# 设备、Raspberry Pi 与 Mac
+# 设备、Raspberry Pi、Mac 与 Windows
 
 设备只有出站连接：客户端通过 Tailscale 调用 Server，Server 不主动连接 Pi，也不
 公开摄像头或识别服务。
@@ -125,5 +125,21 @@ Server 可结合当前 Plan、电脑状态与同用户新鲜 Pi 状态生成带 
 只保存客观快照。工作块开始、切换、结束或 Plan 语义需要更新时，Server 使用
 正式版 `deepseek-v4-flash-0731` 做一次结构化分析；展示文本由 Server 限长清洗，
 Schema 错误不会重复请求，且失败不默认回退到 OpenClaw
-`qwen3.7-plus`，任务租约和退避不影响原始上传。工作日志默认不生成日间预览，只在
-`Asia/Shanghai` 每日 23:59 生成一次；兼容行为可由部署配置显式开启。
+`qwen3.7-plus`，任务租约和退避不影响原始上传。工作日志不再作为独立的 Computer 日终
+模型任务或前端卡片生成；Daily summary 直接使用 Codex 汇报、Computer 工作块和 Plan
+证据。历史 `ComputerDailyWorkLog` 记录与兼容接口保留，但不会由调度器继续创建。
+
+## Windows 使用监视器
+
+`app/computer/windows` 是无界面的 .NET 8 用户任务，功能与 macOS 客户端保持一致：每
+20 秒读取前台窗口和输入空闲时间，每 30 秒发送心跳，每分钟生成桶；锁屏、睡眠、唤醒和
+解锁由 Windows 会话/电源事件更新。Windows 前台窗口只通过 Win32 获取应用身份和标题，
+不读取键盘、剪贴板、截图、网页正文、完整 URL 或完整文件路径。敏感应用和认证窗口沿用
+macOS 的脱敏规则，结构化上下文默认关闭。
+
+客户端使用同一 `/api/computer/activity/batch`、`/api/computer/heartbeat` 和
+`/api/computer/codex-reports/batch` 协议，离线队列按 `deviceId` 隔离并在成功响应返回的
+桶时间后删除。安装脚本 `app/computer/windows/scripts/install.ps1` 发布自包含 `win-x64`
+程序并注册当前用户的登录任务；卸载只停止任务，保留本地配置、token 和队列。Windows
+系统时区会映射为 Server 要求的 IANA 名称，无法映射时通过 `SMARTCORE_TIMEZONE` 显式
+配置。

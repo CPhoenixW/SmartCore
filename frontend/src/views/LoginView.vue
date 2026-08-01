@@ -6,7 +6,16 @@ import smartcoreMarkBlue from "@/assets/smartcore-mark-blue.png";
 import { i18n } from "@/locales";
 
 const route = useRoute();
-const language = ref<"zh" | "en">((localStorage.getItem("smartcoreLanguage") as "zh" | "en") || "zh");
+function readLanguage(): "zh" | "en" {
+  try {
+    const value = window.localStorage.getItem("smartcoreLanguage");
+    return value === "en" ? "en" : "zh";
+  } catch {
+    return "zh";
+  }
+}
+
+const language = ref<"zh" | "en">(readLanguage());
 const mode = ref<"loading" | "setup" | "login" | "register">("loading");
 const userId = ref("");
 const displayName = ref("");
@@ -47,7 +56,11 @@ const copy = computed(() => language.value === "en" ? {
 
 function switchLanguage() {
   language.value = language.value === "zh" ? "en" : "zh";
-  localStorage.setItem("smartcoreLanguage", language.value);
+  try {
+    window.localStorage.setItem("smartcoreLanguage", language.value);
+  } catch {
+    // The selected language still applies for this page even when storage is unavailable.
+  }
   i18n.global.locale.value = language.value === "en" ? "en-US" : "zh-CN";
 }
 

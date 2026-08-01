@@ -20,6 +20,9 @@ node_modules/
 dist/
 build/
 .build/
+app/computer/windows/bin/
+app/computer/windows/obj/
+app/computer/windows/publish/
 *.egg-info/
 *.tsbuildinfo
 .DS_Store

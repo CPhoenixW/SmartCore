@@ -1,9 +1,13 @@
 # Computer Monitor
 
-`macos/` 是无界面的 Swift LaunchAgent。它采集客观电脑状态、前台应用和过滤后的窗口
-标题，按分钟离线排队，并使用 computer 设备 token 上传。可选结构化上下文只包含域名、
-IDE 工作区和文档名；敏感应用只记录应用名，不采集完整 URL/路径、正文、键盘内容、
-剪贴板或截图。
+`macos/` 是无界面的 Swift LaunchAgent，`windows/` 是无界面的 .NET 用户任务。两者
+使用同一配对、心跳、分钟桶和 Codex report 协议：采集客观电脑状态、前台应用和过滤后的
+窗口标题，按分钟离线排队，并使用 Computer 设备 token 上传。Server 统一决定工作块边界、
+项目投入和日报内容；客户端不运行大模型。
+
+两个客户端都不采集完整 URL/路径、正文、键盘内容、剪贴板或截图。可选结构化上下文只
+包含域名、IDE 工作区和文档名；敏感应用始终只记录应用身份。Windows 的构建、安装、
+配对和命令见 [`windows/README.md`](./windows/README.md)。
 
 ```bash
 swift test --package-path app/computer/macos
