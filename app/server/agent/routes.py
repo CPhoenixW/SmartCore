@@ -1120,14 +1120,17 @@ def createDevRouter() -> APIRouter:
 
     @router.post("/dev/state", dependencies=[Depends(requireDeviceToken)])
     async def postDevState(body: DevStateBody, db: Session = Depends(get_db)) -> dict[str, Any]:
-        state = crud.upsertDevState(
-            db,
-            devId=body.devId,
-            state=body.state,
-            confidence=body.confidence,
-            seenAt=body.seenAt,
-            meta=body.meta,
-        )
+        try:
+            state = crud.upsertDevState(
+                db,
+                devId=body.devId,
+                state=body.state,
+                confidence=body.confidence,
+                seenAt=body.seenAt,
+                meta=body.meta,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="device not found") from exc
         await screenManager.broadcast(
             {
                 "kind": "devState",

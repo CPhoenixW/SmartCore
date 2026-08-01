@@ -1,8 +1,0 @@
--- Browser authentication authority moved from self-contained signed cookies to
--- opaque server-side sessions. Existing SQLite databases are upgraded
--- idempotently by app/server/auth/storage.py because SQLite does not support
--- portable ADD COLUMN IF NOT EXISTS statements.
---
--- New databases receive the complete definition from schema.sql. During an
--- upgrade, tokenHash/userAgent/lastSeenAt are added, every legacy row is
--- revoked, and a unique tokenHash index is installed before traffic is served.

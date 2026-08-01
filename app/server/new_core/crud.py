@@ -15,7 +15,6 @@ from app.server.new_core.models import (
     CourseEvt,
     DdlEvt,
     DdlPlan,
-    Device,
     DeviceStateLog,
     EvtBase,
     Idea,
@@ -746,12 +745,11 @@ def upsertDevState(
     seenAt: str | None = None,
     meta: dict | None = None,
 ) -> dict[str, Any]:
-    _ensure_user(db)
-    device = db.get(Device, devId)
-    if device is None:
-        device = Device(deviceId=devId, userId=DEFAULT_USER_ID, deviceName=devId, deviceKind="screen")
-        db.add(device)
-        db.flush()
+    from app.server.device.compatibility import ensure_legacy_device
+
+    # Compatibility state writes must still resolve ownership through
+    # lifeDevice. Never recreate the old implicit "default" owner here.
+    ensure_legacy_device(db, devId)
     row = DeviceStateLog(deviceId=devId, state=state, confidence=confidence, seenAt=seenAt or nowIso(), meta=meta)
     db.add(row)
     _recordAct(db, actorKind="device", action="update", targetKind="device", targetId=devId)

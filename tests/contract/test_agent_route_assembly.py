@@ -65,3 +65,14 @@ def test_agent_route_usage_is_persisted_without_request_payload(client) -> None:
         assert "tools" in row.endpoint
     finally:
         db.close()
+
+
+def test_unmatched_agent_paths_do_not_create_usage_dimensions(client) -> None:
+    response = client.get("/agent/random-probe-that-is-not-a-route")
+    assert response.status_code == 404
+
+    db = SessionLocal()
+    try:
+        assert db.query(AgentRouteUsage).count() == 0
+    finally:
+        db.close()

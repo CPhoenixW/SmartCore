@@ -5,7 +5,10 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+from app.server.auth.security import session_token_hash
+from app.server.db.session import SessionLocal
 from app.server.main import create_app
+from app.server.new_core.models import UserSession
 
 pytestmark = pytest.mark.api
 
@@ -115,6 +118,15 @@ def test_server_sessions_can_be_listed_revoked_and_invalidated_by_password_chang
     )
     assert registered.status_code == 200
     old_first_token = first.cookies.get("smartcore_session")
+    assert old_first_token
+
+    db = SessionLocal()
+    try:
+        stored = db.query(UserSession).filter_by(tokenHash=session_token_hash(old_first_token)).one()
+        assert stored.tokenHash != old_first_token
+        assert old_first_token not in " ".join(str(value) for value in vars(stored).values())
+    finally:
+        db.close()
 
     second = TestClient(create_app())
     assert second.post(
@@ -149,6 +161,63 @@ def test_server_sessions_can_be_listed_revoked_and_invalidated_by_password_chang
     assert stale.get("/api/auth/me").status_code == 401
     assert first.post("/api/auth/logout-all").status_code == 200
     assert first.get("/api/auth/me").status_code == 401
+
+
+def test_session_revocation_and_logout_all_are_actor_scoped(app_env) -> None:
+    owner = TestClient(create_app())
+    owner_user = owner.post(
+        "/api/auth/register",
+        json={"loginName": "session-owner", "password": "correct-horse-battery-staple"},
+    ).json()["data"]
+
+    other = TestClient(create_app())
+    other_user = other.post(
+        "/api/auth/register",
+        json={"loginName": "session-other", "password": "correct-horse-battery-staple"},
+    ).json()["data"]
+    other_session = other.get("/api/auth/sessions").json()["data"][0]
+
+    assert owner.delete(f"/api/auth/sessions/{other_session['sessionId']}").status_code == 404
+    assert other.get("/api/auth/me").json()["data"]["userId"] == other_user["userId"]
+
+    assert owner.post("/api/auth/logout-all").status_code == 200
+    assert owner.get("/api/auth/me").status_code == 401
+    assert other.get("/api/auth/me").json()["data"]["userId"] == other_user["userId"]
+    assert owner_user["userId"] != other_user["userId"]
+
+
+def test_admin_active_user_switch_cannot_change_selected_users_password(app_env) -> None:
+    admin = _setup_client()
+    created = admin.post(
+        "/api/auth/register",
+        json={"loginName": "selected-user", "password": "correct-horse-battery-staple"},
+    )
+    assert created.status_code == 200
+    selected_user_id = created.json()["data"]["userId"]
+
+    assert admin.post("/api/auth/logout").status_code == 200
+    assert admin.post(
+        "/api/auth/login",
+        json={"userId": "default", "password": "correct-horse-battery-staple"},
+    ).status_code == 200
+    assert admin.post(
+        "/api/admin/activeUser", json={"userId": selected_user_id}
+    ).status_code == 200
+
+    response = admin.post(
+        "/api/auth/password",
+        json={
+            "currentPassword": "correct-horse-battery-staple",
+            "newPassword": "updated-horse-battery-staple",
+        },
+    )
+    assert response.status_code == 409
+
+    selected = TestClient(create_app())
+    assert selected.post(
+        "/api/auth/login",
+        json={"userId": "selected-user", "password": "correct-horse-battery-staple"},
+    ).status_code == 200
 
 
 def test_paired_device_token_can_poll_photo_requests(app_env) -> None:

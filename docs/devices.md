@@ -85,6 +85,10 @@ WebP，大小由 `DEVICE_PHOTO_MAX_BYTES` 控制。Pi 必须按 `requestId` 去�
 兼容表只有在生产数据无冲突、所有读写已切到 `lifeDevice`、旧端版本退出且外键完成正式
 迁移后才能删除；本阶段不直接合表、不改设备 token，也不删除历史状态或照片。
 
+旧 `POST /dev/state` 只作为全局设备 token 的过渡入口，必须命中已存在的
+`lifeDevice`，再写同 ID 的旧状态外键镜像；它不再自动创建归属 `default` 的旧设备。
+新 Pi 使用配对设备 token 和 `POST /dev/heartbeat`。
+
 ## Pi 本地数据
 
 `known_faces/`、`captures/`、`output/`、`logs/`、`.venv/`、模型和环境文件都不进入

@@ -6,7 +6,8 @@ from app.server.device.compatibility import (
     DeviceOwnershipConflict,
     migrate_device_compatibility,
 )
-from app.server.new_core.models import AppUser, Device, LifeDevice
+from app.server.new_core import crud
+from app.server.new_core.models import AppUser, Device, DeviceStateLog, LifeDevice
 
 pytestmark = pytest.mark.unit
 
@@ -73,3 +74,36 @@ def test_device_compatibility_rejects_owner_conflicts(db_session) -> None:
 
     with pytest.raises(DeviceOwnershipConflict, match="device owner conflict"):
         migrate_device_compatibility(db_session)
+
+
+def test_legacy_state_write_requires_authoritative_life_device(db_session) -> None:
+    db_session.add(AppUser(userId="owner", loginName="owner", displayName="Owner"))
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="lifeDevice not found"):
+        crud.upsertDevState(db_session, devId="unknown-pi", state="working")
+
+    assert db_session.get(Device, "unknown-pi") is None
+    assert db_session.query(DeviceStateLog).count() == 0
+
+
+def test_legacy_state_write_creates_owner_preserving_mirror(db_session) -> None:
+    db_session.add_all(
+        [
+            AppUser(userId="owner", loginName="owner", displayName="Owner"),
+            LifeDevice(
+                deviceId="paired-pi",
+                userId="owner",
+                deviceName="Paired Pi",
+                deviceKind="pi",
+            ),
+        ]
+    )
+    db_session.commit()
+
+    state = crud.upsertDevState(db_session, devId="paired-pi", state="working")
+
+    assert state["deviceId"] == "paired-pi"
+    assert state["state"] == "working"
+    assert db_session.get(Device, "paired-pi").userId == "owner"
+    assert db_session.query(DeviceStateLog).filter_by(deviceId="paired-pi").count() == 1

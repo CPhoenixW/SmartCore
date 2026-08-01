@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import Request
+from fastapi.routing import APIRoute
 from sqlalchemy import text
 
 from app.server.agent.assembly import LEGACY_AGENT_PATHS
@@ -14,7 +15,12 @@ logger = logging.getLogger(__name__)
 
 def record_agent_route_usage(request: Request, status_code: int) -> None:
     route = request.scope.get("route")
-    path = str(getattr(route, "path", request.url.path))
+    # Ignore unmatched/random paths so unauthenticated probes cannot create an
+    # unbounded number of usage rows. The matched route template is the stable
+    # operation identity.
+    if not isinstance(route, APIRoute):
+        return
+    path = route.path
     if not path.startswith("/agent/") and path != "/agent":
         return
     endpoint_callable = getattr(route, "endpoint", None)

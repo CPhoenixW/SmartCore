@@ -12,7 +12,7 @@ from app.server.auth.security import (
 from app.server.db.session import SessionLocal, init_db
 from app.server.main import create_app
 from app.server.new_core import crud
-from app.server.new_core.models import AppUser, DeviceKey, LifeDevice
+from app.server.new_core.models import AppUser, Device, DeviceKey, DeviceStateLog, LifeDevice
 from app.server.user_device.service import (
     activatePair,
     claimPair,
@@ -198,3 +198,44 @@ def test_heartbeat_requires_paired_device_credential(app_env) -> None:
         ).status_code
         == 200
     )
+
+
+def test_legacy_state_route_requires_life_device_and_preserves_owner(app_env) -> None:
+    client = TestClient(create_app())
+    assert client.post(
+        "/api/auth/setup", json={"password": "correct-horse-battery-staple"}
+    ).status_code == 200
+
+    unknown = client.post(
+        "/dev/state",
+        json={"devId": "unknown-pi", "state": "working"},
+        headers={"X-SmartCore-Device-Token": "device-secret"},
+    )
+    assert unknown.status_code == 404
+
+    pair = client.post(
+        "/api/device/pair/start", json={"deviceName": "Legacy Pi", "deviceKind": "pi"}
+    ).json()["data"]
+    assert client.post(
+        f"/api/device/pair/{pair['pairId']}/claim", json={"claimCode": pair["claimCode"]}
+    ).status_code == 200
+    assert client.post(f"/api/device/pair/{pair['pairId']}/confirm").status_code == 200
+    activated = client.post(
+        f"/api/device/pair/{pair['pairId']}/activate", json={"claimCode": pair["claimCode"]}
+    ).json()["data"]
+    device_id = activated["device"]["deviceId"]
+
+    written = client.post(
+        "/dev/state",
+        json={"devId": device_id, "state": "working"},
+        headers={"X-SmartCore-Device-Token": "device-secret"},
+    )
+    assert written.status_code == 200
+
+    db = SessionLocal()
+    try:
+        assert db.get(Device, "unknown-pi") is None
+        assert db.get(Device, device_id).userId == "default"
+        assert db.query(DeviceStateLog).filter_by(deviceId=device_id).count() == 1
+    finally:
+        db.close()
