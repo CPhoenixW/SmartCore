@@ -94,6 +94,56 @@ def test_plan_idle_reminds_after_five_minutes_from_plan_start_once(
     assert log.dedupKey.startswith(f"computer-attention:{device.deviceId}:")
 
 
+def test_plan_idle_skips_meal_and_rest_plan(db_session) -> None:
+    idle_since = datetime(2026, 8, 1, 8, 50, tzinfo=UTC)
+    user, _device = _fixture(db_session, state_since=idle_since)
+    plan_start = datetime(2026, 8, 1, 9, tzinfo=UTC)
+    base = EvtBase(
+        userId=user.userId,
+        title="晚饭+休息",
+        desc="6点吃晚饭，吃饭休息到7点",
+        evtType="plan",
+        stat="todo",
+    )
+    db_session.add(base)
+    db_session.flush()
+    db_session.add(PlanEvt(evtId=base.evtId, stTime=plan_start.isoformat(), durationMin=60))
+    status = db_session.get(ComputerMonitorStatus, _device.deviceId)
+    status.lastHeartbeatAt = (plan_start + timedelta(minutes=5)).isoformat()
+    db_session.commit()
+
+    assert dispatch_attention_reminders(
+        db_session,
+        now=plan_start + timedelta(minutes=5),
+        screen_online=lambda _user_id: True,
+    ) == 0
+    assert db_session.query(NotifyLog).count() == 0
+
+
+def test_plan_idle_uses_overlapping_computer_plan_when_life_plan_is_present(
+    db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _enable_screen(monkeypatch)
+    plan_start = datetime(2026, 8, 1, 9, tzinfo=UTC)
+    user, device = _fixture(db_session, state_since=plan_start)
+    for title in ("晚饭+休息", "修复后端调度"):
+        base = EvtBase(userId=user.userId, title=title, evtType="plan", stat="todo")
+        db_session.add(base)
+        db_session.flush()
+        db_session.add(PlanEvt(evtId=base.evtId, stTime=plan_start.isoformat(), durationMin=60))
+    status = db_session.get(ComputerMonitorStatus, device.deviceId)
+    status.lastHeartbeatAt = (plan_start + timedelta(minutes=5)).isoformat()
+    db_session.commit()
+
+    assert dispatch_attention_reminders(
+        db_session,
+        now=plan_start + timedelta(minutes=5),
+        screen_online=lambda _user_id: True,
+    ) == 1
+    log = db_session.query(NotifyLog).one()
+    assert "修复后端调度" in log.content
+
+
 def test_implicit_focus_requires_twenty_active_minutes(
     db_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

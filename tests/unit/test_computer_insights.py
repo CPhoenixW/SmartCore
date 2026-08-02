@@ -6,9 +6,11 @@ import pytest
 
 from app.server.computer.insights import (
     build_hour_context,
+    dispatch_smart_plan_reminders,
     queue_hourly_analysis,
     store_hourly_analysis,
 )
+from app.server.computer.plan_activity import plan_computer_activity_expected
 from app.server.new_core.models import (
     AppUser,
     ComputerActivityBucket,
@@ -47,13 +49,121 @@ def _add_activity(db, device, start: datetime, seconds: int) -> None:
     db.commit()
 
 
-def _add_plan(db, user_id: str, start: datetime, duration_min: int) -> str:
-    base = EvtBase(userId=user_id, title="Focus task", evtType="plan")
+def _add_plan(
+    db,
+    user_id: str,
+    start: datetime,
+    duration_min: int,
+    *,
+    title: str = "Focus task",
+    desc: str | None = None,
+) -> str:
+    base = EvtBase(userId=user_id, title=title, desc=desc, evtType="plan")
     db.add(base)
     db.flush()
     db.add(PlanEvt(evtId=base.evtId, stTime=start.isoformat(), durationMin=duration_min))
     db.commit()
     return base.evtId
+
+
+@pytest.mark.parametrize(
+    ("title", "description", "expected"),
+    [
+        ("晚饭+休息", "6点吃晚饭，吃饭休息到7点", False),
+        ("午睡", None, False),
+        ("Gym workout", None, False),
+        ("晚饭后写代码", None, True),
+        ("REST API 调试", None, True),
+        ("看VLA论文", None, True),
+        ("阅读", "不需要电脑", False),
+    ],
+)
+def test_plan_computer_activity_expectation(
+    title: str, description: str | None, expected: bool
+) -> None:
+    assert plan_computer_activity_expected(title, description) is expected
+
+
+def test_low_overlap_reminder_skips_non_computer_plan(
+    db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _user, device = _fixture_db(db_session)
+    start = datetime(2026, 8, 2, 10, tzinfo=UTC)
+    _add_plan(
+        db_session,
+        device.userId,
+        start,
+        60,
+        title="晚饭+休息",
+        desc="吃晚饭，休息到下一项计划开始",
+    )
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        "app.server.computer.insights.routeNotify",
+        lambda *args, **kwargs: captured.append(kwargs) or {"stat": "sent"},
+    )
+
+    assert dispatch_smart_plan_reminders(
+        db_session,
+        now=start + timedelta(minutes=60),
+        screen_online=lambda _user_id: True,
+    ) == 0
+    assert captured == []
+
+
+def test_low_overlap_reminder_keeps_computer_plan(
+    db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _user, device = _fixture_db(db_session)
+    start = datetime(2026, 8, 2, 10, tzinfo=UTC)
+    event_id = _add_plan(
+        db_session,
+        device.userId,
+        start,
+        60,
+        title="修复 API 调度 bug",
+    )
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        "app.server.computer.insights.routeNotify",
+        lambda *args, **kwargs: captured.append(kwargs) or {"stat": "sent"},
+    )
+
+    assert dispatch_smart_plan_reminders(
+        db_session,
+        now=start + timedelta(minutes=60),
+        screen_online=lambda _user_id: True,
+    ) == 1
+    assert len(captured) == 1
+    assert captured[0]["evtId"] == event_id
+
+
+def test_low_overlap_reminder_skips_completed_computer_plan(
+    db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _user, device = _fixture_db(db_session)
+    start = datetime(2026, 8, 2, 10, tzinfo=UTC)
+    event_id = _add_plan(
+        db_session,
+        device.userId,
+        start,
+        60,
+        title="修复 API 调度 bug",
+    )
+    db_session.get(EvtBase, event_id).stat = "done"
+    db_session.commit()
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        "app.server.computer.insights.routeNotify",
+        lambda *args, **kwargs: captured.append(kwargs) or {"stat": "sent"},
+    )
+
+    assert dispatch_smart_plan_reminders(
+        db_session,
+        now=start + timedelta(minutes=60),
+        screen_online=lambda _user_id: True,
+    ) == 0
+    assert captured == []
 
 
 def test_hour_context_counts_overlapping_plans_as_one_union(db_session) -> None:

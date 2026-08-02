@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.server.computer.contracts import SUPPORTED_COMPUTER_ANALYSIS_MODELS
+from app.server.computer.plan_activity import plan_computer_activity_expected
 from app.server.new_core.models import (
     ComputerActivityBucket,
     ComputerActivityContext,
@@ -865,8 +866,10 @@ def dispatch_smart_plan_reminders(db: Session, *, now: datetime, screen_online: 
         for base, plan in db.execute(
             select(EvtBase, PlanEvt)
             .join(PlanEvt, PlanEvt.evtId == EvtBase.evtId)
-            .where(EvtBase.userId == device.userId, EvtBase.stat != "cancelled")
+            .where(EvtBase.userId == device.userId, EvtBase.stat == "todo")
         ).all():
+            if not plan_computer_activity_expected(base.title, base.desc):
+                continue
             start, end = (
                 _aware(plan.stTime),
                 _aware(plan.stTime) + timedelta(minutes=plan.durationMin),

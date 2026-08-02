@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.server.computer.plan_activity import plan_computer_activity_expected
 from app.server.new_core.models import (
     ComputerMonitorStatus,
     ComputerWorkBlock,
@@ -39,6 +40,8 @@ def _current_plan(
             EvtBase.stat == "todo",
         )
     ).all():
+        if not plan_computer_activity_expected(base.title, base.desc):
+            continue
         try:
             start = _aware(plan.stTime).astimezone(UTC)
         except (TypeError, ValueError):
