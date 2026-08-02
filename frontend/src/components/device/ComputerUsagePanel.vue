@@ -381,7 +381,7 @@ function blockEndLabel(block: ComputerWorkBlock) {
 }
 
 .computer-activity-map {
-  min-width: 1680px;
+  min-width: 2400px;
 }
 
 .computer-map-axis {
@@ -401,7 +401,7 @@ function blockEndLabel(block: ComputerWorkBlock) {
   }
 
   .computer-activity-map {
-    min-width: 1320px;
+    min-width: 1920px;
   }
 }
 </style>

@@ -85,6 +85,8 @@ describe("device routes", () => {
     expect(computerPanel).toContain("computer-two-column computer-two-column--scroll");
     expect(computerPanel).toContain("computer-card-scroll");
     expect(computerPanel).toContain('ref="activityMapScroll"');
+    expect(computerPanel).toContain("min-width: 2400px");
+    expect(computerPanel).toContain("min-width: 1920px");
     expect(styles).toContain(".computer-two-column--scroll>.card{display:flex;height:300px");
     expect(styles).toContain(".computer-two-column--scroll>.card>.card-body{min-height:0;flex:1;overflow:hidden}");
     expect(styles).toContain(".computer-card-scroll{align-content:start;height:100%;overflow-y:auto");
