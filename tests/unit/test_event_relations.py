@@ -511,7 +511,7 @@ def test_openclaw_tools_publish_course_and_reminder_relations() -> None:
     paths = {route.path for route in createRelationQueryRouter().routes}
     assert "/agent/tools" in paths
     assert "/agent/db/query_events" in paths
-    assert "/agent/evtQuery" in paths
+    assert "/agent/evtQuery" not in paths
 
     write_paths = {route.path for route in createRelationWriteRouter().routes}
     assert "/agent/db/delete_event" in write_paths

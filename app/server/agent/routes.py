@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -13,12 +12,10 @@ from app.server.agent.scope import (
     SCOPE_HEADER,
     AgentScope,
     enforce_restricted_agent_scope,
-    issue_ocr_evidence,
     require_agent_scope,
 )
 from app.server.config import Settings, get_settings
 from app.server.db.session import get_db
-from app.server.llm.gateway import LLMConfigurationError, LLMGatewayError, analyze_image
 from app.server.new_core import crud
 from app.server.new_core.models import Idea, IdeaMediaJob, IdeaUpload, nowIso
 from app.server.screen.manager import screenManager
@@ -55,7 +52,6 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         "name": "evtQuery",
         "method": "POST",
         "path": "/agent/db/query_events",
-        "legacyPaths": ["/agent/evtQuery"],
         "riskLevel": "read",
         "confirmationRequired": False,
         "inputSchema": _schema_object(
@@ -542,87 +538,6 @@ def createAgentRouter() -> APIRouter:
                 uploadIds=upload_ids,
                 userId=scope.userId,
             ),
-        )
-
-    @router.post("/media/ocr", dependencies=protected)
-    def mediaImageOcr(
-        body: dict[str, Any],
-        db: Session = Depends(get_db),
-        scope: AgentScope = Depends(require_agent_scope),
-        settings: Settings = Depends(get_settings),
-    ) -> dict[str, Any]:
-        upload_id = str(body.get("uploadId") or "").strip()
-        job_id = str(body.get("jobId") or "").strip()
-        if not upload_id:
-            return _failed(["uploadId required"])
-        upload = db.get(IdeaUpload, upload_id)
-        if upload is None or upload.userId != scope.userId:
-            return _failed(["attachment not found"])
-        if not upload.mimeType.startswith("image/"):
-            return _failed(["only image attachments can be OCRed"])
-        path = Path(upload.storagePath)
-        if not path.is_file():
-            return _failed(["attachment file not found"])
-        if upload.sizeBytes > settings.vision_max_image_bytes:
-            return _failed(["image exceeds OCR size limit"])
-        job: IdeaMediaJob | None = None
-        if job_id:
-            job = db.get(IdeaMediaJob, job_id)
-            if job is None or job.userId != scope.userId or job.uploadId != upload_id:
-                return _failed(["media job not found"])
-            if job.stat in {"ocr_ready", "ready", "consumed"} and job.ocrText:
-                return _done(
-                    {
-                        "uploadId": upload_id,
-                        "jobId": job.jobId,
-                        "text": job.ocrText,
-                        "ocrEvidence": job.ocrEvidence
-                        or issue_ocr_evidence(userId=scope.userId, uploadId=upload_id),
-                        "cached": True,
-                    }
-                )
-            if job.stat == "processing":
-                return _failed(["media job OCR is already in progress"])
-            if job.stat == "failed":
-                return _failed([job.errorMessage or "media job failed"])
-            if job.stat != "queued":
-                return _failed([f"media job cannot be OCRed from state {job.stat}"])
-            job.stat = "processing"
-            job.updatedAt = nowIso()
-            db.commit()
-        try:
-            extracted = analyze_image(
-                path.read_bytes(),
-                mime_type=upload.mimeType,
-                prompt=(
-                    "提取图片中可见的文字、表格和必要的版面语义。"
-                    "只描述能从图片直接确认的信息；不要推测或生成 Markdown。"
-                ),
-                settings=settings,
-            )
-        except (LLMConfigurationError, LLMGatewayError) as exc:
-            if job is not None:
-                job.stat = "failed"
-                job.errorMessage = f"OCR unavailable: {exc}"[:300]
-                job.updatedAt = nowIso()
-                db.commit()
-            return _failed([f"OCR unavailable: {exc}"])
-        evidence = issue_ocr_evidence(userId=scope.userId, uploadId=upload_id)
-        if job is not None:
-            job.stat = "ocr_ready"
-            job.ocrText = extracted[:6000]
-            job.ocrEvidence = evidence
-            job.errorMessage = None
-            job.updatedAt = nowIso()
-            db.commit()
-        return _done(
-            {
-                "uploadId": upload_id,
-                **({"jobId": job.jobId} if job is not None else {}),
-                "text": extracted[:6000],
-                "ocrEvidence": evidence,
-                "cached": False,
-            }
         )
 
     @router.post("/idea/media-job/complete", dependencies=protected)

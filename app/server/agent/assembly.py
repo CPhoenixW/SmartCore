@@ -39,9 +39,6 @@ _SOURCES = (
 )
 
 LEGACY_AGENT_MIGRATIONS = {
-    # Wave 1: read-only or superseded processing flows.
-    "/agent/evtQuery": LegacyAgentMigration("/agent/db/query_events", 1),
-    "/agent/media/ocr": LegacyAgentMigration(None, 1),
     # Wave 2: owner-scoped domain writes.
     "/agent/evtCreate": LegacyAgentMigration("/agent/db/create_event", 2),
     "/agent/evtUpdate": LegacyAgentMigration("/agent/db/update_event", 2),

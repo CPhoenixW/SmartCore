@@ -122,15 +122,16 @@ Agent token 与用户 scope；不要根据单个 router 文件推断最终契约
 - `/agent/feedback/*`
 - `/agent/idea/*`
 
-`evtQuery`、`evtCreate`、`evtUpdate`、`evtDelete`、`sendText`、`sendCard` 等是兼容
+`evtCreate`、`evtUpdate`、`evtDelete`、`sendText`、`sendCard` 等是剩余兼容
 别名，并在 OpenAPI 中标记 deprecated。每次实际 `/agent/*` 调用会按 method、匹配 path、
 endpoint 与状态码累计到 `agentRouteUsage`，不保存 token、scope 或 body； assembled app
 启动时还会把全部 operation 写入 `agentRouteObservation`，因此零调用路由也有可核对的观测
 起点。管理员通过 `GET /api/admin/agentRouteUsage` 查看明细，通过
 `GET /api/admin/agentRouteCompatibility` 查看旧别名的连续安静期和移除资格。旧生产日志不含
 匹配 path，不能反推历史调用；别名只有在 Adapter/skill 已迁移，且首次观测或最后调用之后
-连续 30 天没有任何请求时才能分批删除。退役清单同时声明现代替代路径与风险批次：第一批
-为只读或已被新媒体流程替代的入口，第二批为领域写入，第三批为飞书/Screen 外部反馈；CI
+连续 30 天没有任何请求时才能分批删除。第一批只读/已替代入口 `/agent/evtQuery` 与
+`/agent/media/ocr` 已在确认零调用及第一方迁移后按用户指示提前退役；剩余清单声明现代替代
+路径与风险批次：第二批为领域写入，第三批为飞书/Screen 外部反馈；CI
 禁止 OpenClaw、Adapter、Server 第一方调用和运维脚本重新写死旧 URL。
 
 ## 设备配对状态机
@@ -228,7 +229,7 @@ upload -> queued -> processing -> ready -> consumed
 - PDF/TXT/ZIP 创建后即可绑定；图片必须经过 ready media job。
 - 同一 upload 只有一个 active job；重复创建复用状态/结果。
 - 图片由 Adapter 校验并作为原生视觉输入；完成工具只接受 jobId 与摘要。
-- 旧 `/agent/media/ocr`、OCR 字段和 `ocr_ready` 状态仅作滚动兼容，不发布到
+- `/agent/media/ocr` 已退役；OCR 字段和 `ocr_ready` 状态只为历史数据兼容，不发布到
   `GET /agent/tools`，新 Agent 不得调用。
 - `PATCH /api/idea/{id}` 用 `expectedRevision`、`addUploadIds`、
   `removeAttachmentIds` 原子提交；stale revision 返回冲突。

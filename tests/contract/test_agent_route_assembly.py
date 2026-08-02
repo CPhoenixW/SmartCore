@@ -96,7 +96,6 @@ def test_legacy_migration_manifest_has_live_replacements_and_no_first_party_urls
         if migration.replacementPath is not None
     } <= paths
     assert {migration.retirementWave for migration in LEGACY_AGENT_MIGRATIONS.values()} == {
-        1,
         2,
         3,
     }
@@ -158,22 +157,22 @@ def test_legacy_route_removal_requires_a_complete_quiet_window(client) -> None:
         before = legacy_agent_route_readiness(db, now=now)
         assert before["allEligibleForRemoval"] is True
         assert len(before["routes"]) == len(LEGACY_AGENT_PATHS)
-        assert [wave["wave"] for wave in before["waves"]] == [1, 2, 3]
+        assert [wave["wave"] for wave in before["waves"]] == [2, 3]
         assert all(wave["allEligibleForRemoval"] is True for wave in before["waves"])
         assert all("retirementWave" in row and "replacementPath" in row for row in before["routes"])
     finally:
         db.close()
 
-    response = client.post("/agent/evtQuery", json={})
+    response = client.post("/agent/evtCreate", json={})
     assert response.status_code == 401
 
     db = SessionLocal()
     try:
         after = legacy_agent_route_readiness(db, now=now + timedelta(seconds=1))
-        query_route = next(row for row in after["routes"] if row["path"] == "/agent/evtQuery")
-        assert query_route["callCount"] == 1
-        assert query_route["clientErrorCount"] == 1
-        assert query_route["eligibleForRemoval"] is False
+        create_route = next(row for row in after["routes"] if row["path"] == "/agent/evtCreate")
+        assert create_route["callCount"] == 1
+        assert create_route["clientErrorCount"] == 1
+        assert create_route["eligibleForRemoval"] is False
         assert after["allEligibleForRemoval"] is False
         assert after["waves"][0]["allEligibleForRemoval"] is False
     finally:

@@ -73,7 +73,7 @@ Computer 后台分析由 Server 直接调用一次正式版 `deepseek-v4-flash-0
 兼容回退路径。
 
 新调用的查询、创建和更新优先使用 `/agent/db/*`，反馈使用 `/agent/feedback/*`。
-仓库仍有 `evtQuery` 等兼容别名；canonical 与兼容删除路径都必须同时携带 Agent token
+仓库仍有 `evtCreate` 等兼容别名；canonical 与剩余兼容路径都必须同时携带 Agent token
 和用户 scope。
 
 工具结果使用稳定 envelope：

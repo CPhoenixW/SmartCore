@@ -10,7 +10,7 @@
 - 引入候选引用与二阶段语义选择，降低模型直接猜测数据库 ID 的风险。
 - 建立 OpenClaw bridge 与 Agent API，飞书事件由 SmartCore 验证后转发。
 
-维护意义：仓库仍保留 `evtQuery`、`evtCreate`、`sendText` 等早期命名作为兼容别名，
+维护意义：仓库仍保留 `evtCreate`、`sendText` 等早期命名作为兼容别名，
 但新调用使用 `/agent/db/*` 与 `/agent/feedback/*`。
 
 ## 2026-07-03 至 07-05：Server 核心、工作台与副屏
@@ -169,6 +169,8 @@ Computer active seconds；结果卡片必须匹配原 owner、bot、chat 和消�
 - `lifeDevice` 成为设备事实源，旧 `device` 进入幂等镜像兼容期；不直接合表或删除历史数据。
 - Pi 照片 Web 路由增加 Session 与 owner 校验；Computer 当日页移除项目投入卡，聚合继续供
   23:59 日报使用。
+- Agent 第一批低风险旧入口 `/agent/evtQuery` 与 `/agent/media/ocr` 在生产零调用确认后退役；
+  现代查询路径与原生图片媒体流程继续保留。
 
-关键边界：旧 HMAC Cookie 在升级后需重新登录；设备 owner 冲突阻止迁移；生产旧别名只有在
-新统计覆盖完整兼容期且所有调用方迁移后才可删除。
+关键边界：旧 HMAC Cookie 在升级后需重新登录；设备 owner 冲突阻止迁移；剩余生产旧别名
+继续按调用统计兼容期分批退役，除非用户再次明确接受提前删除的 API 兼容风险。

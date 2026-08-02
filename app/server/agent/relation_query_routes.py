@@ -173,12 +173,4 @@ def createRelationQueryRouter() -> APIRouter:
     ) -> dict[str, Any]:
         return execute(body, db, scope)
 
-    @router.post("/evtQuery", dependencies=protected)
-    def query_legacy(
-        body: dict[str, Any] | None = None,
-        db: Session = Depends(get_db),
-        scope: AgentScope = Depends(require_agent_scope),
-    ) -> dict[str, Any]:
-        return execute(body, db, scope)
-
     return router

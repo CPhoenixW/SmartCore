@@ -21,7 +21,7 @@ def test_agent_tools_keep_stable_names_and_aliases() -> None:
     assert tools["dailyWorkContext"]["path"] == "/agent/daily-work-context"
     assert tools["dailyWorkContext"]["method"] == "GET"
     assert tools["evtQuery"]["path"] == "/agent/db/query_events"
-    assert "/agent/evtQuery" in tools["evtQuery"]["legacyPaths"]
+    assert "legacyPaths" not in tools["evtQuery"]
     assert tools["evtCreate"]["path"] == "/agent/db/create_event"
     assert tools["evtUpdate"]["path"] == "/agent/db/update_event"
     assert tools["commutePlanUpdate"]["path"] == "/agent/db/update_commute_plan"

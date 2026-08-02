@@ -322,45 +322,13 @@ def test_multimodal_agent_can_only_capture_its_own_image_upload(app_env, tmp_pat
     assert ideas[0]["attachments"][0]["fileName"] == "diagram.png"
 
 
-def test_legacy_ocr_route_remains_owner_scoped(app_env, monkeypatch, tmp_path) -> None:
-    image_path = tmp_path / "legacy.png"
-    image_path.write_bytes(b"image-bytes")
+def test_retired_ocr_route_is_not_registered(app_env) -> None:
     client = TestClient(create_app())
-    db = SessionLocal()
-    try:
-        upload = crud.createIdeaUpload(
-            db,
-            userId="default",
-            fileName="legacy.png",
-            mimeType="image/png",
-            storagePath=str(image_path),
-            sizeBytes=11,
-        )
-    finally:
-        db.close()
-    monkeypatch.setattr(
-        "app.server.agent.routes.analyze_image", lambda *_args, **_kwargs: "兼容结果"
-    )
     headers = {
         "X-SmartCore-Agent-Token": "agent-secret",
         "X-SmartCore-Agent-Scope": issue_agent_scope(userId="default", purpose="web"),
     }
-    response = client.post(
-        "/agent/media/ocr", headers=headers, json={"uploadId": upload["uploadId"]}
-    )
-    assert response.json()["data"]["text"] == "兼容结果"
-
-    denied = client.post(
-        "/agent/media/ocr",
-        headers={
-            **headers,
-            "X-SmartCore-Agent-Scope": issue_agent_scope(
-                userId="other-user", purpose="web"
-            ),
-        },
-        json={"uploadId": upload["uploadId"]},
-    )
-    assert denied.json()["errors"] == ["attachment not found"]
+    assert client.post("/agent/media/ocr", headers=headers, json={}).status_code == 404
 
 
 def test_document_capture_does_not_require_ocr_evidence(app_env, tmp_path) -> None:

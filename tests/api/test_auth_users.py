@@ -5,6 +5,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+from app.server.agent.assembly import LEGACY_AGENT_PATHS
 from app.server.auth.security import session_token_hash
 from app.server.db.session import SessionLocal
 from app.server.main import create_app
@@ -226,7 +227,7 @@ def test_agent_route_compatibility_report_is_admin_only(app_env) -> None:
     assert response.status_code == 200
     report = response.json()["data"]
     assert report["observationDays"] == 30
-    assert len(report["routes"]) == 10
+    assert {row["path"] for row in report["routes"]} == LEGACY_AGENT_PATHS
     assert all(row["eligibleForRemoval"] is False for row in report["routes"])
 
     ordinary = TestClient(create_app())

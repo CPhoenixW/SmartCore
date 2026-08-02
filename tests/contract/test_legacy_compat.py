@@ -12,12 +12,11 @@ from tests.factories import create_user
 pytestmark = pytest.mark.contract
 
 
-def test_router_exposes_canonical_and_legacy_paths() -> None:
+def test_router_exposes_canonical_and_remaining_legacy_paths() -> None:
     paths = {route.path for route in createAssembledAgentRouter().routes}
     expected = {
         "/agent/tools",
         "/agent/db/query_events",
-        "/agent/evtQuery",
         "/agent/db/create_event",
         "/agent/evtCreate",
         "/agent/db/update_event",
@@ -36,6 +35,7 @@ def test_router_exposes_canonical_and_legacy_paths() -> None:
         "/agent/screenPush",
     }
     assert expected.issubset(paths)
+    assert {"/agent/evtQuery", "/agent/media/ocr"}.isdisjoint(paths)
 
 
 def test_router_sets_and_scoped_legacy_delete_remain_compatible(
@@ -51,7 +51,8 @@ def test_router_sets_and_scoped_legacy_delete_remain_compatible(
         "/agent/db/create_event",
         "/agent/db/update_event",
     }.issubset(paths)
-    assert {"/agent/evtQuery", "/agent/evtCreate", "/agent/evtUpdate"}.issubset(paths)
+    assert {"/agent/evtCreate", "/agent/evtUpdate"}.issubset(paths)
+    assert "/agent/evtQuery" not in paths
 
     with SessionLocal() as db:
         create_user(db, user_id="other")
