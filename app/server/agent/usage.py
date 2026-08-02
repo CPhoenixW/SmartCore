@@ -9,7 +9,7 @@ from fastapi.routing import APIRoute
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.server.agent.assembly import LEGACY_AGENT_PATHS
+from app.server.agent.assembly import LEGACY_AGENT_MIGRATIONS, LEGACY_AGENT_PATHS
 from app.server.db.session import SessionLocal
 from app.server.new_core.models import (
     AgentRouteObservation,
@@ -131,6 +131,7 @@ def legacy_agent_route_readiness(
     }
     routes: list[dict[str, object]] = []
     for observation in observations:
+        migration = LEGACY_AGENT_MIGRATIONS[observation.path]
         usage = usage_by_operation.get(
             (observation.method, observation.path),
             {
@@ -151,6 +152,8 @@ def legacy_agent_route_readiness(
                 "method": observation.method,
                 "path": observation.path,
                 "endpoint": observation.endpoint,
+                "replacementPath": migration.replacementPath,
+                "retirementWave": migration.retirementWave,
                 "observedSinceAt": observation.observedSinceAt,
                 "lastAssembledAt": observation.lastAssembledAt,
                 **usage,
@@ -159,11 +162,28 @@ def legacy_agent_route_readiness(
                 "eligibleForRemoval": current >= eligible_after,
             }
         )
+    waves = [
+        {
+            "wave": wave,
+            "paths": [
+                str(route["path"])
+                for route in routes
+                if route["retirementWave"] == wave
+            ],
+            "allEligibleForRemoval": all(
+                bool(route["eligibleForRemoval"])
+                for route in routes
+                if route["retirementWave"] == wave
+            ),
+        }
+        for wave in sorted({int(route["retirementWave"]) for route in routes})
+    ]
     return {
         "observationDays": LEGACY_AGENT_COMPATIBILITY_DAYS,
         "generatedAt": current.isoformat(),
         "allEligibleForRemoval": bool(routes)
         and all(bool(route["eligibleForRemoval"]) for route in routes),
+        "waves": waves,
         "routes": routes,
     }
 

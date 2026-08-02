@@ -22,6 +22,12 @@ class _RouterSource:
     factory: Callable[[], APIRouter]
 
 
+@dataclass(frozen=True)
+class LegacyAgentMigration:
+    replacementPath: str | None
+    retirementWave: int
+
+
 _SOURCES = (
     _RouterSource("relation_query", createRelationQueryRouter),
     _RouterSource("relation_write", createRelationWriteRouter),
@@ -32,20 +38,22 @@ _SOURCES = (
     _RouterSource("idea_and_screen", createAgentRouter),
 )
 
-LEGACY_AGENT_PATHS = frozenset(
-    {
-        "/agent/evtQuery",
-        "/agent/evtCreate",
-        "/agent/evtUpdate",
-        "/agent/evtDelete",
-        "/agent/sendText",
-        "/agent/sendCard",
-        "/agent/ideaCapture",
-        "/agent/ideaToEvt",
-        "/agent/media/ocr",
-        "/agent/screenPush",
-    }
-)
+LEGACY_AGENT_MIGRATIONS = {
+    # Wave 1: read-only or superseded processing flows.
+    "/agent/evtQuery": LegacyAgentMigration("/agent/db/query_events", 1),
+    "/agent/media/ocr": LegacyAgentMigration(None, 1),
+    # Wave 2: owner-scoped domain writes.
+    "/agent/evtCreate": LegacyAgentMigration("/agent/db/create_event", 2),
+    "/agent/evtUpdate": LegacyAgentMigration("/agent/db/update_event", 2),
+    "/agent/evtDelete": LegacyAgentMigration("/agent/db/delete_event", 2),
+    "/agent/ideaCapture": LegacyAgentMigration("/agent/idea/capture", 2),
+    "/agent/ideaToEvt": LegacyAgentMigration("/agent/idea/to_event", 2),
+    # Wave 3: external feedback side effects.
+    "/agent/sendText": LegacyAgentMigration("/agent/feedback/send_text", 3),
+    "/agent/sendCard": LegacyAgentMigration("/agent/feedback/send_card", 3),
+    "/agent/screenPush": LegacyAgentMigration("/agent/feedback/screen_push", 3),
+}
+LEGACY_AGENT_PATHS = frozenset(LEGACY_AGENT_MIGRATIONS)
 
 
 def _operations(route: APIRoute) -> tuple[tuple[str, str], ...]:

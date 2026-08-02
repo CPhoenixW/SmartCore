@@ -129,7 +129,9 @@ endpoint 与状态码累计到 `agentRouteUsage`，不保存 token、scope 或 b
 起点。管理员通过 `GET /api/admin/agentRouteUsage` 查看明细，通过
 `GET /api/admin/agentRouteCompatibility` 查看旧别名的连续安静期和移除资格。旧生产日志不含
 匹配 path，不能反推历史调用；别名只有在 Adapter/skill 已迁移，且首次观测或最后调用之后
-连续 30 天没有任何请求时才能分批删除。
+连续 30 天没有任何请求时才能分批删除。退役清单同时声明现代替代路径与风险批次：第一批
+为只读或已被新媒体流程替代的入口，第二批为领域写入，第三批为飞书/Screen 外部反馈；CI
+禁止 OpenClaw、Adapter、Server 第一方调用和运维脚本重新写死旧 URL。
 
 ## 设备配对状态机
 

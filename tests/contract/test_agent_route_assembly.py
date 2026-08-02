@@ -9,7 +9,11 @@ from zoneinfo import ZoneInfo
 import pytest
 from fastapi.routing import APIRoute
 
-from app.server.agent.assembly import LEGACY_AGENT_PATHS
+from app.server.agent.assembly import (
+    LEGACY_AGENT_MIGRATIONS,
+    LEGACY_AGENT_PATHS,
+    createAssembledAgentRouter,
+)
 from app.server.agent.usage import (
     LEGACY_AGENT_COMPATIBILITY_DAYS,
     legacy_agent_route_readiness,
@@ -21,6 +25,7 @@ from app.server.new_core.models import AgentRouteObservation, AgentRouteUsage
 pytestmark = pytest.mark.contract
 
 _SNAPSHOT = Path(__file__).parent / "snapshots" / "assembled_agent_routes.json"
+_REPOSITORY = Path(__file__).resolve().parents[2]
 
 
 def _walk_api_routes(routes):
@@ -82,6 +87,40 @@ def test_assembled_agent_routes_match_snapshot_and_are_unique(app_env) -> None:
         db.close()
 
 
+def test_legacy_migration_manifest_has_live_replacements_and_no_first_party_urls() -> None:
+    paths = {route.path for route in createAssembledAgentRouter().routes}
+    assert set(LEGACY_AGENT_MIGRATIONS) == LEGACY_AGENT_PATHS
+    assert {
+        migration.replacementPath
+        for migration in LEGACY_AGENT_MIGRATIONS.values()
+        if migration.replacementPath is not None
+    } <= paths
+    assert {migration.retirementWave for migration in LEGACY_AGENT_MIGRATIONS.values()} == {
+        1,
+        2,
+        3,
+    }
+
+    first_party_files = [
+        *(_REPOSITORY / "openclaw").rglob("*.py"),
+        *(_REPOSITORY / "openclaw").rglob("*.md"),
+        *(_REPOSITORY / "openclaw").rglob("*.json"),
+        *(_REPOSITORY / "scripts").rglob("*.py"),
+        *(_REPOSITORY / "scripts").rglob("*.sh"),
+        *(
+            path
+            for path in (_REPOSITORY / "app" / "server").rglob("*.py")
+            if "agent" not in path.relative_to(_REPOSITORY / "app" / "server").parts
+        ),
+    ]
+    direct_references: list[str] = []
+    for path in first_party_files:
+        source = path.read_text(encoding="utf-8")
+        for legacy_path in LEGACY_AGENT_PATHS:
+            if f'"{legacy_path}"' in source or f"'{legacy_path}'" in source:
+                direct_references.append(f"{path.relative_to(_REPOSITORY)}:{legacy_path}")
+    assert direct_references == []
+
 def test_agent_route_usage_is_persisted_without_request_payload(client) -> None:
     response = client.get("/agent/tools")
     assert response.status_code == 401
@@ -119,6 +158,9 @@ def test_legacy_route_removal_requires_a_complete_quiet_window(client) -> None:
         before = legacy_agent_route_readiness(db, now=now)
         assert before["allEligibleForRemoval"] is True
         assert len(before["routes"]) == len(LEGACY_AGENT_PATHS)
+        assert [wave["wave"] for wave in before["waves"]] == [1, 2, 3]
+        assert all(wave["allEligibleForRemoval"] is True for wave in before["waves"])
+        assert all("retirementWave" in row and "replacementPath" in row for row in before["routes"])
     finally:
         db.close()
 
@@ -133,5 +175,6 @@ def test_legacy_route_removal_requires_a_complete_quiet_window(client) -> None:
         assert query_route["clientErrorCount"] == 1
         assert query_route["eligibleForRemoval"] is False
         assert after["allEligibleForRemoval"] is False
+        assert after["waves"][0]["allEligibleForRemoval"] is False
     finally:
         db.close()
