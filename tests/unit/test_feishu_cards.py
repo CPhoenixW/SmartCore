@@ -148,6 +148,7 @@ def test_agent_tools_expose_structured_card_endpoints() -> None:
 
     paths = {route.path for route in createFeedbackRouter().routes}
     assert "/agent/feedback/send_card" in paths
+    assert "/agent/sendCard" not in paths
     assert "/agent/feedback/send_query_result_card" in paths
     assert "/agent/feedback/send_operation_success_card" in paths
     assert "/agent/feedback/send_reminder_card" in paths

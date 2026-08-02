@@ -42,7 +42,6 @@ _FEEDBACK_TOOLS: list[dict[str, Any]] = [
         "name": "sendFeishuMessageCard",
         "method": "POST",
         "path": "/agent/feedback/send_card",
-        "legacyPaths": ["/agent/sendCard"],
         "riskLevel": "external",
         "confirmationRequired": False,
         "description": "Send a Feishu interactive card. Prefer title/content over hand-written card JSON.",
@@ -222,7 +221,6 @@ def createFeedbackRouter() -> APIRouter:
     router = APIRouter(prefix="/agent", tags=["agent-feedback"])
     protected = [Depends(requireAgentToken), Depends(require_agent_scope)]
 
-    @router.post("/sendCard", dependencies=protected)
     @router.post("/feedback/send_card", dependencies=protected)
     def send_card(
         body: dict[str, Any],
@@ -243,7 +241,6 @@ def createFeedbackRouter() -> APIRouter:
             )
         return _send_card(body, card, db, scope)
 
-    @router.post("/sendText", dependencies=protected)
     @router.post("/feedback/send_text", dependencies=protected)
     def send_text(
         body: dict[str, Any],

@@ -24,8 +24,5 @@
   {"method":"POST","path":"/agent/idea/media-job/complete","endpoint":"app.server.agent.routes.createAgentRouter.<locals>.ideaMediaJobComplete","deprecated":false},
   {"method":"POST","path":"/agent/idea/media-job/fail","endpoint":"app.server.agent.routes.createAgentRouter.<locals>.ideaMediaJobFail","deprecated":false},
   {"method":"POST","path":"/agent/idea/to_event","endpoint":"app.server.agent.routes.createAgentRouter.<locals>.ideaToEvt","deprecated":false},
-  {"method":"POST","path":"/agent/screenPush","endpoint":"app.server.agent.routes.createAgentRouter.<locals>.screenPush","deprecated":true},
-  {"method":"POST","path":"/agent/sendCard","endpoint":"app.server.agent.feedback_routes.createFeedbackRouter.<locals>.send_card","deprecated":true},
-  {"method":"POST","path":"/agent/sendText","endpoint":"app.server.agent.feedback_routes.createFeedbackRouter.<locals>.send_text","deprecated":true},
   {"method":"GET","path":"/agent/tools","endpoint":"app.server.agent.relation_query_routes.createRelationQueryRouter.<locals>.tools","deprecated":false}
 ]

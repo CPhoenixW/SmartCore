@@ -10,8 +10,8 @@
 - 引入候选引用与二阶段语义选择，降低模型直接猜测数据库 ID 的风险。
 - 建立 OpenClaw bridge 与 Agent API，飞书事件由 SmartCore 验证后转发。
 
-维护意义：领域旧 URL 已退役；仓库仅保留 `sendText`、`sendCard`、`screenPush` 反馈
-兼容别名，新调用使用 `/agent/db/*`、`/agent/idea/*` 与 `/agent/feedback/*`。
+维护意义：旧 URL 已全部退役；稳定工具名通过 `/agent/tools` 映射到 `/agent/db/*`、
+`/agent/idea/*` 与 `/agent/feedback/*`。
 
 ## 2026-07-03 至 07-05：Server 核心、工作台与副屏
 
@@ -173,6 +173,8 @@ Computer active seconds；结果卡片必须匹配原 owner、bot、chat 和消�
   现代查询路径与原生图片媒体流程继续保留。
 - Agent 第二批领域写入旧入口 `evtCreate`、`evtUpdate`、`evtDelete`、`ideaCapture`、
   `ideaToEvt` 在生产零调用确认后退役；稳定工具名不变，统一解析到现代 URL。
+- Agent 第三批反馈旧入口 `sendText`、`sendCard`、`screenPush` 在生产零调用及现代反馈
+  副作用回归通过后退役；至此 Agent URL 别名全部清零。
 
-关键边界：旧 HMAC Cookie 在升级后需重新登录；设备 owner 冲突阻止迁移；仅余生产反馈
-旧别名继续按调用统计兼容期退役，除非用户再次明确接受提前删除的 API 兼容风险。
+关键边界：旧 HMAC Cookie 在升级后需重新登录；设备 owner 冲突阻止迁移；Agent 历史
+route observation 保留为 inactive 审计记录，不再注册兼容 handler。

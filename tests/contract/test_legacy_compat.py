@@ -12,7 +12,7 @@ from tests.factories import create_user
 pytestmark = pytest.mark.contract
 
 
-def test_router_exposes_canonical_and_remaining_legacy_paths() -> None:
+def test_router_exposes_only_canonical_agent_paths() -> None:
     paths = {route.path for route in createAssembledAgentRouter().routes}
     expected = {
         "/agent/tools",
@@ -23,11 +23,8 @@ def test_router_exposes_canonical_and_remaining_legacy_paths() -> None:
         "/agent/idea/capture",
         "/agent/idea/to_event",
         "/agent/feedback/send_text",
-        "/agent/sendText",
         "/agent/feedback/send_card",
-        "/agent/sendCard",
         "/agent/feedback/screen_push",
-        "/agent/screenPush",
     }
     assert expected.issubset(paths)
     assert {
@@ -38,6 +35,9 @@ def test_router_exposes_canonical_and_remaining_legacy_paths() -> None:
         "/agent/ideaCapture",
         "/agent/ideaToEvt",
         "/agent/media/ocr",
+        "/agent/sendText",
+        "/agent/sendCard",
+        "/agent/screenPush",
     }.isdisjoint(paths)
 
 
@@ -54,7 +54,7 @@ def test_router_sets_and_scoped_canonical_delete_remain_owner_safe(
         "/agent/db/create_event",
         "/agent/db/update_event",
     }.issubset(paths)
-    assert {"/agent/sendText", "/agent/sendCard", "/agent/screenPush"}.issubset(paths)
+    assert {"/agent/sendText", "/agent/sendCard", "/agent/screenPush"}.isdisjoint(paths)
 
     with SessionLocal() as db:
         create_user(db, user_id="other")

@@ -580,7 +580,7 @@ def test_scoped_send_text_uses_bound_chat_only(app_env, monkeypatch) -> None:
     headers = {"X-SmartCore-Agent-Token": "agent-secret", "X-SmartCore-Agent-Scope": scope}
 
     resp = client.post(
-        "/agent/sendText",
+        "/agent/feedback/send_text",
         headers=headers,
         json={"text": "**已记录**\n- 事项一", "chatId": "oc_wrong"},
     )
@@ -610,7 +610,7 @@ def test_send_card_calls_feishu_interactive(app_env, monkeypatch) -> None:
     headers = {"X-SmartCore-Agent-Token": "agent-secret", "X-SmartCore-Agent-Scope": scope}
 
     resp = client.post(
-        "/agent/sendCard",
+        "/agent/feedback/send_card",
         headers=headers,
         json={"chat_id": "oc_wrong", "card": card},
     )
@@ -619,6 +619,41 @@ def test_send_card_calls_feishu_interactive(app_env, monkeypatch) -> None:
     assert resp.json()["ok"] is True
     assert fake_client.card_calls[0][0] == "oc_bound"
     assert fake_client.card_calls[0][1]["header"]["title"]["content"] == "提醒"
+
+
+def test_screen_push_uses_canonical_owner_scoped_route(app_env, monkeypatch) -> None:
+    captured: dict = {}
+
+    async def fake_broadcast(message: dict, *, userId: str | None = None) -> int:
+        captured.update(message=message, userId=userId)
+        return 1
+
+    monkeypatch.setattr(
+        "app.server.agent.routes.screenManager.broadcast",
+        fake_broadcast,
+    )
+    client = TestClient(create_app())
+    scope = _bind_default_chat("oc_bound")
+    response = client.post(
+        "/agent/feedback/screen_push",
+        headers={
+            "X-SmartCore-Agent-Token": "agent-secret",
+            "X-SmartCore-Agent-Scope": scope,
+        },
+        json={"evtId": "evt-1", "title": "提醒", "content": "开始处理"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {"delivered": 1}
+    assert captured == {
+        "message": {
+            "kind": "reminder",
+            "evtId": "evt-1",
+            "title": "提醒",
+            "content": "开始处理",
+        },
+        "userId": "default",
+    }
 
 
 def test_agent_endpoints_return_ok_false_for_missing_ids(app_env) -> None:

@@ -73,9 +73,10 @@ current route registration in `app/server/main.py`.
 
 - `app/server/agent/assembly.py` rejects any operation implemented by more than one Agent router.
   Keep every source operation unique and the assembled-app snapshot current when changing routers.
-- Modern paths are `/agent/db/*` and `/agent/feedback/*`; `evtQuery`, `evtCreate`, `evtUpdate`,
-  `sendText`, and similar names are deprecated compatibility aliases. Check persisted production
-  usage before removing one.
+- Agent URL compatibility aliases are retired. Stable tool names such as `evtQuery`, `evtCreate`,
+  and `sendFeishuText` resolve through `GET /agent/tools` to `/agent/db/*`, `/agent/idea/*`, or
+  `/agent/feedback/*`; do not reconstruct a URL from a tool name. Historical route observations
+  remain inactive for audit.
 - Both `lifeDevice` and the older operational `device` records exist. Generic pairing/dispatch and
   Pi state/photo flows touch different parts of this boundary. `lifeDevice` is authoritative;
   `device` is a compatibility mirror until its historical foreign keys migrate.

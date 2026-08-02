@@ -169,9 +169,9 @@ Computer 工作块或 Plan 证据的日期不调度日报；固定标题由 Adap
 
 这些不是可直接删除的“冗余”：
 
-1. Agent handler 已显式组装，不再依赖注册顺序。只读/已替代入口和领域写入入口已在
-   用户明确接受提前退役风险后分两批删除；仅余外部反馈别名继续保留有调用统计的兼容期。
-   assembled operation 会记录独立观测起点，CI 阻止第一方调用重新依赖旧 URL。
+1. Agent handler 已显式组装，不再依赖注册顺序；全部三批旧 URL 已在用户明确接受提前
+   退役风险后删除。历史 route observation 保留为 inactive 审计记录，CI 阻止第一方调用
+   重新依赖永久退役 URL。
 2. `device` 仍作为状态/照片外键镜像存在；`lifeDevice` 已成为事实源，最终删表仍需正式
    外键迁移和旧端退出证明。
 3. `relation_compat.py` 与启动维护保护旧数据库关系。移除前必须用生产 schema 副本

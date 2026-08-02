@@ -73,8 +73,8 @@ Computer 后台分析由 Server 直接调用一次正式版 `deepseek-v4-flash-0
 兼容回退路径。
 
 新调用的查询、创建和更新优先使用 `/agent/db/*`，反馈使用 `/agent/feedback/*`。
-领域查询与写入旧 URL 已退役；仅余 `sendText`、`sendCard`、`screenPush` 反馈兼容
-别名。canonical 与剩余兼容路径都必须同时携带 Agent token 和用户 scope。
+全部旧 URL 已退役；稳定工具名继续由 `/agent/tools` 解析到 canonical 路径。所有路径都
+必须同时携带 Agent token 和用户 scope。
 
 工具结果使用稳定 envelope：
 

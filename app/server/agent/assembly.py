@@ -38,12 +38,7 @@ _SOURCES = (
     _RouterSource("idea_and_screen", createAgentRouter),
 )
 
-LEGACY_AGENT_MIGRATIONS = {
-    # Wave 3: external feedback side effects.
-    "/agent/sendText": LegacyAgentMigration("/agent/feedback/send_text", 3),
-    "/agent/sendCard": LegacyAgentMigration("/agent/feedback/send_card", 3),
-    "/agent/screenPush": LegacyAgentMigration("/agent/feedback/screen_push", 3),
-}
+LEGACY_AGENT_MIGRATIONS: dict[str, LegacyAgentMigration] = {}
 LEGACY_AGENT_PATHS = frozenset(LEGACY_AGENT_MIGRATIONS)
 
 

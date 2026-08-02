@@ -122,18 +122,13 @@ Agent token 与用户 scope；不要根据单个 router 文件推断最终契约
 - `/agent/feedback/*`
 - `/agent/idea/*`
 
-`sendText`、`sendCard`、`screenPush` 是仅余的兼容别名，并在 OpenAPI 中标记
-deprecated。每次实际 `/agent/*` 调用会按 method、匹配 path、
-endpoint 与状态码累计到 `agentRouteUsage`，不保存 token、scope 或 body； assembled app
-启动时还会把全部 operation 写入 `agentRouteObservation`，因此零调用路由也有可核对的观测
-起点。管理员通过 `GET /api/admin/agentRouteUsage` 查看明细，通过
-`GET /api/admin/agentRouteCompatibility` 查看旧别名的连续安静期和移除资格。旧生产日志不含
-匹配 path，不能反推历史调用；别名只有在 Adapter/skill 已迁移，且首次观测或最后调用之后
-连续 30 天没有任何请求时才能分批删除。只读/已替代入口 `/agent/evtQuery`、
-`/agent/media/ocr` 和领域写入入口 `evtCreate`、`evtUpdate`、`evtDelete`、
-`ideaCapture`、`ideaToEvt` 已在确认生产零调用及第一方迁移后，按用户明确接受的提前退役
-风险分两批删除。仅余飞书/Screen 外部反馈别名继续观测；CI 禁止 OpenClaw、Adapter、
-Server 第一方调用和运维脚本重新写死旧 URL。
+Agent URL 兼容别名已全部退役，OpenAPI 不再包含 deprecated Agent operation。稳定工具名
+仍由 `GET /agent/tools` 映射到上述现代 URL，调用方不得用工具名拼接路径。每次实际
+`/agent/*` 调用仍按 method、匹配 path、endpoint 与状态码累计到 `agentRouteUsage`，不保存
+token、scope 或 body；assembled app operation 继续写入 `agentRouteObservation`。已退役
+路由的历史 observation 保留为 `active=false` 审计记录，管理员兼容报告只返回当前 active
+兼容路由，因此现在为空。三批旧入口均在确认生产零调用及第一方迁移后，按用户明确接受的
+提前退役风险删除；CI 使用永久退役清单阻止第一方代码重新写死旧 URL。
 
 ## 设备配对状态机
 

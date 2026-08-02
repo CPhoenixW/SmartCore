@@ -408,7 +408,6 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         "name": "sendFeishuText",
         "method": "POST",
         "path": "/agent/feedback/send_text",
-        "legacyPaths": ["/agent/sendText"],
         "riskLevel": "external",
         "confirmationRequired": False,
         "inputSchema": _schema_object(
@@ -424,7 +423,6 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         "name": "sendFeishuCard",
         "method": "POST",
         "path": "/agent/feedback/send_card",
-        "legacyPaths": ["/agent/sendCard"],
         "riskLevel": "external",
         "confirmationRequired": False,
         "inputSchema": _schema_object(
@@ -440,7 +438,6 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         "name": "screenPush",
         "method": "POST",
         "path": "/agent/feedback/screen_push",
-        "legacyPaths": ["/agent/screenPush"],
         "riskLevel": "external",
         "confirmationRequired": False,
         "inputSchema": _schema_object(
@@ -635,7 +632,6 @@ def createAgentRouter() -> APIRouter:
 
         return _run_write(db, operation)
 
-    @router.post("/screenPush", dependencies=protected)
     @router.post("/feedback/screen_push", dependencies=protected)
     async def screenPush(
         body: dict[str, Any], scope: AgentScope = Depends(require_agent_scope)

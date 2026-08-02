@@ -15,7 +15,7 @@ from openclaw.skills.smartcore.scripts import call_tool, query_events
 pytestmark = pytest.mark.contract
 
 
-def test_agent_tools_keep_stable_names_and_aliases() -> None:
+def test_agent_tools_keep_stable_names_and_canonical_paths() -> None:
     tools = {item["name"]: item for item in routes._AGENT_TOOLS}
 
     assert tools["dailyWorkContext"]["path"] == "/agent/daily-work-context"
@@ -24,8 +24,7 @@ def test_agent_tools_keep_stable_names_and_aliases() -> None:
     assert "legacyPaths" not in tools["evtQuery"]
     assert tools["evtCreate"]["path"] == "/agent/db/create_event"
     assert tools["evtUpdate"]["path"] == "/agent/db/update_event"
-    for name in ("evtCreate", "evtUpdate", "evtDelete", "ideaCapture", "ideaToEvt"):
-        assert "legacyPaths" not in tools[name]
+    assert all("legacyPaths" not in tool for tool in tools.values())
     assert tools["commutePlanUpdate"]["path"] == "/agent/db/update_commute_plan"
     assert tools["commutePlanUpdate"]["inputSchema"]["required"] == [
         "planEvtId",

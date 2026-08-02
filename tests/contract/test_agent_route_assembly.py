@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from datetime import datetime, timedelta
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.routing import APIRoute
@@ -14,10 +12,7 @@ from app.server.agent.assembly import (
     LEGACY_AGENT_PATHS,
     createAssembledAgentRouter,
 )
-from app.server.agent.usage import (
-    LEGACY_AGENT_COMPATIBILITY_DAYS,
-    legacy_agent_route_readiness,
-)
+from app.server.agent.usage import legacy_agent_route_readiness
 from app.server.db.session import SessionLocal
 from app.server.main import create_app
 from app.server.new_core.models import AgentRouteObservation, AgentRouteUsage
@@ -26,6 +21,20 @@ pytestmark = pytest.mark.contract
 
 _SNAPSHOT = Path(__file__).parent / "snapshots" / "assembled_agent_routes.json"
 _REPOSITORY = Path(__file__).resolve().parents[2]
+_RETIRED_AGENT_PATHS = frozenset(
+    {
+        "/agent/evtQuery",
+        "/agent/media/ocr",
+        "/agent/evtCreate",
+        "/agent/evtUpdate",
+        "/agent/evtDelete",
+        "/agent/ideaCapture",
+        "/agent/ideaToEvt",
+        "/agent/sendText",
+        "/agent/sendCard",
+        "/agent/screenPush",
+    }
+)
 
 
 def _walk_api_routes(routes):
@@ -87,15 +96,11 @@ def test_assembled_agent_routes_match_snapshot_and_are_unique(app_env) -> None:
         db.close()
 
 
-def test_legacy_migration_manifest_has_live_replacements_and_no_first_party_urls() -> None:
+def test_retired_agent_paths_are_absent_and_first_party_uses_canonical_urls() -> None:
     paths = {route.path for route in createAssembledAgentRouter().routes}
     assert set(LEGACY_AGENT_MIGRATIONS) == LEGACY_AGENT_PATHS
-    assert {
-        migration.replacementPath
-        for migration in LEGACY_AGENT_MIGRATIONS.values()
-        if migration.replacementPath is not None
-    } <= paths
-    assert {migration.retirementWave for migration in LEGACY_AGENT_MIGRATIONS.values()} == {3}
+    assert LEGACY_AGENT_PATHS == frozenset()
+    assert _RETIRED_AGENT_PATHS.isdisjoint(paths)
 
     first_party_files = [
         *(_REPOSITORY / "openclaw").rglob("*.py"),
@@ -103,19 +108,16 @@ def test_legacy_migration_manifest_has_live_replacements_and_no_first_party_urls
         *(_REPOSITORY / "openclaw").rglob("*.json"),
         *(_REPOSITORY / "scripts").rglob("*.py"),
         *(_REPOSITORY / "scripts").rglob("*.sh"),
-        *(
-            path
-            for path in (_REPOSITORY / "app" / "server").rglob("*.py")
-            if "agent" not in path.relative_to(_REPOSITORY / "app" / "server").parts
-        ),
+        *(_REPOSITORY / "app" / "server").rglob("*.py"),
     ]
     direct_references: list[str] = []
     for path in first_party_files:
         source = path.read_text(encoding="utf-8")
-        for legacy_path in LEGACY_AGENT_PATHS:
-            if f'"{legacy_path}"' in source or f"'{legacy_path}'" in source:
-                direct_references.append(f"{path.relative_to(_REPOSITORY)}:{legacy_path}")
+        for retired_path in _RETIRED_AGENT_PATHS:
+            if f'"{retired_path}"' in source or f"'{retired_path}'" in source:
+                direct_references.append(f"{path.relative_to(_REPOSITORY)}:{retired_path}")
     assert direct_references == []
+
 
 def test_agent_route_usage_is_persisted_without_request_payload(client) -> None:
     response = client.get("/agent/tools")
@@ -143,36 +145,18 @@ def test_unmatched_agent_paths_do_not_create_usage_dimensions(client) -> None:
         db.close()
 
 
-def test_legacy_route_removal_requires_a_complete_quiet_window(client) -> None:
-    now = datetime.now(ZoneInfo("Asia/Shanghai"))
-    old_observation = (now - timedelta(days=LEGACY_AGENT_COMPATIBILITY_DAYS + 1)).isoformat()
-    db = SessionLocal()
-    try:
-        for row in db.query(AgentRouteObservation).filter_by(compatibility=True, active=True):
-            row.observedSinceAt = old_observation
-        db.commit()
-        before = legacy_agent_route_readiness(db, now=now)
-        assert before["allEligibleForRemoval"] is True
-        assert len(before["routes"]) == len(LEGACY_AGENT_PATHS)
-        assert [wave["wave"] for wave in before["waves"]] == [3]
-        assert all(wave["allEligibleForRemoval"] is True for wave in before["waves"])
-        assert all("retirementWave" in row and "replacementPath" in row for row in before["routes"])
-    finally:
-        db.close()
-
+def test_legacy_route_readiness_is_empty_after_final_retirement(client) -> None:
     response = client.post("/agent/sendText", json={})
-    assert response.status_code == 401
+    assert response.status_code == 404
 
     db = SessionLocal()
     try:
-        after = legacy_agent_route_readiness(db, now=now + timedelta(seconds=1))
-        send_text_route = next(
-            row for row in after["routes"] if row["path"] == "/agent/sendText"
-        )
-        assert send_text_route["callCount"] == 1
-        assert send_text_route["clientErrorCount"] == 1
-        assert send_text_route["eligibleForRemoval"] is False
-        assert after["allEligibleForRemoval"] is False
-        assert after["waves"][0]["allEligibleForRemoval"] is False
+        report = legacy_agent_route_readiness(db)
+        assert report["routes"] == []
+        assert report["waves"] == []
+        assert report["allEligibleForRemoval"] is False
+        assert db.query(AgentRouteObservation).filter_by(
+            compatibility=True, active=True
+        ).count() == 0
     finally:
         db.close()
