@@ -233,7 +233,6 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         "name": "evtCreate",
         "method": "POST",
         "path": "/agent/db/create_event",
-        "legacyPaths": ["/agent/evtCreate"],
         "riskLevel": "write",
         "confirmationRequired": False,
         "inputSchema": _schema_object(
@@ -256,7 +255,6 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         "name": "evtUpdate",
         "method": "POST",
         "path": "/agent/db/update_event",
-        "legacyPaths": ["/agent/evtUpdate"],
         "riskLevel": "write",
         "confirmationRequired": False,
         "inputSchema": _schema_object(
@@ -337,7 +335,6 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         "name": "evtDelete",
         "method": "POST",
         "path": "/agent/db/delete_event",
-        "legacyPaths": ["/agent/evtDelete"],
         "riskLevel": "destructive",
         "confirmationRequired": False,
         "inputSchema": _schema_object({"evtId": {"type": "string", "minLength": 1}}, ["evtId"]),
@@ -346,7 +343,6 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         "name": "ideaCapture",
         "method": "POST",
         "path": "/agent/idea/capture",
-        "legacyPaths": ["/agent/ideaCapture"],
         "riskLevel": "write",
         "confirmationRequired": False,
         "inputSchema": _schema_object(
@@ -391,7 +387,6 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         "name": "ideaToEvt",
         "method": "POST",
         "path": "/agent/idea/to_event",
-        "legacyPaths": ["/agent/ideaToEvt"],
         "riskLevel": "write",
         "confirmationRequired": False,
         "inputSchema": _schema_object(
@@ -509,7 +504,6 @@ def createAgentRouter() -> APIRouter:
     router = APIRouter(prefix="/agent", tags=["agent"])
     protected = [Depends(requireAgentToken), Depends(require_agent_scope)]
 
-    @router.post("/ideaCapture", dependencies=protected)
     @router.post("/idea/capture", dependencies=protected)
     def ideaCapture(
         body: dict[str, Any],
@@ -583,7 +577,6 @@ def createAgentRouter() -> APIRouter:
             db.commit()
         return _done({"jobId": job.jobId, "stat": job.stat})
 
-    @router.post("/ideaToEvt", dependencies=protected)
     @router.post("/idea/to_event", dependencies=protected)
     def ideaToEvt(
         body: dict[str, Any],

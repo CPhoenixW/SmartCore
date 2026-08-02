@@ -515,7 +515,7 @@ def test_openclaw_tools_publish_course_and_reminder_relations() -> None:
 
     write_paths = {route.path for route in createRelationWriteRouter().routes}
     assert "/agent/db/delete_event" in write_paths
-    assert "/agent/evtDelete" in write_paths
+    assert "/agent/evtDelete" not in write_paths
 
 
 def test_reminder_channel_defaults_to_screen_and_can_use_feishu() -> None:

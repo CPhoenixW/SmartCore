@@ -24,6 +24,8 @@ def test_agent_tools_keep_stable_names_and_aliases() -> None:
     assert "legacyPaths" not in tools["evtQuery"]
     assert tools["evtCreate"]["path"] == "/agent/db/create_event"
     assert tools["evtUpdate"]["path"] == "/agent/db/update_event"
+    for name in ("evtCreate", "evtUpdate", "evtDelete", "ideaCapture", "ideaToEvt"):
+        assert "legacyPaths" not in tools[name]
     assert tools["commutePlanUpdate"]["path"] == "/agent/db/update_commute_plan"
     assert tools["commutePlanUpdate"]["inputSchema"]["required"] == [
         "planEvtId",

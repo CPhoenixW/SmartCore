@@ -627,9 +627,9 @@ def test_agent_endpoints_return_ok_false_for_missing_ids(app_env) -> None:
     headers = {"X-SmartCore-Agent-Token": "agent-secret", "X-SmartCore-Agent-Scope": scope}
 
     for path, payload in (
-        ("/agent/evtUpdate", {}),
-        ("/agent/evtDelete", {}),
-        ("/agent/ideaToEvt", {}),
+        ("/agent/db/update_event", {}),
+        ("/agent/db/delete_event", {}),
+        ("/agent/idea/to_event", {}),
     ):
         resp = client.post(path, headers=headers, json=payload)
         assert resp.status_code == 200

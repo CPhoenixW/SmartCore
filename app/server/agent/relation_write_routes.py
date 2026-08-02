@@ -263,16 +263,8 @@ def createRelationWriteRouter() -> APIRouter:
     def create_modern(body: dict[str, Any], db: Session = Depends(get_db), scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
         return create(body, db, scope)
 
-    @router.post("/evtCreate", dependencies=protected)
-    def create_legacy(body: dict[str, Any], db: Session = Depends(get_db), scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
-        return create(body, db, scope)
-
     @router.post("/db/update_event", dependencies=protected)
     def update_modern(body: dict[str, Any], db: Session = Depends(get_db), scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
-        return update(body, db, scope)
-
-    @router.post("/evtUpdate", dependencies=protected)
-    def update_legacy(body: dict[str, Any], db: Session = Depends(get_db), scope: AgentScope = Depends(require_agent_scope)) -> dict[str, Any]:
         return update(body, db, scope)
 
     @router.post("/db/update_commute_plan", dependencies=protected)
@@ -285,14 +277,6 @@ def createRelationWriteRouter() -> APIRouter:
 
     @router.post("/db/delete_event", dependencies=protected)
     def delete_modern(
-        body: dict[str, Any],
-        db: Session = Depends(get_db),
-        scope: AgentScope = Depends(require_agent_scope),
-    ) -> dict[str, Any]:
-        return delete(body, db, scope)
-
-    @router.post("/evtDelete", dependencies=protected)
-    def delete_legacy(
         body: dict[str, Any],
         db: Session = Depends(get_db),
         scope: AgentScope = Depends(require_agent_scope),

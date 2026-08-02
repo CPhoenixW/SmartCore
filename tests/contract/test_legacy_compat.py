@@ -18,15 +18,10 @@ def test_router_exposes_canonical_and_remaining_legacy_paths() -> None:
         "/agent/tools",
         "/agent/db/query_events",
         "/agent/db/create_event",
-        "/agent/evtCreate",
         "/agent/db/update_event",
-        "/agent/evtUpdate",
         "/agent/db/delete_event",
-        "/agent/evtDelete",
         "/agent/idea/capture",
-        "/agent/ideaCapture",
         "/agent/idea/to_event",
-        "/agent/ideaToEvt",
         "/agent/feedback/send_text",
         "/agent/sendText",
         "/agent/feedback/send_card",
@@ -35,10 +30,18 @@ def test_router_exposes_canonical_and_remaining_legacy_paths() -> None:
         "/agent/screenPush",
     }
     assert expected.issubset(paths)
-    assert {"/agent/evtQuery", "/agent/media/ocr"}.isdisjoint(paths)
+    assert {
+        "/agent/evtQuery",
+        "/agent/evtCreate",
+        "/agent/evtUpdate",
+        "/agent/evtDelete",
+        "/agent/ideaCapture",
+        "/agent/ideaToEvt",
+        "/agent/media/ocr",
+    }.isdisjoint(paths)
 
 
-def test_router_sets_and_scoped_legacy_delete_remain_compatible(
+def test_router_sets_and_scoped_canonical_delete_remain_owner_safe(
     client: TestClient,
     agent_headers,
 ) -> None:
@@ -51,8 +54,7 @@ def test_router_sets_and_scoped_legacy_delete_remain_compatible(
         "/agent/db/create_event",
         "/agent/db/update_event",
     }.issubset(paths)
-    assert {"/agent/evtCreate", "/agent/evtUpdate"}.issubset(paths)
-    assert "/agent/evtQuery" not in paths
+    assert {"/agent/sendText", "/agent/sendCard", "/agent/screenPush"}.issubset(paths)
 
     with SessionLocal() as db:
         create_user(db, user_id="other")
@@ -64,7 +66,7 @@ def test_router_sets_and_scoped_legacy_delete_remain_compatible(
         )
 
     response = client.post(
-        "/agent/evtDelete",
+        "/agent/db/delete_event",
         headers=agent_headers("default"),
         json={"evtId": foreign["evtId"]},
     )

@@ -39,12 +39,6 @@ _SOURCES = (
 )
 
 LEGACY_AGENT_MIGRATIONS = {
-    # Wave 2: owner-scoped domain writes.
-    "/agent/evtCreate": LegacyAgentMigration("/agent/db/create_event", 2),
-    "/agent/evtUpdate": LegacyAgentMigration("/agent/db/update_event", 2),
-    "/agent/evtDelete": LegacyAgentMigration("/agent/db/delete_event", 2),
-    "/agent/ideaCapture": LegacyAgentMigration("/agent/idea/capture", 2),
-    "/agent/ideaToEvt": LegacyAgentMigration("/agent/idea/to_event", 2),
     # Wave 3: external feedback side effects.
     "/agent/sendText": LegacyAgentMigration("/agent/feedback/send_text", 3),
     "/agent/sendCard": LegacyAgentMigration("/agent/feedback/send_card", 3),

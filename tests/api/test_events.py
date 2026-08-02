@@ -157,14 +157,13 @@ def test_agent_commute_update_is_scoped_atomic_and_does_not_duplicate_reminders(
     assert denied.json()["ok"] is False
     assert "plan not found" in denied.json()["errors"][0]
 
-    for path in ("/agent/db/delete_event", "/agent/evtDelete"):
-        denied_delete = client.post(
-            path,
-            headers=agent_headers("other-user"),
-            json={"evtId": plan["evtId"]},
-        )
-        assert denied_delete.json()["ok"] is False
-        assert "evt not found" in denied_delete.json()["errors"][0]
+    denied_delete = client.post(
+        "/agent/db/delete_event",
+        headers=agent_headers("other-user"),
+        json={"evtId": plan["evtId"]},
+    )
+    assert denied_delete.json()["ok"] is False
+    assert "evt not found" in denied_delete.json()["errors"][0]
 
     still_owned = client.post(
         "/agent/db/query_events",
