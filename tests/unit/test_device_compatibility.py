@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session
 
 from app.server.device.compatibility import (
     DeviceOwnershipConflict,
@@ -74,6 +76,86 @@ def test_device_compatibility_rejects_owner_conflicts(db_session) -> None:
 
     with pytest.raises(DeviceOwnershipConflict, match="device owner conflict"):
         migrate_device_compatibility(db_session)
+
+
+def test_pi_mirrors_support_the_historical_device_kind_constraint(tmp_path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'legacy-device.sqlite'}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE device (
+                        deviceId VARCHAR(50) PRIMARY KEY,
+                        userId VARCHAR(32) NOT NULL,
+                        deviceName VARCHAR(100) NOT NULL,
+                        deviceKind VARCHAR(30) NOT NULL,
+                        isActive INTEGER NOT NULL DEFAULT 1,
+                        registeredAt VARCHAR(64) NOT NULL,
+                        CHECK (deviceKind IN ('screen', 'browser', 'mobile', 'bot', 'server'))
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE lifeDevice (
+                        deviceId VARCHAR(32) PRIMARY KEY,
+                        userId VARCHAR(32) NOT NULL,
+                        deviceName VARCHAR(100) NOT NULL,
+                        deviceKind VARCHAR(30) NOT NULL,
+                        stat VARCHAR(20) NOT NULL DEFAULT 'active',
+                        lastSeenAt VARCHAR(64),
+                        createdAt VARCHAR(64) NOT NULL,
+                        updatedAt VARCHAR(64) NOT NULL
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO device (
+                        deviceId, userId, deviceName, deviceKind, isActive, registeredAt
+                    ) VALUES (
+                        'existing-pi', 'owner', 'Old Pi', 'screen', 1,
+                        '2026-08-01T00:00:00+08:00'
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO lifeDevice (
+                        deviceId, userId, deviceName, deviceKind, stat, createdAt, updatedAt
+                    ) VALUES
+                        (
+                            'existing-pi', 'owner', 'Existing Pi', 'pi', 'active',
+                            '2026-08-01T00:00:00+08:00', '2026-08-01T00:00:00+08:00'
+                        ),
+                        (
+                            'new-pi', 'owner', 'New Pi', 'pi', 'active',
+                            '2026-08-01T00:00:00+08:00', '2026-08-01T00:00:00+08:00'
+                        )
+                    """
+                )
+            )
+
+        with Session(engine) as session:
+            assert migrate_device_compatibility(session) == {
+                "createdLifeDevices": 0,
+                "createdLegacyMirrors": 1,
+            }
+            assert session.get(Device, "existing-pi").deviceKind == "server"
+            assert session.get(Device, "new-pi").deviceKind == "server"
+            assert migrate_device_compatibility(session) == {
+                "createdLifeDevices": 0,
+                "createdLegacyMirrors": 0,
+            }
+    finally:
+        engine.dispose()
 
 
 def test_legacy_state_write_requires_authoritative_life_device(db_session) -> None:

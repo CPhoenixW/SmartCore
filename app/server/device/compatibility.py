@@ -12,7 +12,13 @@ class DeviceOwnershipConflict(RuntimeError):
 
 
 def _legacy_kind(kind: str) -> str:
-    if kind in {"screen", "browser", "mobile", "bot", "server", "pi"}:
+    # Historical production schemas predate the Pi kind and constrain this
+    # compatibility-only column to the original five values. lifeDevice keeps
+    # the authoritative "pi" kind; the old FK mirror uses the closest legacy
+    # value so startup remains compatible without rebuilding the table.
+    if kind == "pi":
+        return "server"
+    if kind in {"screen", "browser", "mobile", "bot", "server"}:
         return kind
     if kind == "feishuBot":
         return "bot"
