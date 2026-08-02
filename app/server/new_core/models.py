@@ -397,6 +397,18 @@ class AgentRouteUsage(Base):
     lastStatusCode: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
+class AgentRouteObservation(Base):
+    __tablename__ = "agentRouteObservation"
+
+    method: Mapped[str] = mapped_column(String(10), primary_key=True)
+    path: Mapped[str] = mapped_column(String(200), primary_key=True)
+    endpoint: Mapped[str] = mapped_column(String(300), nullable=False)
+    compatibility: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    observedSinceAt: Mapped[str] = mapped_column(String(64), nullable=False)
+    lastAssembledAt: Mapped[str] = mapped_column(String(64), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
 class LifeDevice(Base):
     __tablename__ = "lifeDevice"
 

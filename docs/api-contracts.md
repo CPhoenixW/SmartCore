@@ -124,9 +124,12 @@ Agent token 与用户 scope；不要根据单个 router 文件推断最终契约
 
 `evtQuery`、`evtCreate`、`evtUpdate`、`evtDelete`、`sendText`、`sendCard` 等是兼容
 别名，并在 OpenAPI 中标记 deprecated。每次实际 `/agent/*` 调用会按 method、匹配 path、
-endpoint 与状态码累计到 `agentRouteUsage`，不保存 token、scope 或 body；管理员可通过
-`GET /api/admin/agentRouteUsage` 检查。旧生产日志不含匹配 path，不能反推历史调用；别名
-只有在新统计覆盖完整兼容期且 Adapter/skill 已迁移后才能删除。
+endpoint 与状态码累计到 `agentRouteUsage`，不保存 token、scope 或 body； assembled app
+启动时还会把全部 operation 写入 `agentRouteObservation`，因此零调用路由也有可核对的观测
+起点。管理员通过 `GET /api/admin/agentRouteUsage` 查看明细，通过
+`GET /api/admin/agentRouteCompatibility` 查看旧别名的连续安静期和移除资格。旧生产日志不含
+匹配 path，不能反推历史调用；别名只有在 Adapter/skill 已迁移，且首次观测或最后调用之后
+连续 30 天没有任何请求时才能分批删除。
 
 ## 设备配对状态机
 

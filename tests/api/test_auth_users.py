@@ -220,6 +220,26 @@ def test_admin_active_user_switch_cannot_change_selected_users_password(app_env)
     ).status_code == 200
 
 
+def test_agent_route_compatibility_report_is_admin_only(app_env) -> None:
+    admin = _setup_client()
+    response = admin.get("/api/admin/agentRouteCompatibility")
+    assert response.status_code == 200
+    report = response.json()["data"]
+    assert report["observationDays"] == 30
+    assert len(report["routes"]) == 10
+    assert all(row["eligibleForRemoval"] is False for row in report["routes"])
+
+    ordinary = TestClient(create_app())
+    assert ordinary.post(
+        "/api/auth/register",
+        json={
+            "loginName": "route-observer",
+            "password": "correct-horse-battery-staple",
+        },
+    ).status_code == 200
+    assert ordinary.get("/api/admin/agentRouteCompatibility").status_code == 403
+    assert TestClient(create_app()).get("/api/admin/agentRouteCompatibility").status_code == 401
+
 def test_paired_device_token_can_poll_photo_requests(app_env) -> None:
     client = _setup_client()
     activated = _paired_device(client, "pi")

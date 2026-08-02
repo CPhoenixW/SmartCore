@@ -462,6 +462,18 @@ CREATE TABLE IF NOT EXISTS agentRouteUsage (
 );
 CREATE INDEX IF NOT EXISTS idx_agent_route_usage_last_called
 ON agentRouteUsage(lastCalledAt);
+CREATE TABLE IF NOT EXISTS agentRouteObservation (
+    method VARCHAR(10) NOT NULL,
+    path VARCHAR(200) NOT NULL,
+    endpoint VARCHAR(300) NOT NULL,
+    compatibility BOOLEAN NOT NULL DEFAULT 0,
+    observedSinceAt VARCHAR(64) NOT NULL,
+    lastAssembledAt VARCHAR(64) NOT NULL,
+    active BOOLEAN NOT NULL DEFAULT 1,
+    PRIMARY KEY(method, path)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_route_observation_compatibility
+ON agentRouteObservation(compatibility, active, observedSinceAt);
 CREATE TABLE IF NOT EXISTS lifeDevice (
     deviceId VARCHAR(32) PRIMARY KEY,
     userId VARCHAR(32) NOT NULL REFERENCES appUser(userId) ON DELETE CASCADE,

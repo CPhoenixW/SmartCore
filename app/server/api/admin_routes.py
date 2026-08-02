@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.server.agent.usage import legacy_agent_route_readiness
 from app.server.auth.security import (
     require_authenticated_actor_id,
     require_authenticated_user_id,
@@ -128,6 +129,15 @@ def agentRouteUsage(
             for row in rows
         ],
     }
+
+
+@router.get("/agentRouteCompatibility")
+def agentRouteCompatibility(
+    actorId: str = Depends(require_authenticated_actor_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    _actor(db, actorId)
+    return {"ok": True, "data": legacy_agent_route_readiness(db)}
 
 
 @router.get("/feishuBots")

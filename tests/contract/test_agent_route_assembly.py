@@ -2,15 +2,21 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.routing import APIRoute
 
 from app.server.agent.assembly import LEGACY_AGENT_PATHS
+from app.server.agent.usage import (
+    LEGACY_AGENT_COMPATIBILITY_DAYS,
+    legacy_agent_route_readiness,
+)
 from app.server.db.session import SessionLocal
 from app.server.main import create_app
-from app.server.new_core.models import AgentRouteUsage
+from app.server.new_core.models import AgentRouteObservation, AgentRouteUsage
 
 pytestmark = pytest.mark.contract
 
@@ -53,6 +59,28 @@ def test_assembled_agent_routes_match_snapshot_and_are_unique(app_env) -> None:
     assert all(count == 1 for count in counts.values())
     assert {str(row["path"]) for row in actual if row["deprecated"]} == LEGACY_AGENT_PATHS
 
+    db = SessionLocal()
+    try:
+        observations = db.query(AgentRouteObservation).filter_by(active=True).all()
+        observed_since = {
+            (row.method, row.path): row.observedSinceAt for row in observations
+        }
+        assert {(row.method, row.path) for row in observations} == {
+            (str(row["method"]), str(row["path"])) for row in actual
+        }
+        assert {row.path for row in observations if row.compatibility} == LEGACY_AGENT_PATHS
+        assert all(row.observedSinceAt and row.lastAssembledAt for row in observations)
+    finally:
+        db.close()
+
+    create_app()
+    db = SessionLocal()
+    try:
+        restarted = db.query(AgentRouteObservation).filter_by(active=True).all()
+        assert {(row.method, row.path): row.observedSinceAt for row in restarted} == observed_since
+    finally:
+        db.close()
+
 
 def test_agent_route_usage_is_persisted_without_request_payload(client) -> None:
     response = client.get("/agent/tools")
@@ -76,5 +104,34 @@ def test_unmatched_agent_paths_do_not_create_usage_dimensions(client) -> None:
     db = SessionLocal()
     try:
         assert db.query(AgentRouteUsage).count() == 0
+    finally:
+        db.close()
+
+
+def test_legacy_route_removal_requires_a_complete_quiet_window(client) -> None:
+    now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    old_observation = (now - timedelta(days=LEGACY_AGENT_COMPATIBILITY_DAYS + 1)).isoformat()
+    db = SessionLocal()
+    try:
+        for row in db.query(AgentRouteObservation).filter_by(compatibility=True, active=True):
+            row.observedSinceAt = old_observation
+        db.commit()
+        before = legacy_agent_route_readiness(db, now=now)
+        assert before["allEligibleForRemoval"] is True
+        assert len(before["routes"]) == len(LEGACY_AGENT_PATHS)
+    finally:
+        db.close()
+
+    response = client.post("/agent/evtQuery", json={})
+    assert response.status_code == 401
+
+    db = SessionLocal()
+    try:
+        after = legacy_agent_route_readiness(db, now=now + timedelta(seconds=1))
+        query_route = next(row for row in after["routes"] if row["path"] == "/agent/evtQuery")
+        assert query_route["callCount"] == 1
+        assert query_route["clientErrorCount"] == 1
+        assert query_route["eligibleForRemoval"] is False
+        assert after["allEligibleForRemoval"] is False
     finally:
         db.close()

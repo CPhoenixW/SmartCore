@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app.server.agent.assembly import createAssembledAgentRouter
 from app.server.agent.feedback_routes import ensure_feedback_tools
 from app.server.agent.routes import createDevRouter
-from app.server.agent.usage import record_agent_route_usage
+from app.server.agent.usage import record_agent_route_usage, sync_agent_route_observations
 from app.server.api.admin_routes import router as adminApiRouter
 from app.server.api.auth_routes import router as authApiRouter
 from app.server.api.avatar_routes import router as avatarApiRouter
@@ -120,6 +120,8 @@ def create_app() -> FastAPI:
     _initialize_database()
     settings = get_settings()
     ensure_feedback_tools()
+    assembled_agent_router = createAssembledAgentRouter()
+    sync_agent_route_observations(assembled_agent_router)
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
     @app.middleware("http")
@@ -153,7 +155,7 @@ def create_app() -> FastAPI:
     app.include_router(userDeviceRouter)
     app.include_router(computerRouter)
     app.include_router(feishuPairRouter)
-    app.include_router(createAssembledAgentRouter())
+    app.include_router(assembled_agent_router)
     app.include_router(create_feishu_router())
     app.include_router(screenRouter)
 
