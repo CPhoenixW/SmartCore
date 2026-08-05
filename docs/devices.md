@@ -141,7 +141,7 @@ Server 可结合当前 Plan、电脑状态与同用户新鲜 Pi 状态生成带 
 判断，但不输出效率或分心结论。启用 `COMPUTER_WORK_BLOCK_ANALYSIS_ENABLED` 后，Server
 每分钟根据 active、20 分钟 idle、锁屏/休眠/暂停和上下文变化维护连续工作块；小时任务
 只保存客观快照。工作块开始、切换、结束或 Plan 语义需要更新时，Server 使用
-正式版 `deepseek-v4-flash-0731` 做一次结构化分析；展示文本由 Server 限长清洗，
+稳定版 `deepseek-v4-flash` 做一次结构化分析；展示文本由 Server 限长清洗，
 Schema 错误不会重复请求，且失败不默认回退到 OpenClaw
 `qwen3.7-plus`，任务租约和退避不影响原始上传。工作日志不再作为独立的 Computer 日终
 模型任务或前端卡片生成；Daily summary 直接使用 Codex 汇报、Computer 工作块和 Plan

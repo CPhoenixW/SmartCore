@@ -181,7 +181,7 @@ Pi 状态与照片使用 `/dev/*`；通用设备列表/配对/分发使用 `/api
 `POST /agent/computer/work-block-analysis`；小时接口保留兼容读取，每日接口继续使用
 `daily-context/daily-log`。owner 从 scope 派生，run 以稳定 trigger key 幂等；Server
 拥有 Plan 活跃覆盖率和最终执行状态，AI 必须为上下文中的每个 Plan 返回语义匹配，不能
-提交或覆盖客观比例。Server 直连分析使用正式版 `deepseek-v4-flash-0731` 并且只请求一次；
+提交或覆盖客观比例。Server 直连分析使用稳定版 `deepseek-v4-flash` 并且只请求一次；
 `refresh` trigger 只允许 `extend` 同一 open 工作块：累计 active 二十分钟首次触发，此后
 每新增六十分钟 active 触发，并向模型同时提供上一版快照、累计事实和新增证据。
 无人值守 Computer 任务默认不回退 OpenClaw。兼容回退可通过部署配置显式开启，使用

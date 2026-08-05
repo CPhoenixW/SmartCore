@@ -63,7 +63,9 @@ class Settings(BaseSettings):
     computer_attention_idle_minutes: int = 5
     computer_implicit_focus_active_minutes: int = 20
     computer_analysis_direct_llm_enabled: bool = True
-    computer_analysis_model: str = "deepseek-v4-flash-0731"
+    # The gateway's 0731 alias intermittently returns an empty completion. Keep the
+    # structured Computer path on the stable Flash model unless explicitly overridden.
+    computer_analysis_model: str = "deepseek-v4-flash"
     computer_analysis_max_output_tokens: int = 2048
     computer_analysis_openclaw_fallback_enabled: bool = False
     computer_daily_preview_enabled: bool = False

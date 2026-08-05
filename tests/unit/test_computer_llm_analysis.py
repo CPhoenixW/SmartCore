@@ -91,12 +91,12 @@ def test_daily_direct_analysis_uses_formal_flash_and_cleans_display_fields_once(
         db_session,
         device=device,
         row=row,
-        settings=Settings(computer_analysis_model="deepseek-v4-flash-0731"),
+        settings=Settings(computer_analysis_model="deepseek-v4-flash"),
         completion=completion,
     )
 
     assert len(requests) == 1
-    assert requests[0]["model"] == "deepseek-v4-flash-0731"
+    assert requests[0]["model"] == "deepseek-v4-flash"
     assert requests[0]["max_tokens"] == 2048
     assert requests[0]["response_format"] == {"type": "json_object"}
     assert requests[0]["usage_label"] == "computer_daily_work_log"
@@ -107,7 +107,7 @@ def test_daily_direct_analysis_uses_formal_flash_and_cleans_display_fields_once(
     assert stored["status"] == "complete"
     assert stored["title"] == "接口开发持续推进"
     assert "\n" not in stored["summary"]
-    assert stored["model"] == "deepseek-v4-flash-0731"
+    assert stored["model"] == "deepseek-v4-flash"
     assert stored["workBlockIds"] == [block.blockId]
     assert stored["previewRevision"] == 1
 
@@ -147,7 +147,7 @@ def test_work_block_direct_analysis_uses_server_fixed_action(db_session) -> None
         db_session,
         device=device,
         run=run,
-        settings=Settings(computer_analysis_model="deepseek-v4-flash-0731"),
+        settings=Settings(computer_analysis_model="deepseek-v4-flash"),
         completion=lambda _messages, **_kwargs: json.dumps(
             {
                 "action": "ignore",
@@ -159,7 +159,7 @@ def test_work_block_direct_analysis_uses_server_fixed_action(db_session) -> None
 
     assert stored["run"]["action"] == "complete"
     assert stored["workBlock"]["status"] == "closed"
-    assert stored["workBlock"]["model"] == "deepseek-v4-flash-0731"
+    assert stored["workBlock"]["model"] == "deepseek-v4-flash"
 
 
 def test_work_block_accepts_twenty_character_title_and_cleans_display_fields(
@@ -214,7 +214,7 @@ def test_work_block_accepts_twenty_character_title_and_cleans_display_fields(
         db_session,
         device=device,
         run=run,
-        settings=Settings(computer_analysis_model="deepseek-v4-flash-0731"),
+        settings=Settings(computer_analysis_model="deepseek-v4-flash"),
         completion=completion,
     )
 
