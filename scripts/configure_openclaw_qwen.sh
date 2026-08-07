@@ -75,7 +75,9 @@ apply_config() {
     install -m 600 "$CONFIG_PATH" "$backup"
     temporary="$(mktemp "$OPENCLAW_HOME_DIR/openclaw.json.routing.XXXXXX")"
     trap 'rm -f -- "${temporary:-}"' RETURN
-    jq --arg text_model "$TEXT_MODEL_REF" --arg vision_model "$VISION_MODEL_REF" '
+    jq --arg text_model "$TEXT_MODEL_REF" \
+        --arg vision_model "$VISION_MODEL_REF" \
+        --arg vision_agent_dir "$OPENCLAW_HOME_DIR/agents/smartcore-vision/agent" '
         .models.mode = "merge"
         | .models.providers.tokendance.models = (
             ((.models.providers.tokendance.models // [])
@@ -104,6 +106,7 @@ apply_config() {
                 | .tools = {allow: ["exec"]}
             elif .id == "smartcore-vision" then
                 .model = $vision_model
+                | .agentDir = $vision_agent_dir
                 | .skills = ["smartcore"]
                 | .tools = {allow: ["exec"]}
             else . end
@@ -111,6 +114,7 @@ apply_config() {
             ((map(select(.id == "smartcore"))[0])
             | .id = "smartcore-vision"
             | .model = $vision_model
+            | .agentDir = $vision_agent_dir
             | .skills = ["smartcore"]
             | .tools = {allow: ["exec"]})
         ] end)
