@@ -116,7 +116,6 @@ class DailyInference(BaseModel):
 
 class WorkBlockInference(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action: Literal["start", "extend", "switch", "complete", "ignore"]
     topicKey: str | None = Field(default=None, max_length=100)
     title: str | None = Field(default=None, max_length=20)
     summary: str | None = Field(default=None, max_length=800)

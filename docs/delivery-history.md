@@ -3,6 +3,25 @@
 本文只保留影响后续维护的里程碑与验收边界。完整提交和讨论使用 Git 历史；当前
 行为以现行领域文档、代码和测试为准。
 
+## 2026-08-07：模型路由与 WorkBlock 契约收口
+
+- 工作台、连续 WorkBlock 分析和每日工作日报默认使用 `deepseek-v4-flash-0731`；图片兼容
+  函数和 OpenClaw 图片 profile 使用 `qwen3.7-plus`，不再使用 `deepseek-ocr-2`。
+- OpenClaw Adapter 按图片 MIME 在文本与图片 profile 间路由；文本只对传输失败回退一次，格式
+  错误和图片任务失败不切模型。
+- WorkBlock 推理 Schema 移除模型 `action`；Server 按触发器生成 action，缺失 Plan 语义匹配
+  补为 `unclear/low`，严格 JSON/字段校验失败不重试。
+- `dailyWorkContext` 继续作为日报的事实来源，覆盖 Codex 汇报、Plan 和当天全部 Computer
+  设备的工作块（含开放工作块）。
+
+## 2026-08-06：Computer WorkBlock reasoning 预算
+
+- `deepseek-v4-flash-0731` 保持为 Computer/WorkBlock 的默认模型；其长上下文请求可能先生成
+  数千 token reasoning，输出预算从 2048 提升到 8192，避免模型以 `finish_reason=length` 结束而
+  没有 JSON content。
+- 该调整不改变 WorkBlock 边界、重试策略、owner scope 或数据库结构；短 JSON 与真实长上下文
+  均已通过生产网关验证。
+
 ## 2026-05 至 2026-06：原型与统一操作链路
 
 - 建立 FastAPI、SQLite、飞书回调、提醒和早期 Dashboard。

@@ -29,12 +29,27 @@ from app.server.new_core.models import (
 
 WORK_BLOCK_PROMPT_VERSION = "computer-work-block-v1"
 WORK_BLOCK_ACTIONS = {"start", "extend", "switch", "complete", "ignore"}
+SERVER_ACTION_BY_TRIGGER = {
+    "start": "start",
+    "switch": "switch",
+    "complete": "complete",
+    "plan_change": "extend",
+    "refresh": "extend",
+}
 SEMANTIC_ALIGNMENTS = {"aligned", "partially_aligned", "unrelated", "unclear"}
 RETRY_DELAYS = (60, 300, 900, 3600)
 MAX_ATTEMPTS = 5
 INITIAL_SUMMARY_ACTIVE_SECONDS = 5 * 60
 FIRST_REFRESH_ACTIVE_SECONDS = 20 * 60
 REFRESH_INTERVAL_ACTIVE_SECONDS = 60 * 60
+
+
+def server_action_for_trigger(trigger_type: str) -> str:
+    """Return the deterministic action for a queued analysis trigger."""
+    try:
+        return SERVER_ACTION_BY_TRIGGER[str(trigger_type)]
+    except KeyError as exc:
+        raise ValueError("unsupported work block analysis trigger") from exc
 
 
 def _fingerprint(value: Any) -> str:
@@ -872,11 +887,7 @@ def build_work_block_context(
         "constraints": {
             "actions": sorted(WORK_BLOCK_ACTIONS),
             "allowedActionsForTrigger": {
-                "start": ["start"],
-                "switch": ["switch", "extend", "ignore"],
-                "complete": ["complete"],
-                "plan_change": ["extend"],
-                "refresh": ["extend"],
+                trigger: [action] for trigger, action in SERVER_ACTION_BY_TRIGGER.items()
             }.get(run.triggerType, []),
             "semanticAlignments": sorted(SEMANTIC_ALIGNMENTS),
             "promptVersion": WORK_BLOCK_PROMPT_VERSION,
@@ -908,9 +919,22 @@ def _validate_semantic_assessments(
             "evidenceCodes": [str(code)[:80] for code in item.get("evidenceCodes", [])][:10],
             "note": _validate_text(item.get("note"), max_length=500, required=False),
         }
-    if required and set(provided) != plan_ids:
-        raise ValueError("every plan in the context requires a semantic assessment")
-    return list(provided.values())
+    if required:
+        # A missing semantic match is an uncertain match, not a malformed request.
+        # Objective overlap and final Plan state remain Server-owned calculations.
+        for plan in plans:
+            evt_id = str(plan["evtId"])
+            provided.setdefault(
+                evt_id,
+                {
+                    "evtId": evt_id,
+                    "semanticAlignment": "unclear",
+                    "confidence": "low",
+                    "evidenceCodes": [],
+                    "note": None,
+                },
+            )
+    return [provided[str(plan["evtId"])] for plan in plans if str(plan["evtId"]) in provided]
 
 
 def _validated_content(payload: dict[str, Any], *, required: bool) -> dict[str, str | None]:
@@ -978,18 +1002,9 @@ def store_work_block_analysis(
         raise ValueError("complete analysis must use a supported Computer model")
     if payload.get("promptVersion") != WORK_BLOCK_PROMPT_VERSION:
         raise ValueError("unsupported prompt version")
-    action = str(payload.get("action") or "")
-    if action not in WORK_BLOCK_ACTIONS:
-        raise ValueError("invalid work block action")
-    allowed_actions = {
-        "start": {"start"},
-        "switch": {"switch", "extend", "ignore"},
-        "complete": {"complete"},
-        "plan_change": {"extend"},
-        "refresh": {"extend"},
-    }
-    if action not in allowed_actions.get(run.triggerType, set()):
-        raise ValueError("work block action does not match the analysis trigger")
+    # Keep the request/database field for compatibility and audit output, but
+    # always derive the effective action from the Server-owned trigger.
+    action = server_action_for_trigger(run.triggerType)
     if not run.blockId:
         raise ValueError("action requires an existing work block")
     context = build_work_block_context(db, device=device, run=run, claim=False)

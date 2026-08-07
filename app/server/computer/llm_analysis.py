@@ -27,6 +27,7 @@ from app.server.computer.insights import (
 from app.server.computer.work_blocks import (
     WORK_BLOCK_PROMPT_VERSION,
     build_work_block_context,
+    server_action_for_trigger,
     store_work_block_analysis,
 )
 from app.server.config import Settings
@@ -117,18 +118,10 @@ def _clean_display_fields(
 
 def _parse_object(raw: str) -> dict[str, Any]:
     text = raw.strip()
-    if text.startswith("```"):
-        text = text.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
     try:
         value = json.loads(text)
     except json.JSONDecodeError:
-        start, end = text.find("{"), text.rfind("}")
-        if start < 0 or end <= start:
-            raise ValueError("response is not a JSON object") from None
-        try:
-            value = json.loads(text[start : end + 1])
-        except json.JSONDecodeError as exc:
-            raise ValueError("response contains invalid JSON") from exc
+        raise ValueError("response is not valid JSON") from None
     if not isinstance(value, dict):
         raise ValueError("response must be a JSON object")
     return value
@@ -416,21 +409,18 @@ def analyze_work_block(
 ) -> dict[str, Any]:
     context = build_work_block_context(db, device=device, run=run, claim=False)
     run_id, user_id = run.runId, device.userId
-    allowed_actions = [str(value) for value in context["constraints"]["allowedActionsForTrigger"]]
     context_ids = [str(value) for value in context["facts"]["contextIds"]]
 
     def finalize(inferred: WorkBlockInference) -> dict[str, Any]:
         content = inferred.model_dump(mode="json")
-        content.pop("action")
-        action = allowed_actions[0] if len(allowed_actions) == 1 else inferred.action
-        if action not in allowed_actions:
-            raise ValueError(f"action must be one of {allowed_actions}")
         evidence_ids = content.pop("evidenceContextIds") or context_ids[:8]
         body = WorkBlockAnalysisBody(
             runId=run_id,
             status="complete",
             **content,
-            action=action,
+            # The trigger is produced by deterministic Server rules; model output
+            # deliberately has no action field and cannot alter this decision.
+            action=server_action_for_trigger(run.triggerType),
             evidenceContextIds=evidence_ids,
             model=_model(settings),
             promptVersion=WORK_BLOCK_PROMPT_VERSION,
@@ -451,9 +441,8 @@ def analyze_work_block(
         settings=settings,
         inference_type=WorkBlockInference,
         task_instructions=(
-            f"Analyze this work-block trigger. The only allowed actions are {allowed_actions}. The Server "
-            "already fixed start and completion boundaries, so use the sole allowed action when only one "
-            "is listed. Start and switch require an independent Chinese title of at most 10 characters "
+            "Analyze this work-block trigger. The Server already fixed the work-block action and boundaries; "
+            "do not return an action field. Start and switch require an independent Chinese title of at most 10 characters "
             "and one summary paragraph; other optional fields must be omitted without evidence. Return a "
             "semantic assessment for every plan in evidence, using aligned, partially_aligned, unrelated, "
             "or unclear, and reference only evidence context IDs supplied by the Server."

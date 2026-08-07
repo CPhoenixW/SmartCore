@@ -41,6 +41,12 @@ OpenClaw 不读取 SQLite、Docker volume、备份、`.env` 或生产密钥。
 SmartCore Agent 只加载 `smartcore` skill，并只暴露执行 bundled helper 所需的 `exec`
 工具；其他 OpenClaw skills 和工具不进入该 Agent 的上下文。
 
+Adapter 按附件 MIME 固定选择 profile：纯文本和只有文件的消息使用
+`smartcore -> tokendance/deepseek-v4-flash-0731`，包含图片的消息使用隔离的
+`smartcore-vision -> tokendance/qwen3.7-plus`。文本 profile 只有在传输错误、超时、非零退出或
+空最终答案时才允许回退一次到 Qwen；格式校验失败不切换模型，图片 profile 失败也不回退到文本。
+两个 profile 使用不同 session 前缀，避免跨模型复用会话事实。
+
 每个业务任务至少包含：
 
 - 稳定事件 ID，用于端到端幂等；
@@ -65,10 +71,10 @@ scope 分 `feishu` 与 `web` 用途。Web scope 不携带 bot/chat，不能调�
 - 捕获 Idea、把 Idea 转为事项、处理媒体任务；
 - 发送飞书文本/卡片和推送副屏；
 - 持久化日报、完成事项并追加完成总结。
-- 读取脱敏 Computer 工作块证据，提交工作块动作、Plan 语义匹配和每日工作日志。
+- 读取脱敏 Computer 工作块证据，提交 Server 规则生成的工作块结果、Plan 语义匹配和每日工作日志。
 - 读取 `dailyWorkContext` 的当日项目聚合，生成每日简报。
 
-Computer 后台分析由 Server 直接调用一次稳定版 `deepseek-v4-flash` 并保存结构化结果；默认不把
+Computer 后台分析由 Server 直接调用一次 `deepseek-v4-flash-0731` 并保存结构化结果；默认不把
 无人值守 Computer 任务转交 OpenClaw。上述 Computer Agent 工具只保留为部署时显式开启的
 兼容回退路径。
 

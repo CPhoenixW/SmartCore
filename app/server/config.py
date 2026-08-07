@@ -31,12 +31,11 @@ class Settings(BaseSettings):
     llm_provider: str = "tokendance"
     llm_api_key: str = ""
     llm_base_url: str = "https://tokendance.space/gateway/v1"
-    llm_model: str = "deepseek-v4-flash"
+    llm_model: str = "deepseek-v4-flash-0731"
     llm_max_retries: int = 2
     llm_timeout_seconds: int = 120
-    # Images are analyzed separately before the resulting text is handed to the
-    # text-first SmartCore agent workflow.
-    vision_model: str = "deepseek-ocr-2"
+    # Images use Qwen's native multimodal input; documents remain storage-only.
+    vision_model: str = "qwen3.7-plus"
     vision_max_image_bytes: int = 10 * 1024 * 1024
     vision_max_output_tokens: int = 128
     vision_max_retries: int = 0
@@ -63,10 +62,9 @@ class Settings(BaseSettings):
     computer_attention_idle_minutes: int = 5
     computer_implicit_focus_active_minutes: int = 20
     computer_analysis_direct_llm_enabled: bool = True
-    # The gateway's 0731 alias intermittently returns an empty completion. Keep the
-    # structured Computer path on the stable Flash model unless explicitly overridden.
-    computer_analysis_model: str = "deepseek-v4-flash"
-    computer_analysis_max_output_tokens: int = 2048
+    computer_analysis_model: str = "deepseek-v4-flash-0731"
+    # 0731 may spend several thousand tokens on reasoning before emitting JSON.
+    computer_analysis_max_output_tokens: int = 8192
     computer_analysis_openclaw_fallback_enabled: bool = False
     computer_daily_preview_enabled: bool = False
     computer_daily_preview_min_interval_minutes: int = 240

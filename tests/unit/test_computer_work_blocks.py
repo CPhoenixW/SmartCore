@@ -445,29 +445,19 @@ def test_idle_twenty_minutes_queues_complete(db_session) -> None:
     assert closed is not None and closed.status == "closed"
     assert closed.endAt == (start + timedelta(minutes=5)).isoformat()
 
-    with pytest.raises(ValueError, match="does not match"):
-        store_work_block_analysis(
-            db_session,
-            user_id=device.userId,
-            payload={
-                "runId": run2.runId,
-                "status": "complete",
-                "action": "ignore",
-                "model": "qwen3.7-plus",
-                "promptVersion": "computer-work-block-v1",
-            },
-        )
-    failed = store_work_block_analysis(
+    completed = store_work_block_analysis(
         db_session,
         user_id=device.userId,
         payload={
             "runId": run2.runId,
-            "status": "failed",
-            "errorMessage": "NO_REPLY",
+            "status": "complete",
+            # Compatibility input is ignored; the Server derives complete from the trigger.
+            "action": "ignore",
+            "model": "qwen3.7-plus",
             "promptVersion": "computer-work-block-v1",
         },
     )
-    assert failed["status"] == "failed"
+    assert completed["run"]["action"] == "complete"
     assert db_session.get(ComputerWorkBlock, block_id).status == "closed"
 
 
@@ -601,21 +591,22 @@ def test_plan_overlap_uses_elapsed_plan_time_not_full_duration(db_session) -> No
     assert plan["elapsedSeconds"] == 3600
     assert plan["overlapRatio"] == pytest.approx(0.5, abs=0.01)
 
-    with pytest.raises(ValueError, match="every plan"):
-        store_work_block_analysis(
-            db_session,
-            user_id=device.userId,
-            payload={
-                "runId": run.runId,
-                "status": "complete",
-                "action": "start",
-                "title": "实习开发",
-                "summary": "围绕实习任务推进开发并形成了阶段性的代码结果。",
-                "planSemanticAssessments": [],
-                "model": "qwen3.7-plus",
-                "promptVersion": "computer-work-block-v1",
-            },
-        )
+    stored = store_work_block_analysis(
+        db_session,
+        user_id=device.userId,
+        payload={
+            "runId": run.runId,
+            "status": "complete",
+            "action": "ignore",
+            "title": "实习开发",
+            "summary": "围绕实习任务推进开发并形成了阶段性的代码结果。",
+            "planSemanticAssessments": [],
+            "model": "qwen3.7-plus",
+            "promptVersion": "computer-work-block-v1",
+        },
+    )
+    assert stored["workBlock"]["planAssessments"][0]["semanticAlignment"] == "unclear"
+    assert stored["workBlock"]["planAssessments"][0]["confidence"] == "low"
 
 
 def test_plan_end_requeues_semantic_assessment_once(db_session) -> None:

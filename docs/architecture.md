@@ -84,7 +84,7 @@ APScheduler 运行在 Server 内：
 - 日报由 Server 创建有用户 scope 的任务，OpenClaw 生成内容，Adapter 验证后持久化
   并投递。
 - Computer 工作块边界由 Server 确定性维护；Server 将脱敏聚合直接交给
-  稳定版 `deepseek-v4-flash` 做一次结构化主题、总结和 Plan 语义匹配。
+  `deepseek-v4-flash-0731` 做一次结构化主题、总结和 Plan 语义匹配。
   连续 active 五分钟建立工作块，累计 active 二十分钟更新同一标题与总结，此后每新增
   六十分钟 active 再滚动更新；连续 idle 五分钟的注意力提醒由 Server 确定性发送，
   不调用模型，也不提前关闭工作块。

@@ -180,12 +180,13 @@ Pi 状态与照片使用 `/dev/*`；通用设备列表/配对/分发使用 `/api
 工作块使用 `GET /agent/computer/work-block-context` 与
 `POST /agent/computer/work-block-analysis`；小时接口保留兼容读取，每日接口继续使用
 `daily-context/daily-log`。owner 从 scope 派生，run 以稳定 trigger key 幂等；Server
-拥有 Plan 活跃覆盖率和最终执行状态，AI 必须为上下文中的每个 Plan 返回语义匹配，不能
-提交或覆盖客观比例。Server 直连分析使用稳定版 `deepseek-v4-flash` 并且只请求一次；
+拥有 Plan 活跃覆盖率和最终执行状态，AI 可返回上下文中的 Plan 语义匹配；缺失匹配由 Server
+补为 `unclear`、`low`，不能提交或覆盖客观比例。工作块 `action` 字段保留兼容和审计用途，
+但有效 action 完全由 Server 按触发器决定。Server 直连分析使用 `deepseek-v4-flash-0731` 并且只请求一次；
 `refresh` trigger 只允许 `extend` 同一 open 工作块：累计 active 二十分钟首次触发，此后
 每新增六十分钟 active 触发，并向模型同时提供上一版快照、累计事实和新增证据。
-无人值守 Computer 任务默认不回退 OpenClaw。兼容回退可通过部署配置显式开启，使用
-`qwen3.7-plus`；两者提交 `computer-work-block-v1`，均只接收 Server 组装的脱敏聚合，
+无人值守 Computer 任务默认不回退 OpenClaw。兼容回退若单独开启，沿用文本 profile 的
+`deepseek-v4-flash-0731`；图片任务才使用 `qwen3.7-plus`。两者只接收 Server 组装的脱敏聚合，
 不读取数据库、OCR、网页正文或聊天正文。Computer 每日日志默认只在 23:59 生成一次，
 日间预览默认关闭。
 

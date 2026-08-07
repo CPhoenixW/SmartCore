@@ -119,7 +119,7 @@ def analyze_image(
     prompt: str,
     settings: Settings | None = None,
 ) -> str:
-    """Describe an inbound image through the configured vision model."""
+    """Describe an inbound image through the configured Qwen multimodal model."""
     active_settings = settings or get_settings()
     api_key = _effective_api_key(active_settings)
     if not api_key:
