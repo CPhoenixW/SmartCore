@@ -19,6 +19,7 @@ from app.server.api.event_view_routes import router as eventViewApiRouter
 from app.server.api.idea_media_routes import router as ideaMediaApiRouter
 from app.server.api.routes import router as apiRouter
 from app.server.api.weather_routes import router as weatherApiRouter
+from app.server.auth.http_boundary import RequestLimits, reject_request
 from app.server.auth.security import session_user_id_from_request
 from app.server.auth.storage import ensure_auth_schema
 from app.server.computer.routes import router as computerRouter
@@ -117,12 +118,28 @@ def _register_work_frontend(app: FastAPI, frontend_dist: Path | None = None) -> 
 
 
 def create_app() -> FastAPI:
-    _initialize_database()
     settings = get_settings()
+    _initialize_database()
     ensure_feedback_tools()
     assembled_agent_router = createAssembledAgentRouter()
     sync_agent_route_observations(assembled_agent_router)
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
+    limits = RequestLimits()
+
+    @app.middleware("http")
+    async def browser_boundary(request: Request, call_next):
+        response = reject_request(request, settings, limits)
+        if response is None:
+            response = await call_next(request)
+        if request.url.path.startswith(("/api/", "/screen", "/work")):
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Referrer-Policy"] = "no-referrer"
+            response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
+    @app.get("/", include_in_schema=False)
+    def home():
+        return RedirectResponse("/work", status_code=303)
 
     @app.middleware("http")
     async def agent_route_usage(request: Request, call_next):

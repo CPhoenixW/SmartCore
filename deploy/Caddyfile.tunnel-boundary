@@ -1,18 +1,12 @@
-# SmartCore Cloudflare Tunnel boundary (HTTP only, no TLS).
-# Cloudflare Tunnel should target host 172.17.0.1:8000 (docker bridge gateway).
-# Only /feishu/event is forwarded to the app container; all other paths return 404.
+import Caddyfile.public-routes
+
+{
+    servers {
+        trusted_proxies static {$TUNNEL_PROXY_NETWORK:127.0.0.1/32}
+        client_ip_headers CF-Connecting-IP
+    }
+}
 
 :80 {
-	log {
-		output stdout
-		format console
-	}
-
-	handle /feishu/event {
-		reverse_proxy app:8000
-	}
-
-	handle {
-		respond "Not Found" 404
-	}
+    import smartcore_boundary
 }

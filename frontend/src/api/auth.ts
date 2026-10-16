@@ -4,6 +4,8 @@ import type { CurrentUser } from "@/types/user";
 export interface AuthStatus {
   authenticated: boolean;
   needsSetup: boolean;
+  registrationEnabled: boolean;
+  setupEnabled: boolean;
   defaultUserId: string;
   user: CurrentUser | null;
 }

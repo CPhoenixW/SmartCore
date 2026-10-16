@@ -1,7 +1,9 @@
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -19,6 +21,22 @@ class Settings(BaseSettings):
     auth_cookie_name: str = "smartcore_session"
     auth_cookie_secure: bool = False
     auth_session_hours: int = 168
+    auth_registration_enabled: bool = True
+    auth_setup_enabled: bool = True
+    public_access_enabled: bool = False
+    public_origin: str = ""
+    trusted_proxy_networks: str = ""
+
+    @model_validator(mode="after")
+    def validate_public_access(self):
+        if self.public_access_enabled:
+            origin = urlsplit(self.public_origin)
+            if (origin.scheme != "https" or not origin.hostname or origin.username
+                    or origin.password or origin.path or origin.query or origin.fragment):
+                raise ValueError("PUBLIC_ORIGIN must be an HTTPS origin without a path")
+            if not self.auth_cookie_secure or self.auth_registration_enabled or self.auth_setup_enabled:
+                raise ValueError("public access requires Secure cookies and disabled registration/setup")
+        return self
 
     feishu_app_id: str = ""
     feishu_app_secret: str = ""

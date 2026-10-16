@@ -23,6 +23,7 @@ const password = ref("");
 const confirmation = ref("");
 const error = ref("");
 const busy = ref(false);
+const registrationEnabled = ref(false);
 
 const copy = computed(() => language.value === "en" ? {
   title: "Sign in to SmartCore",
@@ -85,12 +86,14 @@ function switchMode(next: "login" | "register") {
 onMounted(async () => {
   try {
     const status = await authApi.status();
-    userId.value = status.needsSetup ? status.defaultUserId : "";
+    registrationEnabled.value = status.registrationEnabled === true;
+    const canSetup = status.needsSetup && status.setupEnabled !== false;
+    userId.value = canSetup ? status.defaultUserId : "";
     if (status.authenticated) {
       continueToWorkbench();
       return;
     }
-    mode.value = status.needsSetup ? "setup" : "login";
+    mode.value = canSetup ? "setup" : "login";
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : String(reason);
     mode.value = "login";
@@ -136,7 +139,7 @@ async function submit() {
         <p v-if="mode === 'setup'" class="security-note">{{ copy.setupHint }}</p>
         <p v-if="error" class="login-error" role="alert">{{ error }}</p>
         <button class="login-submit" type="submit" :disabled="busy">{{ busy ? "…" : copy.submit }}</button>
-        <button v-if="mode === 'login'" class="login-secondary" type="button" @click="switchMode('register')">{{ copy.register }}</button>
+        <button v-if="mode === 'login' && registrationEnabled" class="login-secondary" type="button" @click="switchMode('register')">{{ copy.register }}</button>
         <button v-else-if="mode === 'register'" class="login-secondary" type="button" @click="switchMode('login')">{{ copy.signIn }}</button>
       </form>
     </section>

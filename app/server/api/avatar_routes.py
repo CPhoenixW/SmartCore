@@ -86,10 +86,17 @@ async def upload_avatar(
 
 
 @router.get("/avatar/{filename}", include_in_schema=False)
-def read_avatar(filename: str) -> FileResponse:
+def read_avatar(
+    filename: str,
+    user_id: str = Depends(require_authenticated_user_id),
+    db: Session = Depends(get_db),
+) -> FileResponse:
     safe_name = Path(filename).name
     extension = Path(safe_name).suffix.lower()
     if safe_name != filename or extension not in _MEDIA_TYPES:
+        raise HTTPException(status_code=404, detail="avatar not found")
+    user = crud.getCurrentUser(db, userId=user_id)
+    if user.get("avatarUrl") != f"/api/user/avatar/{safe_name}":
         raise HTTPException(status_code=404, detail="avatar not found")
     path = _AVATAR_DIR / safe_name
     if not path.is_file():

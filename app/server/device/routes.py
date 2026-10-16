@@ -145,7 +145,8 @@ async def device_heartbeat(
             "present": body.present,
             "persons": persons,
             "meta": state["meta"],
-        }
+        },
+        userId=device.userId,
     )
     return _ok(
         {

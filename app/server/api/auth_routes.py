@@ -120,6 +120,8 @@ def auth_status(request: Request, db: Session = Depends(get_db)) -> dict[str, An
         "data": {
             "authenticated": session_user is not None,
             "needsSetup": not bool(default_user.get("passwd")),
+            "registrationEnabled": get_settings().auth_registration_enabled,
+            "setupEnabled": get_settings().auth_setup_enabled,
             "defaultUserId": default_user["userId"],
             "user": _public_user(session_user) if session_user else None,
         },
@@ -133,6 +135,8 @@ def setup_password(
     response: Response,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    if not get_settings().auth_setup_enabled:
+        raise HTTPException(status_code=403, detail="initial setup is disabled")
     user = _default_user(db)
     if user.get("passwd"):
         raise HTTPException(status_code=409, detail="initial password has already been configured")
@@ -166,6 +170,8 @@ def register(
     response: Response,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    if not get_settings().auth_registration_enabled:
+        raise HTTPException(status_code=403, detail="registration is disabled")
     login_name = _normalized_login_name(body.loginName)
     if db.scalar(select(AppUser).where(AppUser.loginName == login_name)) is not None:
         raise HTTPException(status_code=409, detail="login name is already in use")
@@ -200,6 +206,8 @@ def login(
     response: Response,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    if len(body.password) > 128 or len(body.userId) > 100:
+        raise HTTPException(status_code=401, detail="invalid user ID or password")
     user_id = body.userId.strip()
     user = _user_row(db, user_id)
     if user is None or not verify_password(body.password, str(user.get("passwd") or "")):

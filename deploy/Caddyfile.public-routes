@@ -1,0 +1,82 @@
+# Shared, opt-in public boundary. Agent and legacy /dev/state stay private.
+(smartcore_boundary) {
+    log {
+        output stdout
+        format filter {
+            wrap json
+            fields {
+                request>uri query {
+                    delete claimCode
+                    delete deviceToken
+                    delete ticket
+                }
+                request>headers>X-Smartcore-Device-Token delete
+                request>headers>X-Smartcore-Agent-Token delete
+                request>headers>X-Smartcore-Agent-Scope delete
+            }
+        }
+    }
+    @feishu {
+        method POST
+        path /feishu/event
+    }
+    handle @feishu {
+        reverse_proxy app:8000 {
+            header_up X-SmartCore-Client-IP {client_ip}
+        }
+    }
+    @public_get {
+        expression {$PUBLIC_ACCESS_ENABLED:false}
+        host {$DOMAIN:example.com}
+        method GET
+        path / /work /work/* /screen /static/screen/* /screen/events /screen/ws /api/auth/status /api/auth/me /api/auth/sessions /api/user/me /api/user/avatar/* /api/evt /api/evt/* /api/planEvt /api/ddlEvt /api/courseEvt /api/remindEvt /api/idea /api/idea/media-jobs/* /api/idea/attachments/* /api/devState /api/devState/* /api/log /api/log/* /api/weather /api/daily-summaries /api/device /api/device/* /api/computer/status /api/computer/usage /api/computer/insights /api/computer/codex-reports /api/feishu/* /api/admin/users /api/admin/agentRouteUsage /api/admin/agentRouteCompatibility /api/admin/feishuBots /api/admin/feishuBots/* /dev/photo/request
+    }
+    @public_post {
+        expression {$PUBLIC_ACCESS_ENABLED:false}
+        host {$DOMAIN:example.com}
+        method POST
+        path /api/auth/login /api/auth/logout /api/auth/logout-all /api/auth/password /api/user/avatar /api/planEvt /api/ddlEvt /api/courseEvt /api/courseEvt/*/sync /api/remindEvt /api/evt/relations/sync /api/reminder/action /api/idea /api/idea/uploads /api/idea/media-process /api/idea/media-jobs /api/idea/media-jobs/*/retry /api/llm/parse /api/device/pair/start /api/device/pair/*/claim /api/device/pair/*/confirm /api/device/pair/*/activate /api/device/dispatch /api/device/receipt /api/device/*/photoRequest /api/computer/activity/batch /api/computer/heartbeat /api/computer/codex-reports/batch /api/feishu/pair/start /api/feishu/pair/*/confirm /api/admin/activeUser /api/admin/feishuBots /api/admin/feishuBots/*/toggle /api/admin/feishuBots/*/pair/start /api/admin/feishuBots/*/pair/*/confirm /api/admin/feishuBots/*/binds/*/primary /api/admin/feishuBots/*/test /dev/heartbeat /dev/photo/* /screen/ws-ticket /screen/reminder/action
+    }
+    @public_patch {
+        expression {$PUBLIC_ACCESS_ENABLED:false}
+        host {$DOMAIN:example.com}
+        method PATCH
+        path /api/user/me /api/evt/* /api/idea/* /api/daily-summaries/* /api/admin/feishuBots/*
+    }
+    @public_delete {
+        expression {$PUBLIC_ACCESS_ENABLED:false}
+        host {$DOMAIN:example.com}
+        method DELETE
+        path /api/auth/sessions/* /api/evt/* /api/idea/* /api/device/* /api/feishu/bindings/* /api/admin/feishuBots/*
+    }
+    handle @public_get {
+        import smartcore_proxy
+    }
+    handle @public_post {
+        import smartcore_proxy
+    }
+    handle @public_patch {
+        import smartcore_proxy
+    }
+    handle @public_delete {
+        import smartcore_proxy
+    }
+    handle {
+        respond "Not Found" 404
+    }
+}
+
+(smartcore_proxy) {
+    request_body {
+        max_size 22MB
+    }
+    header {
+        Cache-Control "no-store"
+        Referrer-Policy "no-referrer"
+        X-Content-Type-Options "nosniff"
+        Strict-Transport-Security "max-age=31536000"
+    }
+    reverse_proxy app:8000 {
+        header_up X-SmartCore-Client-IP {client_ip}
+    }
+}

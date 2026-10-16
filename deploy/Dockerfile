@@ -88,4 +88,4 @@ COPY --from=frontend-builder /frontend/dist ./app/server/web/dist
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.server.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["uvicorn", "app.server.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--no-access-log", "--no-proxy-headers"]
