@@ -18,9 +18,12 @@ _DEVICE_PATHS = {
     "/api/computer/activity/batch", "/api/computer/heartbeat",
     "/api/computer/codex-reports/batch",
 }
+_SCREEN_BROWSER_PATHS = {"/screen/ws-ticket", "/screen/reminder/action"}
 
 
 def machine_request(path: str, method: str) -> bool:
+    if path in _SCREEN_BROWSER_PATHS:
+        return False
     return bool(
         _PAIR_CLIENT.fullmatch(path)
         or path.startswith("/dev/") or path.startswith("/screen/")
@@ -70,7 +73,12 @@ class RequestLimits:
 
 def reject_request(request: Request, settings: Settings, limits: RequestLimits) -> JSONResponse | None:
     path, method = request.url.path, request.method
-    if method not in {"GET", "HEAD", "OPTIONS"} and path.startswith("/api/") and not machine_request(path, method):
+    needs_csrf = (
+        method not in {"GET", "HEAD", "OPTIONS"}
+        and (path.startswith("/api/") or path in _SCREEN_BROWSER_PATHS)
+        and not machine_request(path, method)
+    )
+    if needs_csrf:
         origin = request.headers.get("origin")
         expected = settings.public_origin if settings.public_access_enabled else str(request.base_url).rstrip("/")
         if (origin is not None and origin != expected) or (settings.public_access_enabled and origin is None):
@@ -82,6 +90,8 @@ def reject_request(request: Request, settings: Settings, limits: RequestLimits) 
         group, limit = "pairing", 120
     elif path == "/screen/ws-ticket":
         group, limit = "screen-connect", 30
+    elif path == "/screen/reminder/action" and method == "POST":
+        group, limit = "screen-action", 60
     if group and not limits.allow(group, client_ip(request, settings.trusted_proxy_networks), limit, 60):
         return JSONResponse({"detail": "too many requests"}, status_code=429, headers={"Retry-After": "60"})
     return None
