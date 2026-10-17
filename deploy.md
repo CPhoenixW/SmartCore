@@ -149,15 +149,33 @@ Cloudflare），但不影响服务。
 PUBLIC_ACCESS_ENABLED=false
 ```
 
-然后使用当前镜像重建容器：
+然后使用当前运行镜像重建容器。必须从部署状态文件读取镜像标签（`/var/lib/smartcore-deploy/state`
+由 `deploy_prod.sh` 维护），否则 Compose 会回退到 `latest` 而非当前发布版本：
 
 ```bash
 ssh server
 cd /opt/smartcore
-docker compose -f deploy/docker-compose.yml up -d --no-build caddy tunnel-boundary app
+# 读取当前发布的镜像标签
+source /var/lib/smartcore-deploy/state
+# 使用相同镜像标签重建容器
+SMARTCORE_IMAGE_TAG="$CURRENT" docker compose \
+    --project-name deploy \
+    --project-directory deploy \
+    --env-file deploy/.env \
+    --file deploy/docker-compose.yml \
+    up -d --no-build caddy tunnel-boundary app
 ```
 
 此操作不删除数据或卷，仅使 tunnel-boundary 拒绝公网 API 请求（飞书回调保持可用）。
+
+**备选方案**：恢复启用公网访问前的环境配置备份：
+
+```bash
+ssh server
+cd /opt/smartcore
+cp deploy/.env.bak-20261016-public deploy/.env
+# 然后按上述步骤重建容器
+```
 
 ### 内网
 
