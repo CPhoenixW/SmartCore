@@ -11,8 +11,8 @@
 
 ## 发布流程
 
-1. 本地验证并推送 `dev`。
-2. 服务器构建候选镜像，运行后端、前端、容器和隔离健康检查。
+1. 本地验证并推送 `dev`；GitHub Actions CI 自动运行 pytest、ruff 和前端测试。
+2. 确认 CI 通过后，服务器构建候选镜像，运行后端、前端、容器和隔离健康检查。
 3. 提升脚本将已验证提交快进到 `main`，备份 SQLite，并切换 App 与 Adapter 镜像。
 
 ```bash
@@ -20,6 +20,7 @@
 .venv/bin/ruff check app/server tests
 cd frontend && npm test && npm run build
 git push origin dev
+# 等待 GitHub Actions CI 通过
 
 ssh server 'cd /opt/smartcore-dev && ./scripts/deploy_dev.sh'
 ssh server 'cd /opt/smartcore && ./scripts/promote_prod.sh'
@@ -102,8 +103,65 @@ docker compose -f deploy/docker-compose.yml start app
 
 ## 固定边界
 
-- 公网：仅 `/feishu/event`。
-- 内网：Tailscale 上的 `/work`、`/screen`、API 和健康检查。
+### 公网域名访问
+
+生产环境通过 `https://smartcore.phoenixw.online` 向公网提供工作台访问。流量路径为：
+
+```text
+Cloudflare Tunnel -> tunnel-boundary (Caddy) -> app
+```
+
+Cloudflare Tunnel 终止 TLS 并连接到 Server 上的 tunnel-boundary 代理（`172.17.0.1:8000`，
+即 docker0 网关）。tunnel-boundary 使用 `deploy/Caddyfile.public-routes` 定义的允许清单
+过滤请求，只放行以下入口：
+
+- **飞书回调**：`POST /feishu/event`
+- **工作台和 API**：`PUBLIC_ACCESS_ENABLED=true` 时，`/work`、`/screen`、`/api/*` 中的
+  用户数据和设备 API（需要会话或设备凭证）
+
+以下入口**保持私有**，公网访问返回 404：
+
+- `/agent/*`（OpenClaw Agent API）
+- `/api/admin/*`（管理员接口）
+- `/api/auth/setup`、`/api/auth/register`（初始化和注册）
+- `/dev/state`（Pi 内部状态）
+- SSH、SQLite 数据库、备份卷
+
+生产 `deploy/.env` 设置：
+
+```bash
+PUBLIC_ACCESS_ENABLED=true
+PUBLIC_ORIGIN=https://smartcore.phoenixw.online
+AUTH_REGISTRATION_ENABLED=false
+AUTH_SETUP_ENABLED=false
+AUTH_COOKIE_SECURE=true
+TUNNEL_PROXY_NETWORK=172.18.0.1/32
+```
+
+主 Caddy 为 `DOMAIN` 配置 HTTPS；该域名的 ACME 证书申请可能失败（因为公网流量走
+Cloudflare），但不影响服务。
+
+### 关闭公网访问
+
+若需要关闭公网访问，修改生产 `deploy/.env`：
+
+```bash
+PUBLIC_ACCESS_ENABLED=false
+```
+
+然后使用当前镜像重建容器：
+
+```bash
+ssh server
+cd /opt/smartcore
+docker compose -f deploy/docker-compose.yml up -d --no-build caddy tunnel-boundary app
+```
+
+此操作不删除数据或卷，仅使 tunnel-boundary 拒绝公网 API 请求（飞书回调保持可用）。
+
+### 内网
+
+- Tailscale 上的 `/work`、`/screen`、全部 `/api/*`、`/agent/*`、健康检查和 SSH。
 - OpenClaw Gateway：服务器 host user service；Adapter 由 Compose 管理。
 - Pi：通过 `deploy/pi/install_to_pi.sh` 从 `app/raspberryPi/yolo` 同步源码。
 

@@ -65,9 +65,13 @@ Server 内部按领域组织：
 
 ## 网络与安全
 
-- 公网只转发 `POST /feishu/event`。
-- `/work`、`/screen`、`/api/*`、`/agent/*`、设备 API、健康检查和 SSH 只走
-  Tailscale。
+- 公网通过 Cloudflare Tunnel 访问 `https://smartcore.phoenixw.online`。
+  - 始终放行：`POST /feishu/event`。
+  - 启用 `PUBLIC_ACCESS_ENABLED=true` 时放行：`/work`、`/screen`、用户数据和设备 API
+    （需会话或设备凭证）。
+  - 始终拒绝（返回 404）：`/agent/*`、`/api/admin/*`、注册、`/dev/state`、SSH、
+    数据库和备份。
+- 内网（Tailscale）访问全部路由，包括 `/agent/*`、健康检查和 SSH。
 - Pi 只主动连接 Server，不开放摄像头或识别服务端口。
 - SQLite、Idea 媒体、设备照片和备份卷不提供静态公网访问。
 - 飞书、浏览器、设备和 Agent 使用不同凭证，不能共享一个长期 token。
