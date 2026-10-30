@@ -138,7 +138,11 @@ def openclaw_node_bin() -> str:
     configured = os.environ.get("OPENCLAW_NODE_BIN", "").strip()
     if configured:
         return configured
-    candidates = sorted(Path("/root/.openclaw/tools").glob("node-*/bin"), reverse=True)
+    tools_dir = Path("/root/.openclaw/tools")
+    try:
+        candidates = sorted(tools_dir.glob("node-*/bin"), reverse=True)
+    except (PermissionError, OSError):
+        candidates = []
     return str(candidates[0]) if candidates else ""
 
 
