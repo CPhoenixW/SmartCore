@@ -1,5 +1,10 @@
-const CACHE_NAME = "smartcore-work-v1";
-const APP_SHELL = ["/work/", "/work/assistant", "/work/manifest.webmanifest", "/work/favicon.png"];
+const CACHE_NAME = "smartcore-work-v2";
+const APP_SHELL = [
+  "/work/manifest.webmanifest",
+  "/work/favicon.png",
+  "/work/icon-192.png",
+  "/work/icon-512.png",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
