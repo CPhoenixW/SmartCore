@@ -11,9 +11,6 @@ ENV NODE_ENV=production \
     DSH_HOME_ROOT=/data/dsh-home \
     DSH_SCOPE_ROOT=/data/scopes
 
-ARG VCS_REF=unknown
-LABEL org.opencontainers.image.revision="${VCS_REF}"
-
 COPY dsh/package.json dsh/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
@@ -22,6 +19,9 @@ COPY dsh/bridge ./bridge
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin smartcore \
     && mkdir -p /data/dsh-home /data/scopes \
     && chown -R smartcore:smartcore /runtime/dsh /data
+
+ARG VCS_REF=unknown
+LABEL org.opencontainers.image.revision="${VCS_REF}"
 
 USER smartcore
 
