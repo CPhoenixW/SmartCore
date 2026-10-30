@@ -218,8 +218,14 @@ promote() {
         || die "production checkout is not aligned with origin/main"
     [[ "$CANDIDATE" == "$(git -C "$ROOT" rev-parse origin/dev)" ]] \
         || die "verified candidate is no longer the tip of origin/dev"
-    git -C "$ROOT" merge-base --is-ancestor origin/main "$CANDIDATE" \
-        || die "main cannot be fast-forwarded to the verified dev candidate"
+    if git -C "$ROOT" merge-base --is-ancestor origin/main "$CANDIDATE"; then
+        :
+    elif git -C "$ROOT" merge-base --is-ancestor "$CANDIDATE" origin/main \
+        && git -C "$ROOT" diff --quiet "$CANDIDATE" origin/main; then
+        candidate_already_published=true
+    else
+        die "main and the verified dev candidate do not have an identical release tree"
+    fi
     if [[ "$checkout_sha" != "$CANDIDATE" ]] \
         && git -C "$ROOT" merge-base --is-ancestor "$CANDIDATE" "$checkout_sha" \
         && git -C "$ROOT" diff --quiet "$CANDIDATE" "$checkout_sha"; then
