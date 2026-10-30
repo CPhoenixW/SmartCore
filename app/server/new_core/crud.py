@@ -30,7 +30,7 @@ from app.server.new_core.models import (
 
 _DEFAULT_TZ = ZoneInfo("Asia/Shanghai")
 DEFAULT_USER_ID = "default"
-_ALLOWED_MSG_CHANNELS = {"web", "feishu", "llm", "system"}
+_ALLOWED_MSG_CHANNELS = {"web", "llm", "system"}
 _ALLOWED_LANGUAGES = {"zh", "en"}
 logger = logging.getLogger(__name__)
 

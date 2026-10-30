@@ -1,8 +1,7 @@
 # SmartCore production stack: FastAPI app + Caddy (public HTTPS) + tunnel boundary.
 # Copy env.example to .env in this directory before starting.
 #
-# Public HTTPS:  caddy :443 -> /feishu/event only
-# Cloudflare Tunnel: tunnel-boundary on host docker bridge (default 172.17.0.1:8000) -> /feishu/event only
+# Public HTTPS/Tunnel: opt-in PWA/device allowlist.
 # Internal: app on APP_BIND (default 127.0.0.1:8000); production set APP_BIND to server Tailscale IPv4
 
 services:
@@ -13,6 +12,11 @@ services:
       dockerfile: deploy/Dockerfile
     env_file:
       - .env
+    environment:
+      PUBLIC_ACCESS_ENABLED: ${PUBLIC_ACCESS_ENABLED:-false}
+      AUTH_REGISTRATION_ENABLED: ${AUTH_REGISTRATION_ENABLED:-false}
+      AUTH_SETUP_ENABLED: ${AUTH_SETUP_ENABLED:-false}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
     volumes:
       - smartcore-data:/app/data
       - smartcore-backups:/app/backups
@@ -38,11 +42,16 @@ services:
 
   tunnel-boundary:
     image: caddy:2-alpine
+    environment:
+      DOMAIN: ${DOMAIN:-example.com}
+      PUBLIC_ACCESS_ENABLED: ${PUBLIC_ACCESS_ENABLED:-false}
+      TUNNEL_PROXY_NETWORK: ${TUNNEL_PROXY_NETWORK:-127.0.0.1/32}
     ports:
       # Bind docker bridge gateway by default; override TUNNEL_BOUNDARY_BIND if bridge IP differs.
       - "${TUNNEL_BOUNDARY_BIND:-172.17.0.1}:8000:80"
     volumes:
       - ./Caddyfile.tunnel-boundary:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile.public-routes:/etc/caddy/Caddyfile.public-routes:ro
     depends_on:
       - app
     restart: unless-stopped
@@ -57,8 +66,11 @@ services:
     environment:
       DOMAIN: ${DOMAIN:-example.com}
       CADDY_ADMIN_EMAIL: ${CADDY_ADMIN_EMAIL:-admin@example.com}
+      PUBLIC_ACCESS_ENABLED: ${PUBLIC_ACCESS_ENABLED:-false}
+      TUNNEL_PROXY_NETWORK: ${TUNNEL_PROXY_NETWORK:-127.0.0.1/32}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile.public-routes:/etc/caddy/Caddyfile.public-routes:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
@@ -80,7 +92,35 @@ services:
     depends_on:
       - tunnel-boundary
 
+  dsh-runtime:
+    image: "smartcore-dsh-runtime:${SMARTCORE_IMAGE_TAG:-latest}"
+    build:
+      context: ..
+      dockerfile: deploy/dsh.Dockerfile
+    env_file:
+      - dsh.env
+    volumes:
+      - smartcore-dsh-home:/data/dsh-home
+      - smartcore-dsh-scopes:/data/scopes
+    networks:
+      - smartcore
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:18790/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  # Rollback-only OpenClaw service. It is excluded from the default stack and
+  # can be brought back with `--profile legacy-openclaw` if a DSH release needs
+  # to be reverted.
   openclaw-adapter:
+    profiles: [legacy-openclaw]
     image: "smartcore-openclaw-adapter:${SMARTCORE_IMAGE_TAG:-latest}"
     build:
       context: ..
@@ -115,4 +155,6 @@ volumes:
   caddy-data:
   caddy-config:
   smartcore-adapter-logs:
+  smartcore-dsh-home:
+  smartcore-dsh-scopes:
   smartcore-idea-media:

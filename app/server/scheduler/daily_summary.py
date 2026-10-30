@@ -16,7 +16,7 @@ from app.server.new_core.daily_summary_service import (
     store_daily_summary,
 )
 from app.server.new_core.daily_work_context import build_daily_work_context
-from app.server.new_core.models import AppUser, FeishuBind, FeishuBot
+from app.server.new_core.models import AppUser
 
 PostEvent = Callable[[dict[str, Any]], None]
 
@@ -28,34 +28,21 @@ def _has_daily_work_evidence(context: dict[str, Any]) -> bool:
     return isinstance(totals, dict) and int(totals.get("activeSeconds") or 0) > 0
 
 
-def _post_openclaw_event(settings: Settings, event: dict[str, Any]) -> None:
-    endpoint = settings.openclaw_events_endpoint.strip()
+def _post_assistant_event(settings: Settings, event: dict[str, Any]) -> None:
+    endpoint = settings.assistant_events_endpoint.strip()
     if not endpoint:
-        raise RuntimeError("OpenClaw events endpoint is not configured")
+        raise RuntimeError("Assistant events endpoint is not configured")
     headers = {"Content-Type": "application/json"}
-    if settings.openclaw_events_token:
-        headers["Authorization"] = f"Bearer {settings.openclaw_events_token}"
+    if settings.assistant_events_token:
+        headers["Authorization"] = f"Bearer {settings.assistant_events_token}"
     response = httpx.post(endpoint, json=event, headers=headers, timeout=15)
     response.raise_for_status()
 
 
-def _primary_bindings(db: Session) -> list[tuple[AppUser, FeishuBind, FeishuBot]]:
-    rows = db.execute(
-        select(AppUser, FeishuBind, FeishuBot)
-        .join(FeishuBind, FeishuBind.userId == AppUser.userId)
-        .join(FeishuBot, FeishuBot.botId == FeishuBind.botId)
-        .where(
-            AppUser.stat == "active",
-            FeishuBind.stat == "active",
-            FeishuBind.isPrimary.is_(True),
-            FeishuBot.enabled.is_(True),
-        )
-        .order_by(AppUser.createdAt, FeishuBind.updatedAt.desc())
-    ).all()
-    selected: dict[str, tuple[AppUser, FeishuBind, FeishuBot]] = {}
-    for user, binding, bot in rows:
-        selected.setdefault(user.userId, (user, binding, bot))
-    return list(selected.values())
+def _active_users(db: Session) -> list[AppUser]:
+    return list(
+        db.scalars(select(AppUser).where(AppUser.stat == "active").order_by(AppUser.createdAt))
+    )
 
 
 def dispatch_daily_summaries(
@@ -68,10 +55,10 @@ def dispatch_daily_summaries(
     timezone = ZoneInfo(settings.daily_summary_timezone)
     local_now = now.astimezone(timezone)
     report_date = local_now.date().isoformat()
-    deliver = post_event or (lambda event: _post_openclaw_event(settings, event))
+    deliver = post_event or (lambda event: _post_assistant_event(settings, event))
     result = {"queued": 0, "skipped": 0, "failed": 0}
 
-    for user, binding, bot in _primary_bindings(db):
+    for user in _active_users(db):
         context = build_daily_work_context(
             db,
             user_id=user.userId,
@@ -96,13 +83,6 @@ def dispatch_daily_summaries(
             reportDate=report_date,
             ttl_seconds=1800,
         )
-        delivery_scope = issue_agent_scope(
-            userId=user.userId,
-            botId=bot.botId,
-            chatId=binding.chatId,
-            purpose="feishu",
-            ttl_seconds=1800,
-        )
         event = {
             "event_id": event_id,
             "source": "smartcore-scheduler",
@@ -113,16 +93,12 @@ def dispatch_daily_summaries(
                 "description 中的人工结果。"
             ),
             "userId": user.userId,
-            "sourceBindId": binding.bindId,
-            "chat_id": binding.chatId,
-            "chat": {"chat_id": binding.chatId, "chat_type": binding.chatType},
             "user": {
                 "user_id": user.userId,
                 "display_name": user.displayName,
                 "language": user.language,
             },
             "agentScope": scope,
-            "deliveryScope": delivery_scope,
             "request": {
                 "timezone": settings.daily_summary_timezone,
                 "now": local_now.replace(microsecond=0).isoformat(),

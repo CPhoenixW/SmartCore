@@ -38,8 +38,8 @@ appUser
 - Plan 是有开始时间和持续时长的可执行时间块。
 - DDL 可以关联多个 Plan 和多个一次性 Reminder；关联两端必须属于同一用户。
 - 每个 Plan 自动维护开始前 10 分钟和结束前 10 分钟两个 Reminder。
-- Plan 结束后可生成 `planCompletionPrompt`；它绑定当时的 primary Feishu binding、聊天和
-  卡片消息。只有该卡片的按钮或直接回复可追加 `执行结果`，自由文本不自动完成 Plan。
+- 旧库可能仍有 `planCompletionPrompt` 行；它们只作为历史审计数据读取，新流程不会创建或
+  发送结果卡片。Plan 结束后的状态修改由 PWA 或 Screen 完成。
 - Reminder 是推送记录，不出现在普通日程列表；开始提醒不提供完成/延时操作。
 - Course 是学期模板，根据学期起始日、周次、星期和单双周展开为 Plan；
   `coursePlan` 保留 occurrence 日期和序号。
@@ -92,23 +92,17 @@ AI 注释；`computerWorkBlock` 保存跨小时连续主题，`computerWorkBlock
 明细和无引用上下文保留 90 天，日汇总保留。稳定的 `sessionId`、`contextId`
 和 `schemaVersion` 属于采集事实；未来推断只能增加 annotation，不能覆盖原始记录。
 
-## 飞书
+## 历史兼容表
 
-`feishuBot` 保存管理员配置的机器人及加密凭据；`lifeIdentity` 映射外部身份；
-`feishuBind` 把用户、机器人、身份和聊天组成授权端点；`feishuChatPair` 保存短期配对；
-`planCompletionPrompt` 保存 Plan 结束结果卡片的投递、绑定、回复和幂等状态。
-
-- 入站事件先匹配并验证机器人，再解析身份和聊天绑定。
-- 同一身份可以绑定同一用户的多个聊天；一个 binding 可标记为 primary。
-- 主动提醒只使用用户的有效 primary binding，不回退到其他用户的默认聊天。
-- 普通用户只能绑定系统默认机器人，不能读取或修改机器人密钥。
-- 管理员可以创建、测试、启停和删除机器人；明文凭据只在写入时出现。
+旧库中的 `feishuBot`、`feishuBind`、`feishuChatPair` 和 `planCompletionPrompt` 表及其
+迁移定义暂时保留，避免启动旧数据库时破坏外键或历史审计。当前应用不会创建、启用、查询
+或投递机器人，也没有对应的 API、调度任务或前端页面；后续完成数据迁移后可单独删除这些表。
 
 ## 日志、日报与天气
 
 - `actLog`：业务写操作和管理员上下文行为。
 - `notifyLog`：提醒路由、投递状态和去重键。
-- `msgLog`：飞书等消息的方向、外部 ID、意图与处理状态。
+- `msgLog`：历史消息的方向、外部 ID、意图与处理状态；PWA 新请求使用 Agent/assistant 审计。
 - `dailySummary`：每个用户每天最多一条日报，默认 23:59 调度，记录 queued/failed/completed。
 - `weatherForecast`：共享的规范化天气缓存，不包含用户数据。
 
@@ -118,7 +112,7 @@ AI 注释；`computerWorkBlock` 保存跨小时连续主题，`computerWorkBlock
 ## 工作台行为
 
 `/work` 是 Vue 工作台，主要视图包括总览、事项、课程、Idea、设备、日报、日志和
-设置。设备页按 Computer、RaspberryPi、Screen、Feishu Bot 分隔管理。Computer 统计先展示
+设置。设备页按 Computer、RaspberryPi、Screen 分隔管理。Computer 统计先展示
 客观状态、Plan 时间交集、会话和应用，再以当前/最近工作块展示主题、Plan 判断、提醒和每日
 工作日志；小时事实只在证据抽屉中按需查看。Codex 项目报告和项目聚合继续作为 23:59
 日报证据保留，不再在当日 Computer 页面单独展示。

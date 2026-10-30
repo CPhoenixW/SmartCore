@@ -1,22 +1,13 @@
-# SmartCore public HTTPS boundary.
-# Only POST /feishu/event is forwarded to the app container.
-# /dashboard, /admin, /api, /docs, /backup and all other paths return 404.
+import Caddyfile.public-routes
 
 {
-	email {$CADDY_ADMIN_EMAIL:admin@example.com}
+    email {$CADDY_ADMIN_EMAIL:admin@example.com}
+    servers {
+        trusted_proxies static {$TUNNEL_PROXY_NETWORK:127.0.0.1/32}
+        client_ip_headers CF-Connecting-IP
+    }
 }
 
-{$DOMAIN} {
-	log {
-		output stdout
-		format console
-	}
-
-	handle /feishu/event {
-		reverse_proxy app:8000
-	}
-
-	handle {
-		respond "Not Found" 404
-	}
+{$DOMAIN:example.com} {
+    import smartcore_boundary
 }

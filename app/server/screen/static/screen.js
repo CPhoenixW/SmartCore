@@ -26,6 +26,7 @@
 
   let ws = null;
   let reconnectTimer = null;
+  let connecting = false;
   let serverOffsetMs = 0;
   let currentMode = "away";
   let audioCtx = null;
@@ -45,7 +46,11 @@
   async function requestJson(url, options) {
     const response = await fetch(url, options);
     const body = await response.json();
-    if (!response.ok || !body.ok) throw new Error(body.detail || "设备连接失败");
+    if (!response.ok || !body.ok) {
+      const error = new Error(body.detail || "设备连接失败");
+      error.status = response.status;
+      throw error;
+    }
     return body.data;
   }
 
@@ -88,6 +93,7 @@
       showSetup("请在 SmartCore 工作台创建“副屏”配对，然后使用生成的副屏连接链接打开此页面。");
       return;
     }
+    history.replaceState(null, "", "/screen");
     try {
       await requestJson(`/api/device/pair/${pairId}/claim`, {
         method: "POST",
@@ -407,8 +413,6 @@
       tickClock();
       loadTodayEvents();
     } else if (data.kind === "devState") {
-      const deviceId = data.deviceId || data.devId;
-      if (deviceId && deviceId !== "pi") return;
       renderState(data.state);
     } else if (data.kind === "reminderSound") {
       playReminderSound();
@@ -418,15 +422,45 @@
     }
   }
 
-  function connectWs() {
-    if (!deviceCredential) return;
+  async function connectWs() {
+    if (!deviceCredential || connecting) return;
     if (ws && [WebSocket.OPEN, WebSocket.CONNECTING].includes(ws.readyState)) return;
-    const query = new URLSearchParams(deviceCredential);
+    connecting = true;
+    let ticket;
+    try {
+      const query = new URLSearchParams({ deviceId: deviceCredential.deviceId });
+      const result = await requestJson(`/screen/ws-ticket?${query}`, {
+        method: "POST",
+        headers: { "X-SmartCore-Device-Token": deviceCredential.deviceToken },
+      });
+      ticket = result.ticket;
+    } catch (error) {
+      setWsConnected(false);
+      if ([401, 403].includes(error.status)) {
+        deviceCredential = null;
+        localStorage.removeItem(credentialKey);
+        cachedEvents = [];
+        renderSchedule([]);
+        renderState("unknown");
+        activeReminder = null;
+        hideReminderPage();
+        showSetup("设备凭据已失效，请在工作台重新配对副屏。");
+      } else {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(connectWs, 5000);
+      }
+      return;
+    } finally {
+      connecting = false;
+    }
+    const query = new URLSearchParams({ deviceId: deviceCredential.deviceId, ticket });
     ws = new WebSocket(`${wsBaseUrl}?${query.toString()}`);
     ws.onopen = () => setWsConnected(true);
     ws.onmessage = (event) => {
       try {
-        handleWsMessage(JSON.parse(event.data));
+        const data = JSON.parse(event.data);
+        if (data.kind === "ping") ws.send("pong");
+        else handleWsMessage(data);
       } catch {
         showReminderPage("消息", event.data, null);
       }

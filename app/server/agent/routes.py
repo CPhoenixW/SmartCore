@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import mimetypes
+from pathlib import Path
 from typing import Any, Callable
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -17,7 +20,7 @@ from app.server.agent.scope import (
 from app.server.config import Settings, get_settings
 from app.server.db.session import get_db
 from app.server.new_core import crud
-from app.server.new_core.models import Idea, IdeaMediaJob, IdeaUpload, nowIso
+from app.server.new_core.models import Idea, IdeaMediaJob, IdeaUpload, LifeDevice, nowIso
 from app.server.screen.manager import screenManager
 
 AGENT_TOKEN_HEADER = "X-SmartCore-Agent-Token"
@@ -356,6 +359,25 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         ),
     },
     {
+        "name": "ideaMediaContext",
+        "method": "GET",
+        "path": "/agent/idea/media-context",
+        "riskLevel": "read",
+        "confirmationRequired": False,
+        "inputSchema": _schema_object(
+            {"uploadIds": {"type": "array", "items": {"type": "string"}}},
+            ["uploadIds"],
+        ),
+    },
+    {
+        "name": "ideaMediaJobContext",
+        "method": "GET",
+        "path": "/agent/idea/media-job/context",
+        "riskLevel": "read",
+        "confirmationRequired": False,
+        "inputSchema": _schema_object({"jobId": {"type": "string"}}, ["jobId"]),
+    },
+    {
         "name": "ideaMediaJobComplete",
         "method": "POST",
         "path": "/agent/idea/media-job/complete",
@@ -402,36 +424,6 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
                 "prio": {"type": "string", "enum": ["low", "mid", "high"]},
             },
             ["ideaId"],
-        ),
-    },
-    {
-        "name": "sendFeishuText",
-        "method": "POST",
-        "path": "/agent/feedback/send_text",
-        "riskLevel": "external",
-        "confirmationRequired": False,
-        "inputSchema": _schema_object(
-            {
-                "text": {"type": "string", "minLength": 1},
-                "receiveId": {"type": "string"},
-                "chatId": {"type": "string"},
-            },
-            ["text"],
-        ),
-    },
-    {
-        "name": "sendFeishuCard",
-        "method": "POST",
-        "path": "/agent/feedback/send_card",
-        "riskLevel": "external",
-        "confirmationRequired": False,
-        "inputSchema": _schema_object(
-            {
-                "card": {"type": "object"},
-                "receiveId": {"type": "string"},
-                "chatId": {"type": "string"},
-            },
-            ["card"],
         ),
     },
     {
@@ -529,6 +521,88 @@ def createAgentRouter() -> APIRouter:
                 uploadIds=upload_ids,
                 userId=scope.userId,
             ),
+        )
+
+    @router.get("/idea/media-context", dependencies=protected)
+    def ideaMediaContext(
+        uploadIds: list[str] = Query(default=[], min_length=1, max_length=10),
+        db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
+    ) -> dict[str, Any]:
+        ids = list(dict.fromkeys(item.strip() for item in uploadIds if item.strip()))
+        if not ids:
+            return _failed(["uploadIds required"])
+        uploads = db.scalars(
+            select(IdeaUpload).where(
+                IdeaUpload.uploadId.in_(ids), IdeaUpload.userId == scope.userId
+            )
+        ).all()
+        if len(uploads) != len(ids):
+            return _failed(["one or more attachments are unavailable"])
+        return _done(
+            {
+                "attachments": [
+                    {
+                        "uploadId": upload.uploadId,
+                        "fileName": upload.fileName,
+                        "mimeType": upload.mimeType,
+                        "sizeBytes": upload.sizeBytes,
+                    }
+                    for upload in uploads
+                ]
+            }
+        )
+
+    @router.get("/idea/media-context/{uploadId}", dependencies=protected)
+    def ideaMediaContextFile(
+        uploadId: str,
+        db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
+        settings: Settings = Depends(get_settings),
+    ) -> FileResponse:
+        upload = db.scalar(
+            select(IdeaUpload).where(
+                IdeaUpload.uploadId == uploadId, IdeaUpload.userId == scope.userId
+            )
+        )
+        if upload is None or not upload.mimeType.startswith("image/"):
+            raise HTTPException(status_code=404, detail="image attachment not found")
+        path = Path(upload.storagePath)
+        if not path.is_file() or path.stat().st_size > settings.idea_media_max_bytes:
+            raise HTTPException(status_code=404, detail="image attachment unavailable")
+        return FileResponse(
+            path,
+            media_type=upload.mimeType or mimetypes.guess_type(upload.fileName)[0],
+            filename=upload.fileName,
+        )
+
+    @router.get("/idea/media-job/context", dependencies=protected)
+    def ideaMediaJobContext(
+        jobId: str = Query(min_length=1, max_length=64),
+        db: Session = Depends(get_db),
+        scope: AgentScope = Depends(require_agent_scope),
+    ) -> dict[str, Any]:
+        job = db.get(IdeaMediaJob, jobId)
+        if job is None or job.userId != scope.userId:
+            return _failed(["media job not found"])
+        upload = db.get(IdeaUpload, job.uploadId)
+        if upload is None or upload.userId != scope.userId:
+            return _failed(["media attachment not found"])
+        return _done(
+            {
+                "jobId": job.jobId,
+                "ideaId": job.ideaId,
+                "contextText": job.contextText,
+                "stat": job.stat,
+                "attachments": [
+                    {
+                        "uploadId": upload.uploadId,
+                        "fileName": upload.fileName,
+                        "mimeType": upload.mimeType,
+                        "sizeBytes": upload.sizeBytes,
+                    }
+                ],
+            }
         )
 
     @router.post("/idea/media-job/complete", dependencies=protected)
@@ -680,7 +754,8 @@ def createDevRouter() -> APIRouter:
                 "confidence": state.get("confidence"),
                 "seenAt": state.get("seenAt"),
                 "meta": state.get("meta"),
-            }
+            },
+            userId=db.get(LifeDevice, body.devId).userId,
         )
         return {"ok": True, "data": state}
 

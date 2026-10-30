@@ -1,0 +1,14 @@
+{
+  "name": "SmartCore 助手",
+  "short_name": "SmartCore",
+  "description": "个人工作助手与计划入口",
+  "lang": "zh-CN",
+  "start_url": "/work/assistant",
+  "scope": "/work/",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#2563eb",
+  "icons": [
+    { "src": "/work/favicon.png", "sizes": "256x256", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

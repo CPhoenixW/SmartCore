@@ -1,18 +1,22 @@
 # ruff: noqa: E501
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.server.config import get_settings
 from app.server.db.session import get_db
 from app.server.new_core import crud
 from app.server.new_core.event_relations import list_events
-from app.server.new_core.models import EvtBase, LifeDevice, nowIso
-from app.server.screen.manager import screenManager
-from app.server.user_device.service import requireDevice
+from app.server.new_core.models import DeviceKey, EvtBase, LifeDevice, nowIso
+from app.server.screen.manager import credential_active, screenManager
+from app.server.screen.tickets import screenTickets
+from app.server.user_device.service import requireDevice, tokenHash
 
 router = APIRouter(tags=["screen"])
 DEVICE_TOKEN_HEADER = "X-SmartCore-Device-Token"
@@ -135,6 +139,16 @@ def screenReminderAction(
     return {"ok": True, "data": data}
 
 
+@router.post("/screen/ws-ticket")
+def screenTicket(
+    deviceId: str = Query(min_length=1, max_length=50),
+    db: Session = Depends(get_db),
+    token: str | None = Header(default=None, alias=DEVICE_TOKEN_HEADER),
+) -> dict:
+    device = _screen_device(db, deviceId, token)
+    return {"ok": True, "data": {"ticket": screenTickets.issue(device.deviceId, tokenHash(token)), "expiresIn": 60}}
+
+
 @router.websocket("/screen/ws")
 async def screenWebsocket(
     websocket: WebSocket,
@@ -143,11 +157,26 @@ async def screenWebsocket(
     device_id = websocket.query_params.get("deviceId")
     token = websocket.query_params.get("deviceToken")
     try:
-        device = _screen_device(db, device_id or "", token)
+        origin = websocket.headers.get("origin")
+        settings = get_settings()
+        if settings.public_access_enabled and origin != settings.public_origin:
+            raise HTTPException(status_code=403, detail="invalid screen origin")
+        ticket = websocket.query_params.get("ticket")
+        if ticket:
+            token_hash = screenTickets.consume(ticket, device_id or "")
+            key = db.scalar(select(DeviceKey).where(DeviceKey.tokenHash == token_hash))
+            device = db.get(LifeDevice, key.deviceId) if key else None
+            if device is None or not credential_active(device.userId, device.deviceId, token_hash):
+                raise HTTPException(status_code=401, detail="invalid screen credential")
+        elif not settings.public_access_enabled:
+            device = _screen_device(db, device_id or "", token)
+            token_hash = tokenHash(token)
+        else:
+            raise HTTPException(status_code=401, detail="connection ticket required")
     except HTTPException:
         await websocket.close(code=1008)
         return
-    await screenManager.connect(websocket, device.userId)
+    await screenManager.connect(websocket, device.userId, device.deviceId, token_hash)
     pi = db.scalar(select(LifeDevice).where(LifeDevice.userId == device.userId, LifeDevice.deviceKind == "pi", LifeDevice.stat == "active").order_by(LifeDevice.lastSeenAt.desc()))
     latest = crud.getLatestDevState(db, devId=pi.deviceId) if pi else None
     if latest:
@@ -164,6 +193,14 @@ async def screenWebsocket(
         )
     try:
         while True:
-            await websocket.receive_text()
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=20)
+            except TimeoutError:
+                pass
+            if not await screenManager.authorize(websocket):
+                return
+            await websocket.send_json({"kind": "ping"})
     except WebSocketDisconnect:
+        pass
+    finally:
         await screenManager.disconnect(websocket)

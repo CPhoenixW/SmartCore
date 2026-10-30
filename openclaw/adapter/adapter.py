@@ -442,7 +442,7 @@ def build_prompt(
         "For event queries, use the bundled skills/smartcore/scripts/query_events.py helper "
         "instead of constructing curl commands.\n"
         f"{commute_edit_instructions}"
-        "Do not call Feishu feedback endpoints or sendFeishu tools; the Adapter owns final delivery.\n"
+        "Do not call feedback endpoints; the Adapter owns final delivery for this rollback profile.\n"
         "Return exactly one concise user-facing final answer in finalAssistantVisibleText.\n"
         f"{attachment_instructions}"
         "On failure or ambiguity, return one concise clarification or error message.\n"
@@ -614,7 +614,7 @@ def split_reply_card(text: str) -> tuple[str, str]:
 
 
 def send_final_reply(event: dict[str, Any], text: str) -> None:
-    scope_key = "deliveryScope" if event.get("event_type") == "daily_summary" else "agentScope"
+    scope_key = "agentScope"
     scope = str(event.get(scope_key) or "").strip()
     if not scope:
         raise ValueError(f"missing {scope_key}")
@@ -887,7 +887,7 @@ def run_openclaw(event: dict[str, Any]) -> None:
     selected_agent_id = agent_id
     session_prefix = os.environ.get(
         "OPENCLAW_VISION_SESSION_PREFIX" if has_image else "OPENCLAW_SESSION_PREFIX",
-        f"agent:{agent_id}:smartcore-feishu",
+        f"agent:{agent_id}:smartcore-rollback",
     )
     # Media and scheduled reports are independent tasks. Reusing a conversational
     # session can leak old facts into either workflow.

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -30,7 +30,7 @@ router = APIRouter(prefix="/api/device", tags=["user-device"])
 
 class StartPairBody(BaseModel):
     deviceName: str = Field(min_length=1, max_length=100)
-    deviceKind: str = Field(min_length=2, max_length=30)
+    deviceKind: Literal["screen", "pi", "computer", "browser"]
 
 
 class ClaimPairBody(BaseModel):

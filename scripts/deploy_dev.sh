@@ -9,7 +9,7 @@ STATE_DIR="${SMARTCORE_DEPLOY_STATE_DIR:-/var/lib/smartcore-deploy}"
 CANDIDATE_FILE="$STATE_DIR/candidate"
 LOCK_FILE="${SMARTCORE_DEPLOY_LOCK_FILE:-/var/lock/smartcore-deploy.lock}"
 APP_IMAGE_REPO="${SMARTCORE_IMAGE_REPO:-smartcore}"
-ADAPTER_IMAGE_REPO="${SMARTCORE_ADAPTER_IMAGE_REPO:-smartcore-openclaw-adapter}"
+DSH_IMAGE_REPO="${SMARTCORE_DSH_IMAGE_REPO:-smartcore-dsh-runtime}"
 
 log() {
     printf '[smartcore-dev] %s\n' "$*"
@@ -48,6 +48,22 @@ wait_for_dev_health() {
             unhealthy|exited|dead)
                 return 1
                 ;;
+        esac
+        sleep 2
+    done
+    return 1
+}
+
+wait_for_dsh_health() {
+    local tag="$1"
+    local container_id status
+    container_id="$(compose_dev "$tag" ps --quiet dsh-runtime)"
+    [[ -n "$container_id" ]] || return 1
+    for _ in $(seq 1 45); do
+        status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}starting{{end}}' "$container_id")"
+        case "$status" in
+            healthy) return 0 ;;
+            unhealthy|exited|dead) return 1 ;;
         esac
         sleep 2
     done
@@ -93,14 +109,14 @@ verify_runtime_image() (
 write_candidate_state() {
     local sha="$1"
     local app_image_id="$2"
-    local adapter_image_id="$3"
+    local dsh_image_id="$3"
     local state_tmp
     mkdir -p "$STATE_DIR"
     state_tmp="$(mktemp "$STATE_DIR/candidate.XXXXXX")"
     {
         printf 'CANDIDATE=%q\n' "$sha"
         printf 'APP_IMAGE_ID=%q\n' "$app_image_id"
-        printf 'ADAPTER_IMAGE_ID=%q\n' "$adapter_image_id"
+        printf 'DSH_IMAGE_ID=%q\n' "$dsh_image_id"
         printf 'VERIFIED_AT=%q\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     } >"$state_tmp"
     chmod 600 "$state_tmp"
@@ -135,7 +151,7 @@ main() {
         || die "origin/dev cannot be fast-forwarded from this checkout"
     git -C "$ROOT" merge --ff-only origin/dev
 
-    local sha app_image_id adapter_image_id
+    local sha app_image_id dsh_image_id
     sha="$(git -C "$ROOT" rev-parse HEAD)"
 
     log "running cached backend and frontend verification"
@@ -151,11 +167,11 @@ main() {
         --tag "$APP_IMAGE_REPO:$sha" \
         "$ROOT"
 
-    log "building candidate Adapter image $ADAPTER_IMAGE_REPO:$sha"
+    log "building candidate DSH image $DSH_IMAGE_REPO:$sha"
     docker build \
         --build-arg "VCS_REF=$sha" \
-        --file "$ROOT/deploy/adapter.Dockerfile" \
-        --tag "$ADAPTER_IMAGE_REPO:$sha" \
+        --file "$ROOT/deploy/dsh.Dockerfile" \
+        --tag "$DSH_IMAGE_REPO:$sha" \
         "$ROOT"
 
     log "checking the candidate runtime without production data or network access"
@@ -164,10 +180,11 @@ main() {
     log "starting isolated dev app on 127.0.0.1:${SMARTCORE_DEV_PORT:-18000}"
     compose_dev "$sha" up --detach --no-build
     wait_for_dev_health "$sha" || die "isolated dev app failed its health check"
+    wait_for_dsh_health "$sha" || die "isolated DSH runtime failed its health check"
 
     app_image_id="$(docker image inspect --format '{{.Id}}' "$APP_IMAGE_REPO:$sha")"
-    adapter_image_id="$(docker image inspect --format '{{.Id}}' "$ADAPTER_IMAGE_REPO:$sha")"
-    write_candidate_state "$sha" "$app_image_id" "$adapter_image_id"
+    dsh_image_id="$(docker image inspect --format '{{.Id}}' "$DSH_IMAGE_REPO:$sha")"
+    write_candidate_state "$sha" "$app_image_id" "$dsh_image_id"
 
     log "candidate verified: $sha"
     log "dev health: http://127.0.0.1:${SMARTCORE_DEV_PORT:-18000}/healthz"

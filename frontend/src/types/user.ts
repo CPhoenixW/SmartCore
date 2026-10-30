@@ -4,5 +4,5 @@ export interface CurrentUser {
   displayName: string;
   language: "zh" | "en";
   avatarUrl?: string | null;
-  reminderChannel: "screen" | "feishu";
+  reminderChannel: "screen";
 }

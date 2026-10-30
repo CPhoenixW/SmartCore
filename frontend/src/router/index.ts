@@ -10,6 +10,7 @@ export const router = createRouter({
       component: WorkLayout,
       children: [
         { path: "", alias: "overview", name: "overview", component: () => import("@/views/OverviewView.vue") },
+        { path: "assistant", name: "assistant", component: () => import("@/views/AssistantView.vue") },
         { path: "daily-summary", name: "dailySummary", component: () => import("@/views/DailySummaryView.vue") },
         { path: "add", name: "add", component: () => import("@/views/AddEventView.vue") },
         { path: "update", name: "update", component: () => import("@/views/UpdateEventView.vue") },
@@ -23,7 +24,6 @@ export const router = createRouter({
             { path: "raspberry-pi", name: "deviceRaspberryPi", component: () => import("@/views/RaspberryPiView.vue") },
             { path: "computer", name: "deviceComputer", component: () => import("@/views/ComputerView.vue") },
             { path: "screen", name: "deviceScreen", component: () => import("@/views/ScreenView.vue") },
-            { path: "feishu-bot", name: "deviceFeishuBot", component: () => import("@/views/FeishuBotView.vue") },
           ],
         },
         { path: "ideas", alias: "inspire", name: "ideas", component: () => import("@/views/IdeaView.vue") },

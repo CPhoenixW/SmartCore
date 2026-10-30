@@ -3,6 +3,16 @@
 本文只保留影响后续维护的里程碑与验收边界。完整提交和讨论使用 Git 历史；当前
 行为以现行领域文档、代码和测试为准。
 
+## 2026-10-30：手机 PWA 与 DSH 助手迁移
+
+- `/work/assistant` 提供可安装到手机主屏的跨平台 PWA 入口，支持本地会话恢复、草稿保存和离线提示。
+- `/api/assistant/message` 从浏览器 session 派生 web scope；PWA 和调度任务统一进入 DSH bridge，
+  飞书回调、机器人管理、配对和投递工具从默认链路删除。
+- DSH 使用官方 `sdk-minimal` 会话运行时和 SmartCore MCP bridge；模型只看到高层事项、Idea、日报、Computer 与媒体工具。
+- 图片媒体通过 scope 保护的 Server 端点作为 MCP image content 返回；旧 OpenClaw Compose service 改为 `legacy-openclaw` 回滚 profile。
+- 候选验证包含 DSH 健康检查、RPC 会话冒烟和工具调用冒烟；生产提升仍需候选环境完成后按现有晋升流程执行。
+- 旧数据库中的飞书表和迁移定义暂留为兼容层，启动不再创建、启用或访问机器人。
+
 ## 2026-08-07：模型路由与 WorkBlock 契约收口
 
 - 工作台、连续 WorkBlock 分析和每日工作日报默认使用 `deepseek-v4-flash-0731`；图片兼容

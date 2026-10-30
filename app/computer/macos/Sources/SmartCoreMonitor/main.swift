@@ -368,12 +368,18 @@ final class MonitorAgentDelegate: NSObject, NSApplicationDelegate {
         guard !syncing, let configuration, let token, let outbox else { return }
         syncing = true
         defer { syncing = false }
+        var failure: Error?
         do {
             let buckets = try outbox.pending(deviceId: configuration.deviceId)
             if !buckets.isEmpty {
                 let accepted = try await client.upload(buckets: buckets, configuration: configuration, token: token)
                 try outbox.acknowledge(deviceId: configuration.deviceId, bucketStarts: accepted)
             }
+        } catch {
+            failure = error
+        }
+
+        do {
             try await client.heartbeat(
                 MonitorHeartbeat(
                     currentState: currentState,
@@ -388,11 +394,16 @@ final class MonitorAgentDelegate: NSObject, NSApplicationDelegate {
                 configuration: configuration,
                 token: token
             )
+        } catch {
+            failure = failure ?? error
+        }
+
+        if let failure {
+            nextSyncAt = Date().addingTimeInterval(retryBackoff.failed())
+            fputs("SmartCoreMonitor: synchronization pending: \(failure.localizedDescription)\n", stderr)
+        } else {
             retryBackoff.succeeded()
             nextSyncAt = Date().addingTimeInterval(30)
-        } catch {
-            nextSyncAt = Date().addingTimeInterval(retryBackoff.failed())
-            fputs("SmartCoreMonitor: synchronization pending: \(error.localizedDescription)\n", stderr)
         }
     }
 }

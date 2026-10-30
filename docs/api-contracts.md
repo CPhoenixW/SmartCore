@@ -25,16 +25,15 @@ Agent 接口使用机器稳定的结果：
 | 调用方 | 凭证 | 主要入口 | 所有权来源 |
 |---|---|---|---|
 | 匿名浏览器 | 无 | `/api/auth/status|setup|register|login` | 尚未建立或新建用户 |
-| 登录浏览器 | opaque Session Cookie | `/api/*`、`/api/device/*`、`/api/feishu/*` | `userSession` active user |
+| 登录浏览器 | opaque Session Cookie | `/api/*`、`/api/device/*` | `userSession` active user |
 | 管理员 | 同一服务端 Session | `/api/admin/*` | actor 鉴权，active user 定资源范围 |
-| Feishu | callback token/签名/加密 | `POST /feishu/event` | 匹配 bot + identity + chat binding |
-| OpenClaw | Agent token；用户操作通常另需短期 scope | `/agent/*` | scope 中的 user/bot/chat；例外见下文 |
+| DSH bridge | Agent token；用户操作通常另需短期 scope | `/agent/*` | scope 中的 user；例外见下文 |
 | 配对中客户端 | `pairId` + `claimCode` | 设备 claim/status/activate | 配对记录用户 |
 | 已配对设备 | `X-SmartCore-Device-Token` | dispatch、heartbeat、photo、screen | token 绑定的 device/user |
 | Screen WebSocket | query 中 device ID/token | `/screen/ws` | screen device owner |
 
 `/healthz` 和 `/screen` HTML 本身没有应用层认证，但只能通过既定内网边界访问。
-公网反向代理只允许飞书回调。
+公网反向代理只按部署配置允许 PWA 的认证、工作台和助手路径。
 
 ## 浏览器会话
 
@@ -58,15 +57,15 @@ Agent 接口使用机器稳定的结果：
 | 前缀 | 能力 |
 |---|---|
 | `/api/auth` | 初始化、注册、登录、注销、当前用户 |
-| `/api/admin` | 用户切换、Feishu bot 配置/测试/绑定 |
+| `/api/admin` | 用户切换和管理审计 |
 | `/api/evt` 等 | 事项 CRUD、关系同步、提醒操作 |
 | `/api/idea` | Idea、上传、媒体任务、附件读取 |
 | `/api/device` | 设备列表、配对、分发、照片请求 |
-| `/api/feishu` | 普通用户绑定默认机器人 |
 | `/api/devState` | 状态、历史和滚动用量 |
 | `/api/computer` | 电脑活动与 Codex 项目报告上传、状态、统计和洞察 |
 | `/api/daily-summaries` | 当前用户日报 |
 | `/api/weather` | 登录用户读取共享天气缓存 |
+| `/api/assistant` | 登录 PWA 向 DSH 发送 owner-scoped 会话消息 |
 
 日报列表和修改均以浏览器会话中的 active user 为所有权来源。修改使用
 `PATCH /api/daily-summaries/{summaryId}`，提交 `content`，并可携带读取时的
@@ -87,7 +86,7 @@ Agent 接口使用机器稳定的结果：
 关系写入必须验证同一用户。普通日程默认隐藏 push-only Reminder。Course 的
 `stDate/endDate` 仍有兼容字段，新调用使用 `semesterStart/startWeek/endWeek/weekMode`。
 
-更新/删除以 `evtId` 定位前必须验证 owner。OpenClaw 查询不能静默执行无限制全库
+更新/删除以 `evtId` 定位前必须验证 owner。DSH 查询不能静默执行无限制全库
 扫描；先解析时间范围并使用 scope 用户。
 
 ## Agent API
@@ -105,8 +104,7 @@ X-SmartCore-Agent-Scope
 
 scope 为 HMAC 签名、默认十分钟有效，purpose 为：
 
-- `feishu`：必须带 userId、botId、chatId，可进行绑定聊天反馈。
-- `web`：带 userId，不带 bot/chat，不能调用飞书投递。
+- `web`：带 userId，允许 PWA 助手使用当前用户的工具。
 - `daily_summary`：绑定 userId 和 reportDate，只允许日报上下文与保存接口。
 
 包括 `/agent/context` 与 `/agent/db/delete_event` 在内的 assembled Agent 路由都要求
@@ -141,8 +139,6 @@ created -> claimed -> userConfirmed -> paired
 2. 客户端持 code claim。
 3. 登录 owner confirm。
 4. 普通设备持 code activate；token 仅返回一次，数据库保存 SHA-256 hash。
-5. Feishu bot 配对在用户确认时由 Server 激活，并继续建立 identity/binding。
-
 设备 token 只能操作绑定 device。dispatch 的 GET/receipt 不能读取或确认其他设备的
 记录。Screen 的 HTTP/WS 同样校验 device owner。
 
@@ -185,7 +181,7 @@ Pi 状态与照片使用 `/dev/*`；通用设备列表/配对/分发使用 `/api
 但有效 action 完全由 Server 按触发器决定。Server 直连分析使用 `deepseek-v4-flash-0731` 并且只请求一次；
 `refresh` trigger 只允许 `extend` 同一 open 工作块：累计 active 二十分钟首次触发，此后
 每新增六十分钟 active 触发，并向模型同时提供上一版快照、累计事实和新增证据。
-无人值守 Computer 任务默认不回退 OpenClaw。兼容回退若单独开启，沿用文本 profile 的
+无人值守 Computer 任务默认不回退 DSH。兼容回退若单独开启，沿用文本 profile 的
 `deepseek-v4-flash-0731`；图片任务才使用 `qwen3.7-plus`。两者只接收 Server 组装的脱敏聚合，
 不读取数据库、OCR、网页正文或聊天正文。Computer 每日日志默认只在 23:59 生成一次，
 日间预览默认关闭。
@@ -193,28 +189,6 @@ Pi 状态与照片使用 `/dev/*`；通用设备列表/配对/分发使用 `/api
 注意力提醒不经过 Agent API：Server 使用 Computer `idle` 与 `stateSince` 每分钟确定性检查。
 当前 Plan 下连续 idle 五分钟提醒；无 Plan 时需 open 工作块先累计 active 二十分钟。提醒按
 连续 idle episode 去重，锁屏、休眠、暂停和离线不触发。
-
-## Feishu 配对状态机
-
-普通用户：
-
-```text
-POST /api/feishu/pair/start
--> 在目标聊天发送「绑定 <code>」
--> claimed
--> POST /api/feishu/pair/{id}/confirm
--> active FeishuBind
-```
-
-入站消息只有匹配 `(bot, identity, chat)` 的 active binding 才能签发 scope。主动提醒
-只选该用户 primary binding；没有 binding 时不得回退到管理员聊天。
-
-管理员 `/api/admin/feishuBots/*` 可以配置、启停、测试和配对 bot。明文 App Secret、
-Verification Token 与 Encrypt Key 只允许写入，读取响应和日志绝不返回。
-
-`GET /api/feishu/usage?range=today|7d|30d&timezone=...` 只允许登录用户读取自己的
-消息数量、结果趋势、通知数量和最近处理状态。响应不包含原始消息、外部消息 ID、
-通知正文或其他用户的数据。
 
 ## Idea 媒体状态机
 
@@ -225,7 +199,7 @@ upload -> queued -> processing -> ready -> consumed
 
 - PDF/TXT/ZIP 创建后即可绑定；图片必须经过 ready media job。
 - 同一 upload 只有一个 active job；重复创建复用状态/结果。
-- 图片由 Adapter 校验并作为原生视觉输入；完成工具只接受 jobId 与摘要。
+- 图片由 DSH bridge 通过 scope 保护的 media route 读取并作为 MCP image content；完成工具只接受 jobId 与摘要。
 - `/agent/media/ocr` 已退役；OCR 字段和 `ocr_ready` 状态只为历史数据兼容，不发布到
   `GET /agent/tools`，新 Agent 不得调用。
 - `PATCH /api/idea/{id}` 用 `expectedRevision`、`addUploadIds`、
@@ -236,12 +210,9 @@ upload -> queued -> processing -> ready -> consumed
 
 - 提醒去重由稳定 dedup key 保证；只有真实投递结果写入通知状态。
 - Plan 开始提醒不提供完成/延时；结束、DDL 和独立提醒按现行卡片规则处理。
-- Plan 到达结束时间后的五分钟窗口内，Server 向当时有效的 primary Feishu binding 发送一次
-  结果卡片。只有绑定到同一 bot/chat/owner 和原卡片消息的按钮或回复可写入 description；
-  “已完成”按钮同时标记 done，自由文本只追加结果。卡片重试复用稳定飞书请求 UUID。
-- Screen 与 Feishu 的 done/snooze 最终都由 Server 修改同一事项。
-- `dailySummary` 以 `(userId, reportDate)` 唯一；Adapter 先验证并保存最终报告，再投递
-  Feishu。默认每日 23:59 调度；OpenClaw 必须先调用 scope 保护的
+- Plan 结束后的状态修改由 PWA 或 Screen 通过 Server 完成，Server 验证 owner 后更新事项。
+- `dailySummary` 以 `(userId, reportDate)` 唯一；DSH bridge 先验证并保存最终报告，PWA
+  再从受保护的日报 API 读取。默认每日 23:59 调度；DSH 必须先调用 scope 保护的
   `GET /agent/daily-work-context`，按项目使用 Codex 报告、Computer 工作块和 Plan 人工结果，
   失败不能保存为 completed。事实冲突优先级为人工 Plan 结果、Codex 报告、工作块推断；
   项目投入时长只使用 Server 汇总的 active seconds。

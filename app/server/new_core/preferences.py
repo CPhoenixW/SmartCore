@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 from app.server.db.session import Base
 from app.server.new_core import crud
 
-_ALLOWED_REMINDER_CHANNELS = {"screen", "feishu"}
+_ALLOWED_REMINDER_CHANNELS = {"screen"}
 
 
 class UserPreference(Base):
@@ -42,9 +42,9 @@ def get_user_preferences(
     user_id: str = crud.DEFAULT_USER_ID,
 ) -> dict[str, Any]:
     row = _ensure_preference(db, user_id)
-    return {
-        "reminderChannel": row.reminderChannel,
-    }
+    if row.reminderChannel != "screen":
+        row.reminderChannel = "screen"
+    return {"reminderChannel": "screen"}
 
 
 def update_user_preferences(
@@ -57,7 +57,7 @@ def update_user_preferences(
     if reminder_channel is not None:
         normalized = reminder_channel.strip().lower()
         if normalized not in _ALLOWED_REMINDER_CHANNELS:
-            raise ValueError("reminderChannel must be screen or feishu")
+            raise ValueError("reminderChannel must be screen")
         row.reminderChannel = normalized
     db.commit()
     db.refresh(row)

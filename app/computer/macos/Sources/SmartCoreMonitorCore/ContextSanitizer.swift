@@ -76,8 +76,8 @@ public enum ActivityContextSanitizer {
             kind = .browser
         } else if documentURL?.isFileURL == true {
             kind = isIDE ? .ide : .document
-            documentName = boundedOptional(normalized(documentURL?.lastPathComponent), length: 300)
-            workspace = boundedOptional(normalized(documentURL?.deletingLastPathComponent().lastPathComponent), length: 300)
+            documentName = boundedOptional(pathComponent(documentURL?.lastPathComponent), length: 300)
+            workspace = boundedOptional(pathComponent(documentURL?.deletingLastPathComponent().lastPathComponent), length: 300)
         } else if isIDE {
             kind = .ide
         }
@@ -104,6 +104,12 @@ public enum ActivityContextSanitizer {
 
     private static func boundedOptional(_ value: String?, length: Int) -> String? {
         value.map { bounded($0, length: length) }
+    }
+
+    private static func pathComponent(_ value: String?) -> String? {
+        guard let value, !value.isEmpty else { return nil }
+        let normalized = value.replacingOccurrences(of: "\\", with: "/")
+        return normalized.split(separator: "/", omittingEmptySubsequences: true).last.map(String.init)
     }
 
     private static func filteredTitle(_ value: String?, appName: String) -> String? {

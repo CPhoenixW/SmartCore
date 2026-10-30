@@ -1,7 +1,9 @@
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -19,13 +21,23 @@ class Settings(BaseSettings):
     auth_cookie_name: str = "smartcore_session"
     auth_cookie_secure: bool = False
     auth_session_hours: int = 168
+    auth_registration_enabled: bool = True
+    auth_setup_enabled: bool = True
+    public_access_enabled: bool = False
+    public_origin: str = ""
+    trusted_proxy_networks: str = ""
 
-    feishu_app_id: str = ""
-    feishu_app_secret: str = ""
-    feishu_verification_token: str = ""
-    feishu_encrypt_key: str = ""
-    feishu_default_chat_id: str = ""
-    feishu_replay_max_age_seconds: int = 300
+    @model_validator(mode="after")
+    def validate_public_access(self):
+        if self.public_access_enabled:
+            origin = urlsplit(self.public_origin)
+            if (origin.scheme != "https" or not origin.hostname or origin.username
+                    or origin.password or origin.path or origin.query or origin.fragment):
+                raise ValueError("PUBLIC_ORIGIN must be an HTTPS origin without a path")
+            if not self.auth_cookie_secure or self.auth_registration_enabled or self.auth_setup_enabled:
+                raise ValueError("public access requires Secure cookies and disabled registration/setup")
+        return self
+
     semester_start: date | None = None
 
     llm_provider: str = "tokendance"
@@ -86,8 +98,21 @@ class Settings(BaseSettings):
     device_photo_max_bytes: int = 10 * 1024 * 1024
     device_photo_dir: str = str(PROJECT_ROOT / "data" / "device_photos")
     computer_activity_retention_days: int = 90
+    # DSH is the primary assistant runtime. The OpenClaw names remain as a
+    # rollback-only compatibility surface until the old compose profile is
+    # removed in a later migration.
+    dsh_events_endpoint: str = ""
+    dsh_events_token: str = ""
     openclaw_events_endpoint: str = ""
     openclaw_events_token: str = ""
+
+    @property
+    def assistant_events_endpoint(self) -> str:
+        return (self.dsh_events_endpoint or self.openclaw_events_endpoint).strip()
+
+    @property
+    def assistant_events_token(self) -> str:
+        return self.dsh_events_token or self.openclaw_events_token
 
     backup_dir: str = str(PROJECT_ROOT / "backups")
     pi_user: str = ""

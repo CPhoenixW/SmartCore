@@ -295,6 +295,6 @@ def test_daily_summary_scope_only_exposes_daily_context_and_persistence(
         == 401
     )
     assert (
-        client.post("/agent/feedback/send_text", json={"text": "unsafe"}, headers=headers).status_code
-        == 403
+        client.post("/agent/feedback/send_text", json={"text": "removed"}, headers=headers).status_code
+        == 404
     )

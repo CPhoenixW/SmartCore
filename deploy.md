@@ -13,7 +13,7 @@
 
 1. 本地验证并推送 `dev`。
 2. 服务器构建候选镜像，运行后端、前端、容器和隔离健康检查。
-3. 提升脚本将已验证提交快进到 `main`，备份 SQLite，并切换 App 与 Adapter 镜像。
+3. 提升脚本将已验证提交快进到 `main`，备份 SQLite，并切换 App 与 DSH Runtime 镜像。
 
 ```bash
 .venv/bin/pytest -q
@@ -25,13 +25,8 @@ ssh server 'cd /opt/smartcore-dev && ./scripts/deploy_dev.sh'
 ssh server 'cd /opt/smartcore && ./scripts/promote_prod.sh'
 ```
 
-涉及 SmartCore Agent 模型时，在候选镜像通过后应用并检查 OpenClaw 配置。脚本会先把
-当前配置以 `0600` 权限备份，并在校验或 Gateway 重启失败时自动恢复：
-
-```bash
-ssh server 'cd /opt/smartcore-dev && ./scripts/configure_openclaw_qwen.sh --apply'
-ssh server 'cd /opt/smartcore-dev && ./scripts/configure_openclaw_qwen.sh --status'
-```
+涉及 SmartCore Agent 模型时，在候选镜像通过后检查 DSH Runtime 的健康、MCP 工具发现和
+一次 PWA 助手请求。DSH 配置由 `deploy/dsh.env` 注入，不在候选机外保存密钥。
 
 不要直接在 `/opt/smartcore` 编辑文件，也不要用普通 `docker compose up --build`
 替代候选提升流程。
@@ -45,7 +40,7 @@ ssh server 'cd /opt/smartcore && docker compose -f deploy/docker-compose.yml exe
 
 同时确认：
 
-- App 与 OpenClaw Adapter 的 revision label 等于发布提交。
+- App 与 DSH Runtime 的 revision label 等于发布提交。
 - 两个服务均为 `healthy`，Cloudflared 正在运行。
 - Tailscale `/healthz`、`/work` 和一个只读 API 正常。
 - 启动日志没有迁移、认证或调度错误。
@@ -54,12 +49,6 @@ ssh server 'cd /opt/smartcore && docker compose -f deploy/docker-compose.yml exe
 
 ```bash
 ssh server 'cd /opt/smartcore && ./scripts/deploy_prod.sh --rollback'
-```
-
-模型配置独立回滚，必须显式使用 `--apply` 输出的备份路径：
-
-```bash
-ssh server 'cd /opt/smartcore && ./scripts/configure_openclaw_qwen.sh --rollback /root/.openclaw/backups/openclaw-before-qwen-YYYYMMDDTHHMMSSZ.json'
 ```
 
 脚本使用上一个已记录镜像回滚，不删除 Docker 卷。若涉及数据迁移，先评估数据库
@@ -102,9 +91,9 @@ docker compose -f deploy/docker-compose.yml start app
 
 ## 固定边界
 
-- 公网：仅 `/feishu/event`。
+- 公网：按 Caddy allowlist 只开放 PWA 登录、工作台和助手路径。
 - 内网：Tailscale 上的 `/work`、`/screen`、API 和健康检查。
-- OpenClaw Gateway：服务器 host user service；Adapter 由 Compose 管理。
+- DSH Runtime：由 Compose 管理；旧 OpenClaw Adapter 仅在显式 rollback profile 中使用。
 - Pi：通过 `deploy/pi/install_to_pi.sh` 从 `app/raspberryPi/yolo` 同步源码。
 
 全部架构、集成和设备说明见 [docs/README.md](./docs/README.md)。

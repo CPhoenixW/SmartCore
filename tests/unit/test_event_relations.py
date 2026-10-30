@@ -518,13 +518,13 @@ def test_openclaw_tools_publish_course_and_reminder_relations() -> None:
     assert "/agent/evtDelete" not in write_paths
 
 
-def test_reminder_channel_defaults_to_screen_and_can_use_feishu() -> None:
+def test_reminder_channel_is_screen_only() -> None:
     db = _session()
     try:
         assert get_user_preferences(db)["reminderChannel"] == "screen"
-        updated = update_user_preferences(db, reminder_channel="feishu")
-        assert updated["reminderChannel"] == "feishu"
-        assert get_user_preferences(db)["reminderChannel"] == "feishu"
+        with pytest.raises(ValueError, match="reminderChannel must be screen"):
+            update_user_preferences(db, reminder_channel="external")
+        assert get_user_preferences(db)["reminderChannel"] == "screen"
     finally:
         db.close()
 

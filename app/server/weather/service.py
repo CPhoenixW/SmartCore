@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.server.config import Settings
-from app.server.new_core.models import AppUser, FeishuBind, FeishuBot, WeatherForecast
+from app.server.new_core.models import AppUser, WeatherForecast
 from app.server.new_core.notify import sendReminder
 
 LOCATION_KEY = "hangzhou-qiantang"
@@ -182,21 +182,8 @@ def _weather_label(code: Any) -> str:
     return "天气变化"
 
 
-def _primary_weather_users(db: Session) -> list[str]:
-    return list(
-        db.scalars(
-            select(AppUser.userId)
-            .join(FeishuBind, FeishuBind.userId == AppUser.userId)
-            .join(FeishuBot, FeishuBot.botId == FeishuBind.botId)
-            .where(
-                AppUser.stat == "active",
-                FeishuBind.stat == "active",
-                FeishuBind.isPrimary.is_(True),
-                FeishuBot.enabled.is_(True),
-            )
-            .distinct()
-        ).all()
-    )
+def _active_weather_users(db: Session) -> list[str]:
+    return list(db.scalars(select(AppUser.userId).where(AppUser.stat == "active")).all())
 
 
 def deliver_tomorrow_weather(
@@ -211,7 +198,7 @@ def deliver_tomorrow_weather(
     forecast = get_weather(db)
     result = {"sent": 0, "skipped": 0, "failed": 0}
     if not forecast:
-        result["failed"] = len(_primary_weather_users(db))
+        result["failed"] = len(_active_weather_users(db))
         return result
 
     timezone = ZoneInfo(settings.weather_timezone)
@@ -220,7 +207,7 @@ def deliver_tomorrow_weather(
         (item for item in forecast.get("days", []) if item.get("date") == tomorrow),
         None,
     )
-    users = _primary_weather_users(db)
+    users = _active_weather_users(db)
     if day is None:
         result["failed"] = len(users)
         return result
@@ -237,7 +224,7 @@ def deliver_tomorrow_weather(
             evtId=None,
             title=title,
             content=content,
-            channel="feishu",
+            channel="screen",
             dedupKey=f"weather:tomorrow:{user_id}:{tomorrow}",
             phase="notice",
             userId=user_id,
