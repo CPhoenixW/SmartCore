@@ -198,7 +198,7 @@ promote() {
     verify_environment
     load_verified_candidate
 
-    local checkout_sha deployed_sha dsh_sha new_sha
+    local checkout_sha deployed_sha dsh_sha new_sha candidate_already_published=false
     local deployed_revision_known=false
     checkout_sha="$(git -C "$ROOT" rev-parse HEAD)"
     if deployed_sha="$(running_revision app)"; then
@@ -220,13 +220,23 @@ promote() {
         || die "verified candidate is no longer the tip of origin/dev"
     git -C "$ROOT" merge-base --is-ancestor origin/main "$CANDIDATE" \
         || die "main cannot be fast-forwarded to the verified dev candidate"
+    if [[ "$checkout_sha" != "$CANDIDATE" ]] \
+        && git -C "$ROOT" merge-base --is-ancestor "$CANDIDATE" "$checkout_sha" \
+        && git -C "$ROOT" diff --quiet "$CANDIDATE" "$checkout_sha"; then
+        # A protected-branch PR may have already published the candidate as a
+        # merge commit. The image tag remains the verified candidate SHA when
+        # the resulting tree is identical, so do not move main backwards.
+        candidate_already_published=true
+    fi
     verify_candidate_images "$CANDIDATE"
     new_sha="$CANDIDATE"
 
-    if [[ "$checkout_sha" != "$new_sha" ]]; then
+    if [[ "$checkout_sha" != "$new_sha" && "$candidate_already_published" != true ]]; then
         log "fast-forwarding origin/main to verified candidate $new_sha"
         git -C "$ROOT" push origin "$new_sha:refs/heads/main"
         git -C "$ROOT" merge --ff-only "$new_sha"
+    elif [[ "$candidate_already_published" == true ]]; then
+        log "verified candidate $new_sha is already published in origin/main"
     fi
 
     compose config --quiet
