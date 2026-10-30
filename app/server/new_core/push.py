@@ -63,6 +63,7 @@ def send_web_push(
                 data=json.dumps(payload, ensure_ascii=False),
                 vapid_private_key=settings.pwa_push_vapid_private_key,
                 vapid_claims={"sub": settings.pwa_push_vapid_subject},
+                timeout=settings.pwa_push_timeout_seconds,
                 ttl=3600,
             )
             sent += 1
