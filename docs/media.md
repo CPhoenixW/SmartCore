@@ -1,16 +1,15 @@
 # Idea 与媒体
 
-媒体能力统一使用私有上传、OpenClaw 原生图片理解和 owner-scoped 附件读取。
-浏览器与飞书共享同一组数据模型和安全边界。
+媒体能力统一使用私有上传、DSH 原生图片理解和 owner-scoped 附件读取。
+PWA 是唯一提交媒体任务的交互入口。
 
 ## 现行流程
 
 ```text
-Feishu text/image/file ----> SmartCore ingress ----> private upload
-Web upload ----------------> upload API ----------> private upload
+PWA text/image/file -------> upload API ----------> private upload
                                                        |
                                                        v
-OpenClaw scoped task -> native image analysis -> Idea + attachments
+DSH scoped task -> MCP image content -> native image analysis -> Idea + attachments
                                                        |
                                                        v
                                       /work preview and download
@@ -18,9 +17,8 @@ OpenClaw scoped task -> native image analysis -> Idea + attachments
 
 - 纯文字继续走普通日程、提醒、查询或 Idea 流程。
 - 图片、PDF、TXT 和 ZIP 可作为附件；ZIP 不解压、不执行，文档不读取内容。
-- 飞书富文本中的文字和全部受支持附件作为同一个任务转发。
-- 图片由 SmartCore Agent 的 `tokendance/qwen3.7-plus` 原生理解；用户文字提供任务上下文。
-- Adapter 只把校验过的 JPEG、PNG、WebP 临时复制到隔离工作区，任务结束后删除。
+- 图片由 DSH 的 `tokendance/qwen3.7-plus` 原生理解；用户文字提供任务上下文。
+- DSH MCP bridge 只通过 scope 保护的 Server 端点读取图片，并以 MCP image content 交给模型，不暴露私有存储路径。
 - 模型根据图片与用户文字生成事实性中文 Markdown 摘要，最多 100 字。
 - 文档只存储，文件名在没有有效标题时作为回退。
 
@@ -53,22 +51,20 @@ owner、MIME 和 job 状态。旧 OCR 字段与 `ocr_ready` 状态只为已有�
 `removeAttachmentIds` 描述附件变化。省略数组表示不修改附件。任何 owner、任务状态、
 类型、数量或 revision 校验失败都不能提交部分更新。
 
-## 飞书与 Agent
+## PWA 与 Agent
 
-飞书下载附件后只把任务局部引用传给 OpenClaw。Adapter 校验服务端路径、MIME、扩展名
-和大小后，以 `0600` 权限临时复制图片；模型提示与最终回复不包含私有存储路径。
-Agent 公开工具包括 Idea capture 与 media-job complete/fail，精确 schema 由
+浏览器只把任务局部引用传给 DSH。MCP bridge 校验服务端返回的 MIME、扩展名和大小；模型
+提示与最终回复不包含私有存储路径。DSH 公开工具包括 Idea capture 与 media-job complete/fail，精确 schema 由
 `GET /agent/tools` 提供。
 
-一条富媒体消息要么形成一个一致的 Idea/附件结果，要么保持可诊断的失败状态。
-不允许回调处理器绕过 OpenClaw 直接写 Idea，也不允许模型提交任意服务器
-路径或 URL。
+一条富媒体请求要么形成一个一致的 Idea/附件结果，要么保持可诊断的失败状态。不允许
+浏览器绕过 Server 直接写 Idea，也不允许模型提交任意服务器路径或 URL。
 
 ## 存储与安全
 
 - 文件位于 `IDEA_MEDIA_DIR` 对应的私有 volume，不由 Caddy 静态公开。
 - 允许 JPEG、PNG、WebP、PDF、TXT 和 ZIP；默认单文件上限由
-  `IDEA_MEDIA_MAX_BYTES` 控制，进入模型的图片另受 `OPENCLAW_IMAGE_MAX_BYTES` 限制。
+  `IDEA_MEDIA_MAX_BYTES` 控制，进入模型的图片另受 DSH bridge 的 10 MiB 限制。
 - 服务端校验 MIME/扩展名并生成不可猜测存储名；展示文件名不能参与路径拼接。
 - 下载设置安全的 `Content-Disposition` 和 `nosniff`；Markdown 禁止 raw HTML。
 - 图片可在鉴权 lightbox 中查看和下载；文档只提供下载。

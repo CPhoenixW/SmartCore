@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -317,60 +315,3 @@ def test_deleted_device_token_is_revoked(app_env) -> None:
         ).status_code
         == 401
     )
-
-
-def test_feishu_binding_claims_then_confirms_chat(app_env, monkeypatch) -> None:
-    client = _setup_client()
-    bot = client.get("/api/admin/feishuBots").json()["data"][0]
-    pair = client.post(f"/api/admin/feishuBots/{bot['botId']}/pair/start").json()["data"]
-    monkeypatch.setenv("OPENCLAW_EVENTS_ENDPOINT", "http://openclaw.local/events")
-    event = {
-        "schema": "2.0",
-        "header": {"event_type": "im.message.receive_v1", "token": "verify-token"},
-        "event": {
-            "sender": {"sender_id": {"open_id": "ou_bound"}, "sender_type": "user"},
-            "message": {
-                "message_id": "om_bind",
-                "chat_id": "oc_bind",
-                "chat_type": "p2p",
-                "message_type": "text",
-                "content": json.dumps({"text": f"绑定 {pair['claimCode']}"}),
-            },
-        },
-    }
-    assert client.post("/feishu/event", json=event).status_code == 200
-    confirmed = client.post(f"/api/admin/feishuBots/{bot['botId']}/pair/{pair['pairId']}/confirm")
-    assert confirmed.status_code == 200
-    assert confirmed.json()["data"]["stat"] == "active"
-
-
-def test_same_feishu_identity_can_bind_two_chats_for_the_same_user(app_env, monkeypatch) -> None:
-    client = _setup_client()
-    bot = client.get("/api/admin/feishuBots").json()["data"][0]
-    monkeypatch.setattr(
-        "app.server.feishu.client.FeishuClient.send_text", lambda *_args, **_kwargs: {"code": 0}
-    )
-
-    for index, chat_id in enumerate(("oc_first", "oc_second"), start=1):
-        pair = client.post(f"/api/admin/feishuBots/{bot['botId']}/pair/start").json()["data"]
-        event = {
-            "schema": "2.0",
-            "header": {"event_type": "im.message.receive_v1", "token": "verify-token"},
-            "event": {
-                "sender": {"sender_id": {"open_id": "ou_same"}, "sender_type": "user"},
-                "message": {
-                    "message_id": f"om_bind_{index}",
-                    "chat_id": chat_id,
-                    "chat_type": "p2p",
-                    "message_type": "text",
-                    "content": json.dumps({"text": f"绑定 {pair['claimCode']}"}),
-                },
-            },
-        }
-        assert client.post("/feishu/event", json=event).status_code == 200
-        assert (
-            client.post(
-                f"/api/admin/feishuBots/{bot['botId']}/pair/{pair['pairId']}/confirm"
-            ).status_code
-            == 200
-        )

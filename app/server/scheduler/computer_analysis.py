@@ -43,12 +43,12 @@ def _analysis_error_message(exc: Exception) -> str:
 
 
 def _post(settings: Settings, event: dict[str, Any]) -> None:
-    endpoint = settings.openclaw_events_endpoint.strip()
+    endpoint = settings.assistant_events_endpoint.strip()
     if not endpoint:
-        raise RuntimeError("OpenClaw events endpoint is not configured")
+        raise RuntimeError("Assistant events endpoint is not configured")
     headers = {"Content-Type": "application/json"}
-    if settings.openclaw_events_token:
-        headers["Authorization"] = f"Bearer {settings.openclaw_events_token}"
+    if settings.assistant_events_token:
+        headers["Authorization"] = f"Bearer {settings.assistant_events_token}"
     response = httpx.post(endpoint, json=event, headers=headers, timeout=15)
     response.raise_for_status()
 

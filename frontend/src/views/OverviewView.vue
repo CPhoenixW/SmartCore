@@ -152,7 +152,7 @@ function moveSelectedDate(days: number) {
         <div class="device-inline"><span class="state-dot" :class="`state-dot--${deviceState}`" /><div><strong>{{ t(`device.state.${deviceState}`) }}</strong><small>{{ deviceQuery.data.value?.seenAt ?? t('common.notSet') }}</small></div></div>
         <div class="kv-grid compact-grid"><div><span>{{ t("overview.persons") }}</span><strong>{{ devicePersons }}</strong></div><div><span>{{ t("overview.stateConfidence") }}</span><strong>{{ deviceQuery.data.value?.confidence == null ? t('common.notSet') : `${Math.round(Number(deviceQuery.data.value.confidence) * 100)}%` }}</strong></div><div><span>{{ t("overview.present") }}</span><strong>{{ deviceMeta.present ? t("overview.presentYes") : t("overview.presentNo") }}</strong></div></div>
       </BaseCard>
-      <BaseCard :title="t('overview.quickActions')"><div class="quick-grid"><RouterLink :to="{ name: 'add' }">{{ t("overview.addEvent") }}</RouterLink><RouterLink :to="{ name: 'ideas' }">{{ t("overview.captureIdea") }}</RouterLink><RouterLink :to="{ name: 'course' }">{{ t("overview.manageCourses") }}</RouterLink><RouterLink :to="{ name: 'device' }">{{ t("overview.deviceStatus") }}</RouterLink></div></BaseCard>
+      <BaseCard :title="t('overview.quickActions')"><div class="quick-grid"><RouterLink :to="{ name: 'assistant' }">{{ t("overview.openAssistant") }}</RouterLink><RouterLink :to="{ name: 'add' }">{{ t("overview.addEvent") }}</RouterLink><RouterLink :to="{ name: 'ideas' }">{{ t("overview.captureIdea") }}</RouterLink><RouterLink :to="{ name: 'course' }">{{ t("overview.manageCourses") }}</RouterLink><RouterLink :to="{ name: 'device' }">{{ t("overview.deviceStatus") }}</RouterLink></div></BaseCard>
     </div>
   </section>
 </template>

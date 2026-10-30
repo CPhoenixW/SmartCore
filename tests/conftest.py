@@ -22,12 +22,10 @@ from app.server.agent.scope import issue_agent_scope  # noqa: E402
 from app.server.auth.security import create_session_token  # noqa: E402
 from app.server.config import get_settings  # noqa: E402
 from app.server.db.session import Base, reset_engine_for_tests  # noqa: E402
-from app.server.feishu.client import FeishuClient  # noqa: E402
 from app.server.main import create_app  # noqa: E402
 from tests.factories import (  # noqa: E402
     FakeScheduler,
     create_user,
-    feishu_message_event,
     pair_device,
 )
 
@@ -38,10 +36,6 @@ def app_db(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
     monkeypatch.setenv("AGENT_API_TOKEN", "agent-secret")
     monkeypatch.setenv("DEVICE_API_TOKEN", "device-secret")
-    monkeypatch.setenv("FEISHU_VERIFICATION_TOKEN", "verify-token")
-    monkeypatch.setenv("FEISHU_APP_ID", "app-id")
-    monkeypatch.setenv("FEISHU_APP_SECRET", "app-secret")
-    monkeypatch.setenv("FEISHU_DEFAULT_CHAT_ID", "oc_default")
     get_settings.cache_clear()
     reset_engine_for_tests()
     try:
@@ -107,29 +101,6 @@ def paired_device():
 
 
 @pytest.fixture
-def managed_feishu_bot(client: TestClient):
-    if client.post(
-        "/api/auth/setup", json={"password": "correct-horse-battery-staple"}
-    ).status_code not in {200, 409}:
-        raise AssertionError("failed to initialize administrator")
-
-    def create(**overrides: Any) -> dict[str, Any]:
-        payload = {
-            "botName": "Managed bot",
-            "appId": "cli_test_app",
-            "appSecret": "test-app-secret",
-            "verificationToken": "test-verification-token",
-            "encryptKey": "test-encrypt-key",
-        }
-        payload.update(overrides)
-        response = client.post("/api/admin/feishuBots", json=payload)
-        response.raise_for_status()
-        return response.json()["data"]
-
-    return create
-
-
-@pytest.fixture
 def agent_headers():
     def headers(
         user_id: str = "default",
@@ -147,29 +118,6 @@ def agent_headers():
         }
 
     return headers
-
-
-@pytest.fixture
-def feishu_event_factory():
-    return feishu_message_event
-
-
-@pytest.fixture
-def fake_feishu(monkeypatch):
-    calls: dict[str, list[Any]] = {"text": [], "card": []}
-    monkeypatch.setattr(
-        FeishuClient,
-        "send_text",
-        lambda _self, chat, message, **_kwargs: (
-            calls["text"].append((chat, message)) or {"code": 0}
-        ),
-    )
-    monkeypatch.setattr(
-        FeishuClient,
-        "send_interactive_card",
-        lambda _self, chat, card, **_kwargs: calls["card"].append((chat, card)) or {"code": 0},
-    )
-    return calls
 
 
 @pytest.fixture

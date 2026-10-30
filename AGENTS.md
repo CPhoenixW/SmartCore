@@ -8,16 +8,16 @@ then open the relevant document from `docs/README.md`.
 SmartCore is a server-authoritative personal work system:
 
 ```text
-Feishu -> public callback -> Server -> OpenClaw Adapter
-Pi / Vue / Phone Screen ------------> Server API or WebSocket
-Server scheduler -------------------> Screen or Feishu
+PWA / Vue --------------------------> Server browser session -> DSH Runtime/MCP Bridge
+Pi / Computer / Phone Screen -------> Server API or WebSocket
+Server scheduler -------------------> PWA daily summaries or Screen
 ```
 
 - `app/server` owns SQLite, authorization, business rules, scheduling, integrations, and Web.
 - `app/raspberryPi/yolo` is an outbound-only recognition/status client.
 - `app/computer/macos` is the headless macOS usage monitor and local offline queue.
 - `frontend` is the Vue workbench served at `/work` after build.
-- `openclaw` contains the Adapter and SmartCore skill; it never reads the database directly.
+- `dsh` contains the active runtime bridge; `openclaw` is rollback-only and never reads the database directly.
 
 The Server is the only database writer. Clients must not import `app.server` or select their own
 data owner.
@@ -42,11 +42,10 @@ current route registration in `app/server/main.py`.
 | Login/admin/ownership | `app/server/auth/`, `api/auth_routes.py`, `api/admin_routes.py` | `tests/unit/test_auth.py`, `tests/api/test_auth_users.py` |
 | Events/relations | `new_core/models.py`, `event_relations.py`, `crud.py`, `api/routes.py` | `tests/unit/test_event_relations.py`, `tests/unit/test_event_search_time.py` |
 | Reminders/scheduler | `new_core/reminder_service.py`, `notify.py`, `scheduler/` | `tests/unit/test_event_relations.py`, `tests/contract/test_agent_api.py` |
-| Feishu | `app/server/feishu/`, `api/admin_routes.py` | `tests/api/test_feishu_*.py`, `tests/unit/test_feishu_cards.py` |
-| OpenClaw/Agent API | `app/server/agent/`, `openclaw/adapter/`, `openclaw/skills/` | `tests/contract/test_agent_api.py`, `tests/unit/test_openclaw_adapter.py` |
+| DSH/Agent API | `app/server/agent/`, `dsh/bridge/` | `tests/contract/test_agent_api.py`, `tests/api/test_assistant.py` |
 | Idea/media | `api/idea_media_routes.py`, `api/routes.py`, `new_core/crud.py` | `tests/api/test_ideas.py`, `tests/contract/test_agent_api.py` |
 | User devices/Pi | `user_device/`, `device/`, `app/raspberryPi/yolo/` | `tests/api/test_devices.py`, `tests/unit/test_device_state.py` |
-| Phone screen | `screen/` | `tests/api/test_devices.py`, `tests/api/test_feishu_ingress.py` |
+| Phone screen | `screen/` | `tests/api/test_devices.py` |
 | Daily summary/weather | `new_core/daily_summary_service.py`, `weather/`, `scheduler/` | `tests/api/test_reports_weather.py` |
 | Schema/migrations | `db/sql/`, `db/session.py`, startup compatibility | `tests/migrations/test_schema_migrations.py` |
 | Vue workbench | `frontend/src/views`, `components`, `api` | matching files under `frontend/tests/` |
@@ -55,27 +54,25 @@ current route registration in `app/server/main.py`.
 ## Invariants
 
 - Every user-owned read and write derives `userId` from a verified browser session, device token,
-  Feishu binding, or Agent scope. Ignore caller-supplied ownership fields.
+  Agent scope. Ignore caller-supplied ownership fields.
 - Ordinary users operate only on themselves. Admin active-user switching preserves the real actor
   in the server-side session and audit log.
 - Event types are `plan`, `ddl`, `course`, and `remind`. Subtype ownership comes from `evtBase`.
 - A Plan owns start-minus-10-minute and end-minus-10-minute push reminders.
 - A DDL may own multiple Plans and standalone reminders. Cross-user relations are invalid.
 - Clear, authorized Agent requests execute directly. Queries and writes must be user-scoped.
-- Feishu replies use the bot/chat that authenticated the inbound event; never fall back across
-  users.
-- Media files remain private and owner-scoped. Documents are storage-only; images are staged into
-  the isolated OpenClaw workspace for native multimodal analysis.
-- The scheduler remains deterministic and independent from OpenClaw availability.
-- Public ingress is only `POST /feishu/event`; internal surfaces rely on the Tailscale boundary.
+- Media files remain private and owner-scoped. Documents are storage-only; images are read through
+  the isolated DSH MCP bridge for native multimodal analysis.
+- The scheduler remains deterministic and independent from DSH availability.
+- Public ingress is the configured PWA allowlist; there is no robot callback.
 
 ## Compatibility Hazards
 
 - `app/server/agent/assembly.py` rejects any operation implemented by more than one Agent router.
   Keep every source operation unique and the assembled-app snapshot current when changing routers.
-- Agent URL compatibility aliases are retired. Stable tool names such as `evtQuery`, `evtCreate`,
-  and `sendFeishuText` resolve through `GET /agent/tools` to `/agent/db/*`, `/agent/idea/*`, or
-  `/agent/feedback/*`; do not reconstruct a URL from a tool name. Historical route observations
+- Agent URL compatibility aliases are retired. Stable tool names such as `evtQuery` and `evtCreate`
+  resolve through `GET /agent/tools` to `/agent/db/*` or `/agent/idea/*`; do not reconstruct a URL
+  from a tool name. Historical route observations
   remain inactive for audit.
 - Both `lifeDevice` and the older operational `device` records exist. Generic pairing/dispatch and
   Pi state/photo flows touch different parts of this boundary. `lifeDevice` is authoritative;

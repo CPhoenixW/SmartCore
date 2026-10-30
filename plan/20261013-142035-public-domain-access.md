@@ -1,8 +1,7 @@
 # 公网域名访问实施计划
 
-状态：**已实施并部署**。
-实施时间：2026-10-13 至 2026-10-17。
-生产域名：`https://smartcore.phoenixw.online`（smartcore. 子域名，非顶级域名）。
+状态：待用户确认；尚未实施或部署。
+时间：2026-10-13 14:20，Asia/Singapore。
 
 ## 已确认需求与验收
 
@@ -57,17 +56,6 @@
 
 ## 授权边界
 
-已完成实施与验证。生产配置：
-
-```bash
-PUBLIC_ACCESS_ENABLED=true
-PUBLIC_ORIGIN=https://smartcore.phoenixw.online
-AUTH_REGISTRATION_ENABLED=false
-AUTH_SETUP_ENABLED=false
-AUTH_COOKIE_SECURE=true
-TUNNEL_PROXY_NETWORK=172.18.0.1/32
-```
-
-公网访问 `/agent/*`、`/api/admin/*`、注册、`/dev/state`、OpenClaw、SSH、数据库和备份
-均返回 404（已验证）。关闭公网访问只需设置 `PUBLIC_ACCESS_ENABLED=false` 并重建容器，
-详见 `deploy.md`。
+- 当前阶段仅完成检查与本计划；待用户确认后实施本地代码与验证。
+- Git 提交/推送、远程访问、DNS/隧道修改和生产发布尚未获明确授权，不执行这些动作。
+- 本地验证完成后展示结果，按用户后续授权进入候选和生产流程。

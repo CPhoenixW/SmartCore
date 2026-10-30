@@ -38,12 +38,6 @@ class Settings(BaseSettings):
                 raise ValueError("public access requires Secure cookies and disabled registration/setup")
         return self
 
-    feishu_app_id: str = ""
-    feishu_app_secret: str = ""
-    feishu_verification_token: str = ""
-    feishu_encrypt_key: str = ""
-    feishu_default_chat_id: str = ""
-    feishu_replay_max_age_seconds: int = 300
     semester_start: date | None = None
 
     llm_provider: str = "tokendance"
@@ -104,8 +98,21 @@ class Settings(BaseSettings):
     device_photo_max_bytes: int = 10 * 1024 * 1024
     device_photo_dir: str = str(PROJECT_ROOT / "data" / "device_photos")
     computer_activity_retention_days: int = 90
+    # DSH is the primary assistant runtime. The OpenClaw names remain as a
+    # rollback-only compatibility surface until the old compose profile is
+    # removed in a later migration.
+    dsh_events_endpoint: str = ""
+    dsh_events_token: str = ""
     openclaw_events_endpoint: str = ""
     openclaw_events_token: str = ""
+
+    @property
+    def assistant_events_endpoint(self) -> str:
+        return (self.dsh_events_endpoint or self.openclaw_events_endpoint).strip()
+
+    @property
+    def assistant_events_token(self) -> str:
+        return self.dsh_events_token or self.openclaw_events_token
 
     backup_dir: str = str(PROJECT_ROOT / "backups")
     pi_user: str = ""

@@ -7,10 +7,10 @@ from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.server.agent.assembly import createAssembledAgentRouter
-from app.server.agent.feedback_routes import ensure_feedback_tools
 from app.server.agent.routes import createDevRouter
 from app.server.agent.usage import record_agent_route_usage, sync_agent_route_observations
 from app.server.api.admin_routes import router as adminApiRouter
+from app.server.api.assistant_routes import router as assistantApiRouter
 from app.server.api.auth_routes import router as authApiRouter
 from app.server.api.avatar_routes import router as avatarApiRouter
 from app.server.api.daily_summary_routes import router as dailySummaryApiRouter
@@ -28,8 +28,6 @@ from app.server.config import get_settings
 from app.server.db.session import SessionLocal, init_db
 from app.server.device.compatibility import migrate_device_compatibility_on_startup
 from app.server.device.routes import router as deviceRouter
-from app.server.feishu.event_handler import create_feishu_router
-from app.server.feishu.pair_routes import router as feishuPairRouter
 from app.server.new_core.relation_compat import install_relation_compat
 from app.server.new_core.relation_maintenance import (
     close_past_course_occurrences,
@@ -120,7 +118,6 @@ def _register_work_frontend(app: FastAPI, frontend_dist: Path | None = None) -> 
 def create_app() -> FastAPI:
     settings = get_settings()
     _initialize_database()
-    ensure_feedback_tools()
     assembled_agent_router = createAssembledAgentRouter()
     sync_agent_route_observations(assembled_agent_router)
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
@@ -159,6 +156,7 @@ def create_app() -> FastAPI:
     parse_router = __import__("app.server.api.ai_routes", fromlist=["router"]).router
     app.include_router(authApiRouter)
     app.include_router(adminApiRouter)
+    app.include_router(assistantApiRouter)
     app.include_router(parse_router)
     app.include_router(avatarApiRouter)
     app.include_router(deviceStateApiRouter)
@@ -171,9 +169,7 @@ def create_app() -> FastAPI:
     app.include_router(deviceRouter)
     app.include_router(userDeviceRouter)
     app.include_router(computerRouter)
-    app.include_router(feishuPairRouter)
     app.include_router(assembled_agent_router)
-    app.include_router(create_feishu_router())
     app.include_router(screenRouter)
 
     screen_static_dir = Path(__file__).resolve().parent / "screen" / "static"

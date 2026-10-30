@@ -136,7 +136,7 @@ Computer token 上传。它只承载项目名、结果状态、单段摘要、�
 新设备在工作台“设备 -> Computer”创建配对，将配对 JSON 通过标准输入交给
 `SmartCoreMonitor pair`，在工作台确认后由客户端激活。安装脚本把签名可执行文件放在
 `~/Library/Application Support/SmartCoreMonitor/bin`，并注册登录自启和异常重启。
-设备管理页按 Computer、RaspberryPi、Screen 和 Feishu Bot 四类隔离配对、管理与参数。
+设备管理页按 Computer、RaspberryPi 和 Screen 三类隔离配对、管理与参数。
 Server 可结合当前 Plan、电脑状态与同用户新鲜 Pi 状态生成带 reason codes 的确定性
 判断，但不输出效率或分心结论。启用 `COMPUTER_WORK_BLOCK_ANALYSIS_ENABLED` 后，Server
 每分钟根据 active、20 分钟 idle、锁屏/休眠/暂停和上下文变化维护连续工作块；小时任务

@@ -20,8 +20,6 @@ def _legacy_kind(kind: str) -> str:
         return "server"
     if kind in {"screen", "browser", "mobile", "bot", "server"}:
         return kind
-    if kind == "feishuBot":
-        return "bot"
     return "browser"
 
 

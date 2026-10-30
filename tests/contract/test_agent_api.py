@@ -34,8 +34,7 @@ def test_agent_tools_keep_stable_names_and_canonical_paths() -> None:
         "endAt",
     ]
     assert tools["evtDelete"]["path"] == "/agent/db/delete_event"
-    assert tools["sendFeishuText"]["path"] == "/agent/feedback/send_text"
-    assert tools["sendFeishuCard"]["path"] == "/agent/feedback/send_card"
+    assert not any(name.startswith("send") for name in tools)
     assert tools["computerHourlyContext"]["path"] == "/agent/computer/hourly-context"
     assert tools["computerHourlyContext"]["method"] == "GET"
     assert tools["computerHourlyAnalysisComplete"]["path"] == "/agent/computer/hourly-analysis"
