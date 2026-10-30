@@ -6,8 +6,8 @@
 
 状态：已采用。
 
-数据、业务规则、调度、权限和审计全部归 Server。Pi、Web、Screen、Computer 和
-OpenClaw 都是客户端。
+数据、业务规则、调度、权限和审计全部归 Server。Pi、PWA、Screen、Computer 和 DSH
+bridge 都是客户端或受限运行时。
 
 原因：避免不同设备各自写数据、重复提醒和离线冲突。结果是端侧必须只依赖稳定
 HTTP/WebSocket 协议，不能导入 `app.server` 或直接访问 SQLite。
@@ -16,8 +16,8 @@ HTTP/WebSocket 协议，不能导入 `app.server` 或直接访问 SQLite。
 
 状态：已采用。
 
-浏览器使用可撤销的服务端 session，设备使用设备 token，Feishu 使用 bot/identity/chat
-binding，OpenClaw 使用 Agent token + 短期 scope。客户端提交的 `userId` 不决定
+浏览器使用可撤销的服务端 session，设备使用设备 token，DSH 使用 Agent token + 短期
+scope。客户端提交的 `userId` 不决定
 owner。
 
 原因：仅在前端隐藏用户选择无法阻止横向越权。管理员切换必须同时保存 active user
@@ -37,11 +37,10 @@ DDL Plan 和 Reminder 都使用关系表/外键表达，不在描述文本里隐
 
 状态：已采用。
 
-提醒扫描、去重、天气刷新和投递路由由 APScheduler 与领域服务执行。OpenClaw 参与
+提醒扫描、去重、天气刷新和投递路由由 APScheduler 与领域服务执行。DSH 参与
 自然语言任务和日报生成，但不参与每分钟提醒判断。
 
-Plan 结束结果询问同样由 Server 确定性投递。只有 primary Feishu binding 对原卡片的
-按钮或直接回复可修改该 Plan；普通消息不会被猜测为执行结果。
+Plan 结束后的状态修改由 PWA 或 Screen 通过 Server 完成，普通提醒不会交给模型猜测。
 
 原因：模型延迟、费用或故障不能让提醒系统停止。任何新周期任务先判断能否用普通
 代码可靠完成，再决定是否调用模型。
@@ -50,21 +49,20 @@ Plan 结束结果询问同样由 Server 确定性投递。只有 primary Feishu 
 
 状态：已采用。
 
-SmartCore 验证并规范化 Feishu 事件，Adapter 运行 OpenClaw skill，OpenClaw 通过
-`/agent/*` 读写。最终飞书投递由 Adapter/SmartCore 管理。
+历史 OpenClaw Adapter 曾通过受限 `/agent/*` 读写；当前默认路径已迁移到 DSH bridge，旧
+Adapter 只作为显式 rollback profile，不接收新流量。
 
 拒绝的方案：让开发工具或 OpenClaw 直接读 SQLite/volume。这样无法可靠实施用户
 scope、审计、幂等和回滚，也会扩大密钥与生产数据暴露面。
 
-## D006 Feishu bot 与用户聊天绑定分离
+## D006 历史机器人表与运行链路隔离
 
-状态：已采用。
+状态：历史兼容。
 
-`feishuBot` 表示应用凭据和 bot runtime，`lifeIdentity` 表示外部身份，`feishuBind`
-表示具体用户/bot/chat 授权端点。
+旧库中的 `feishuBot`、`lifeIdentity`、`feishuBind` 和 `feishuChatPair` 只保留为表结构和
+历史审计；当前应用不加载机器人 runtime，不提供回调、管理或投递 API。
 
-原因：一个 bot 可以服务多个用户和聊天，但任何消息/提醒都必须回到已绑定目标，
-不能使用全局默认聊天造成跨用户投递。普通用户只绑定默认 bot；管理员才管理凭据。
+原因：保留旧库的外键和审计可读性，同时让新链路只有 PWA、DSH 和 Screen。
 
 ## D007 媒体使用私有存储与原生多模态理解
 
@@ -147,8 +145,8 @@ trigger key 和退避重试，`NO_REPLY` 不能永久留下 queued 记录。每�
 
 提醒仍由 Server 根据未活跃和低于 30% 重叠规则产生；吃饭、休息、睡眠、通勤、运动等
 明确生活活动由本地确定性语义门控排除，混合计划中的明确电脑工作提示优先，无法确定的计划
-保持原有行为，不调用模型。已完成或取消的 Plan 不再产生低重叠提醒。提醒按用户现有
-Screen/Feishu 路由并写入 `notifyLog`；AI 不直接发送小时消息或修改 Plan。
+保持原有行为，不调用模型。已完成或取消的 Plan 不再产生低重叠提醒。提醒写入
+`notifyLog` 并推送 Screen；AI 不直接发送小时消息或修改 Plan。
 
 ## D013 每日简报使用最小证据聚合
 
@@ -161,7 +159,7 @@ Codex 每个任务只提交项目、结果状态、摘要和 commit/PR/测试证
 
 无人值守日报的分析 scope 只允许读取聚合和保存日报，独立投递 scope 不进入模型上下文；
 设备报告使用原子 upsert 和每日配额，所有聚合文本均按不可信事实处理。无任何 Codex、
-Computer 工作块或 Plan 证据的日期不调度日报；固定标题由 Adapter 根据任务日期本地生成，
+Computer 工作块或 Plan 证据的日期不调度日报；固定标题由 DSH bridge 根据任务日期本地生成，
 模型标题的可恢复格式差异不触发第二次调用，只有无有效中文正文或叙述泄漏才隔离重试一次。
 
 原因：显式结果能补足仅靠窗口标题无法确认的产出，同时把隐私、错误归因和重复计时控制在
@@ -171,8 +169,8 @@ Computer 工作块或 Plan 证据的日期不调度日报；固定标题由 Adap
 
 状态：已采用。
 
-SmartCore 的无图片自然语言请求统一使用 `deepseek-v4-flash-0731`；包含图片的 OpenClaw
-任务使用隔离的 `qwen3.7-plus` profile，文本传输失败最多回退一次，格式错误不切换模型。
+SmartCore 的无图片自然语言请求统一使用 `deepseek-v4-flash-0731`；包含图片的 DSH
+任务通过 MCP 图片内容使用隔离的 `qwen3.7-plus` 路由，文本传输失败最多回退一次，格式错误不切换模型。
 Server 工作台、连续 WorkBlock 分析和每日工作日报均使用无图片 DeepSeek 路径；图片兼容入口
 使用 Qwen，不再使用旧的 `deepseek-ocr-2`。
 
@@ -194,6 +192,22 @@ WorkBlock 的 `action` 是活动边界和触发器的业务结果，不属于模
 的同步调用。使用本地索引可以把发现阶段变成有界、可审计的元数据查询，同时保持 D013 的隐私边界；
 项目映射和 `/api/computer/codex-reports/batch` 上传继续沿用现有幂等协议。
 
+## D016 DSH 取代 OpenClaw 作为助手运行时
+
+状态：候选环境验证中。
+
+DSH 的 `sdk-minimal` 运行时负责会话持久化、模型调用和等待；`dsh/bridge/mcp-server.mjs`
+只暴露 SmartCore 的高层 MCP 工具。DSH 进程不读取 SQLite、数据库卷或宿主 shell，所有读写
+仍经 Server 的 Agent token 与短期用户 scope。浏览器 PWA 和调度任务共用 DSH bridge，
+Server 继续负责所有权、事务、提醒和最终投递。
+
+选择 DSH 是为了删除旧 Adapter 中重复的模型会话、工具发现和子进程编排，同时保留可持久
+恢复的会话。OpenClaw Compose service、镜像和环境变量只保留在 `legacy-openclaw` profile
+作为候选回滚路径；候选切换通过健康检查和真实用户路径后才停用旧服务。
+
+DSH 的 MCP 工具默认只提供 SmartCore 事项、Idea、日报、Computer 和媒体动作。媒体图片由
+带 scope 的 Server 端点读取并作为 MCP 图片内容返回，避免把附件路径或任意文件能力交给模型。
+
 ## 当前兼容与技术债
 
 这些不是可直接删除的“冗余”：
@@ -208,6 +222,14 @@ WorkBlock 的 `action` 是活动边界和触发器的业务结果，不属于模
 4. `app/server/new_core/event_relations.py`、`crud.py` 和 Agent route 文件职责较重。
    拆分应按事务/领域边界进行，不能机械按文件行数拆。
 5. `DASHBOARD_BASE_URL` 是历史命名；配置示例指向现行 `/work`，删除该设置前应检查
-   生产环境与飞书卡片调用方。
+   部署脚本和已有环境变量。
 
 处理这些债务时，优先增加能证明现状的测试，再做迁移或删除。
+
+## D017 PWA 是唯一交互入口
+
+状态：已采用。
+
+飞书机器人回调、配对、管理页面、投递工具和公网路由已从默认链路删除。PWA 通过浏览器
+session 进入 Server，助手请求经 DSH bridge 调用受限 Agent API；日报和通知写回 Server
+后由 PWA 或 Screen 读取。旧机器人表只为旧数据库兼容，完成数据迁移后可清理。

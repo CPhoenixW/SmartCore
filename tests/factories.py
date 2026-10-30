@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -51,33 +50,6 @@ def pair_device(
     )
     response.raise_for_status()
     return response.json()["data"]
-
-
-def feishu_message_event(
-    text: str,
-    *,
-    chat_id: str = "oc_test_chat",
-    message_id: str = "om_test_message",
-    open_id: str = "ou_test_user",
-    token: str = "verify-token",
-) -> dict[str, Any]:
-    return {
-        "schema": "2.0",
-        "header": {"event_type": "im.message.receive_v1", "token": token},
-        "event": {
-            "sender": {
-                "sender_id": {"open_id": open_id},
-                "sender_type": "user",
-            },
-            "message": {
-                "message_id": message_id,
-                "chat_id": chat_id,
-                "chat_type": "p2p",
-                "message_type": "text",
-                "content": json.dumps({"text": text}, ensure_ascii=False),
-            },
-        },
-    }
 
 
 @dataclass

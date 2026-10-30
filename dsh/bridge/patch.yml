@@ -1,0 +1,62 @@
+# SmartCore's DSH composition. The stock sdk-minimal profile is used for its
+# durable Agent/session runtime; the overlay removes host capabilities and adds
+# the single SmartCore MCP bridge.
+- insert:
+    - id: smartcore-llm-pi-ai
+      name: '@deepseek-ai/dsh-llm-pi-ai'
+      config:
+        providers:
+          tokendance:
+            displayName: SmartCore Gateway
+            apiKeyEnv: LLM_API_KEY
+            api: openai-completions
+            baseURL: !!js process.env.LLM_BASE_URL
+            models:
+              - id: !!js process.env.LLM_MODEL
+                contextWindow: 128000
+                maxTokens: 8192
+                input: [text, image]
+    - id: smartcore-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: smartcore
+        transport: stdio
+        command: node
+        args: [!!js process.env.SMARTCORE_MCP_SERVER]
+        env:
+          SMARTCORE_BASE_URL: !!js process.env.SMARTCORE_BASE_URL
+          SMARTCORE_AGENT_TOKEN: !!js process.env.SMARTCORE_AGENT_TOKEN
+          SMARTCORE_SCOPE_FILE: !!js process.env.SMARTCORE_SCOPE_FILE
+        failOnStartupError: true
+        toolCallTimeoutMs: 120000
+        reconnect:
+          enabled: true
+          initialDelayMs: 250
+          maxDelayMs: 5000
+          maxAttempts: 20
+
+# These rows are already present in sdk-minimal, but they are intentionally
+# disabled for the SmartCore deployment. SmartCore actions remain the only
+# model-visible side effect surface.
+- id: tool-fs
+  disabled: true
+- id: tool-working-directory
+  disabled: true
+- id: persistent-bash
+  disabled: true
+- id: persistent-pwsh
+  disabled: true
+- id: terminal-bash
+  disabled: true
+- id: terminal-pwsh
+  disabled: true
+- id: subprocess
+  disabled: true
+- id: pty
+  disabled: true
+- id: sandbox
+  disabled: true
+- id: sandbox-policy
+  disabled: true
+- id: mcp-resources
+  disabled: true

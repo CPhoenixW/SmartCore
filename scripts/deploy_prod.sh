@@ -11,7 +11,7 @@ STATE_DIR="${SMARTCORE_DEPLOY_STATE_DIR:-/var/lib/smartcore-deploy}"
 STATE_FILE="$STATE_DIR/state"
 CANDIDATE_FILE="$STATE_DIR/candidate"
 APP_IMAGE_REPO="${SMARTCORE_IMAGE_REPO:-smartcore}"
-ADAPTER_IMAGE_REPO="${SMARTCORE_ADAPTER_IMAGE_REPO:-smartcore-openclaw-adapter}"
+DSH_IMAGE_REPO="${SMARTCORE_DSH_IMAGE_REPO:-smartcore-dsh-runtime}"
 
 log() {
     printf '[smartcore-deploy] %s\n' "$*"
@@ -45,7 +45,7 @@ acquire_lock() {
 verify_environment() {
     [[ "$ROOT" == "$EXPECTED_ROOT" ]] || die "run this script from $EXPECTED_ROOT (got $ROOT)"
     [[ -f "$ENV_FILE" ]] || die "missing production environment file: $ENV_FILE"
-    [[ -f "$ROOT/deploy/adapter.env" ]] || die "missing Adapter environment file"
+    [[ -f "$ROOT/deploy/dsh.env" ]] || die "missing DSH environment file"
     [[ -f "$ROOT/deploy/cloudflared.env" ]] || die "missing Cloudflared environment file"
     [[ "$(git -C "$ROOT" branch --show-current)" == "main" ]] || die "production checkout must be on main"
     [[ -z "$(git -C "$ROOT" status --porcelain)" ]] || die "production checkout has uncommitted files"
@@ -119,7 +119,7 @@ wait_for_health() {
 wait_for_release() {
     local cloudflared_id
     wait_for_health app || return 1
-    wait_for_health openclaw-adapter || return 1
+    wait_for_health dsh-runtime || return 1
     cloudflared_id="$(compose ps --quiet cloudflared)"
     [[ -n "$cloudflared_id" ]] || return 1
     [[ "$(docker inspect --format '{{.State.Running}}' "$cloudflared_id")" == true ]]
@@ -146,10 +146,10 @@ rollback_to() {
     local current="${2:-unknown}"
     docker image inspect "$APP_IMAGE_REPO:$target" >/dev/null 2>&1 \
         || die "rollback image does not exist: $APP_IMAGE_REPO:$target"
-    docker image inspect "$ADAPTER_IMAGE_REPO:$target" >/dev/null 2>&1 \
-        || die "rollback image does not exist: $ADAPTER_IMAGE_REPO:$target"
+    docker image inspect "$DSH_IMAGE_REPO:$target" >/dev/null 2>&1 \
+        || die "rollback image does not exist: $DSH_IMAGE_REPO:$target"
 
-    log "rolling back application and Adapter images to $target"
+    log "rolling back application and DSH images to $target"
     activate_release "$target"
     wait_for_release || die "rollback release failed its health check"
     write_state "$target" "$current"
@@ -174,43 +174,43 @@ load_verified_candidate() {
     source "$CANDIDATE_FILE"
     [[ "${CANDIDATE:-}" =~ ^[0-9a-f]{40}$ ]] || die "candidate state contains an invalid revision"
     [[ "${APP_IMAGE_ID:-}" =~ ^sha256:[0-9a-f]{64}$ ]] || die "candidate state contains an invalid app image ID"
-    [[ "${ADAPTER_IMAGE_ID:-}" =~ ^sha256:[0-9a-f]{64}$ ]] || die "candidate state contains an invalid Adapter image ID"
+    [[ "${DSH_IMAGE_ID:-}" =~ ^sha256:[0-9a-f]{64}$ ]] || die "candidate state contains an invalid DSH image ID"
 }
 
 verify_candidate_images() {
     local sha="$1"
-    local actual_app_id actual_adapter_id app_revision adapter_revision
+    local actual_app_id actual_dsh_id app_revision dsh_revision
 
     actual_app_id="$(docker image inspect --format '{{.Id}}' "$APP_IMAGE_REPO:$sha" 2>/dev/null)" \
         || die "verified app image is missing: $APP_IMAGE_REPO:$sha"
-    actual_adapter_id="$(docker image inspect --format '{{.Id}}' "$ADAPTER_IMAGE_REPO:$sha" 2>/dev/null)" \
-        || die "verified Adapter image is missing: $ADAPTER_IMAGE_REPO:$sha"
+    actual_dsh_id="$(docker image inspect --format '{{.Id}}' "$DSH_IMAGE_REPO:$sha" 2>/dev/null)" \
+        || die "verified DSH image is missing: $DSH_IMAGE_REPO:$sha"
     [[ "$actual_app_id" == "$APP_IMAGE_ID" ]] || die "app image changed after verification"
-    [[ "$actual_adapter_id" == "$ADAPTER_IMAGE_ID" ]] || die "Adapter image changed after verification"
+    [[ "$actual_dsh_id" == "$DSH_IMAGE_ID" ]] || die "DSH image changed after verification"
 
     app_revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$APP_IMAGE_REPO:$sha")"
-    adapter_revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$ADAPTER_IMAGE_REPO:$sha")"
+    dsh_revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$DSH_IMAGE_REPO:$sha")"
     [[ "$app_revision" == "$sha" ]] || die "app image revision label does not match candidate"
-    [[ "$adapter_revision" == "$sha" ]] || die "Adapter image revision label does not match candidate"
+    [[ "$dsh_revision" == "$sha" ]] || die "DSH image revision label does not match candidate"
 }
 
 promote() {
     verify_environment
     load_verified_candidate
 
-    local checkout_sha deployed_sha adapter_sha new_sha
+    local checkout_sha deployed_sha dsh_sha new_sha
     local deployed_revision_known=false
     checkout_sha="$(git -C "$ROOT" rev-parse HEAD)"
     if deployed_sha="$(running_revision app)"; then
-        if adapter_sha="$(running_revision openclaw-adapter)" \
-            && [[ "$adapter_sha" == "$deployed_sha" ]]; then
+        if dsh_sha="$(running_revision dsh-runtime)" \
+            && [[ "$dsh_sha" == "$deployed_sha" ]]; then
             deployed_revision_known=true
         fi
     else
         deployed_sha="$checkout_sha"
     fi
     tag_running_image app "$APP_IMAGE_REPO" "$deployed_sha"
-    tag_running_image openclaw-adapter "$ADAPTER_IMAGE_REPO" "$deployed_sha"
+    tag_running_image dsh-runtime "$DSH_IMAGE_REPO" "$deployed_sha"
 
     log "checking verified dev candidate against origin"
     git -C "$ROOT" fetch --prune origin main dev

@@ -1,7 +1,7 @@
 from collections.abc import Callable, Generator
 from pathlib import Path
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -74,7 +74,32 @@ def _execute_sqlite_script(db_path: Path, script_path: Path) -> None:
     sql = script_path.read_text(encoding="utf-8")
     conn = sqlite3.connect(db_path)
     try:
-        conn.executescript(sql)
+        statement_lines: list[str] = []
+        for line in sql.splitlines(keepends=True):
+            statement_lines.append(line)
+            statement = "".join(statement_lines)
+            if not sqlite3.complete_statement(statement):
+                continue
+            statement_lines = []
+            if not statement.strip():
+                continue
+            try:
+                conn.execute(statement)
+            except sqlite3.OperationalError as exc:
+                statement_without_comments = "\n".join(
+                    part for part in statement.splitlines() if not part.strip().startswith("--")
+                ).lstrip().upper()
+                if (
+                    "NO SUCH COLUMN" in str(exc).upper()
+                    and statement_without_comments.startswith(("CREATE INDEX", "CREATE UNIQUE INDEX"))
+                ):
+                    # An old table can be rebuilt by the migration pass after
+                    # this schema script. Do not fail startup only because its
+                    # legacy shape cannot accept a current index yet.
+                    continue
+                raise
+        if statement_lines and "".join(statement_lines).strip():
+            conn.execute("".join(statement_lines))
         conn.commit()
     finally:
         conn.close()
@@ -138,15 +163,24 @@ def _rebuild_evt_base_for_reminders(conn: object) -> None:
     )
     columns = _sqlite_columns(conn, "evtBase")
     user_expr = "COALESCE(userId, 'default')" if "userId" in columns else "'default'"
+    title_expr = "title" if "title" in columns else "''"
+    desc_expr = "desc" if "desc" in columns else "NULL"
+    type_expr = "evtType" if "evtType" in columns else "'plan'"
+    prio_expr = "prio" if "prio" in columns else "'mid'"
+    stat_expr = "stat" if "stat" in columns else "'todo'"
+    created_expr = "createdAt" if "createdAt" in columns else "strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')"
     updated_expr = "COALESCE(updatedAt, createdAt)" if "updatedAt" in columns else "createdAt"
+    if "createdAt" not in columns:
+        updated_expr = "strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')"
     conn.execute(
         f"""
         INSERT INTO evtBase_new (
             evtId, userId, title, desc, evtType, prio, stat, createdAt, updatedAt
         )
         SELECT
-            evtId, {user_expr}, title, desc, evtType,
-            COALESCE(prio, 'mid'), COALESCE(stat, 'todo'), createdAt, {updated_expr}
+            evtId, {user_expr}, {title_expr}, {desc_expr}, {type_expr},
+            COALESCE({prio_expr}, 'mid'), COALESCE({stat_expr}, 'todo'),
+            {created_expr}, {updated_expr}
         FROM evtBase
         """
     )
@@ -207,7 +241,8 @@ def _rebuild_remind_evt_for_standalone(conn: object) -> None:
 
 def _rebuild_act_log_for_user_targets(conn: object) -> None:
     sql = _sqlite_table_sql(conn, "actLog")
-    if not _sqlite_columns(conn, "actLog") or "CHECK (targetKind IN ('user'," in sql:
+    columns = _sqlite_columns(conn, "actLog")
+    if not columns or "CHECK (targetKind IN ('user'," in sql:
         return
     conn.execute("DROP TABLE IF EXISTS actLog_new")
     conn.execute(
@@ -231,7 +266,62 @@ def _rebuild_act_log_for_user_targets(conn: object) -> None:
         )
         """
     )
-    conn.execute("INSERT INTO actLog_new SELECT * FROM actLog")
+    act_id_expr = "CAST(actLogId AS TEXT)" if "actLogId" in columns else "actId"
+    user_expr = "userId" if "userId" in columns else "'default'"
+    actor_kind_expr = "'system'"
+    actor_id_expr = "NULL"
+    action_expr = (
+        "CASE actType "
+        "WHEN 'create' THEN 'create' "
+        "WHEN 'update' THEN 'update' "
+        "WHEN 'delete' THEN 'delete' "
+        "WHEN 'complete' THEN 'complete' "
+        "WHEN 'cancel' THEN 'cancel' "
+        "WHEN 'auto_create' THEN 'auto_create' "
+        "WHEN 'link' THEN 'link' "
+        "WHEN 'notify' THEN 'notify' "
+        "ELSE 'update' END"
+        if "actType" in columns
+        else "'update'"
+    )
+    target_kind_expr = (
+        "CASE targetType "
+        "WHEN 'user' THEN 'user' "
+        "WHEN 'evt' THEN 'evt' "
+        "WHEN 'planEvt' THEN 'planEvt' "
+        "WHEN 'ddlEvt' THEN 'ddlEvt' "
+        "WHEN 'courseEvt' THEN 'courseEvt' "
+        "WHEN 'remindEvt' THEN 'remindEvt' "
+        "WHEN 'coursePlan' THEN 'coursePlan' "
+        "WHEN 'idea' THEN 'idea' "
+        "WHEN 'device' THEN 'device' "
+        "ELSE 'evt' END"
+        if "targetType" in columns
+        else "'evt'"
+    )
+    target_id_expr = (
+        "COALESCE(CAST(targetId AS TEXT), '')" if "targetId" in columns else "''"
+    )
+    result_expr = (
+        "CASE WHEN stat IN ('failed', 'error') THEN 'failed' ELSE 'ok' END"
+        if "stat" in columns
+        else "'ok'"
+    )
+    error_expr = "NULL"
+    created_expr = "createdAt" if "createdAt" in columns else "strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')"
+    conn.execute(
+        f"""
+        INSERT INTO actLog_new (
+            actId, userId, actorKind, actorId, action, targetKind, targetId,
+            sourceDeviceId, result, errorMessage, createdAt
+        )
+        SELECT
+            {act_id_expr}, {user_expr}, {actor_kind_expr}, {actor_id_expr},
+            {action_expr}, {target_kind_expr}, {target_id_expr}, NULL,
+            {result_expr}, {error_expr}, {created_expr}
+        FROM actLog
+        """
+    )
     conn.execute("DROP TABLE actLog")
     conn.execute("ALTER TABLE actLog_new RENAME TO actLog")
 
@@ -484,27 +574,7 @@ def init_db() -> None:
         _apply_sqlite_migrations(settings.database_path)
         engine, _ = _ensure_engine()
         Base.metadata.create_all(bind=engine)
-        with engine.begin() as connection:
-            connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_feishuBot_user ON feishuBot(userId)"))
-        from app.server.feishu.bot_service import migrateFeishuBinds, seedLegacyBot
-
-        db = SessionLocal()
-        try:
-            seedLegacyBot(db, settings)
-            migrateFeishuBinds(db)
-        finally:
-            db.close()
         return
 
     engine, _ = _ensure_engine()
     Base.metadata.create_all(bind=engine)
-    with engine.begin() as connection:
-        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_feishuBot_user ON feishuBot(userId)"))
-    from app.server.feishu.bot_service import migrateFeishuBinds, seedLegacyBot
-
-    db = SessionLocal()
-    try:
-        seedLegacyBot(db, settings)
-        migrateFeishuBinds(db)
-    finally:
-        db.close()

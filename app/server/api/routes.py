@@ -100,7 +100,7 @@ class UserPatchBody(BaseModel):
     displayName: str | None = None
     language: str | None = None
     avatarUrl: str | None = None
-    reminderChannel: Literal["screen", "feishu"] | None = None
+    reminderChannel: Literal["screen"] | None = None
 
 
 @router.get("/user/me")
@@ -456,7 +456,7 @@ def process_idea_media(
     ).all()
     if len(uploads) != len(upload_ids):
         raise HTTPException(status_code=404, detail="one or more attachments are unavailable")
-    if not settings.openclaw_events_endpoint or not settings.openclaw_events_token:
+    if not settings.assistant_events_endpoint or not settings.assistant_events_token:
         raise HTTPException(status_code=503, detail="media processing is unavailable")
     attachments = [
         {
@@ -480,9 +480,9 @@ def process_idea_media(
     }
     try:
         response = httpx.post(
-            settings.openclaw_events_endpoint,
+            settings.assistant_events_endpoint,
             json=event,
-            headers={"Authorization": f"Bearer {settings.openclaw_events_token}"},
+            headers={"Authorization": f"Bearer {settings.assistant_events_token}"},
             timeout=10.0,
         )
         response.raise_for_status()
@@ -516,7 +516,7 @@ def create_idea_media_job(
         if existing.ideaId != idea.ideaId:
             raise HTTPException(status_code=409, detail="upload already belongs to another media job")
         return ok(_media_job_dict(existing))
-    if not settings.openclaw_events_endpoint or not settings.openclaw_events_token:
+    if not settings.assistant_events_endpoint or not settings.assistant_events_token:
         raise HTTPException(status_code=503, detail="media processing is unavailable")
 
     now = datetime.now().astimezone()
@@ -572,9 +572,9 @@ def _dispatch_idea_media_job(
         "agentScope": issue_agent_scope(userId=job.userId, purpose="web", ttl_seconds=900),
     }
     response = httpx.post(
-        settings.openclaw_events_endpoint,
+        settings.assistant_events_endpoint,
         json=event,
-        headers={"Authorization": f"Bearer {settings.openclaw_events_token}"},
+        headers={"Authorization": f"Bearer {settings.assistant_events_token}"},
         timeout=10.0,
     )
     response.raise_for_status()

@@ -13,7 +13,7 @@
 | [系统架构](./architecture.md) | 运行拓扑、代码边界、权限与安全原则 |
 | [领域模型](./domain-model.md) | 用户、事项、提醒、设备、日志和定时任务 |
 | [API 与鉴权契约](./api-contracts.md) | 凭证矩阵、关键接口、状态机和兼容别名 |
-| [飞书与 OpenClaw](./integrations.md) | 回调、配对、Agent scope、工具与输出契约 |
+| [PWA 与 DSH](./integrations.md) | PWA 会话、Agent scope、工具与输出契约 |
 | [Idea 与媒体](./media.md) | 上传、多模态分析、附件编辑、存储和鉴权 |
 | [设备与 Pi](./devices.md) | 设备配对、分发、Pi 状态和照片协议 |
 | [架构决策](./decisions.md) | 关键方案原因、拒绝方案和当前技术债 |
@@ -28,7 +28,8 @@
 - API 组装点：`app/server/main.py`
 - 数据模型：`app/server/new_core/models.py`
 - 部署配置模板：`deploy/env.example`、`deploy/adapter.env.example`
-- OpenClaw skill：`openclaw/skills/smartcore/SKILL.md`
+- DSH bridge：`dsh/bridge/server.mjs`、`dsh/bridge/mcp-server.mjs`
+- OpenClaw rollback skill：`openclaw/skills/smartcore/SKILL.md`
 - 回归测试：`tests/`、`frontend/tests/`
 
 ## 维护规则

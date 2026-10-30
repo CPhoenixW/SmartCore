@@ -124,20 +124,6 @@
 .screen-plan-list time{color:#2563eb;font-size:12px;font-weight:800}
 .screen-plan-list strong,.screen-plan-list small{display:block}
 .screen-plan-list small{margin-top:4px;color:var(--color-text-muted);font-size:10px}
-.feishu-trend{display:flex;align-items:end;gap:5px;height:218px;overflow-x:auto;padding:14px 2px 0}
-.feishu-trend__column{display:grid;grid-template-rows:174px auto;min-width:24px;flex:1;gap:8px;text-align:center}
-.feishu-trend__column>span{display:flex;align-items:end;justify-content:center;height:100%;border-bottom:1px solid #cbd5e1}
-.feishu-trend__column i{display:block;width:62%;min-height:3px;border-radius:3px 3px 0 0;background:#2563eb}
-.feishu-trend__column small{color:#64748b;font-size:9px;white-space:nowrap}
-.feishu-result-list{display:grid;gap:17px;padding:4px 0}
-.feishu-result-list>div{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px}
-.feishu-result-list span{color:#475569;font-size:12px}
-.feishu-result-list strong{font-size:15px}
-.feishu-result-list i{grid-column:1/-1;height:6px;overflow:hidden;border-radius:3px;background:#e2e8f0}
-.feishu-result-list b{display:block;height:100%;background:#16a34a}
-.feishu-result-list b.failed{background:#dc2626}
-.feishu-result-list b.unsupported{background:#d97706}
-.feishu-result-list b.notification{background:#2563eb}
 .device-activity-list{display:grid}
 .device-activity-list article{display:grid;grid-template-columns:116px minmax(0,1fr) auto;align-items:center;gap:12px;padding:12px 2px;border-bottom:1px solid var(--border-color)}
 .device-activity-list article:last-child{border-bottom:0}
@@ -179,9 +165,6 @@
 .computer-card-scroll{align-content:start;height:100%;overflow-y:auto;overscroll-behavior-y:contain;padding-right:5px;scrollbar-gutter:stable}
 .device-parameter-grid--health{height:100%;overflow-y:auto;overscroll-behavior-y:contain;padding-right:5px;scrollbar-gutter:stable}
 .device-parameter-grid--health>div{padding:11px 12px}
-.device-data-grid--feishu-summary>.card{display:flex;min-height:278px;flex-direction:column}
-.device-data-grid--feishu-summary>.card>.card-body{min-height:0;flex:1}
-.device-data-grid--feishu-summary .feishu-result-list{align-content:center;height:100%}
 .screen-live-preview{height:300px;overflow:hidden;border:1px solid #cbd5e1;border-radius:7px;background:#eef4ff}
 .screen-live-preview iframe{display:block;width:100%;height:100%;border:0;pointer-events:none}
 .screen-overview{min-width:0}

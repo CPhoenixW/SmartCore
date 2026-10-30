@@ -31,8 +31,6 @@ required = {
     "evtDelete",
     "ideaCapture",
     "ideaToEvt",
-    "sendFeishuText",
-    "sendFeishuCard",
     "screenPush",
 }
 missing = required - names
@@ -54,4 +52,4 @@ count = data.get("count")
 print(f"ok: returned {count} events")
 '
 
-echo "OpenClaw agent contract smoke check passed."
+echo "Legacy agent contract smoke check passed."

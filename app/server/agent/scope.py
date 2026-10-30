@@ -13,7 +13,7 @@ from fastapi import Header, HTTPException, Request
 from app.server.auth.security import _b64decode, _b64encode, auth_secret
 
 SCOPE_HEADER = "X-SmartCore-Agent-Scope"
-_SCOPE_PURPOSES = {"feishu", "web", "daily_summary"}
+_SCOPE_PURPOSES = {"web", "daily_summary"}
 _DAILY_SUMMARY_PATHS = {
     ("GET", "/agent/tools"),
     ("GET", "/agent/daily-work-context"),
@@ -74,13 +74,13 @@ def issue_agent_scope(
     userId: str,
     botId: str | None = None,
     chatId: str = "",
-    purpose: str = "feishu",
+    purpose: str = "web",
     reportDate: str | None = None,
     ttl_seconds: int = 600,
 ) -> str:
     if purpose not in _SCOPE_PURPOSES:
         raise ValueError("unsupported agent scope purpose")
-    if not userId or (purpose == "feishu" and (not botId or not chatId)):
+    if not userId:
         raise ValueError("invalid agent scope routing")
     if purpose == "daily_summary":
         try:
@@ -147,7 +147,7 @@ def require_agent_scope(
         bot_id = str(payload.get("botId") or "").strip()
         chat_id = str(payload.get("chatId") or "").strip()
         report_date = str(payload.get("reportDate") or "").strip()
-        if not user_id or (purpose == "feishu" and (not bot_id or not chat_id)):
+        if not user_id:
             raise ValueError("fields")
         if purpose == "daily_summary":
             if not report_date or date.fromisoformat(report_date).isoformat() != report_date:

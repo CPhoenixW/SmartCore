@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime
-from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -18,14 +16,10 @@ from app.server.new_core.event_relations import create_plan_event
 from app.server.new_core.models import (
     AppUser,
     DailySummary,
-    FeishuBind,
-    FeishuBot,
-    LifeIdentity,
 )
 from app.server.scheduler.daily_summary import dispatch_daily_summaries
 from app.server.scheduler.service import SchedulerService
 from app.server.weather.service import deliver_tomorrow_weather, get_weather, refresh_weather
-from openclaw.adapter import adapter
 
 pytestmark = pytest.mark.api
 
@@ -194,38 +188,6 @@ def test_scheduler_dispatches_once_per_bound_user_and_records_failures(app_env) 
             ]
         )
         db.flush()
-        db.add(
-            FeishuBot(
-                botId="bot-bound",
-                userId="bound",
-                botName="Bot",
-                appId="app-bound",
-                appSecretCipher="secret",
-                verificationTokenCipher="verify",
-                encryptKeyCipher="encrypt",
-                enabled=True,
-            )
-        )
-        db.add(
-            LifeIdentity(
-                identityId="identity-bound",
-                userId="bound",
-                provider="feishu",
-                externalId="open-bound",
-            )
-        )
-        db.flush()
-        db.add(
-            FeishuBind(
-                bindId="bind-bound",
-                userId="bound",
-                botId="bot-bound",
-                identityId="identity-bound",
-                chatId="chat-bound",
-                stat="active",
-                isPrimary=True,
-            )
-        )
         db.commit()
 
         events: list[dict] = []
@@ -240,7 +202,7 @@ def test_scheduler_dispatches_once_per_bound_user_and_records_failures(app_env) 
             settings=settings,
             now=empty_day,
             post_event=events.append,
-        ) == {"queued": 0, "skipped": 1, "failed": 0}
+        ) == {"queued": 0, "skipped": 2, "failed": 0}
         assert events == []
         assert db.scalar(
             select(DailySummary).where(
@@ -270,18 +232,17 @@ def test_scheduler_dispatches_once_per_bound_user_and_records_failures(app_env) 
             now=now,
             post_event=events.append,
         )
-        assert first == {"queued": 1, "skipped": 0, "failed": 0}
+        assert first == {"queued": 1, "skipped": 1, "failed": 0}
         assert events[0]["event_type"] == "daily_summary"
         assert events[0]["reportDate"] == "2026-07-19"
         assert "agentScope" in events[0]
-        assert "deliveryScope" in events[0]
-        assert events[0]["agentScope"] != events[0]["deliveryScope"]
+        assert events[0]["userId"] == "bound"
         assert dispatch_daily_summaries(
             db,
             settings=settings,
             now=now,
             post_event=events.append,
-        ) == {"queued": 0, "skipped": 1, "failed": 0}
+        ) == {"queued": 0, "skipped": 2, "failed": 0}
         assert len(events) == 1
 
         next_day = datetime(2026, 7, 20, 22, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
@@ -295,7 +256,7 @@ def test_scheduler_dispatches_once_per_bound_user_and_records_failures(app_env) 
             now=next_day,
             post_event=fail,
         )
-        assert failed == {"queued": 0, "skipped": 0, "failed": 1}
+        assert failed == {"queued": 0, "skipped": 1, "failed": 1}
         row = db.scalar(
             select(DailySummary).where(
                 DailySummary.userId == "bound",
@@ -349,104 +310,6 @@ def test_scheduler_registers_daily_cron_at_configured_hour(app_env) -> None:
     assert fake.jobs[1][1]["id"] == "smartcore-computer-activity-cleanup"
     assert fake.jobs[1][1]["hour"] == 3
     assert fake.jobs[1][1]["minute"] == 20
-
-
-def test_adapter_saves_daily_report_before_delivering(tmp_path, monkeypatch) -> None:
-    calls: list[tuple[str, str]] = []
-    report = (
-        "内部分析不应发送\n"
-        "📅 **2026年07月19日 工作日报**\n\n"
-        "### 📝 本日工作概述\n> 完成核心工作。\n\n"
-        "### 🚀 今日主要成果与技术进展\n- **项目**\n  - **进展**：完成工作。\n  - **技术要点/避坑**：记录中未提供技术细节。\n\n"
-        "### ⚠️ 遇到问题与阻碍 (Blockers)\n- 今日记录中未发现明确阻碍。\n\n"
-        "### 📅 明日规划\n- 继续已记录事项。"
-    )
-    payload = json.dumps({"result": {"finalAssistantVisibleText": report}})
-    monkeypatch.setattr(
-        adapter.subprocess,
-        "run",
-        lambda *args, **kwargs: SimpleNamespace(
-            returncode=0,
-            stdout=payload,
-            stderr="",
-        ),
-    )
-    monkeypatch.setattr(
-        adapter,
-        "save_daily_summary",
-        lambda event, **kwargs: calls.append(("save", str(kwargs["content"]))),
-    )
-    monkeypatch.setattr(
-        adapter,
-        "deliver_reply",
-        lambda event, text: calls.append(("deliver", text)) or True,
-    )
-    monkeypatch.setattr(adapter, "log", lambda *args, **kwargs: None)
-    monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
-
-    event = {
-        "event_id": "daily-summary:owner:2026-07-19",
-        "event_type": "daily_summary",
-        "reportDate": "2026-07-19",
-        "agentScope": "signed",
-        "chat_id": "chat-owner",
-    }
-    adapter.run_openclaw(event)
-
-    assert calls == [
-        ("save", report[report.index("📅") :]),
-        ("deliver", report[report.index("📅") :]),
-    ]
-    prompt = adapter.build_prompt(event)
-    assert "dailyWorkContext" in prompt
-    assert "禁止输出分析过程" in prompt
-
-
-def test_adapter_retries_invalid_daily_report_in_isolated_session(tmp_path, monkeypatch) -> None:
-    report = (
-        "📅 **2026年07月19日 工作日报**\n\n"
-        "### 📝 本日工作概述\n> 完成核心工作。\n\n"
-        "### 🚀 今日主要成果与技术进展\n- **项目**\n  - **进展**：完成工作。\n  - **技术要点/避坑**：记录中未提供技术细节。\n\n"
-        "### ⚠️ 遇到问题与阻碍 (Blockers)\n- 今日记录中未发现明确阻碍。\n\n"
-        "### 📅 明日规划\n- 继续已记录事项。"
-    )
-    outputs = iter(
-        [
-            json.dumps({"result": {"finalAssistantVisibleText": "Analysis only"}}),
-            json.dumps({"result": {"finalAssistantVisibleText": report}}),
-        ]
-    )
-    sessions: list[str] = []
-
-    def fake_run(args, **_kwargs):
-        sessions.append(args[args.index("--session-key") + 1])
-        return SimpleNamespace(returncode=0, stdout=next(outputs), stderr="")
-
-    saved: list[str] = []
-    monkeypatch.setattr(adapter.subprocess, "run", fake_run)
-    monkeypatch.setattr(
-        adapter,
-        "save_daily_summary",
-        lambda _event, **kwargs: saved.append(str(kwargs["content"])),
-    )
-    monkeypatch.setattr(adapter, "deliver_reply", lambda *_args: True)
-    monkeypatch.setattr(adapter, "log", lambda *_args, **_kwargs: None)
-    monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
-
-    adapter.run_openclaw(
-        {
-            "event_id": "daily-summary:owner:2026-07-19",
-            "event_type": "daily_summary",
-            "reportDate": "2026-07-19",
-            "agentScope": "signed",
-            "chat_id": "chat-owner",
-        }
-    )
-
-    assert saved == [report]
-    assert len(sessions) == 2
-    assert sessions[0] != sessions[1]
-    assert sessions[1].endswith("-format-retry")
 
 
 def _payload() -> dict:
@@ -533,39 +396,6 @@ def test_tomorrow_weather_is_sent_once_per_bound_user(app_env, monkeypatch) -> N
     db = SessionLocal()
     try:
         db.add(AppUser(userId="owner", loginName="owner", displayName="Owner"))
-        db.add(
-            FeishuBot(
-                botId="bot-owner",
-                userId="owner",
-                botName="Bot",
-                appId="app",
-                appSecretCipher="cipher",
-                verificationTokenCipher="cipher",
-                encryptKeyCipher="cipher",
-                enabled=True,
-                isDefault=True,
-            )
-        )
-        db.add(
-            LifeIdentity(
-                identityId="identity-owner",
-                userId="owner",
-                provider="feishu",
-                externalId="open-owner",
-            )
-        )
-        db.flush()
-        db.add(
-            FeishuBind(
-                bindId="bind-owner",
-                userId="owner",
-                botId="bot-owner",
-                identityId="identity-owner",
-                chatId="chat-owner",
-                stat="active",
-                isPrimary=True,
-            )
-        )
         db.commit()
         refresh_weather(
             db,
@@ -574,8 +404,8 @@ def test_tomorrow_weather_is_sent_once_per_bound_user(app_env, monkeypatch) -> N
         )
 
         monkeypatch.setattr(
-            "app.server.new_core.notify._sendFeishu",
-            lambda db, title, content, *, userId: (True, "chat-owner", None),
+            "app.server.screen.manager.screenManager.broadcastFromThread",
+            lambda message, *, userId: True,
         )
         now = datetime(2026, 7, 20, 22, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
         first = deliver_tomorrow_weather(

@@ -1,0 +1,10 @@
+{
+  "name": "smartcore-dsh-runtime",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-llm-pi-ai": "0.2.1-rc.5"
+  }
+}

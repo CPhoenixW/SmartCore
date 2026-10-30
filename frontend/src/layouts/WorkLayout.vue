@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   BookOpen,
+  Bot,
   Calendar,
   CalendarPlus,
   House,
@@ -31,6 +32,7 @@ const pageRoot = ref<HTMLElement | null>(null);
 let stopStagedWheelScroll: (() => void) | undefined;
 const nav = [
   { key: "overview", name: "overview", icon: House },
+  { key: "assistant", name: "assistant", icon: Bot },
   { key: "dailySummary", name: "dailySummary", icon: Calendar },
   { key: "add", name: "add", icon: CalendarPlus },
   { key: "update", name: "update", icon: Pencil },

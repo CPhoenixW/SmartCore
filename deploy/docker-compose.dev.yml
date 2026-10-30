@@ -8,7 +8,9 @@ services:
       BACKUP_DIR: /app/backups
       DEVICE_PHOTO_DIR: /app/data/device_photos
       SCHEDULER_ENABLED: "false"
-      OPENCLAW_EVENTS_ENDPOINT: ""
+      DSH_EVENTS_ENDPOINT: http://dsh-runtime:18790/api/smartcore/events
+      DSH_EVENTS_TOKEN: smartcore-dev-dsh-token
+      AGENT_API_TOKEN: smartcore-dev-agent-token
     volumes:
       - smartcore-dev-data:/app/data
       - smartcore-dev-backups:/app/backups
@@ -25,7 +27,50 @@ services:
       timeout: 3s
       retries: 12
       start_period: 5s
+    networks:
+      - smartcore-dev
+
+  dsh-runtime:
+    image: "smartcore-dsh-runtime:${SMARTCORE_IMAGE_TAG:?SMARTCORE_IMAGE_TAG is required}"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "18790"
+      DSH_EVENTS_TOKEN: smartcore-dev-dsh-token
+      SMARTCORE_BASE_URL: http://app:8000
+      SMARTCORE_AGENT_TOKEN: smartcore-dev-agent-token
+      LLM_PROVIDER: ${LLM_PROVIDER:-tokendance}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:9999/v1}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-v4-flash-0731}
+      DSH_PROVIDER: ${LLM_PROVIDER:-tokendance}
+      DSH_MODEL: ${LLM_MODEL:-deepseek-v4-flash-0731}
+      DSH_VISION_MODEL: ${VISION_MODEL:-qwen3.7-plus}
+    volumes:
+      - smartcore-dev-dsh-home:/data/dsh-home
+      - smartcore-dev-dsh-scopes:/data/scopes
+    networks:
+      - smartcore-dev
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:18790/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
 
 volumes:
   smartcore-dev-data:
   smartcore-dev-backups:
+  smartcore-dev-dsh-home:
+  smartcore-dev-dsh-scopes:
+
+networks:
+  smartcore-dev:
+    driver: bridge

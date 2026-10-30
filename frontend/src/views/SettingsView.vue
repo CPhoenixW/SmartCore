@@ -134,7 +134,7 @@ function clearAvatar() {
       <form class="form-grid" @submit.prevent="save">
         <label class="field field--wide"><span>{{ t("settings.displayName") }}</span><input v-model="form.displayName" required /></label>
         <label class="field"><span>{{ t("settings.language") }}</span><select v-model="form.language"><option value="zh">{{ t("settings.chinese") }}</option><option value="en">English</option></select></label>
-        <label class="field"><span>{{ t("settings.reminderChannel") }}</span><select v-model="form.reminderChannel"><option value="screen">{{ t("settings.screenReminder") }}</option><option value="feishu">{{ t("settings.feishuReminder") }}</option></select></label>
+        <label class="field"><span>{{ t("settings.reminderChannel") }}</span><select v-model="form.reminderChannel"><option value="screen">{{ t("settings.screenReminder") }}</option></select></label>
         <div class="field field--wide">
           <span>{{ t("settings.avatarUpload") }}</span>
           <div class="avatar-upload-row">
@@ -161,7 +161,7 @@ function clearAvatar() {
       </BaseCard>
     </div>
     <aside class="settings-scroll-column settings-scroll-column--preview" data-staged-wheel-scroll>
-      <BaseCard :title="t('settings.avatarPreview')"><div class="profile-preview"><div class="avatar large"><img v-if="previewUrl" :src="previewUrl" :alt="t('settings.avatarPreview')" /><span v-else>{{ initials }}</span></div><strong>{{ form.displayName || 'SmartCore' }}</strong><span>{{ form.language === 'en' ? 'English' : t('settings.chinese') }} · {{ form.reminderChannel === 'feishu' ? t('settings.feishuReminder') : t('settings.screenReminder') }}</span></div></BaseCard>
+      <BaseCard :title="t('settings.avatarPreview')"><div class="profile-preview"><div class="avatar large"><img v-if="previewUrl" :src="previewUrl" :alt="t('settings.avatarPreview')" /><span v-else>{{ initials }}</span></div><strong>{{ form.displayName || 'SmartCore' }}</strong><span>{{ form.language === 'en' ? 'English' : t('settings.chinese') }} · {{ t('settings.screenReminder') }}</span></div></BaseCard>
       <BaseCard v-if="accountSecurityAvailable" :title="t('settings.sessionsTitle')" :subtitle="t('settings.sessionsHint')">
         <div v-if="browserSessions.data.value?.length" class="browser-session-list">
           <article v-for="session in browserSessions.data.value" :key="session.sessionId">

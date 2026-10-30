@@ -8,7 +8,6 @@ from fastapi import APIRouter
 from fastapi.routing import APIRoute
 
 from app.server.agent.daily_summary_routes import createDailySummaryAgentRouter
-from app.server.agent.feedback_routes import createFeedbackRouter
 from app.server.agent.relation_query_routes import createRelationQueryRouter
 from app.server.agent.relation_write_routes import createRelationWriteRouter
 from app.server.agent.routes import createAgentRouter
@@ -31,7 +30,6 @@ class LegacyAgentMigration:
 _SOURCES = (
     _RouterSource("relation_query", createRelationQueryRouter),
     _RouterSource("relation_write", createRelationWriteRouter),
-    _RouterSource("feedback", createFeedbackRouter),
     _RouterSource("daily_summary", createDailySummaryAgentRouter),
     _RouterSource("computer", createComputerAgentRouter),
     _RouterSource("v2", createAgentV2Router),

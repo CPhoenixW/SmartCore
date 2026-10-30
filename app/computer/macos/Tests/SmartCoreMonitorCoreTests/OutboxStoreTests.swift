@@ -35,6 +35,69 @@ import Testing
         #expect(try reopened.pending(deviceId: "old-device") == [first])
     }
 
+    @Test func pendingSanitizesLegacyPathMetadataWithoutDroppingTime() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("outbox.sqlite")
+        let context = ActivityContext(
+            bundleId: "com.apple.Terminal",
+            appName: "Terminal",
+            contextKind: .document,
+            workspace: "/",
+            documentName: "/Users/person/SmartCore/service.py"
+        )
+        let bucket = ActivityBucket(
+            bucketStart: Date(timeIntervalSince1970: 1_704_067_200),
+            timezone: "UTC",
+            sessionId: "session",
+            coveredSeconds: 60,
+            switchCount: 0,
+            slices: [ActivitySlice(state: .active, seconds: 60, context: context)]
+        )
+
+        let store = try OutboxStore(path: path)
+        try store.enqueue([bucket], deviceId: "device")
+        let pending = try store.pending(deviceId: "device")
+
+        #expect(pending[0].coveredSeconds == 60)
+        #expect(pending[0].slices[0].workspace == nil)
+        #expect(pending[0].slices[0].documentName == "service.py")
+    }
+
+    @Test func pendingRemovesAllRedactedStructuredMetadata() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let context = ActivityContext(
+            bundleId: "com.example.Auth",
+            appName: "Auth",
+            windowTitle: "sign in",
+            contextKind: .application,
+            domain: "accounts.example.test",
+            workspace: "vault",
+            documentName: "secret.txt",
+            titleRedacted: true
+        )
+        let bucket = ActivityBucket(
+            bucketStart: Date(timeIntervalSince1970: 1_704_067_200),
+            timezone: "UTC",
+            sessionId: "session",
+            coveredSeconds: 60,
+            switchCount: 0,
+            slices: [ActivitySlice(state: .active, seconds: 60, context: context)]
+        )
+
+        let store = try OutboxStore(path: directory.appendingPathComponent("outbox.sqlite"))
+        try store.enqueue([bucket], deviceId: "device")
+        let slice = try #require(try store.pending(deviceId: "device").first?.slices.first)
+
+        #expect(slice.titleRedacted)
+        #expect(slice.windowTitle == nil)
+        #expect(slice.contextKind == nil)
+        #expect(slice.domain == nil)
+        #expect(slice.workspace == nil)
+        #expect(slice.documentName == nil)
+    }
+
     @Test func configurationUsesDeviceScopedKeychainAccount() {
         let first = MonitorConfiguration(serverUrl: "https://smartcore.test", deviceId: "one", deviceName: "Mac")
         let second = MonitorConfiguration(serverUrl: "https://smartcore.test", deviceId: "two", deviceName: "Mac")

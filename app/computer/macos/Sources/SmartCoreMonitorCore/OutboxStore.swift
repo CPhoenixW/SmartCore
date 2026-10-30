@@ -67,7 +67,7 @@ public final class OutboxStore: @unchecked Sendable {
         while sqlite3_step(statement) == SQLITE_ROW {
             guard let bytes = sqlite3_column_blob(statement, 0) else { continue }
             let data = Data(bytes: bytes, count: Int(sqlite3_column_bytes(statement, 0)))
-            result.append(try MonitorCoding.decoder().decode(ActivityBucket.self, from: data))
+            result.append(try MonitorCoding.decoder().decode(ActivityBucket.self, from: data).sanitizedForUpload())
         }
         return result
     }

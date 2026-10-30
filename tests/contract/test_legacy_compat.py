@@ -22,8 +22,6 @@ def test_router_exposes_only_canonical_agent_paths() -> None:
         "/agent/db/delete_event",
         "/agent/idea/capture",
         "/agent/idea/to_event",
-        "/agent/feedback/send_text",
-        "/agent/feedback/send_card",
         "/agent/feedback/screen_push",
     }
     assert expected.issubset(paths)

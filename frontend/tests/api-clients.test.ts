@@ -3,7 +3,6 @@ import { aiApi } from "@/api/ai";
 import { dailySummaryApi } from "@/api/dailySummary";
 import { computerApi } from "@/api/computer";
 import { deviceApi } from "@/api/device";
-import { feishuPairApi } from "@/api/feishuPair";
 import { expectFetch, mockJsonFetch, restoreHttpMocks } from "./helpers/http";
 
 afterEach(restoreHttpMocks);
@@ -110,44 +109,4 @@ describe("API clients", () => {
     );
   });
 
-  it("starts the authenticated default-bot pairing flow", async () => {
-    const fetchMock = mockJsonFetch({
-      pairId: "pair-1",
-      botId: "bot-1",
-      botName: "SmartCore",
-      deviceName: "SmartCore",
-      deviceKind: "feishuBot",
-      claimCode: "claim-code",
-      stat: "created",
-      expiresAt: "2026-07-18T21:00:00+08:00",
-    });
-
-    const pair = await feishuPairApi.start();
-
-    expect(pair.deviceKind).toBe("feishuBot");
-    expectFetch(fetchMock, "/api/feishu/pair/start", "POST");
-  });
-
-  it("uses user-scoped binding endpoints", async () => {
-    const fetchMock = mockJsonFetch([]);
-
-    await feishuPairApi.bindings();
-
-    expectFetch(fetchMock, "/api/feishu/bindings", "GET");
-  });
-
-  it("queries owner-scoped Feishu usage without requesting raw message content", async () => {
-    const fetchMock = mockJsonFetch({
-      range: "7d",
-      timezone: "Asia/Singapore",
-      totals: { messages: 0, forwarded: 0, failed: 0, unsupported: 0, notificationsSent: 0, notificationsFailed: 0 },
-      intents: [],
-      trend: [],
-      recent: [],
-    });
-
-    await feishuPairApi.usage("7d", "Asia/Singapore");
-
-    expectFetch(fetchMock, "/api/feishu/usage?range=7d&timezone=Asia%2FSingapore", "GET");
-  });
 });

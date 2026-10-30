@@ -88,6 +88,41 @@ public struct ActivitySlice: Codable, Equatable, Sendable {
         documentName = try values.decodeIfPresent(String.self, forKey: .documentName)
         titleRedacted = try values.decodeIfPresent(Bool.self, forKey: .titleRedacted) ?? false
     }
+
+    /// Removes metadata that the server deliberately refuses to store as paths.
+    ///
+    /// This also repairs legacy outbox rows created before path metadata was
+    /// filtered at capture time, without discarding the measured seconds.
+    public func sanitizedForUpload() -> ActivitySlice {
+        guard state == .active else {
+            return ActivitySlice(state: state, seconds: seconds, context: nil)
+        }
+
+        let context = ActivityContext(
+            bundleId: bundleId ?? "unknown",
+            appName: appName ?? "Unknown",
+            windowTitle: titleRedacted ? nil : windowTitle,
+            contextKind: titleRedacted ? nil : contextKind,
+            domain: titleRedacted ? nil : safeDomain(domain),
+            workspace: titleRedacted ? nil : safePathComponent(workspace),
+            documentName: titleRedacted ? nil : safePathComponent(documentName),
+            titleRedacted: titleRedacted
+        )
+        return ActivitySlice(state: state, seconds: seconds, context: context)
+    }
+
+    private func safePathComponent(_ value: String?) -> String? {
+        guard let value, !value.isEmpty else { return nil }
+        let normalized = value.replacingOccurrences(of: "\\", with: "/")
+        return normalized.split(separator: "/", omittingEmptySubsequences: true).last.map(String.init)
+    }
+
+    private func safeDomain(_ value: String?) -> String? {
+        guard let value, !value.isEmpty,
+              !value.contains(where: { "/:?#@".contains($0) })
+        else { return nil }
+        return value
+    }
 }
 
 public struct ActivityBucket: Codable, Equatable, Sendable {
@@ -112,6 +147,17 @@ public struct ActivityBucket: Codable, Equatable, Sendable {
         self.coveredSeconds = coveredSeconds
         self.switchCount = switchCount
         self.slices = slices
+    }
+
+    public func sanitizedForUpload() -> ActivityBucket {
+        ActivityBucket(
+            bucketStart: bucketStart,
+            timezone: timezone,
+            sessionId: sessionId,
+            coveredSeconds: coveredSeconds,
+            switchCount: switchCount,
+            slices: slices.map { $0.sanitizedForUpload() }
+        )
     }
 }
 

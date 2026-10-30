@@ -1,7 +1,7 @@
 # SmartCore
 
-SmartCore 是一个服务器主控的个人事务系统。服务器保存数据并负责调度、飞书、
-OpenClaw 和 Web 工作台；树莓派负责工位状态检测；电脑监视器作为独立客户端演进。
+SmartCore 是一个服务器主控的个人事务系统。服务器保存数据并负责调度、DSH 和 PWA
+工作台；树莓派负责工位状态检测；电脑监视器作为独立客户端演进。
 
 ## 目录
 
@@ -59,7 +59,7 @@ ssh server 'cd /opt/smartcore && ./scripts/deploy_prod.sh --rollback'
 
 ## 网络与安全
 
-- 公网仅允许 `POST /feishu/event`，由 Caddy/Cloudflare Tunnel 转发。
+- 公网按 Caddy/Cloudflare Tunnel 配置只开放 PWA 登录、工作台和助手路径；没有机器人回调。
 - `/work`、`/screen`、内部 API 和健康检查只通过 Tailscale 访问。
 - 密钥只存放在服务器或设备本地 `.env`；数据库、备份、人脸样本和模型权重不进 Git。
 - Python 与前端依赖分别锁定在 `requirements*.lock` 和 `frontend/package-lock.json`。

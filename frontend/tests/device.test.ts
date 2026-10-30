@@ -49,17 +49,10 @@ describe("device routes", () => {
     expect(router.resolve({ name: "deviceRaspberryPi" }).path).toBe("/device/raspberry-pi");
     expect(router.resolve({ name: "deviceComputer" }).path).toBe("/device/computer");
     expect(router.resolve({ name: "deviceScreen" }).path).toBe("/device/screen");
-    expect(router.resolve({ name: "deviceFeishuBot" }).path).toBe("/device/feishu-bot");
-  });
-
-  it("keeps the Feishu page focused on outcomes instead of exposing a processing chain", () => {
-    const source = readFileSync(resolve(process.cwd(), "src/views/FeishuBotView.vue"), "utf8");
-    expect(source).not.toContain("处理链路");
-    expect(source.toLowerCase()).not.toContain("processing chain");
   });
 
   it("keeps device pages focused on data without duplicate page headers", () => {
-    for (const view of ["ComputerView.vue", "RaspberryPiView.vue", "ScreenView.vue", "FeishuBotView.vue"]) {
+    for (const view of ["ComputerView.vue", "RaspberryPiView.vue", "ScreenView.vue"]) {
       const source = readFileSync(resolve(process.cwd(), `src/views/${view}`), "utf8");
       expect(source).not.toContain("<PageHeader");
     }
@@ -116,16 +109,13 @@ describe("device routes", () => {
   it("uses interactive bars for all time-series charts", () => {
     const piView = readFileSync(resolve(process.cwd(), "src/views/RaspberryPiView.vue"), "utf8");
     const computerPanel = readFileSync(resolve(process.cwd(), "src/components/device/ComputerUsagePanel.vue"), "utf8");
-    const feishuView = readFileSync(resolve(process.cwd(), "src/views/FeishuBotView.vue"), "utf8");
     const styles = readFileSync(resolve(process.cwd(), "src/styles/workbench.css"), "utf8");
 
-    for (const source of [piView, computerPanel, feishuView]) {
+    for (const source of [piView, computerPanel]) {
       expect(source).toContain("BarChart");
       expect(source).not.toContain("SmoothLineChart");
     }
     expect(piView).toContain("recentUsage(activeDeviceId.value, 24)");
-    expect(feishuView).not.toContain("feishuDevice.recentMessages");
-    expect(feishuView).toContain("feishu-binding-management");
     expect(styles).toContain(".bar-chart__canvas{display:grid;align-items:end;height:134px");
     expect(styles).toContain(".bar-chart__labels{display:grid;min-height:16px");
   });
