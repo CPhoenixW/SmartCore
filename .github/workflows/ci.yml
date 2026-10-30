@@ -76,6 +76,7 @@ jobs:
           cp deploy/env.example deploy/.env
           cp deploy/adapter.env.example deploy/adapter.env
           cp deploy/cloudflared.env.example deploy/cloudflared.env
+          cp deploy/dsh.env.example deploy/dsh.env
           docker compose \
             --project-directory deploy \
             --env-file deploy/.env \
