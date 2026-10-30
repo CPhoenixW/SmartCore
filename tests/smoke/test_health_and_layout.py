@@ -29,20 +29,39 @@ def test_server_defaults_resolve_from_repository_root() -> None:
     )
 
 
-def test_work_favicon_is_public_but_pages_remain_protected(tmp_path: Path) -> None:
+def test_work_pwa_assets_are_public_but_pages_remain_protected(tmp_path: Path) -> None:
     frontend_dist = tmp_path / "dist"
     (frontend_dist / "assets").mkdir(parents=True)
     (frontend_dist / "index.html").write_text("<html></html>", encoding="utf-8")
     (frontend_dist / "favicon.png").write_bytes(b"favicon")
+    (frontend_dist / "icon-192.png").write_bytes(b"icon-192")
+    (frontend_dist / "icon-512.png").write_bytes(b"icon-512")
+    (frontend_dist / "manifest.webmanifest").write_text("{}", encoding="utf-8")
+    (frontend_dist / "sw.js").write_text("self.skipWaiting()", encoding="utf-8")
     app = FastAPI()
     _register_work_frontend(app, frontend_dist)
 
     with TestClient(app) as test_client:
-        favicon = test_client.get("/work/favicon.png", follow_redirects=False)
+        assets = {
+            path: test_client.get(f"/work/{path}", follow_redirects=False)
+            for path in (
+                "favicon.png",
+                "icon-192.png",
+                "icon-512.png",
+                "manifest.webmanifest",
+                "sw.js",
+            )
+        }
         protected_page = test_client.get("/work/ideas", follow_redirects=False)
 
-    assert favicon.status_code == 200
-    assert favicon.headers["content-type"].startswith("image/png")
-    assert favicon.content == b"favicon"
+    assert all(response.status_code == 200 for response in assets.values())
+    assert assets["favicon.png"].headers["content-type"].startswith("image/png")
+    assert assets["icon-192.png"].content == b"icon-192"
+    assert assets["icon-512.png"].content == b"icon-512"
+    assert assets["manifest.webmanifest"].headers["content-type"].startswith(
+        "application/manifest+json"
+    )
+    assert assets["sw.js"].headers["content-type"].startswith("application/javascript")
+    assert assets["sw.js"].headers["cache-control"] == "no-cache"
     assert protected_page.status_code == 303
     assert protected_page.headers["location"] == "/work/login?next=/work/ideas"

@@ -79,7 +79,16 @@ async def lifespan(app: FastAPI):
 def _register_work_frontend(app: FastAPI, frontend_dist: Path | None = None) -> None:
     frontend_dist = frontend_dist or Path(__file__).resolve().parent / "web" / "dist"
     frontend_assets = frontend_dist / "assets"
-    frontend_favicon = frontend_dist / "favicon.png"
+    public_pwa_files = {
+        "favicon.png": (frontend_dist / "favicon.png", "image/png"),
+        "icon-192.png": (frontend_dist / "icon-192.png", "image/png"),
+        "icon-512.png": (frontend_dist / "icon-512.png", "image/png"),
+        "manifest.webmanifest": (
+            frontend_dist / "manifest.webmanifest",
+            "application/manifest+json",
+        ),
+        "sw.js": (frontend_dist / "sw.js", "application/javascript"),
+    }
 
     if frontend_dist.is_dir() and frontend_assets.is_dir():
         app.mount("/work/assets", StaticFiles(directory=frontend_assets), name="work_assets")
@@ -87,8 +96,10 @@ def _register_work_frontend(app: FastAPI, frontend_dist: Path | None = None) -> 
         @app.get("/work", include_in_schema=False)
         @app.get("/work/{path:path}", include_in_schema=False)
         def serve_work(request: Request, path: str = "") -> Response:
-            if path == "favicon.png" and frontend_favicon.is_file():
-                return FileResponse(frontend_favicon, media_type="image/png")
+            public_file = public_pwa_files.get(path)
+            if public_file is not None and public_file[0].is_file():
+                headers = {"Cache-Control": "no-cache"} if path == "sw.js" else None
+                return FileResponse(public_file[0], media_type=public_file[1], headers=headers)
             user_id = session_user_id_from_request(request)
             if path == "login":
                 if user_id:
