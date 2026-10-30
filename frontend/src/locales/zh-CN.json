@@ -6,7 +6,12 @@
     "apiError": "API 异常",
     "legacyUi": "旧版界面",
     "navigation": "工作台导航",
-    "menu": "打开菜单"
+    "menu": "打开菜单",
+    "more": "更多",
+    "enableNotifications": "开启手机通知",
+    "notificationsEnabled": "手机通知已开启",
+    "notificationsDenied": "浏览器拒绝了通知权限",
+    "notificationsUnavailable": "当前环境暂时无法开启通知"
   },
   "nav": {
     "overview": "总览",
@@ -199,7 +204,10 @@
     "error": "助手暂时不可用，草稿已保留",
     "clear": "新对话",
     "you": "你",
-    "bot": "SmartCore"
+    "bot": "SmartCore",
+    "starting": "我先帮你看一下…",
+    "toolWorking": "正在调用工具…",
+    "done": "已完成"
   },
   "add": {
     "title": "添加事件",

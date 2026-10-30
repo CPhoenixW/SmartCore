@@ -241,6 +241,20 @@ CREATE TABLE IF NOT EXISTS notifyLog (
     CHECK (stat IN ('pending', 'sent', 'failed', 'skipped', 'fallback'))
 );
 
+CREATE TABLE IF NOT EXISTS pushSubscription (
+    subscriptionId VARCHAR(32) PRIMARY KEY,
+    userId VARCHAR(32) NOT NULL,
+    endpoint VARCHAR(2000) NOT NULL UNIQUE,
+    p256dh VARCHAR(500) NOT NULL,
+    auth VARCHAR(500) NOT NULL,
+    userAgent VARCHAR(500),
+    createdAt VARCHAR(64) NOT NULL,
+    updatedAt VARCHAR(64) NOT NULL,
+    FOREIGN KEY (userId) REFERENCES appUser(userId) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_pushSubscription_user ON pushSubscription(userId);
+
 CREATE TABLE IF NOT EXISTS msgLog (
     msgId VARCHAR(32) PRIMARY KEY,
     userId VARCHAR(32) NOT NULL,

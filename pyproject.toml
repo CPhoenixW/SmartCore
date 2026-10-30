@@ -20,6 +20,7 @@ dependencies = [
     "python-multipart",
     "cryptography",
     "websockets",
+    "pywebpush>=2.5.0",
 ]
 
 [project.optional-dependencies]

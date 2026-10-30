@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.server.new_core import crud
+from app.server.new_core.push import send_web_push
 from app.server.screen.manager import screenManager
 
 
@@ -41,16 +42,28 @@ def sendReminder(
     phase: str = "end",
     userId: str = crud.DEFAULT_USER_ID,
 ) -> dict[str, str]:
-    """Deliver a reminder to the user's optional Screen client.
-
-    The browser PWA is the durable notification surface. The Screen channel is
-    the only realtime channel left in the core scheduler; legacy preference
-    values are normalized to Screen by the preference service.
-    """
+    """Deliver a reminder to browser Push first, then the optional Screen client."""
     if dedupKey and crud.notifyDedupExists(db, dedupKey):
         return {"channel": "screen", "stat": "deduped"}
-    if channel != "screen":
-        channel = "screen"
+    browser_ok, browser_fail = send_web_push(
+        db,
+        user_id=userId,
+        title=title,
+        content=content,
+        evt_id=evtId,
+    )
+    if browser_ok:
+        crud.writeNotifyLog(
+            db,
+            dedupKey=dedupKey,
+            channel="browser",
+            title=title,
+            content=content,
+            stat="sent",
+            evtId=evtId,
+            userId=userId,
+        )
+        return {"channel": "browser", "stat": "sent"}
     ok, fail = _sendScreen(title, content, evtId=evtId, phase=phase, userId=userId)
     stat = "sent" if ok else "failed"
     crud.writeNotifyLog(
@@ -61,7 +74,7 @@ def sendReminder(
         content=content,
         stat=stat,
         evtId=evtId,
-        failReason=fail,
+        failReason=fail or browser_fail,
         userId=userId,
     )
     return {"channel": "screen", "stat": stat}
@@ -78,9 +91,28 @@ def routeNotify(
     phase: str = "end",
     userId: str = crud.DEFAULT_USER_ID,
 ) -> dict[str, str]:
-    """Route deterministic reminders to the Screen when it is connected."""
+    """Route deterministic reminders to browser Push, with Screen fallback."""
     if dedupKey and crud.notifyDedupExists(db, dedupKey):
         return {"channel": "screen", "stat": "deduped"}
+    browser_ok, browser_fail = send_web_push(
+        db,
+        user_id=userId,
+        title=title,
+        content=content,
+        evt_id=evtId,
+    )
+    if browser_ok:
+        crud.writeNotifyLog(
+            db,
+            dedupKey=dedupKey,
+            channel="browser",
+            title=title,
+            content=content,
+            stat="sent",
+            evtId=evtId,
+            userId=userId,
+        )
+        return {"channel": "browser", "stat": "sent"}
     if not screenOnline or not screenManager.online(userId):
         crud.writeNotifyLog(
             db,
@@ -90,7 +122,7 @@ def routeNotify(
             content=content,
             stat="failed",
             evtId=evtId,
-            failReason="screen websocket offline",
+            failReason=f"{browser_fail}; screen websocket offline" if browser_fail else "screen websocket offline",
             userId=userId,
         )
         return {"channel": "screen", "stat": "failed"}

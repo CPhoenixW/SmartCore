@@ -233,3 +233,18 @@ DSH 的 MCP 工具默认只提供 SmartCore 事项、Idea、日报、Computer �
 飞书机器人回调、配对、管理页面、投递工具和公网路由已从默认链路删除。PWA 通过浏览器
 session 进入 Server，助手请求经 DSH bridge 调用受限 Agent API；日报和通知写回 Server
 后由 PWA 或 Screen 读取。旧机器人表只为旧数据库兼容，完成数据迁移后可清理。
+
+## D018 手机助手使用 Server 时间、SSE 状态和 Browser Push
+
+状态：已采用。
+
+手机 PWA 的助手入口使用 `/api/assistant/stream`，由 Server 从已验证浏览器 session 派生
+scope，并把 Server 生成的带时区 `serverNow` 放进 DSH 上下文。DSH bridge 只发布有限的
+状态、工具进度和最终答案事件，PWA 可在工具调用期间显示正在做什么，同时不暴露内部推理。
+
+课程、DDL 和 Reminder 仍由 Server scheduler 确定性扫描；用户显式开启通知后，Server 通过
+VAPID Web Push 投递到 PWA Service Worker，失败或未订阅时回退到 Screen。VAPID 私钥只存在
+部署环境，订阅按浏览器 session owner 保存，历史投递写入 `notifyLog`。
+
+原因：手机端不需要每天打开飞书或工作台即可收到提醒；把时间、所有权、调度和投递留在
+Server 可以避免设备时钟、模型猜日期或浏览器直接决定业务归属。
