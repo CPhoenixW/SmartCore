@@ -56,6 +56,25 @@ function send(response, status, body) {
   response.end(payload);
 }
 
+function sendSse(response, body) {
+  response.write(`data: ${JSON.stringify(body)}\n\n`);
+}
+
+function safeToolName(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "SmartCore 工具";
+  return raw.replace(/^mcp__smartcore__/, "").replace(/^smartcore_/, "").slice(0, 120);
+}
+
+function toolStatus(name) {
+  const normalized = safeToolName(name).toLowerCase();
+  if (normalized.includes("query") || normalized.includes("search")) return "正在查询你的安排…";
+  if (normalized.includes("create") || normalized.includes("capture")) return "正在帮你记录…";
+  if (normalized.includes("update") || normalized.includes("complete") || normalized.includes("delete")) return "正在更新你的事项…";
+  if (normalized.includes("media") || normalized.includes("image")) return "正在处理附件…";
+  return "正在调用 SmartCore…";
+}
+
 function eventText(event) {
   if (typeof event.text === "string" && event.text.trim()) return event.text.trim();
   if (event.message && typeof event.message.text === "string") return event.message.text.trim();
@@ -79,7 +98,8 @@ function safePrompt(event) {
   return [
     "你是 SmartCore 的个人工作助手。请用中文，简洁、直接地帮助用户完成当前请求。",
     "你只能通过 mcp__smartcore__* 工具读写 SmartCore；不要猜测事件 id，不要访问文件系统、shell 或数据库。",
-    "涉及日期时间时先使用上下文，向 Server 传入带时区的绝对 ISO 8601 时间。先查询再修改；完成、删除或转化前确认目标明确。",
+    "涉及日期时间时，绝对以事件上下文中的 serverNow 和 timezone 为准，禁止自行猜测年份或当前日期；向 Server 传入带时区的绝对 ISO 8601 时间。先查询再修改；完成、删除或转化前确认目标明确。",
+    "需要调用工具时，先用一句自然语言告诉用户你将查询或修改什么，再调用工具；工具完成后再给出简短结果。不要让用户在工具调用期间长时间无反馈。",
     mediaInstruction,
     "工具操作成功后用一句话说明结果；如果无法安全执行，说明缺少的字段。",
     `用户输入：${eventText(event)}`,
@@ -186,31 +206,49 @@ class DshRuntime {
     })().catch((error) => { this.ready = null; try { this.child?.kill("SIGTERM"); } catch {} throw error; });
     return this.ready;
   }
-  async query(sessionId, prompt, scopeToken) {
+  async query(sessionId, prompt, scopeToken, onUpdate) {
     const prior = this.queue;
     const run = prior.catch(() => {}).then(async () => {
       await this.updateScope(scopeToken);
-      return this._query(sessionId, prompt);
+      return this._query(sessionId, prompt, onUpdate);
     });
     const queued = run.finally(() => { if (this.queue === queued) this.queue = Promise.resolve(); });
     this.queue = queued;
     return run;
   }
-  async _query(sessionId, prompt) {
+  async _query(sessionId, prompt, onUpdate = () => {}) {
     await this.start();
     const rpc = this.rpc;
     const textParts = [];
+    const toolNames = new Map();
+    const emit = (update) => {
+      try { onUpdate(update); } catch {}
+    };
     const listener = (method, params) => {
       if (params.sessionId !== sessionId) return;
       if (method === "session.status") {
+        if (params.status === "running") emit({ type: "status", phase: "thinking", message: "正在理解你的请求…" });
         return;
       }
       if (method !== "session.event") return;
       const event = params.event || {};
+      const data = event.data || event;
       if (event.type === "assistant/message") {
-        const content = event.data?.message?.content || [];
+        const content = data.message?.content || [];
         const text = content.filter((block) => block?.type === "text").map((block) => block.text || "").join("");
-        if (text) textParts.push(text);
+        if (text) {
+          textParts.push(text);
+          emit({ type: "message", text, mode: "new" });
+          emit({ type: "status", phase: content.some((block) => block?.type === "tool-call") ? "tool" : "responding", message: content.some((block) => block?.type === "tool-call") ? "准备查询你的资料…" : "正在整理答案…" });
+        }
+      } else if (event.type === "tool/call") {
+        const name = safeToolName(data.name || data.toolName || data.call?.name);
+        if (data.callId) toolNames.set(String(data.callId), name);
+        emit({ type: "tool", state: "start", name, message: toolStatus(name) });
+      } else if (event.type === "tool/result") {
+        const name = toolNames.get(String(data.callId || data.message?.callId || "")) || "SmartCore 工具";
+        emit({ type: "tool", state: "done", name, message: "资料已返回，继续整理…" });
+        emit({ type: "status", phase: "thinking", message: "正在根据结果整理答案…" });
       }
     };
     rpc.listeners.add(listener);
@@ -243,13 +281,45 @@ async function handleEvent(event, { waitForResult = false } = {}) {
   return { accepted: true, sessionId, response: response || "已处理。" };
 }
 
+async function streamEvent(event, response) {
+  if (!event || typeof event !== "object" || !String(event.userId || "").trim()) throw new Error("event userId is required");
+  const hasImage = Array.isArray(event.attachments) && event.attachments.some((item) => String(item?.mimeType || "").startsWith("image/"));
+  const runtime = runtimeFor(String(event.userId), hasImage ? "vision" : "text");
+  const scopeToken = String(event.agentScope || "");
+  const sessionId = sessionIdFor(event);
+  const queue = [];
+  let wake;
+  let finished = false;
+  const push = (item) => { queue.push(item); if (wake) { const resolve = wake; wake = undefined; resolve(); } };
+  const work = runtime.query(sessionId, safePrompt(event), scopeToken, push)
+    .then((result) => push({ type: "done", sessionId, response: result || "已处理。" }))
+    .catch((error) => push({ type: "error", message: "助手暂时不可用，请稍后重试。" }))
+    .finally(() => { finished = true; if (wake) { const resolve = wake; wake = undefined; resolve(); } });
+
+  response.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  sendSse(response, { type: "status", phase: "thinking", message: "正在连接助手…" });
+  while (!finished || queue.length) {
+    if (!queue.length) await new Promise((resolve) => { wake = resolve; });
+    while (queue.length) sendSse(response, queue.shift());
+  }
+  await work;
+  sendSse(response, { type: "end" });
+  response.end();
+}
+
 const server = createServer(async (request, response) => {
   try {
     if (request.method === "GET" && request.url === "/healthz") return send(response, 200, { status: "ok", runtimeCount: runtimes.size, provider: MODEL_PROVIDER, model: TEXT_MODEL, visionModel: VISION_MODEL });
     const authorization = String(request.headers.authorization || "");
     if (!equalSecret(authorization.startsWith("Bearer ") ? authorization.slice(7) : "", EVENT_TOKEN)) return send(response, 401, { detail: "invalid or missing DSH event token" });
-    if (request.method !== "POST" || !["/api/smartcore/events", "/api/smartcore/query"].includes(request.url)) return send(response, 404, { detail: "not found" });
+    if (request.method !== "POST" || !["/api/smartcore/events", "/api/smartcore/query", "/api/smartcore/stream"].includes(request.url)) return send(response, 404, { detail: "not found" });
     const event = await requestBody(request);
+    if (request.url === "/api/smartcore/stream") return await streamEvent(event, response);
     const result = await handleEvent(event, { waitForResult: request.url === "/api/smartcore/query" });
     return send(response, request.url === "/api/smartcore/events" ? 202 : 200, result);
   } catch (error) {

@@ -91,6 +91,14 @@ class Settings(BaseSettings):
     weather_longitude: float = 120.493
     weather_api_url: str = "https://api.open-meteo.com/v1/forecast"
 
+    # Browser Push is opt-in.  The private key and subject stay in the
+    # deployment environment; only the public key is returned to the PWA.
+    pwa_push_enabled: bool = False
+    pwa_push_vapid_public_key: str = ""
+    pwa_push_vapid_private_key: str = ""
+    pwa_push_vapid_subject: str = ""
+    pwa_push_timeout_seconds: int = 10
+
     agent_api_token: str = ""
     device_api_token: str = ""
     device_heartbeat_interval_seconds: int = 10

@@ -344,6 +344,22 @@ class NotifyLog(Base):
     dedupKey: Mapped[str | None] = mapped_column(String(200), unique=True)
 
 
+class PushSubscription(Base):
+    __tablename__ = "pushSubscription"
+    __table_args__ = (UniqueConstraint("endpoint", name="uq_pushSubscription_endpoint"),)
+
+    subscriptionId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    endpoint: Mapped[str] = mapped_column(String(2000), nullable=False)
+    p256dh: Mapped[str] = mapped_column(String(500), nullable=False)
+    auth: Mapped[str] = mapped_column(String(500), nullable=False)
+    userAgent: Mapped[str | None] = mapped_column(String(500))
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
 class MsgLog(Base):
     __tablename__ = "msgLog"
 

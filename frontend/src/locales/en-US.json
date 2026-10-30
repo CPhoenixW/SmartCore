@@ -6,7 +6,12 @@
     "apiError": "API unavailable",
     "legacyUi": "Legacy UI",
     "navigation": "Workbench navigation",
-    "menu": "Open menu"
+    "menu": "Open menu",
+    "more": "More",
+    "enableNotifications": "Enable phone notifications",
+    "notificationsEnabled": "Phone notifications enabled",
+    "notificationsDenied": "The browser denied notification permission",
+    "notificationsUnavailable": "Notifications are unavailable in this environment"
   },
   "nav": {
     "overview": "Overview",
@@ -199,7 +204,10 @@
     "error": "The assistant is temporarily unavailable; your draft was kept",
     "clear": "New chat",
     "you": "You",
-    "bot": "SmartCore"
+    "bot": "SmartCore",
+    "starting": "I'll take a look…",
+    "toolWorking": "Using a SmartCore tool…",
+    "done": "Done"
   },
   "add": {
     "title": "Add event",
