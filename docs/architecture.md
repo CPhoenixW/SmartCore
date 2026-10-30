@@ -6,7 +6,7 @@ Raspberry Pi、电脑监视器和副屏只负责采集或展示。
 ```text
 PWA / Vue -----------------------> Server browser session -> DSH Runtime/MCP Bridge
 Pi / Computer / Screen ----------> Server device API or WebSocket
-Server scheduler ----------------> PWA daily summaries and Screen notifications
+Server scheduler ----------------> PWA daily summaries, Browser Push and Screen fallback
 ```
 
 ## 运行节点
@@ -74,7 +74,7 @@ handler。新集成必须以 `GET /agent/tools` 返回的契约为准。旧 Feis
 
 APScheduler 运行在 Server 内：
 
-- 事项提醒由确定性规则扫描，不依赖 LLM；实时提醒投递到 Screen，历史记录由 PWA 读取。
+- 事项提醒由确定性规则扫描，不依赖 LLM；实时提醒优先投递到已订阅的 PWA Browser Push，未订阅或失败时回退到 Screen，历史记录由 PWA 读取。
 - 天气从 Open-Meteo 定时刷新；临时失败保留最后一次成功缓存。
 - 日报由 Server 创建有用户 scope 的 DSH 任务，DSH 生成内容，MCP 工具写回后由 PWA 读取。
 - Computer 工作块边界由 Server 确定性维护，结构化主题和总结由受限模型调用完成。

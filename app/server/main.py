@@ -17,7 +17,9 @@ from app.server.api.daily_summary_routes import router as dailySummaryApiRouter
 from app.server.api.device_state_routes import router as deviceStateApiRouter
 from app.server.api.event_view_routes import router as eventViewApiRouter
 from app.server.api.idea_media_routes import router as ideaMediaApiRouter
+from app.server.api.notification_routes import router as notificationApiRouter
 from app.server.api.routes import router as apiRouter
+from app.server.api.runtime_routes import router as runtimeApiRouter
 from app.server.api.weather_routes import router as weatherApiRouter
 from app.server.auth.http_boundary import RequestLimits, reject_request
 from app.server.auth.security import session_user_id_from_request
@@ -174,8 +176,10 @@ def create_app() -> FastAPI:
     app.include_router(dailySummaryApiRouter)
     app.include_router(eventViewApiRouter)
     app.include_router(ideaMediaApiRouter)
+    app.include_router(notificationApiRouter)
     app.include_router(weatherApiRouter)
     app.include_router(apiRouter)
+    app.include_router(runtimeApiRouter)
     app.include_router(createDevRouter())
     app.include_router(deviceRouter)
     app.include_router(userDeviceRouter)

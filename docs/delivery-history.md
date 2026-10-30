@@ -3,6 +3,15 @@
 本文只保留影响后续维护的里程碑与验收边界。完整提交和讨论使用 Git 历史；当前
 行为以现行领域文档、代码和测试为准。
 
+## 2026-10-31：手机助手体验与 Browser Push
+
+- 手机底部导航收敛为四个常用入口，次要页面收进“更多”，保留 PWA 安装和离线草稿体验。
+- `/api/assistant/stream` 与 DSH bridge 增加连接、思考、工具和答案状态；助手上下文使用
+  Server `serverNow` 与浏览器 IANA 时区，避免模型自行猜测日期。
+- 新增 owner-scoped PushSubscription、VAPID 配置和 Service Worker 通知；课程、DDL、Reminder
+  由 scheduler 优先推送到 PWA，失败时回退 Screen，并写入 `notifyLog`。
+- 本轮暂不启用电脑 SSH/Tailscale 控制；设备连接作为下一阶段的显式能力和权限边界继续设计。
+
 ## 2026-10-30：手机 PWA 与 DSH 助手迁移
 
 - `/work/assistant` 提供可安装到手机主屏的跨平台 PWA 入口，支持本地会话恢复、草稿保存和离线提示。
