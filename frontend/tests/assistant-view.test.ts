@@ -60,4 +60,13 @@ beforeEach(() => {
     expect(wrapper.find(".assistant-progress").exists()).toBe(false);
     expect(wrapper.text()).toContain("已创建计划");
   });
+
+  it("keeps an empty conversation quiet and focused", async () => {
+    readMock.mockResolvedValueOnce({ conversationId: "pwa-test", title: "SmartCore 助手", stat: "active", createdAt: "2026-07-31T10:00:00+08:00", updatedAt: "2026-07-31T10:00:00+08:00", lastMessageAt: null, messages: [] });
+    const wrapper = mount(AssistantView, { global: { plugins: [i18n] } });
+    await flushPromises();
+
+    expect(wrapper.find(".assistant-empty").text()).toContain("从一句话开始");
+    expect(wrapper.find(".assistant-quick-prompts").exists()).toBe(false);
+  });
 });
