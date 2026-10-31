@@ -25,6 +25,7 @@ from app.server.new_core.assistant_history import (
     get_primary_conversation,
     list_conversations,
     prepare_request,
+    recent_context_messages,
     search_messages,
 )
 
@@ -74,7 +75,7 @@ def _event_context(body: AssistantMessageBody, user_id: str, settings: Settings)
     except ZoneInfoNotFoundError as exc:
         raise HTTPException(status_code=422, detail="timezone must be a valid IANA name") from exc
     now = datetime.now(timezone).replace(microsecond=0)
-    return {
+    event = {
         "event_id": f"web-assistant-{user_id}-{uuid4().hex}",
         "source": "web",
         "event_type": "assistant_message",
@@ -85,6 +86,22 @@ def _event_context(body: AssistantMessageBody, user_id: str, settings: Settings)
         "serverNow": now.isoformat(),
         "agentScope": issue_agent_scope(userId=user_id, purpose="web", ttl_seconds=900),
     }
+    if body.clientMessageId:
+        event["clientMessageId"] = body.clientMessageId
+    return event
+
+
+def _attach_conversation_context(
+    event: dict[str, Any],
+    history: PreparedAssistantRequest,
+    db: Session,
+) -> None:
+    event["conversationHistory"] = recent_context_messages(
+        db,
+        user_id=history.conversation.userId,
+        conversation_id=history.conversation.conversationId,
+        exclude_message_id=history.user_message.messageId,
+    )
 
 
 def _history_error(exc: ValueError) -> HTTPException:
@@ -285,6 +302,7 @@ def assistant_message(
     event = _event_context(body, user_id, settings)
     history = _prepare_history(body, user_id=user_id, db=db)
     event["conversationId"] = history.conversation.conversationId
+    _attach_conversation_context(event, history, db)
     db.commit()
     if history.replay_response:
         return {
@@ -344,6 +362,7 @@ def assistant_stream(
     event = _event_context(body, user_id, settings)
     history = _prepare_history(body, user_id=user_id, db=db)
     event["conversationId"] = history.conversation.conversationId
+    _attach_conversation_context(event, history, db)
     db.commit()
     if history.replay_response:
         return StreamingResponse(

@@ -110,6 +110,9 @@ function safePrompt(event) {
     if (!omit.has(key) && ["string", "number", "boolean"].includes(typeof value)) context[key] = value;
   }
   if (event.request && typeof event.request === "object") context.request = event.request;
+  if (Array.isArray(event.conversationHistory) && event.conversationHistory.length) {
+    context.conversationHistory = event.conversationHistory;
+  }
   if (event.attachments && Array.isArray(event.attachments)) context.attachments = event.attachments.map((item) => ({ uploadId: item.uploadId, fileName: item.fileName, mimeType: item.mimeType, sizeBytes: item.sizeBytes }));
   const mediaInstruction = event.event_type === "idea_media_edit" && event.jobId
     ? `这是一个图片媒体任务。先调用 mcp__smartcore__smartcore_media_job_context，读取图片后再调用 mcp__smartcore__smartcore_media_job_complete 或 mcp__smartcore__smartcore_media_job_fail。`
@@ -120,6 +123,7 @@ function safePrompt(event) {
     "你是 SmartCore 的个人工作助手。请用中文，简洁、直接地帮助用户完成当前请求。",
     "你只能通过 mcp__smartcore__* 工具读写 SmartCore；不要猜测事件 id，不要访问文件系统、shell 或数据库。",
     "涉及日期时间时，绝对以事件上下文中的 serverNow 和 timezone 为准，禁止自行猜测年份或当前日期；向 Server 传入带时区的绝对 ISO 8601 时间。先查询再修改；完成、删除或转化前确认目标明确。",
+    "这是一个连续的个人助手对话。若事件上下文包含 conversationHistory，把它当作最近的对话背景；当前用户输入优先，不要重复旧操作。",
     "需要调用工具时，先用一句自然语言告诉用户你将查询或修改什么，再调用工具；工具完成后再给出简短结果。不要让用户在工具调用期间长时间无反馈。",
     mediaInstruction,
     "工具操作成功后用一句话说明结果；如果无法安全执行，说明缺少的字段。",
@@ -130,8 +134,14 @@ function safePrompt(event) {
 
 function sessionIdFor(event) {
   const source = safePart(event.source || "unknown");
-  const conversation = event.conversationId || event.chat_id || event.sessionId || event.deviceId || event.jobId || event.reportDate || event.event_type || "default";
-  return `smartcore-${safePart(event.userId)}-${source}-${sessionPart(conversation)}`;
+  // The PWA owns one durable conversation, but a DSH session must stay
+  // bounded. Use one fresh model turn per message and pass a small server-side
+  // history window in safePrompt instead of replaying an ever-growing DSH log.
+  const isPwaAssistant = event.source === "web" && event.event_type === "assistant_message";
+  const turn = isPwaAssistant
+    ? (event.clientMessageId || event.event_id || event.eventId || event.messageId || event.conversationId || "default")
+    : (event.conversationId || event.chat_id || event.sessionId || event.deviceId || event.jobId || event.reportDate || event.event_type || "default");
+  return `smartcore-${safePart(event.userId)}-${source}-${sessionPart(turn)}`;
 }
 
 class RpcClient {
