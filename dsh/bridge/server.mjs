@@ -42,6 +42,11 @@ async function clearStaleSessionLocks(directory) {
   }));
 }
 
+function isMissingSessionError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  return message.includes("session_not_found") || (message.includes("session ") && message.includes("not found"));
+}
+
 function equalSecret(actual, expected) {
   if (!expected) return false;
   const a = Buffer.from(String(actual || ""));
@@ -186,6 +191,7 @@ class DshRuntime {
     this.rpc = null;
     this.ready = null;
     this.queue = Promise.resolve();
+    this.sessions = new Set();
     this.lastUsed = Date.now();
   }
   async updateScope(token) {
@@ -273,8 +279,13 @@ class DshRuntime {
     };
     rpc.listeners.add(listener);
     try {
+      if (!this.sessions.has(sessionId)) {
+        try { await rpc.request("session/resume", { sessionId }); }
+        catch (error) { if (!isMissingSessionError(error)) throw error; }
+      }
       await rpc.request("session/prompt", { sessionId, contentBlocks: [{ type: "text", text: prompt }] });
       await rpc.request("session/wait", { sessionId }, REQUEST_TIMEOUT_MS);
+      this.sessions.add(sessionId);
       return textParts.join("").trim();
     } finally { rpc.listeners.delete(listener); }
   }
