@@ -94,7 +94,6 @@ async function enablePush(): Promise<void> {
         </div>
       </header>
       <main ref="pageRoot" class="page"><RouterView /></main>
-      <nav class="mobile-bottom-nav" :aria-label="t('app.navigation')"><RouterLink v-for="item in primaryNav" :key="item.key" class="mobile-bottom-nav__item" :to="{ name: item.name }"><component :is="item.icon" :size="19" aria-hidden="true" /><span>{{ t(`nav.${item.key}`) }}</span></RouterLink></nav>
     </section>
   </div>
 </template>
