@@ -25,6 +25,11 @@ PWA 的 `/api/assistant/message` 和 `/api/assistant/stream` 从已认证浏览�
 通过 SSE 发回连接、思考、工具调用、工具完成和最终答案状态；工具调用前的自然语言提示
 由模型先输出，PWA 按事件逐步显示，不把内部推理或 Agent scope 暴露给用户。
 
+PWA 的会话由 `assistantConversation` 和 `assistantMessage` 保存。消息写入前由浏览器
+session 推导 owner，`clientMessageId` 提供断线重试幂等；DSH 的工具状态只作为实时 SSE
+反馈，不进入聊天历史。`GET /api/assistant/conversations` 同时承担最近会话列表和助手内
+文本搜索，读取、搜索、归档和一次性本机历史导入都沿用同一 owner 边界。
+
 DSH bridge 按附件 MIME 在 text 和 vision runtime 之间选择模型；图片不通过文件路径交给模型，
 而是由 scope 保护的 Server media route 返回为 MCP image content。两个 profile 使用独立的
 持久会话目录，避免跨模型复用会话事实。

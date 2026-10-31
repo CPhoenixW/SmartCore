@@ -16,6 +16,7 @@
   "nav": {
     "overview": "总览",
     "assistant": "助手",
+    "schedule": "日程",
     "dailySummary": "每日总结",
     "add": "添加事件",
     "update": "更新事件",
@@ -35,6 +36,7 @@
     "delete": "删除",
     "refresh": "刷新",
     "edit": "编辑",
+    "open": "打开",
     "all": "全部",
     "search": "搜索标题、日期或时间",
     "today": "今天",
@@ -42,6 +44,7 @@
     "next": "下一天",
     "retry": "重试",
     "close": "关闭",
+    "clear": "清除",
     "minutes": "分钟",
     "notSet": "未设置",
     "listSeparator": "、"
@@ -129,6 +132,18 @@
   "overview": {
     "title": "总览",
     "subtitle": "查看今天的事项、截止时间与设备状态",
+    "serverClock": "服务器时间",
+    "clockLoading": "正在同步时间…",
+    "openSchedule": "查看日程",
+    "nextAction": "下一项行动",
+    "askPlaceholder": "直接告诉助手你要查什么或记录什么",
+    "askAssistant": "问助手",
+    "todayList": "今天",
+    "next72Title": "接下来 72 小时",
+    "inboxTitle": "需要处理",
+    "openIdeas": "未处理灵感",
+    "notifications": "手机通知",
+    "manageInSettings": "在设置中管理",
     "todo": "待办事项",
     "today": "今日事项",
     "deadline": "未来 72 小时",
@@ -190,6 +205,21 @@
       "failed": "生成失败"
     }
   },
+  "schedule": {
+    "title": "日程",
+    "subtitle": "课程、计划、DDL 和提醒放在同一条行动流里",
+    "add": "新增事项",
+    "rangeLabel": "日程范围",
+    "today": "今天",
+    "week": "本周",
+    "72h": "未来 72 小时",
+    "todayTitle": "今天的安排",
+    "weekTitle": "本周的安排",
+    "72hTitle": "未来 72 小时",
+    "items": "项",
+    "empty": "这个范围内没有待处理安排",
+    "error": "日程暂时无法加载"
+  },
   "assistant": {
     "title": "SmartCore 助手",
     "subtitle": "直接记录、查询和调整你的工作，不必先打开复杂的工作台。",
@@ -207,7 +237,23 @@
     "bot": "SmartCore",
     "starting": "我先帮你看一下…",
     "toolWorking": "正在调用工具…",
-    "done": "已完成"
+    "done": "已完成",
+    "history": "历史会话",
+    "newConversation": "新会话",
+    "searchPlaceholder": "搜索助手消息",
+    "noSearchResults": "没有找到相关消息",
+    "noHistory": "还没有会话",
+    "historyError": "历史会话暂时无法加载",
+    "searchError": "搜索暂时不可用",
+    "openHistory": "打开会话历史",
+    "archive": "归档会话",
+    "importTitle": "发现本机旧会话",
+    "importHint": "有 {count} 条旧消息只保存在这台设备上，可以一次性导入当前账户。",
+    "importAction": "导入历史",
+    "pending": "正在生成回答…",
+    "quickToday": "看看今天安排",
+    "quickCapture": "记录一个待办",
+    "quickDeadline": "查最近的 DDL"
   },
   "add": {
     "title": "添加事件",
@@ -576,6 +622,17 @@
     "sessionRevoked": "会话已撤销",
     "noSessions": "暂无有效会话",
     "logoutAll": "退出所有会话"
+    ,"pushTitle": "手机通知"
+    ,"pushHint": "课程、DDL 和提醒会通过浏览器推送到这台手机。"
+    ,"pushEnable": "开启通知"
+    ,"pushDisable": "关闭通知"
+    ,"pushEnabled": "手机通知已开启"
+    ,"pushDisabled": "手机通知已关闭"
+    ,"pushDenied": "浏览器拒绝了通知权限，请在系统设置中重新允许。"
+    ,"pushUnavailable": "当前环境无法完成通知配置"
+    ,"pushUnsupported": "当前浏览器或安装方式不支持推送通知"
+    ,"toolsTitle": "低频功能"
+    ,"toolsHint": "课程维护、灵感、设备和日志放在这里，需要时再打开。"
   },
   "pair": {
     "title": "已注册设备",

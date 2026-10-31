@@ -16,6 +16,7 @@
   "nav": {
     "overview": "Overview",
     "assistant": "Assistant",
+    "schedule": "Schedule",
     "dailySummary": "Daily summary",
     "add": "Add event",
     "update": "Update event",
@@ -35,6 +36,7 @@
     "delete": "Delete",
     "refresh": "Refresh",
     "edit": "Edit",
+    "open": "Open",
     "all": "All",
     "search": "Search title, date or time",
     "today": "Today",
@@ -42,6 +44,7 @@
     "next": "Next day",
     "retry": "Retry",
     "close": "Close",
+    "clear": "Clear",
     "minutes": "min",
     "notSet": "Not set",
     "listSeparator": ", "
@@ -129,6 +132,18 @@
   "overview": {
     "title": "Overview",
     "subtitle": "Today's events, deadlines and device state",
+    "serverClock": "Server time",
+    "clockLoading": "Syncing time…",
+    "openSchedule": "View schedule",
+    "nextAction": "Next action",
+    "askPlaceholder": "Tell the assistant what to find or capture",
+    "askAssistant": "Ask assistant",
+    "todayList": "Today",
+    "next72Title": "Next 72 hours",
+    "inboxTitle": "Needs attention",
+    "openIdeas": "Unprocessed ideas",
+    "notifications": "Phone notifications",
+    "manageInSettings": "Manage in settings",
     "todo": "To do",
     "today": "Today",
     "deadline": "Next 72 hours",
@@ -190,6 +205,21 @@
       "failed": "Failed"
     }
   },
+  "schedule": {
+    "title": "Schedule",
+    "subtitle": "Courses, plans, deadlines and reminders in one action stream",
+    "add": "Add item",
+    "rangeLabel": "Schedule range",
+    "today": "Today",
+    "week": "This week",
+    "72h": "Next 72 hours",
+    "todayTitle": "Today’s plan",
+    "weekTitle": "This week’s plan",
+    "72hTitle": "Next 72 hours",
+    "items": " items",
+    "empty": "Nothing needs your attention in this range",
+    "error": "The schedule is temporarily unavailable"
+  },
   "assistant": {
     "title": "SmartCore assistant",
     "subtitle": "Capture, query, and adjust your work without opening the full workbench first.",
@@ -207,7 +237,23 @@
     "bot": "SmartCore",
     "starting": "I'll take a look…",
     "toolWorking": "Using a SmartCore tool…",
-    "done": "Done"
+    "done": "Done",
+    "history": "Conversation history",
+    "newConversation": "New conversation",
+    "searchPlaceholder": "Search assistant messages",
+    "noSearchResults": "No matching messages",
+    "noHistory": "No conversations yet",
+    "historyError": "Conversation history is unavailable",
+    "searchError": "Search is temporarily unavailable",
+    "openHistory": "Open conversation history",
+    "archive": "Archive conversation",
+    "importTitle": "Local history found",
+    "importHint": "There are {count} older messages saved only on this device. Import them into this account once.",
+    "importAction": "Import history",
+    "pending": "Generating a response…",
+    "quickToday": "Show today’s plan",
+    "quickCapture": "Capture a task",
+    "quickDeadline": "Find recent deadlines"
   },
   "add": {
     "title": "Add event",
@@ -576,6 +622,17 @@
     "sessionRevoked": "Session revoked",
     "noSessions": "No active sessions",
     "logoutAll": "Log out all sessions"
+    ,"pushTitle": "Phone notifications"
+    ,"pushHint": "Courses, deadlines, and reminders can be delivered to this phone by browser push."
+    ,"pushEnable": "Enable notifications"
+    ,"pushDisable": "Disable notifications"
+    ,"pushEnabled": "Phone notifications enabled"
+    ,"pushDisabled": "Phone notifications disabled"
+    ,"pushDenied": "The browser denied permission. Allow notifications in system settings and try again."
+    ,"pushUnavailable": "Notifications could not be configured in this environment"
+    ,"pushUnsupported": "Push notifications are not supported by this browser or install mode"
+    ,"toolsTitle": "Less frequent tools"
+    ,"toolsHint": "Course maintenance, ideas, devices, and logs stay here until you need them."
   },
   "pair": {
     "title": "Registered devices",

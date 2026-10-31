@@ -296,6 +296,41 @@ CREATE INDEX IF NOT EXISTS idx_actLog_target ON actLog(targetKind, targetId);
 CREATE INDEX IF NOT EXISTS idx_notifyLog_user_scheduled ON notifyLog(userId, scheduledAt);
 CREATE INDEX IF NOT EXISTS idx_msgLog_user_created ON msgLog(userId, createdAt);
 
+CREATE TABLE IF NOT EXISTS assistantConversation (
+    conversationId VARCHAR(160) PRIMARY KEY,
+    userId VARCHAR(32) NOT NULL,
+    title VARCHAR(300) NOT NULL DEFAULT '新会话',
+    stat VARCHAR(20) NOT NULL DEFAULT 'active',
+    createdAt VARCHAR(64) NOT NULL,
+    updatedAt VARCHAR(64) NOT NULL,
+    lastMessageAt VARCHAR(64),
+    FOREIGN KEY (userId) REFERENCES appUser(userId) ON DELETE CASCADE,
+    CHECK (stat IN ('active', 'archived'))
+);
+
+CREATE TABLE IF NOT EXISTS assistantMessage (
+    messageId VARCHAR(32) PRIMARY KEY,
+    conversationId VARCHAR(160) NOT NULL,
+    userId VARCHAR(32) NOT NULL,
+    role VARCHAR(20) NOT NULL,
+    text TEXT NOT NULL DEFAULT '',
+    clientMessageId VARCHAR(120),
+    stat VARCHAR(20) NOT NULL DEFAULT 'complete',
+    createdAt VARCHAR(64) NOT NULL,
+    FOREIGN KEY (conversationId) REFERENCES assistantConversation(conversationId) ON DELETE CASCADE,
+    FOREIGN KEY (userId) REFERENCES appUser(userId) ON DELETE CASCADE,
+    UNIQUE (userId, clientMessageId),
+    CHECK (role IN ('user', 'assistant')),
+    CHECK (stat IN ('pending', 'complete', 'failed'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_assistantConversation_user_updated
+    ON assistantConversation(userId, updatedAt);
+CREATE INDEX IF NOT EXISTS idx_assistantMessage_conversation_created
+    ON assistantMessage(conversationId, createdAt);
+CREATE INDEX IF NOT EXISTS idx_assistantMessage_user_created
+    ON assistantMessage(userId, createdAt);
+
 CREATE TABLE IF NOT EXISTS computerHourlyAnalysis (
     analysisId VARCHAR(32) PRIMARY KEY,
     userId VARCHAR(32) NOT NULL REFERENCES appUser(userId) ON DELETE CASCADE,
