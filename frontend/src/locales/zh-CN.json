@@ -242,6 +242,8 @@
     "syncing": "正在同步",
     "synced": "已同步",
     "offlineShort": "离线",
+    "openSearch": "搜索会话",
+    "closeSearch": "关闭搜索",
     "searchPlaceholder": "搜索这段对话",
     "noSearchResults": "没有找到相关消息",
     "historyError": "历史会话暂时无法加载",
