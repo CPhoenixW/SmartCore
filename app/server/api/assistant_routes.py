@@ -161,6 +161,11 @@ def _stream_dsh(
                         response_text = str(payload.get("response") or "").strip() or "".join(response_parts).strip()
                         complete_response(db, history, response_text)
                         completed = True
+                        # DSH's session id is intentionally different from
+                        # the server-owned conversation id. Return both so
+                        # the browser keeps reading the same conversation
+                        # after the stream closes.
+                        payload = {**payload, "conversationId": history.conversation.conversationId}
                     if event_type == "error" and not completed:
                         fail_response(db, history, str(payload.get("message") or "助手暂时不可用，请稍后重试。"))
                         completed = True
@@ -318,6 +323,7 @@ def assistant_message(
         "ok": True,
         "data": {
             "sessionId": data.get("sessionId") or event["conversationId"],
+            "conversationId": history.conversation.conversationId,
             "response": str(data["response"]),
         },
         "errors": [],
