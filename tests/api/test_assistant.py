@@ -38,7 +38,11 @@ def test_assistant_message_forwards_authenticated_user_to_dsh(
     )
 
     assert response.status_code == 200
-    assert response.json()["data"] == {"sessionId": "session-1", "response": "已记录"}
+    assert response.json()["data"] == {
+        "sessionId": "session-1",
+        "conversationId": primary_conversation_id("default"),
+        "response": "已记录",
+    }
     assert captured["url"] == "http://dsh.local/api/smartcore/query"
     kwargs = captured["kwargs"]
     assert isinstance(kwargs, dict)
@@ -102,6 +106,7 @@ def test_assistant_stream_forwards_progress_events_and_server_time(
     assert response.status_code == 200
     assert "正在查询你的安排" in response.text
     assert '"type": "done"' in response.text
+    assert f'"conversationId": "{primary_conversation_id("default")}"' in response.text
     assert captured["url"] == "http://dsh.local/api/smartcore/stream"
     event = captured["kwargs"]["json"]
     assert event["timezone"] == "Asia/Shanghai"
