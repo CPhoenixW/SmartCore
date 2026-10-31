@@ -242,6 +242,8 @@
     "syncing": "Syncing",
     "synced": "Synced",
     "offlineShort": "Offline",
+    "openSearch": "Search conversation",
+    "closeSearch": "Close search",
     "searchPlaceholder": "Search this conversation",
     "noSearchResults": "No matching messages",
     "historyError": "Conversation history is unavailable",
