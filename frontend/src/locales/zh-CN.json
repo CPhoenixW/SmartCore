@@ -231,6 +231,7 @@
     "send": "发送",
     "sending": "处理中…",
     "thinking": "助手正在处理…",
+    "loading": "正在打开这条对话…",
     "error": "助手暂时不可用，草稿已保留",
     "clear": "清除搜索",
     "you": "你",
@@ -248,10 +249,7 @@
     "noSearchResults": "没有找到相关消息",
     "historyError": "历史会话暂时无法加载",
     "searchError": "搜索暂时不可用",
-    "pending": "正在生成回答…",
-    "quickToday": "看看今天安排",
-    "quickCapture": "记录一个待办",
-    "quickDeadline": "查最近的 DDL"
+    "pending": "正在生成回答…"
   },
   "add": {
     "title": "添加事件",
