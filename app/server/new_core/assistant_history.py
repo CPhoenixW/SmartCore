@@ -281,6 +281,50 @@ def get_conversation(
     }
 
 
+def recent_context_messages(
+    db: Session,
+    *,
+    user_id: str,
+    conversation_id: str,
+    exclude_message_id: str | None = None,
+    limit: int = 8,
+    max_chars: int = 6000,
+) -> list[dict[str, str]]:
+    """Return a small, owner-scoped context window for a fresh DSH turn.
+
+    The PWA keeps one server conversation, while each DSH request gets a fresh
+    model session. Keeping the context window here prevents an old model
+    session's tool schemas and reasoning traces from growing without bound.
+    """
+    conditions = [
+        AssistantMessage.userId == user_id,
+        AssistantMessage.conversationId == conversation_id,
+        AssistantMessage.stat == "complete",
+    ]
+    if exclude_message_id:
+        conditions.append(AssistantMessage.messageId != exclude_message_id)
+    rows = db.scalars(
+        select(AssistantMessage)
+        .where(*conditions)
+        .order_by(AssistantMessage.createdAt.desc(), AssistantMessage.messageId.desc())
+        .limit(max(1, min(limit, 20)))
+    ).all()
+
+    result: list[dict[str, str]] = []
+    used = 0
+    for row in reversed(rows):
+        text = row.text.strip()
+        if not text:
+            continue
+        remaining = max_chars - used
+        if remaining <= 0:
+            break
+        text = text[: min(1800, remaining)]
+        result.append({"role": row.role, "text": text})
+        used += len(text)
+    return result
+
+
 def search_messages(
     db: Session,
     *,

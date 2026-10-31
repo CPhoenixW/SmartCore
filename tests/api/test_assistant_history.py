@@ -105,6 +105,39 @@ def test_assistant_stream_client_message_is_idempotent(signed_client_factory, mo
         db.close()
 
 
+def test_assistant_stream_uses_bounded_server_context_for_each_dsh_turn(
+    signed_client_factory, monkeypatch
+) -> None:
+    _enable_dsh(monkeypatch)
+    events: list[dict] = []
+
+    def stream(_method: str, _url: str, **kwargs):
+        events.append(kwargs["json"])
+        return _StreamResponse()
+
+    monkeypatch.setattr(httpx, "stream", stream)
+    client = signed_client_factory("default")
+    first = {
+        "clientMessageId": "bounded-context-1",
+        "text": "查一下今天的课程",
+    }
+    second = {
+        "clientMessageId": "bounded-context-2",
+        "text": "再告诉我有没有截止日期",
+    }
+    assert client.post("/api/assistant/stream", json=first).status_code == 200
+    assert client.post("/api/assistant/stream", json=second).status_code == 200
+
+    assert events[0]["clientMessageId"] == first["clientMessageId"]
+    assert events[1]["clientMessageId"] == second["clientMessageId"]
+    assert events[0]["event_id"] != events[1]["event_id"]
+    assert events[0]["conversationHistory"] == []
+    assert events[1]["conversationHistory"] == [
+        {"role": "user", "text": first["text"]},
+        {"role": "assistant", "text": "这是历史回答"},
+    ]
+
+
 def test_assistant_history_is_owner_scoped(signed_client_factory) -> None:
     owner = signed_client_factory("default")
     created = owner.post("/api/assistant/conversations", json={"title": "私密会话"})
