@@ -1,5 +1,8 @@
 -- Drop all SmartCore work tables (reverse dependency order).
 
+DROP TABLE IF EXISTS assistantMessageFts;
+DROP TABLE IF EXISTS assistantMessage;
+DROP TABLE IF EXISTS assistantConversation;
 DROP TABLE IF EXISTS msgLog;
 DROP TABLE IF EXISTS notifyLog;
 DROP TABLE IF EXISTS actLog;

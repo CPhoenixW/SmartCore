@@ -1,4 +1,4 @@
-const CACHE_NAME = "smartcore-work-v3";
+const CACHE_NAME = "smartcore-work-v4";
 const APP_SHELL = [
   "/work/manifest.webmanifest",
   "/work/favicon.png",

@@ -20,13 +20,13 @@
         expression {$PUBLIC_ACCESS_ENABLED:false}
         host {$DOMAIN:example.com}
         method GET
-        path / /work /work/* /screen /static/screen/* /screen/events /screen/ws /api/auth/status /api/auth/me /api/auth/sessions /api/user/me /api/user/avatar/* /api/evt /api/evt/* /api/planEvt /api/ddlEvt /api/courseEvt /api/remindEvt /api/idea /api/idea/media-jobs/* /api/idea/attachments/* /api/devState /api/devState/* /api/log /api/log/* /api/weather /api/daily-summaries /api/device /api/device/* /api/computer/status /api/computer/usage /api/computer/insights /api/computer/codex-reports /api/admin/users /api/admin/agentRouteUsage /api/admin/agentRouteCompatibility /api/runtime/clock /api/notifications /api/notifications/* /dev/photo/request
+        path / /work /work/* /screen /static/screen/* /screen/events /screen/ws /api/auth/status /api/auth/me /api/auth/sessions /api/user/me /api/user/avatar/* /api/evt /api/evt/* /api/planEvt /api/ddlEvt /api/courseEvt /api/remindEvt /api/idea /api/idea/media-jobs/* /api/idea/attachments/* /api/devState /api/devState/* /api/log /api/log/* /api/weather /api/daily-summaries /api/device /api/device/* /api/computer/status /api/computer/usage /api/computer/insights /api/computer/codex-reports /api/admin/users /api/admin/agentRouteUsage /api/admin/agentRouteCompatibility /api/runtime/clock /api/notifications /api/notifications/* /api/assistant/conversations /api/assistant/conversations/* /dev/photo/request
     }
     @public_post {
         expression {$PUBLIC_ACCESS_ENABLED:false}
         host {$DOMAIN:example.com}
         method POST
-        path /api/auth/login /api/auth/logout /api/auth/logout-all /api/auth/password /api/user/avatar /api/assistant/message /api/assistant/stream /api/notifications/push-subscription /api/planEvt /api/ddlEvt /api/courseEvt /api/courseEvt/*/sync /api/remindEvt /api/evt/relations/sync /api/reminder/action /api/idea /api/idea/uploads /api/idea/media-process /api/idea/media-jobs /api/idea/media-jobs/*/retry /api/llm/parse /api/device/pair/start /api/device/pair/*/claim /api/device/pair/*/confirm /api/device/pair/*/activate /api/device/dispatch /api/device/receipt /api/device/*/photoRequest /api/computer/activity/batch /api/computer/heartbeat /api/computer/codex-reports/batch /api/admin/activeUser /dev/heartbeat /dev/photo/* /screen/ws-ticket /screen/reminder/action
+        path /api/auth/login /api/auth/logout /api/auth/logout-all /api/auth/password /api/user/avatar /api/assistant/message /api/assistant/stream /api/assistant/conversations /api/notifications/push-subscription /api/planEvt /api/ddlEvt /api/courseEvt /api/courseEvt/*/sync /api/remindEvt /api/evt/relations/sync /api/reminder/action /api/idea /api/idea/uploads /api/idea/media-process /api/idea/media-jobs /api/idea/media-jobs/*/retry /api/llm/parse /api/device/pair/start /api/device/pair/*/claim /api/device/pair/*/confirm /api/device/pair/*/activate /api/device/dispatch /api/device/receipt /api/device/*/photoRequest /api/computer/activity/batch /api/computer/heartbeat /api/computer/codex-reports/batch /api/admin/activeUser /dev/heartbeat /dev/photo/* /screen/ws-ticket /screen/reminder/action
     }
     @public_patch {
         expression {$PUBLIC_ACCESS_ENABLED:false}
@@ -38,7 +38,7 @@
         expression {$PUBLIC_ACCESS_ENABLED:false}
         host {$DOMAIN:example.com}
         method DELETE
-        path /api/auth/sessions/* /api/notifications/push-subscription /api/evt/* /api/idea/* /api/device/*
+        path /api/auth/sessions/* /api/assistant/conversations/* /api/notifications/push-subscription /api/evt/* /api/idea/* /api/device/*
     }
     handle @public_get {
         import smartcore_proxy

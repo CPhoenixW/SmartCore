@@ -4,28 +4,13 @@ import OverviewView from "@/views/OverviewView.vue";
 import { i18n } from "@/locales";
 
 vi.mock("@tanstack/vue-query", () => ({
-  useQuery: (options: { queryKey: unknown }) => {
-    const key = Array.isArray(options.queryKey) ? options.queryKey[0] : "";
-    return {
-      data: { value: key === "ideas" ? [{
-        ideaId: "idea-overview",
-        title: "Recent idea",
-        description: "Shared card treatment",
-        handled: false,
-        revision: 1,
-        attachments: [],
-        createdAt: "2026-07-31T10:00:00+08:00",
-      }] : undefined },
-      isPending: { value: false },
-      isError: { value: false },
-    };
-  },
+  useQuery: () => ({ data: { value: [] }, isPending: { value: false }, isError: { value: false } }),
   useMutation: () => ({ mutate: vi.fn(), isPending: { value: false } }),
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 
 describe("OverviewView", () => {
-  it("renders recent ideas with the shared idea card", () => {
+  it("renders the action-focused mobile overview", () => {
     const wrapper = mount(OverviewView, {
       global: {
         plugins: [i18n],
@@ -34,10 +19,9 @@ describe("OverviewView", () => {
       },
     });
 
-    expect(wrapper.get(".idea-card").text()).toContain("Recent idea");
-    expect(wrapper.get(".idea-card").text()).toContain("Shared card treatment");
-    expect(wrapper.findAll(".overview-scroll-card")).toHaveLength(2);
-    expect(wrapper.findAll(".overview-scroll-window")).toHaveLength(2);
-    expect(wrapper.find(".overview-idea-window").exists()).toBe(true);
+    expect(wrapper.find(".overview-focus").exists()).toBe(true);
+    expect(wrapper.find(".overview-assistant").exists()).toBe(true);
+    expect(wrapper.find(".global-search").exists()).toBe(false);
+    expect(wrapper.text()).toContain("下一项行动");
   });
 });

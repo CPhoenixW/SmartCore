@@ -156,7 +156,6 @@ describe("staged scroll window coverage", () => {
     }
 
     const cases = [
-      ["src/views/OverviewView.vue", 2],
       ["src/views/SettingsView.vue", 2],
       ["src/views/RaspberryPiView.vue", 2],
       ["src/components/device/ComputerUsagePanel.vue", 2],
