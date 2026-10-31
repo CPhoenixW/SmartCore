@@ -5,6 +5,7 @@ import json
 import httpx
 
 from app.server.config import get_settings
+from app.server.new_core.assistant_history import primary_conversation_id
 
 
 def test_assistant_message_forwards_authenticated_user_to_dsh(
@@ -45,7 +46,7 @@ def test_assistant_message_forwards_authenticated_user_to_dsh(
     event = json.loads(json.dumps(kwargs["json"]))
     assert event["userId"] == "default"
     assert event["source"] == "web"
-    assert event["conversationId"] == "pwa-1"
+    assert event["conversationId"] == primary_conversation_id("default")
     assert event["text"] == "记录今天的复习"
     assert event["agentScope"]
 

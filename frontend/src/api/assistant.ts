@@ -38,14 +38,6 @@ export interface AssistantSearchResult {
   createdAt: string;
 }
 
-export interface AssistantImportMessage {
-  role: "user" | "assistant";
-  text: string;
-  messageId?: string;
-  clientMessageId?: string;
-  createdAt?: string;
-}
-
 export type AssistantStreamEvent =
   | { type: "status"; phase: string; message?: string }
   | { type: "message"; text: string; mode?: string }
@@ -119,12 +111,6 @@ export const assistantApi = {
   },
   read(conversationId: string): Promise<AssistantConversation> {
     return apiRequest<AssistantConversation>(`/api/assistant/conversations/${encodeURIComponent(conversationId)}`);
-  },
-  importHistory(conversationId: string, messages: AssistantImportMessage[]): Promise<AssistantConversationSummary & { imported: number }> {
-    return apiRequest<AssistantConversationSummary & { imported: number }>(`/api/assistant/conversations/${encodeURIComponent(conversationId)}/import`, {
-      method: "POST",
-      body: JSON.stringify({ messages }),
-    });
   },
   create(title?: string): Promise<AssistantConversationSummary> {
     return apiRequest<AssistantConversationSummary>("/api/assistant/conversations", {

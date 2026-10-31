@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 import uuid
 from dataclasses import dataclass
@@ -18,6 +19,17 @@ MAX_SEARCH_QUERY = 120
 
 def new_conversation_id() -> str:
     return f"pwa-{uuid.uuid4().hex}"
+
+
+def primary_conversation_id(user_id: str) -> str:
+    """Return the opaque, stable conversation id shared by every device.
+
+    The id is derived from the verified owner only so a fresh browser cannot
+    accidentally create a second chat. Existing conversations are migrated to
+    the newest active row by :func:`get_primary_conversation`.
+    """
+    digest = hashlib.sha256(f"smartcore-primary:{user_id}".encode()).hexdigest()
+    return f"pwa-primary-{digest[:32]}"
 
 
 def _title_from_text(text: str) -> str:
@@ -64,6 +76,38 @@ def ensure_conversation(
     return row
 
 
+def get_primary_conversation(db: Session, *, user_id: str) -> AssistantConversation:
+    """Return the single active conversation for an owner.
+
+    Older releases allowed multiple active conversations. Keep their rows for
+    audit/history, but archive all except the most recently updated one when
+    the owner first uses the single-chat UI. A new owner receives a stable id,
+    which makes the same server conversation appear on every device.
+    """
+    rows = db.scalars(
+        select(AssistantConversation)
+        .where(
+            AssistantConversation.userId == user_id,
+            AssistantConversation.stat == "active",
+        )
+        .order_by(AssistantConversation.updatedAt.desc(), AssistantConversation.createdAt.desc())
+    ).all()
+    if rows:
+        primary = rows[0]
+        if len(rows) > 1:
+            timestamp = nowIso()
+            for duplicate in rows[1:]:
+                duplicate.stat = "archived"
+                duplicate.updatedAt = timestamp
+        return primary
+    return ensure_conversation(
+        db,
+        user_id=user_id,
+        conversation_id=primary_conversation_id(user_id),
+        title="SmartCore 助手",
+    )
+
+
 def _assistant_client_id(client_message_id: str | None) -> str | None:
     value = str(client_message_id or "").strip()
     if not value:
@@ -95,12 +139,10 @@ def prepare_request(
     if len(text) > MAX_MESSAGE_TEXT:
         raise ValueError("assistant message is too long")
     client_id = _assistant_client_id(client_message_id)
-    conversation = ensure_conversation(
-        db,
-        user_id=user_id,
-        conversation_id=conversation_id,
-        title=text,
-    )
+    # The web assistant is intentionally one continuous conversation. Ignore
+    # stale ids sent by older clients and always resolve the server-owned
+    # primary row so multiple devices converge on the same history.
+    conversation = get_primary_conversation(db, user_id=user_id)
     user_message = None
     if client_id:
         user_message = db.scalar(
@@ -209,16 +251,8 @@ def message_dict(row: AssistantMessage) -> dict[str, Any]:
 
 
 def list_conversations(db: Session, *, user_id: str, limit: int = 30) -> list[dict[str, Any]]:
-    rows = db.scalars(
-        select(AssistantConversation)
-        .where(
-            AssistantConversation.userId == user_id,
-            AssistantConversation.stat == "active",
-        )
-        .order_by(AssistantConversation.updatedAt.desc())
-        .limit(max(1, min(limit, 100)))
-    ).all()
-    return [conversation_dict(row) for row in rows]
+    del limit  # Kept in the API contract for older clients; there is one chat now.
+    return [conversation_dict(get_primary_conversation(db, user_id=user_id))]
 
 
 def get_conversation(
@@ -253,6 +287,7 @@ def search_messages(
     user_id: str,
     query: str,
     limit: int = 30,
+    conversation_id: str | None = None,
 ) -> list[dict[str, Any]]:
     compact = re.sub(r"\s+", " ", str(query or "").strip())
     if not compact:
@@ -269,18 +304,21 @@ def search_messages(
                 AssistantConversation.title.ilike(pattern),
             )
         )
+    where_conditions = [
+        AssistantMessage.userId == user_id,
+        AssistantConversation.userId == user_id,
+        AssistantMessage.stat == "complete",
+        and_(*conditions),
+    ]
+    if conversation_id:
+        where_conditions.append(AssistantMessage.conversationId == conversation_id)
     rows = db.execute(
         select(AssistantMessage, AssistantConversation)
         .join(
             AssistantConversation,
             AssistantConversation.conversationId == AssistantMessage.conversationId,
         )
-        .where(
-            AssistantMessage.userId == user_id,
-            AssistantConversation.userId == user_id,
-            AssistantMessage.stat == "complete",
-            and_(*conditions),
-        )
+        .where(*where_conditions)
         .order_by(AssistantMessage.createdAt.desc())
         .limit(max(1, min(limit, 100)))
     ).all()
@@ -311,60 +349,3 @@ def archive_conversation(db: Session, *, user_id: str, conversation_id: str) -> 
     return True
 
 
-def import_messages(
-    db: Session,
-    *,
-    user_id: str,
-    conversation_id: str,
-    messages: list[dict[str, Any]],
-) -> tuple[AssistantConversation, int]:
-    """Import explicitly selected local history without invoking DSH.
-
-    Imported rows get a namespaced client id so a second tap is idempotent and
-    cannot collide with messages created by the live assistant composer.
-    """
-    if len(messages) > 100:
-        raise ValueError("too many messages to import")
-    conversation = ensure_conversation(db, user_id=user_id, conversation_id=conversation_id)
-    imported = 0
-    first_user_text = ""
-    for index, item in enumerate(messages):
-        role = str(item.get("role") or "").strip()
-        text = str(item.get("text") or "").strip()
-        if role not in {"user", "assistant"} or not text:
-            continue
-        if len(text) > MAX_MESSAGE_TEXT:
-            text = text[:MAX_MESSAGE_TEXT]
-        source_id = str(item.get("clientMessageId") or item.get("messageId") or index).strip()
-        source_id = source_id[:90] or str(index)
-        client_id = f"import:{role}:{source_id}"[:MAX_CLIENT_MESSAGE_ID]
-        exists = db.scalar(
-            select(AssistantMessage).where(
-                AssistantMessage.userId == user_id,
-                AssistantMessage.clientMessageId == client_id,
-            )
-        )
-        if exists is not None:
-            continue
-        created_at = str(item.get("createdAt") or "").strip()[:64] or nowIso()
-        db.add(
-            AssistantMessage(
-                conversationId=conversation.conversationId,
-                userId=user_id,
-                role=role,
-                text=text,
-                clientMessageId=client_id,
-                stat="complete",
-                createdAt=created_at,
-            )
-        )
-        imported += 1
-        if not first_user_text and role == "user":
-            first_user_text = text
-    if first_user_text and conversation.title == "新会话":
-        conversation.title = _title_from_text(first_user_text)
-    if imported:
-        conversation.updatedAt = nowIso()
-        conversation.lastMessageAt = nowIso()
-    db.commit()
-    return conversation, imported
