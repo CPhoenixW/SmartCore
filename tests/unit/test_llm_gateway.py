@@ -16,7 +16,7 @@ def test_default_natural_language_gateway_config() -> None:
     settings = Settings()
     assert settings.llm_provider == "tokendance"
     assert settings.llm_base_url == "https://tokendance.space/gateway/v1"
-    assert settings.llm_model == "deepseek-v4-flash-0731"
+    assert settings.llm_model == "deepseek-v4.1-flash-1017"
     assert settings.vision_model == "qwen3.7-plus"
     assert settings.vision_max_output_tokens == 128
     assert settings.vision_max_retries == 0
