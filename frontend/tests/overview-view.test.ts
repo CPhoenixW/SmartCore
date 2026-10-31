@@ -10,7 +10,7 @@ vi.mock("@tanstack/vue-query", () => ({
 }));
 
 describe("OverviewView", () => {
-  it("renders the action-focused mobile overview", () => {
+  it("keeps the overview focused on actions", () => {
     const wrapper = mount(OverviewView, {
       global: {
         plugins: [i18n],
@@ -20,7 +20,7 @@ describe("OverviewView", () => {
     });
 
     expect(wrapper.find(".overview-focus").exists()).toBe(true);
-    expect(wrapper.find(".overview-assistant").exists()).toBe(true);
+    expect(wrapper.find(".overview-assistant").exists()).toBe(false);
     expect(wrapper.find(".global-search").exists()).toBe(false);
     expect(wrapper.text()).toContain("下一项行动");
   });

@@ -1,14 +1,13 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
-import { ArrowRight, Bot, Clock3, Plus, Sparkles } from "@lucide/vue";
+import { ArrowRight, Clock3, Plus, Sparkles } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import BaseCard from "@/components/base/BaseCard.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
 import EventCard from "@/components/events/EventCard.vue";
 import EventStatusToggle from "@/components/events/EventStatusToggle.vue";
-import PageHeader from "@/components/base/PageHeader.vue";
 import { eventApi } from "@/api/event";
 import { runtimeApi } from "@/api/runtime";
 import { ideaApi } from "@/api/idea";
@@ -21,7 +20,6 @@ const { t, locale } = useI18n();
 const router = useRouter();
 const toast = useToast();
 const queryClient = useQueryClient();
-const prompt = ref("");
 const clockQuery = useQuery({ queryKey: ["runtime-clock"], queryFn: () => runtimeApi.clock(), refetchInterval: 60_000 });
 const serverDate = computed(() => clockQuery.data.value?.serverNow?.slice(0, 10) || todayKey());
 const serverTimestamp = computed(() => {
@@ -55,12 +53,6 @@ const statusMutation = useMutation({
 function openEvent(event: SmartCoreEvent): void {
   void router.push({ name: "update", query: { date: eventDateKey(event), evtId: event.evtId } });
 }
-function askAssistant(): void {
-  const text = prompt.value.trim();
-  if (!text) return;
-  prompt.value = "";
-  void router.push({ name: "assistant", query: { prompt: text } });
-}
 function formatServerTime(value?: string): string {
   if (!value) return t("overview.clockLoading");
   return new Intl.DateTimeFormat(locale.value === "en-US" ? "en-US" : "zh-CN", { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
@@ -69,11 +61,9 @@ function formatServerTime(value?: string): string {
 
 <template>
   <div class="overview-page">
-    <PageHeader :title="t('overview.title')" :subtitle="t('overview.subtitle')" />
     <section class="overview-focus card">
       <div class="overview-focus__header"><div><span class="eyebrow"><Clock3 :size="14" aria-hidden="true" />{{ t("overview.serverClock") }}</span><strong>{{ formatServerTime(clockQuery.data.value?.serverNow) }}</strong><small>{{ clockQuery.data.value?.timezone || t("overview.clockLoading") }}</small></div><RouterLink class="button button--ghost" :to="{ name: 'schedule' }">{{ t("overview.openSchedule") }}<ArrowRight :size="15" aria-hidden="true" /></RouterLink></div>
       <div class="overview-focus__action"><div class="overview-focus__icon"><Sparkles :size="20" aria-hidden="true" /></div><div><span>{{ t("overview.nextAction") }}</span><strong v-if="nextAction">{{ nextAction.title }}</strong><p v-if="nextAction">{{ nextAction.desc || t("preview.noDescription") }}</p><EmptyState v-else :text="t('overview.emptyToday')" /></div><RouterLink v-if="nextAction" class="button button--primary" :to="{ name: 'update', query: { date: eventDateKey(nextAction), evtId: nextAction.evtId } }">{{ t("common.open") }}</RouterLink></div>
-      <form class="overview-assistant" @submit.prevent="askAssistant"><Bot :size="18" aria-hidden="true" /><input v-model="prompt" :placeholder="t('overview.askPlaceholder')" /><button class="button button--primary" type="submit" :disabled="!prompt.trim()"><ArrowRight :size="16" aria-hidden="true" />{{ t("overview.askAssistant") }}</button></form>
     </section>
     <section class="overview-columns">
       <BaseCard :title="t('overview.todayList')">
@@ -91,5 +81,5 @@ function formatServerTime(value?: string): string {
 </template>
 
 <style scoped>
-.overview-page{display:grid;gap:18px}.overview-focus{padding:20px}.overview-focus__header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.overview-focus__header>div{display:grid;gap:4px}.eyebrow{display:flex;align-items:center;gap:5px;color:var(--color-text-muted);font-size:12px}.overview-focus__header strong{font-size:26px}.overview-focus__header small{color:var(--color-text-muted)}.overview-focus__action{display:flex;align-items:center;gap:13px;margin-top:22px;padding:15px;border-radius:13px;background:#eff6ff}.overview-focus__action>div:nth-child(2){display:grid;min-width:0;gap:4px;flex:1}.overview-focus__icon{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#dbeafe;color:#1d4ed8}.overview-focus__action span{color:#1d4ed8;font-size:12px;font-weight:700}.overview-focus__action strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:17px}.overview-focus__action p{margin:0;overflow:hidden;color:var(--color-text-muted);text-overflow:ellipsis;white-space:nowrap}.overview-assistant{display:flex;align-items:center;gap:9px;margin-top:14px;padding:8px 9px 8px 12px;border:1px solid var(--border-color);border-radius:11px;background:#fff}.overview-assistant input{min-width:0;flex:1;border:0;outline:0;background:transparent;font:inherit}.overview-columns{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(260px,.9fr);gap:16px}.overview-columns>.card:last-child{grid-column:1/-1}.overview-event-list{display:grid;gap:10px}.overview-event-row{display:grid;grid-template-columns:32px minmax(0,1fr);align-items:start;gap:8px}.overview-event-row :deep(.event-card){min-width:0}.overview-inbox{display:grid;gap:8px}.overview-inbox__row{display:flex;align-items:center;gap:9px;min-height:44px;padding:9px 10px;border:1px solid var(--border-color);border-radius:10px;color:var(--color-text)}.overview-inbox__row span:first-child{flex:1}.overview-inbox__row strong{color:var(--color-primary)}.overview-inbox__muted{color:var(--color-text-muted);font-size:12px}.overview-add{position:fixed;right:24px;bottom:28px;display:grid;place-items:center;width:52px;height:52px;border-radius:50%;background:#2563eb;color:#fff;box-shadow:0 10px 22px rgb(37 99 235 / 28%);z-index:22}.overview-add:hover{background:#1d4ed8}@media(max-width:760px){.overview-focus{padding:16px}.overview-focus__header{align-items:stretch;flex-direction:column}.overview-focus__header strong{font-size:22px}.overview-focus__action{align-items:flex-start;flex-wrap:wrap}.overview-focus__action .button{width:100%;margin-left:53px}.overview-assistant{align-items:stretch;flex-wrap:wrap}.overview-assistant input{width:calc(100% - 30px);flex:none}.overview-assistant .button{width:100%;justify-content:center}.overview-columns{grid-template-columns:1fr}.overview-columns>.card:last-child{grid-column:auto}.overview-add{right:16px;bottom:88px}}
+.overview-page{display:grid;gap:18px}.overview-focus{padding:20px}.overview-focus__header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.overview-focus__header>div{display:grid;gap:4px}.eyebrow{display:flex;align-items:center;gap:5px;color:var(--color-text-muted);font-size:12px}.overview-focus__header strong{font-size:26px}.overview-focus__header small{color:var(--color-text-muted)}.overview-focus__action{display:flex;align-items:center;gap:13px;margin-top:22px;padding:15px;border-radius:13px;background:#eff6ff}.overview-focus__action>div:nth-child(2){display:grid;min-width:0;gap:4px;flex:1}.overview-focus__icon{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#dbeafe;color:#1d4ed8}.overview-focus__action span{color:#1d4ed8;font-size:12px;font-weight:700}.overview-focus__action strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:17px}.overview-focus__action p{margin:0;overflow:hidden;color:var(--color-text-muted);text-overflow:ellipsis;white-space:nowrap}.overview-columns{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(260px,.9fr);gap:16px}.overview-columns>.card:last-child{grid-column:1/-1}.overview-event-list{display:grid;gap:10px}.overview-event-row{display:grid;grid-template-columns:32px minmax(0,1fr);align-items:start;gap:8px}.overview-event-row :deep(.event-card){min-width:0}.overview-inbox{display:grid;gap:8px}.overview-inbox__row{display:flex;align-items:center;gap:9px;min-height:44px;padding:9px 10px;border:1px solid var(--border-color);border-radius:10px;color:var(--color-text)}.overview-inbox__row span:first-child{flex:1}.overview-inbox__row strong{color:var(--color-primary)}.overview-inbox__muted{color:var(--color-text-muted);font-size:12px}.overview-add{position:fixed;right:24px;bottom:28px;display:grid;place-items:center;width:52px;height:52px;border-radius:50%;background:#2563eb;color:#fff;box-shadow:0 10px 22px rgb(37 99 235 / 28%);z-index:22}.overview-add:hover{background:#1d4ed8}@media(max-width:760px){.overview-focus{padding:16px}.overview-focus__header{align-items:stretch;flex-direction:column}.overview-focus__header strong{font-size:22px}.overview-focus__action{align-items:flex-start;flex-wrap:wrap}.overview-focus__action .button{width:100%;margin-left:53px}.overview-columns{grid-template-columns:1fr}.overview-columns>.card:last-child{grid-column:auto}.overview-add{right:16px;bottom:88px}}
 </style>
