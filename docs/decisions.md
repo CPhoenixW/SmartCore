@@ -169,10 +169,10 @@ Computer 工作块或 Plan 证据的日期不调度日报；固定标题由 DSH 
 
 状态：已采用。
 
-SmartCore 的无图片自然语言请求统一使用 `deepseek-v4-flash-0731`；包含图片的 DSH
+SmartCore 的无图片自然语言请求统一使用 `deepseek-v4.1-flash-1017`；包含图片的 DSH
 任务通过 MCP 图片内容使用隔离的 `qwen3.7-plus` 路由，文本传输失败最多回退一次，格式错误不切换模型。
-Server 工作台、连续 WorkBlock 分析和每日工作日报均使用无图片 DeepSeek 路径；图片兼容入口
-使用 Qwen，不再使用旧的 `deepseek-ocr-2`。
+Server 工作台的通用文本入口跟随该模型；连续 WorkBlock 分析和每日工作日报仍使用独立的
+`deepseek-v4-flash-0731` 结构化模型；图片兼容入口使用 Qwen，不再使用旧的 `deepseek-ocr-2`。
 
 WorkBlock 的 `action` 是活动边界和触发器的业务结果，不属于模型推理结果。Server 继续在 API
 和数据库保存该字段以兼容历史记录和审计，但忽略调用方提交的 action，并将缺失的 Plan 语义
@@ -287,3 +287,14 @@ PWA 只保留一个由 Server owner-scoped 的助手会话，所有设备读取�
 
 原因：UI 的“一个对话”是产品和数据同步约束，不要求模型运行时复用无限增长的内部日志。把长度
 边界放在 Server 和 bridge，可以稳定查询类请求，并让手机端继续展示同一条完整历史。
+
+## D022 PWA 文本助手切换到 deepseek-v4.1-flash-1017
+
+状态：已采用。
+
+PWA/DSH 的无图片文本请求和 Server 通用自然语言入口使用 `deepseek-v4.1-flash-1017`，
+图片模型保持现有独立配置，Computer/WorkBlock 结构化分析继续使用其已验证的模型契约。
+模型 ID 由网关 `/models` 验证可用后再进入候选，生产配置只在服务器环境文件中更新，不写入仓库。
+
+原因：新模型是用户指定的助手模型，且网关已提供该精确 ID；保留图片和结构化分析的独立路由，
+避免把未针对这些 schema 验证的模型变化扩大到后台分析任务。
