@@ -379,6 +379,47 @@ class MsgLog(Base):
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
 
 
+class AssistantConversation(Base):
+    __tablename__ = "assistantConversation"
+    __table_args__ = (
+        Index("idx_assistantConversation_user_updated", "userId", "updatedAt"),
+    )
+
+    conversationId: Mapped[str] = mapped_column(String(160), primary_key=True)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(300), nullable=False, default="新会话")
+    stat: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    lastMessageAt: Mapped[str | None] = mapped_column(String(64))
+
+
+class AssistantMessage(Base):
+    __tablename__ = "assistantMessage"
+    __table_args__ = (
+        UniqueConstraint("userId", "clientMessageId", name="uq_assistantMessage_user_client"),
+        Index("idx_assistantMessage_conversation_created", "conversationId", "createdAt"),
+        Index("idx_assistantMessage_user_created", "userId", "createdAt"),
+        CheckConstraint("role IN ('user', 'assistant')", name="ck_assistantMessage_role"),
+        CheckConstraint("stat IN ('pending', 'complete', 'failed')", name="ck_assistantMessage_stat"),
+    )
+
+    messageId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    conversationId: Mapped[str] = mapped_column(
+        String(160), ForeignKey("assistantConversation.conversationId", ondelete="CASCADE"), nullable=False
+    )
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    clientMessageId: Mapped[str | None] = mapped_column(String(120))
+    stat: Mapped[str] = mapped_column(String(20), nullable=False, default="complete")
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
 class UserSession(Base):
     __tablename__ = "userSession"
 

@@ -1,268 +1,95 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
+import { ArrowRight, Bot, Clock3, Plus, Sparkles } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
+import { useRouter } from "vue-router";
 import BaseCard from "@/components/base/BaseCard.vue";
-import PageHeader from "@/components/base/PageHeader.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
 import EventCard from "@/components/events/EventCard.vue";
 import EventStatusToggle from "@/components/events/EventStatusToggle.vue";
-import IdeaCard from "@/components/ideas/IdeaCard.vue";
-import { deviceApi } from "@/api/device";
-import { deviceRegistryApi } from "@/api/deviceRegistry";
+import PageHeader from "@/components/base/PageHeader.vue";
 import { eventApi } from "@/api/event";
+import { runtimeApi } from "@/api/runtime";
 import { ideaApi } from "@/api/idea";
-import { weatherApi } from "@/api/weather";
 import { useToast } from "@/composables/useToast";
 import type { SmartCoreEvent } from "@/types/event";
-import { addDays, eventDateKey, todayKey } from "@/utils/date";
+import { eventDateKey, getEventPrimaryTime, todayKey } from "@/utils/date";
 import { sortEvents } from "@/utils/event";
-import { weatherLabelKey, weatherSymbol } from "@/utils/weather";
 
-const { t } = useI18n();
-const queryClient = useQueryClient();
+const { t, locale } = useI18n();
+const router = useRouter();
 const toast = useToast();
-const selectedDate = ref(todayKey());
-const eventsQuery = useQuery({ queryKey: ["events", "overview-all"], queryFn: () => eventApi.list({ includeReminders: true, includeCourseTemplates: false }) });
-const dayEventsQuery = useQuery({
-  queryKey: computed(() => ["events", "overview-day", selectedDate.value]),
-  queryFn: () => eventApi.list({ date: selectedDate.value, includeReminders: true, includeCourseTemplates: false }),
+const queryClient = useQueryClient();
+const prompt = ref("");
+const clockQuery = useQuery({ queryKey: ["runtime-clock"], queryFn: () => runtimeApi.clock(), refetchInterval: 60_000 });
+const serverDate = computed(() => clockQuery.data.value?.serverNow?.slice(0, 10) || todayKey());
+const serverTimestamp = computed(() => {
+  const value = clockQuery.data.value?.serverNow;
+  const timestamp = value ? new Date(value).getTime() : Date.now();
+  return Number.isFinite(timestamp) ? timestamp : Date.now();
 });
-const ideasQuery = useQuery({ queryKey: ["ideas"], queryFn: ideaApi.list });
-const registeredDevices = useQuery({ queryKey: ["lifeDevices"], queryFn: deviceRegistryApi.list, refetchInterval: 15_000 });
-const deviceId = computed(() => {
-  const devices = registeredDevices.data.value ?? [];
-  return devices.find((device) => device.deviceKind === "pi")?.deviceId ?? devices[0]?.deviceId ?? "";
+const todayQuery = useQuery({
+  queryKey: computed(() => ["overview", "today", serverDate.value]),
+  queryFn: () => eventApi.list({ date: serverDate.value, includeReminders: true, includeCourseTemplates: false }),
 });
-const deviceQuery = useQuery({ queryKey: ["device", "latest", deviceId], queryFn: () => deviceApi.latest(deviceId.value), enabled: computed(() => Boolean(deviceId.value)), refetchInterval: 10_000 });
-const weatherQuery = useQuery({ queryKey: ["weather"], queryFn: weatherApi.latest, refetchInterval: 30 * 60_000 });
-
-const actionable = computed(() => sortEvents((eventsQuery.data.value ?? []).filter((event) => event.evtType !== "course" && event.stat !== "cancelled")));
-const todayEvents = computed(() => actionable.value.filter((event) => eventDateKey(event) === todayKey()));
-const selectedDateEvents = computed(() => sortEvents((dayEventsQuery.data.value ?? []).filter((event) => event.evtType !== "course" && event.stat !== "cancelled")));
-const selectedDateTitle = computed(() => selectedDate.value === todayKey() ? t("overview.today") : selectedDate.value);
-const todos = computed(() => actionable.value.filter((event) => event.stat === "todo"));
-const future72 = computed(() => {
-  const now = Date.now();
-  const end = now + 72 * 3_600_000;
-  return actionable.value.filter((event) => event.evtType === "ddl" && event.stat === "todo" && new Date(event.endTime).getTime() >= now && new Date(event.endTime).getTime() <= end);
+const allEventsQuery = useQuery({ queryKey: ["overview", "all"], queryFn: () => eventApi.list({ includeReminders: true, includeCourseTemplates: false }) });
+const ideasQuery = useQuery({ queryKey: ["ideas", "overview"], queryFn: ideaApi.list });
+const activeToday = computed(() => sortEvents((todayQuery.data.value ?? []).filter((event) => event.stat !== "cancelled")));
+const nextAction = computed(() => activeToday.value.find((event) => event.stat === "todo") ?? activeToday.value[0] ?? null);
+const next72h = computed(() => {
+  const start = serverTimestamp.value;
+  const end = start + 72 * 60 * 60 * 1000;
+  return sortEvents((allEventsQuery.data.value ?? []).filter((event) => {
+    if (event.stat !== "todo") return false;
+    const time = new Date(getEventPrimaryTime(event)).getTime();
+    return Number.isFinite(time) && time >= start && time <= end;
+  })).slice(0, 6);
 });
 const openIdeas = computed(() => (ideasQuery.data.value ?? []).filter((idea) => !idea.handled));
-const recentIdeas = computed(() => [...openIdeas.value].slice(-5).reverse());
-const deviceMeta = computed(() => {
-  const raw = deviceQuery.data.value?.meta;
-  if (raw && typeof raw === "object") return raw;
-  if (typeof raw === "string") {
-    try { return JSON.parse(raw) as Record<string, unknown>; } catch { return {}; }
-  }
-  return {};
-});
-const devicePersons = computed(() => {
-  const persons = deviceMeta.value.persons;
-  if (!Array.isArray(persons)) return t("common.notSet");
-  return persons.map((person) => typeof person === "object" && person ? String((person as Record<string, unknown>).name ?? (person as Record<string, unknown>).personId ?? "") : "").filter(Boolean).join(t("common.listSeparator")) || t("common.notSet");
-});
-const deviceState = computed(() => String(deviceQuery.data.value?.state ?? "offline"));
-const deviceTitle = computed(() => {
-  const device = (registeredDevices.data.value ?? []).find((item) => item.deviceId === deviceId.value);
-  return device?.deviceName || t("overview.device");
-});
-const weather = computed(() => weatherQuery.data.value);
-const currentWeather = computed(() => weather.value?.hours?.[0] ?? null);
-const weatherPoints = computed(() => weather.value?.hours ?? []);
-function weatherTime(value: string) {
-  const match = value.match(/T(\d{2}:\d{2})/);
-  return match?.[1] ?? value;
-}
 const statusMutation = useMutation({
   mutationFn: ({ event, stat }: { event: SmartCoreEvent; stat: "todo" | "done" }) => eventApi.update(event.evtId, { stat }),
-  onSuccess: async () => {
-    await queryClient.invalidateQueries({ queryKey: ["events"] });
-  },
+  onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ["overview"] }); await queryClient.invalidateQueries({ queryKey: ["events"] }); },
   onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
 });
-function moveSelectedDate(days: number) {
-  selectedDate.value = addDays(selectedDate.value, days);
+function openEvent(event: SmartCoreEvent): void {
+  void router.push({ name: "update", query: { date: eventDateKey(event), evtId: event.evtId } });
+}
+function askAssistant(): void {
+  const text = prompt.value.trim();
+  if (!text) return;
+  prompt.value = "";
+  void router.push({ name: "assistant", query: { prompt: text } });
+}
+function formatServerTime(value?: string): string {
+  if (!value) return t("overview.clockLoading");
+  return new Intl.DateTimeFormat(locale.value === "en-US" ? "en-US" : "zh-CN", { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
 }
 </script>
 
 <template>
-  <PageHeader :title="t('overview.title')" :subtitle="t('overview.subtitle')" />
-  <section class="summary-grid">
-    <article><span>{{ t("overview.todo") }}</span><strong>{{ todos.length }}</strong></article>
-    <article><span>{{ t("overview.today") }}</span><strong>{{ todayEvents.length }}</strong></article>
-    <article><span>{{ t("overview.deadline") }}</span><strong>{{ future72.length }}</strong></article>
-    <article><span>{{ t("overview.ideas") }}</span><strong>{{ openIdeas.length }}</strong></article>
-  </section>
-  <section class="dashboard-grid">
-    <div class="stack">
-    <BaseCard class="overview-today-card overview-scroll-card" :title="selectedDateTitle">
-      <div class="overview-date-toolbar">
-        <button class="button" type="button" @click="moveSelectedDate(-1)">{{ t("common.previous") }}</button>
-        <input v-model="selectedDate" type="date" :aria-label="t('overview.selectDate')" />
-        <button class="button" type="button" @click="selectedDate = todayKey()">{{ t("common.today") }}</button>
-        <button class="button" type="button" @click="moveSelectedDate(1)">{{ t("common.next") }}</button>
-      </div>
-      <div class="overview-scroll-window event-list" data-staged-wheel-scroll>
-        <div v-for="event in selectedDateEvents" :key="event.evtId" class="overview-event-row">
-          <EventStatusToggle
-            :status="event.stat"
-            :busy="statusMutation.isPending.value"
-            :mark-done-label="t('event.action.markDone')"
-            :mark-todo-label="t('event.action.markTodo')"
-            @change="statusMutation.mutate({ event, stat: $event })"
-          />
-          <EventCard :event="event" @select="$router.push({ name: 'update', query: { date: eventDateKey(event), evtId: event.evtId } })" />
+  <div class="overview-page">
+    <PageHeader :title="t('overview.title')" :subtitle="t('overview.subtitle')" />
+    <section class="overview-focus card">
+      <div class="overview-focus__header"><div><span class="eyebrow"><Clock3 :size="14" aria-hidden="true" />{{ t("overview.serverClock") }}</span><strong>{{ formatServerTime(clockQuery.data.value?.serverNow) }}</strong><small>{{ clockQuery.data.value?.timezone || t("overview.clockLoading") }}</small></div><RouterLink class="button button--ghost" :to="{ name: 'schedule' }">{{ t("overview.openSchedule") }}<ArrowRight :size="15" aria-hidden="true" /></RouterLink></div>
+      <div class="overview-focus__action"><div class="overview-focus__icon"><Sparkles :size="20" aria-hidden="true" /></div><div><span>{{ t("overview.nextAction") }}</span><strong v-if="nextAction">{{ nextAction.title }}</strong><p v-if="nextAction">{{ nextAction.desc || t("preview.noDescription") }}</p><EmptyState v-else :text="t('overview.emptyToday')" /></div><RouterLink v-if="nextAction" class="button button--primary" :to="{ name: 'update', query: { date: eventDateKey(nextAction), evtId: nextAction.evtId } }">{{ t("common.open") }}</RouterLink></div>
+      <form class="overview-assistant" @submit.prevent="askAssistant"><Bot :size="18" aria-hidden="true" /><input v-model="prompt" :placeholder="t('overview.askPlaceholder')" /><button class="button button--primary" type="submit" :disabled="!prompt.trim()"><ArrowRight :size="16" aria-hidden="true" />{{ t("overview.askAssistant") }}</button></form>
+    </section>
+    <section class="overview-columns">
+      <BaseCard :title="t('overview.todayList')">
+        <div v-if="todayQuery.isPending.value" class="empty-state">{{ t("common.loading") }}</div>
+        <div v-else class="overview-event-list">
+          <div v-for="event in activeToday" :key="event.evtId" class="overview-event-row"><EventStatusToggle :status="event.stat" :busy="statusMutation.isPending.value" :mark-done-label="t('event.action.markDone')" :mark-todo-label="t('event.action.markTodo')" @change="statusMutation.mutate({ event, stat: $event })" /><EventCard :event="event" @select="openEvent" /></div>
+          <EmptyState v-if="!activeToday.length" :text="t('overview.emptyToday')" />
         </div>
-        <div v-if="dayEventsQuery.isPending.value" class="empty-state">{{ t("common.loading") }}</div>
-        <EmptyState v-else-if="!selectedDateEvents.length" class="overview-empty" :text="t('overview.emptySelectedDate')" />
-      </div>
-    </BaseCard>
-    <BaseCard class="overview-scroll-card" :title="t('overview.recentIdeas')"><div class="overview-scroll-window overview-idea-window idea-cards" data-staged-wheel-scroll><IdeaCard v-for="idea in recentIdeas" :key="idea.ideaId" :idea="idea" @select="$router.push({ name: 'ideas' })" /><EmptyState v-if="!recentIdeas.length" /></div></BaseCard>
-    </div>
-    <div class="stack">
-      <BaseCard :title="weather?.location.name ?? t('overview.weather')">
-        <div v-if="currentWeather" class="weather-current">
-          <span class="weather-current__symbol">{{ weatherSymbol(currentWeather.weatherCode) }}</span>
-          <div>
-            <strong>{{ Math.round(currentWeather.temperature) }}°C</strong>
-            <small>{{ t(`overview.weatherCode.${weatherLabelKey(currentWeather.weatherCode)}`) }} · {{ t("overview.feelsLike", { value: Math.round(currentWeather.apparentTemperature) }) }}</small>
-          </div>
-          <span class="weather-current__rain">{{ t("overview.rainChance", { value: Math.round(currentWeather.precipitationProbability) }) }}</span>
-        </div>
-        <div
-          v-if="weatherPoints.length"
-          class="weather-hours"
-          tabindex="0"
-          :aria-label="t('overview.hourlyWeather')"
-        >
-          <div v-for="point in weatherPoints" :key="point.time">
-            <small>{{ weatherTime(point.time) }}</small>
-            <span>{{ weatherSymbol(point.weatherCode) }}</span>
-            <strong>{{ Math.round(point.temperature) }}°</strong>
-          </div>
-        </div>
-        <p v-if="weather?.stale" class="weather-note">{{ t("overview.weatherStale") }}</p>
-        <div v-else-if="weatherQuery.isPending.value" class="empty-state">{{ t("common.loading") }}</div>
-        <EmptyState v-else-if="weatherQuery.isError.value" :text="t('overview.weatherError')" />
-        <EmptyState v-else-if="!weather" :text="t('overview.weatherEmpty')" />
       </BaseCard>
-      <BaseCard :title="t('overview.upcoming')"><div class="event-list"><EventCard v-for="event in future72" :key="event.evtId" :event="event" @select="$router.push({ name: 'update', query: { date: eventDateKey(event), evtId: event.evtId } })" /><EmptyState v-if="!future72.length" class="overview-empty" :text="t('overview.emptyDeadline')" /></div></BaseCard>
-      <BaseCard :title="deviceTitle">
-        <div class="device-inline"><span class="state-dot" :class="`state-dot--${deviceState}`" /><div><strong>{{ t(`device.state.${deviceState}`) }}</strong><small>{{ deviceQuery.data.value?.seenAt ?? t('common.notSet') }}</small></div></div>
-        <div class="kv-grid compact-grid"><div><span>{{ t("overview.persons") }}</span><strong>{{ devicePersons }}</strong></div><div><span>{{ t("overview.stateConfidence") }}</span><strong>{{ deviceQuery.data.value?.confidence == null ? t('common.notSet') : `${Math.round(Number(deviceQuery.data.value.confidence) * 100)}%` }}</strong></div><div><span>{{ t("overview.present") }}</span><strong>{{ deviceMeta.present ? t("overview.presentYes") : t("overview.presentNo") }}</strong></div></div>
-      </BaseCard>
-      <BaseCard :title="t('overview.quickActions')"><div class="quick-grid"><RouterLink :to="{ name: 'assistant' }">{{ t("overview.openAssistant") }}</RouterLink><RouterLink :to="{ name: 'add' }">{{ t("overview.addEvent") }}</RouterLink><RouterLink :to="{ name: 'ideas' }">{{ t("overview.captureIdea") }}</RouterLink><RouterLink :to="{ name: 'course' }">{{ t("overview.manageCourses") }}</RouterLink><RouterLink :to="{ name: 'device' }">{{ t("overview.deviceStatus") }}</RouterLink></div></BaseCard>
-    </div>
-  </section>
+      <BaseCard :title="t('overview.next72Title')"><div class="overview-event-list"><EventCard v-for="event in next72h" :key="event.evtId" :event="event" @select="openEvent" /><EmptyState v-if="!next72h.length" :text="t('overview.emptyDeadline')" /></div></BaseCard>
+      <BaseCard :title="t('overview.inboxTitle')"><div class="overview-inbox"><RouterLink class="overview-inbox__row" :to="{ name: 'ideas' }"><span>{{ t("overview.openIdeas") }}</span><strong>{{ openIdeas.length }}</strong><ArrowRight :size="15" aria-hidden="true" /></RouterLink><RouterLink class="overview-inbox__row" :to="{ name: 'settings' }"><span>{{ t("overview.notifications") }}</span><span class="overview-inbox__muted">{{ t("overview.manageInSettings") }}</span><ArrowRight :size="15" aria-hidden="true" /></RouterLink></div></BaseCard>
+    </section>
+    <RouterLink class="overview-add" :to="{ name: 'add' }" :aria-label="t('overview.addEvent')"><Plus :size="20" aria-hidden="true" /></RouterLink>
+  </div>
 </template>
 
 <style scoped>
-:deep(.overview-scroll-card) {
-  display: flex;
-  height: 430px;
-  min-height: 0;
-  flex-direction: column;
-}
-:deep(.overview-scroll-card > .card-body) {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  overflow: hidden;
-}
-.overview-scroll-window {
-  min-height: 0;
-  flex: 1;
-  padding-right: 4px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-}
-.overview-idea-window {
-  align-content: start;
-  grid-auto-rows: max-content;
-}
-.overview-date-toolbar {
-  display: grid;
-  grid-template-columns: auto minmax(150px, 1fr) auto auto;
-  gap: 10px;
-  margin-bottom: 16px;
-}
-.overview-date-toolbar input {
-  min-width: 0;
-  padding: 9px 11px;
-  border: 1px solid var(--border-color);
-  border-radius: 9px;
-  background: #fff;
-  color: var(--color-text);
-}
-.overview-event-row {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  align-items: start;
-  gap: 8px;
-}
-.overview-event-row :deep(.event-card) {
-  min-width: 0;
-}
-.weather-current {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-}
-.weather-current__symbol {
-  font-size: 34px;
-  line-height: 1;
-}
-.weather-current strong,
-.weather-current small {
-  display: block;
-}
-.weather-current strong {
-  font-size: 24px;
-}
-.weather-current small,
-.weather-current__rain,
-.weather-hours small,
-.weather-note {
-  color: var(--color-text-muted);
-}
-.weather-current__rain {
-  font-size: 13px;
-}
-.weather-hours {
-  display: flex;
-  gap: 6px;
-  margin-top: 16px;
-  padding-bottom: 8px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  overscroll-behavior-x: contain;
-  scroll-snap-type: x proximity;
-  scrollbar-gutter: stable;
-}
-.weather-hours > div {
-  flex: 0 0 66px;
-  display: grid;
-  justify-items: center;
-  gap: 4px;
-  padding: 8px 3px;
-  border-radius: 10px;
-  background: var(--color-surface-muted);
-  scroll-snap-align: start;
-}
-.weather-hours span {
-  font-size: 19px;
-}
-.weather-note {
-  margin: 10px 0 0;
-  font-size: 12px;
-}
-@media (max-width: 760px) {
-  .overview-date-toolbar {
-    grid-template-columns: 1fr 1fr;
-  }
-}
+.overview-page{display:grid;gap:18px}.overview-focus{padding:20px}.overview-focus__header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.overview-focus__header>div{display:grid;gap:4px}.eyebrow{display:flex;align-items:center;gap:5px;color:var(--color-text-muted);font-size:12px}.overview-focus__header strong{font-size:26px}.overview-focus__header small{color:var(--color-text-muted)}.overview-focus__action{display:flex;align-items:center;gap:13px;margin-top:22px;padding:15px;border-radius:13px;background:#eff6ff}.overview-focus__action>div:nth-child(2){display:grid;min-width:0;gap:4px;flex:1}.overview-focus__icon{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#dbeafe;color:#1d4ed8}.overview-focus__action span{color:#1d4ed8;font-size:12px;font-weight:700}.overview-focus__action strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:17px}.overview-focus__action p{margin:0;overflow:hidden;color:var(--color-text-muted);text-overflow:ellipsis;white-space:nowrap}.overview-assistant{display:flex;align-items:center;gap:9px;margin-top:14px;padding:8px 9px 8px 12px;border:1px solid var(--border-color);border-radius:11px;background:#fff}.overview-assistant input{min-width:0;flex:1;border:0;outline:0;background:transparent;font:inherit}.overview-columns{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(260px,.9fr);gap:16px}.overview-columns>.card:last-child{grid-column:1/-1}.overview-event-list{display:grid;gap:10px}.overview-event-row{display:grid;grid-template-columns:32px minmax(0,1fr);align-items:start;gap:8px}.overview-event-row :deep(.event-card){min-width:0}.overview-inbox{display:grid;gap:8px}.overview-inbox__row{display:flex;align-items:center;gap:9px;min-height:44px;padding:9px 10px;border:1px solid var(--border-color);border-radius:10px;color:var(--color-text)}.overview-inbox__row span:first-child{flex:1}.overview-inbox__row strong{color:var(--color-primary)}.overview-inbox__muted{color:var(--color-text-muted);font-size:12px}.overview-add{position:fixed;right:24px;bottom:28px;display:grid;place-items:center;width:52px;height:52px;border-radius:50%;background:#2563eb;color:#fff;box-shadow:0 10px 22px rgb(37 99 235 / 28%);z-index:22}.overview-add:hover{background:#1d4ed8}@media(max-width:760px){.overview-focus{padding:16px}.overview-focus__header{align-items:stretch;flex-direction:column}.overview-focus__header strong{font-size:22px}.overview-focus__action{align-items:flex-start;flex-wrap:wrap}.overview-focus__action .button{width:100%;margin-left:53px}.overview-assistant{align-items:stretch;flex-wrap:wrap}.overview-assistant input{width:calc(100% - 30px);flex:none}.overview-assistant .button{width:100%;justify-content:center}.overview-columns{grid-template-columns:1fr}.overview-columns>.card:last-child{grid-column:auto}.overview-add{right:16px;bottom:88px}}
 </style>

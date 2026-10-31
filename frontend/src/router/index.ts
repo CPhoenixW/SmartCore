@@ -11,6 +11,7 @@ export const router = createRouter({
       children: [
         { path: "", alias: "overview", name: "overview", component: () => import("@/views/OverviewView.vue") },
         { path: "assistant", name: "assistant", component: () => import("@/views/AssistantView.vue") },
+        { path: "schedule", name: "schedule", component: () => import("@/views/ScheduleView.vue") },
         { path: "daily-summary", name: "dailySummary", component: () => import("@/views/DailySummaryView.vue") },
         { path: "add", name: "add", component: () => import("@/views/AddEventView.vue") },
         { path: "update", name: "update", component: () => import("@/views/UpdateEventView.vue") },

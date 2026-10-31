@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useMutation, useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
@@ -10,6 +10,7 @@ import { useToast } from "@/composables/useToast";
 import { adminApi } from "@/api/admin";
 import { useUserStore } from "@/stores/user";
 import type { CurrentUser } from "@/types/user";
+import { notificationsApi, vapidKeyBytes } from "@/api/notifications";
 
 const { t } = useI18n();
 const store = useUserStore();
@@ -22,6 +23,10 @@ const fileInput = ref<HTMLInputElement | null>(null);
 const currentPassword = ref("");
 const newPassword = ref("");
 const passwordConfirmation = ref("");
+const pushSupported = ref(false);
+const pushEnabled = ref(false);
+const pushBusy = ref(false);
+const pushMessage = ref("");
 watch(() => store.user, (user) => Object.assign(form, user), { immediate: true, deep: true });
 const initials = computed(() => form.displayName.trim().slice(0, 2).toUpperCase() || "SC");
 const previewUrl = computed(() => localPreview.value || form.avatarUrl || "");
@@ -32,6 +37,7 @@ const accountSecurityAvailable = computed(() => {
   const current = browserSessions.data.value?.find((session) => session.current);
   return Boolean(current && current.actorUserId === store.user.userId);
 });
+onMounted(() => { void loadPushState(); });
 const switchUser = useMutation({
   mutationFn: (userId: string) => adminApi.switchUser(userId),
   onSuccess: async () => { await store.load(); window.location.href = "/work"; },
@@ -124,6 +130,46 @@ function clearAvatar() {
   form.avatarUrl = "";
   localPreview.value = "";
 }
+
+async function loadPushState(): Promise<void> {
+  pushSupported.value = typeof window !== "undefined" && "serviceWorker" in navigator && "Notification" in window && "PushManager" in window;
+  if (!pushSupported.value) return;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    pushEnabled.value = Boolean(await registration.pushManager.getSubscription());
+  } catch { pushEnabled.value = false; }
+}
+
+async function togglePush(): Promise<void> {
+  if (!pushSupported.value || pushBusy.value) return;
+  pushBusy.value = true;
+  pushMessage.value = "";
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const existing = await registration.pushManager.getSubscription();
+    if (existing && pushEnabled.value) {
+      const json = existing.toJSON();
+      if (json.endpoint && json.keys?.p256dh && json.keys.auth) {
+        await notificationsApi.unsubscribe({ endpoint: json.endpoint, keys: { p256dh: json.keys.p256dh, auth: json.keys.auth } });
+      }
+      await existing.unsubscribe();
+      pushEnabled.value = false;
+      pushMessage.value = t("settings.pushDisabled");
+      return;
+    }
+    const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+    if (permission !== "granted") { pushMessage.value = t("settings.pushDenied"); return; }
+    const config = await notificationsApi.publicKey();
+    if (!config.enabled || !config.publicKey) { pushMessage.value = t("settings.pushUnavailable"); return; }
+    const subscription = existing ?? await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: vapidKeyBytes(config.publicKey) });
+    const json = subscription.toJSON();
+    if (!json.endpoint || !json.keys?.p256dh || !json.keys.auth) throw new Error("invalid push subscription");
+    await notificationsApi.subscribe({ endpoint: json.endpoint, keys: { p256dh: json.keys.p256dh, auth: json.keys.auth } });
+    pushEnabled.value = true;
+    pushMessage.value = t("settings.pushEnabled");
+  } catch { pushMessage.value = t("settings.pushUnavailable"); }
+  finally { pushBusy.value = false; }
+}
 </script>
 
 <template>
@@ -147,6 +193,18 @@ function clearAvatar() {
         <label class="field field--wide"><span>{{ t("settings.avatarUrl") }}</span><input v-model="form.avatarUrl" :placeholder="t('settings.avatarUrlPlaceholder')" /></label>
         <div class="form-actions field--wide"><button class="button button--primary" type="submit" :disabled="saving || uploading">{{ saving ? t("common.saving") : t("common.save") }}</button></div>
       </form>
+      </BaseCard>
+      <BaseCard :title="t('settings.pushTitle')" :subtitle="t('settings.pushHint')">
+        <div class="push-settings">
+          <p v-if="pushMessage" role="status">{{ pushMessage }}</p>
+          <p v-if="!pushSupported" class="push-settings__muted">{{ t("settings.pushUnsupported") }}</p>
+          <button v-else class="button" :class="{ 'button--primary': !pushEnabled, 'button--ghost': pushEnabled }" type="button" :disabled="pushBusy" @click="togglePush">{{ pushEnabled ? t("settings.pushDisable") : t("settings.pushEnable") }}</button>
+        </div>
+      </BaseCard>
+      <BaseCard :title="t('settings.toolsTitle')" :subtitle="t('settings.toolsHint')">
+        <nav class="settings-tools" :aria-label="t('settings.toolsTitle')">
+          <RouterLink v-for="item in ['dailySummary', 'course', 'ideas', 'device', 'logs']" :key="item" class="settings-tool" :to="{ name: item }"><span>{{ t(`nav.${item}`) }}</span><span aria-hidden="true">›</span></RouterLink>
+        </nav>
       </BaseCard>
       <BaseCard v-if="accountSecurityAvailable" :title="t('settings.securityTitle')" :subtitle="t('settings.securityHint')">
         <form class="form-grid" @submit.prevent="changePassword">
@@ -177,6 +235,12 @@ function clearAvatar() {
 </template>
 
 <style scoped>
+.push-settings { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.push-settings p { margin: 0; color: var(--color-text-muted); font-size: 13px; }
+.push-settings__muted { flex: 1; }
+.settings-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.settings-tool { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 9px 11px; border: 1px solid var(--border-color); border-radius: 9px; color: var(--color-text); }
+.settings-tool:hover { border-color: #93c5fd; background: #eff6ff; color: #1d4ed8; }
 .browser-session-list { display: grid; gap: 8px; }
 .browser-session-list article { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px; border: 1px solid var(--border-color); border-radius: 9px; }
 .browser-session-list strong,.browser-session-list small { display: block; }
