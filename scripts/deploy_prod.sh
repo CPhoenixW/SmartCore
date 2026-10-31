@@ -218,11 +218,14 @@ promote() {
         || die "production checkout is not aligned with origin/main"
     [[ "$CANDIDATE" == "$(git -C "$ROOT" rev-parse origin/dev)" ]] \
         || die "verified candidate is no longer the tip of origin/dev"
-    if git -C "$ROOT" merge-base --is-ancestor origin/main "$CANDIDATE"; then
-        :
-    elif git -C "$ROOT" merge-base --is-ancestor "$CANDIDATE" origin/main \
-        && git -C "$ROOT" diff --quiet "$CANDIDATE" origin/main; then
+    # A protected release PR may squash the candidate commit. In that case
+    # the candidate SHA is not an ancestor of main even though its release
+    # tree is exactly what is running in main. Compare the tree first so a
+    # squash merge cannot be mistaken for a mismatched release.
+    if git -C "$ROOT" diff --quiet "$CANDIDATE" origin/main; then
         candidate_already_published=true
+    elif git -C "$ROOT" merge-base --is-ancestor origin/main "$CANDIDATE"; then
+        :
     else
         die "main and the verified dev candidate do not have an identical release tree"
     fi
