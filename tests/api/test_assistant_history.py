@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from app.server.config import get_settings
 from app.server.db.session import SessionLocal
+from app.server.new_core.assistant_history import primary_conversation_id
 from app.server.new_core.models import AssistantConversation, AssistantMessage
 
 
@@ -46,7 +47,6 @@ def test_assistant_stream_persists_conversation_and_searches(
     response = client.post(
         "/api/assistant/stream",
         json={
-            "conversationId": "pwa-history-test",
             "clientMessageId": "client-history-1",
             "text": "查一下下周的课程",
             "timezone": "Asia/Shanghai",
@@ -57,18 +57,19 @@ def test_assistant_stream_persists_conversation_and_searches(
     assert '"type": "done"' in response.text
     assert captured == ["POST http://dsh.local/api/smartcore/stream"]
 
-    history = client.get("/api/assistant/conversations/pwa-history-test")
+    conversation_id = primary_conversation_id("default")
+    history = client.get(f"/api/assistant/conversations/{conversation_id}")
     assert history.status_code == 200
     assert [item["role"] for item in history.json()["data"]["messages"]] == ["user", "assistant"]
 
     search = client.get("/api/assistant/conversations", params={"q": "下周的课程"})
     assert search.status_code == 200
-    assert search.json()["data"]["items"][0]["conversationId"] == "pwa-history-test"
+    assert search.json()["data"]["items"][0]["conversationId"] == conversation_id
 
     db = SessionLocal()
     try:
-        assert db.scalar(select(AssistantConversation).where(AssistantConversation.conversationId == "pwa-history-test"))
-        assert len(db.scalars(select(AssistantMessage).where(AssistantMessage.conversationId == "pwa-history-test")).all()) == 2
+        assert db.scalar(select(AssistantConversation).where(AssistantConversation.conversationId == conversation_id))
+        assert len(db.scalars(select(AssistantMessage).where(AssistantMessage.conversationId == conversation_id)).all()) == 2
     finally:
         db.close()
 
@@ -85,7 +86,6 @@ def test_assistant_stream_client_message_is_idempotent(signed_client_factory, mo
     monkeypatch.setattr(httpx, "stream", stream)
     client = signed_client_factory("default")
     payload = {
-        "conversationId": "pwa-idempotent-test",
         "clientMessageId": "same-client-message",
         "text": "记录一个复习计划",
     }
@@ -98,7 +98,7 @@ def test_assistant_stream_client_message_is_idempotent(signed_client_factory, mo
     db = SessionLocal()
     try:
         rows = db.scalars(
-            select(AssistantMessage).where(AssistantMessage.conversationId == "pwa-idempotent-test")
+            select(AssistantMessage).where(AssistantMessage.conversationId == primary_conversation_id("default"))
         ).all()
         assert len(rows) == 2
     finally:
@@ -121,22 +121,23 @@ def test_assistant_history_is_owner_scoped(signed_client_factory) -> None:
     assert other.get("/api/assistant/conversations", params={"q": "私密"}).json()["data"]["items"] == []
 
 
-def test_assistant_local_history_import_is_idempotent(signed_client_factory) -> None:
+def test_assistant_uses_one_server_conversation_across_clients(signed_client_factory) -> None:
+    first = signed_client_factory("default")
+    second = signed_client_factory("default")
+    first_id = first.get("/api/assistant/conversations").json()["data"]["items"][0]["conversationId"]
+    second_id = second.get("/api/assistant/conversations").json()["data"]["items"][0]["conversationId"]
+    created = second.post("/api/assistant/conversations", json={"title": "不要创建新会话"})
+    assert first_id == second_id == created.json()["data"]["conversationId"]
+    assert len(first.get("/api/assistant/conversations").json()["data"]["items"]) == 1
+
+
+def test_assistant_local_history_import_is_removed(signed_client_factory) -> None:
     client = signed_client_factory("default")
-    payload = {
-        "messages": [
-            {"messageId": "old-user-1", "role": "user", "text": "旧问题", "createdAt": "2026-07-01T10:00:00+08:00"},
-            {"messageId": "old-bot-1", "role": "assistant", "text": "旧回答", "createdAt": "2026-07-01T10:00:01+08:00"},
-        ]
-    }
-    first = client.post("/api/assistant/conversations/pwa-import-test/import", json=payload)
-    second = client.post("/api/assistant/conversations/pwa-import-test/import", json=payload)
-    assert first.status_code == 200
-    assert first.json()["data"]["imported"] == 2
-    assert second.status_code == 200
-    assert second.json()["data"]["imported"] == 0
-    history = client.get("/api/assistant/conversations/pwa-import-test")
-    assert [item["text"] for item in history.json()["data"]["messages"]] == ["旧问题", "旧回答"]
+    response = client.post(
+        "/api/assistant/conversations/pwa-import-test/import",
+        json={"messages": [{"role": "user", "text": "旧问题"}]},
+    )
+    assert response.status_code == 404
 
 
 def test_assistant_stream_invalid_timezone_does_not_create_history(

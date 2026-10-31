@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -25,6 +25,27 @@ const MAX_BODY_BYTES = 2 * 1024 * 1024;
 const runtimes = new Map();
 const safePart = (value) => String(value || "unknown").replace(/[^A-Za-z0-9_.:-]+/g, "-").slice(0, 120) || "unknown";
 const sessionPart = (value) => safePart(value).slice(0, 100);
+
+async function clearStaleSessionLocks(directory) {
+  let entries;
+  try { entries = await readdir(directory, { withFileTypes: true }); }
+  catch (error) {
+    if (error?.code === "ENOENT") return;
+    throw error;
+  }
+  await Promise.all(entries.map(async (entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return clearStaleSessionLocks(path);
+    if (entry.isFile() && entry.name === "session.lock") {
+      try { await unlink(path); } catch (error) { if (error?.code !== "ENOENT") throw error; }
+    }
+  }));
+}
+
+function isMissingSessionError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  return message.includes("session_not_found") || (message.includes("session ") && message.includes("not found"));
+}
 
 function equalSecret(actual, expected) {
   if (!expected) return false;
@@ -170,6 +191,7 @@ class DshRuntime {
     this.rpc = null;
     this.ready = null;
     this.queue = Promise.resolve();
+    this.sessions = new Set();
     this.lastUsed = Date.now();
   }
   async updateScope(token) {
@@ -181,6 +203,10 @@ class DshRuntime {
     if (this.ready) return this.ready;
     this.ready = (async () => {
       await mkdir(this.home, { recursive: true });
+      // DSH persists session content and its lock file in the home volume. A
+      // container restart cannot leave the previous child process holding the
+      // lock, so remove only stale locks before creating the new child.
+      await clearStaleSessionLocks(join(this.home, "sessions"));
       const env = {
         ...process.env,
         DSH_HOME: this.home,
@@ -253,8 +279,13 @@ class DshRuntime {
     };
     rpc.listeners.add(listener);
     try {
+      if (!this.sessions.has(sessionId)) {
+        try { await rpc.request("session/resume", { sessionId }); }
+        catch (error) { if (!isMissingSessionError(error)) throw error; }
+      }
       await rpc.request("session/prompt", { sessionId, contentBlocks: [{ type: "text", text: prompt }] });
       await rpc.request("session/wait", { sessionId }, REQUEST_TIMEOUT_MS);
+      this.sessions.add(sessionId);
       return textParts.join("").trim();
     } finally { rpc.listeners.delete(listener); }
   }
