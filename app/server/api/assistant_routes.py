@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -18,13 +18,11 @@ from app.server.config import Settings, get_settings
 from app.server.db.session import get_db
 from app.server.new_core.assistant_history import (
     PreparedAssistantRequest,
-    archive_conversation,
     complete_response,
     conversation_dict,
-    ensure_conversation,
     fail_response,
     get_conversation,
-    import_messages,
+    get_primary_conversation,
     list_conversations,
     prepare_request,
     search_messages,
@@ -43,18 +41,6 @@ class AssistantMessageBody(BaseModel):
 
 class AssistantConversationBody(BaseModel):
     title: str | None = Field(default=None, max_length=300)
-
-
-class AssistantImportMessageBody(BaseModel):
-    role: Literal["user", "assistant"]
-    text: str = Field(min_length=1, max_length=12_000)
-    messageId: str | None = Field(default=None, max_length=120)
-    clientMessageId: str | None = Field(default=None, max_length=120)
-    createdAt: str | None = Field(default=None, max_length=64)
-
-
-class AssistantImportBody(BaseModel):
-    messages: list[AssistantImportMessageBody] = Field(min_length=1, max_length=100)
 
 
 def _query_endpoint(endpoint: str) -> str:
@@ -221,7 +207,19 @@ def assistant_conversations(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
-        items = search_messages(db, user_id=user_id, query=q, limit=limit) if q else list_conversations(db, user_id=user_id, limit=limit)
+        primary = get_primary_conversation(db, user_id=user_id)
+        items = (
+            search_messages(
+                db,
+                user_id=user_id,
+                query=q,
+                limit=limit,
+                conversation_id=primary.conversationId,
+            )
+            if q
+            else list_conversations(db, user_id=user_id, limit=limit)
+        )
+        db.commit()
     except ValueError as exc:
         raise _history_error(exc) from exc
     return {"ok": True, "data": {"items": items, "query": q or ""}}
@@ -233,7 +231,10 @@ def create_assistant_conversation(
     user_id: str = Depends(require_authenticated_user_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    row = ensure_conversation(db, user_id=user_id, title=body.title if body else None)
+    # Compatibility endpoint: creating a second chat is no longer supported.
+    # Return the owner-scoped primary row so older clients converge safely.
+    del body
+    row = get_primary_conversation(db, user_id=user_id)
     db.commit()
     return {"ok": True, "data": conversation_dict(row)}
 
@@ -250,34 +251,19 @@ def read_assistant_conversation(
     return {"ok": True, "data": result}
 
 
-@router.post("/conversations/{conversation_id}/import")
-def import_assistant_conversation(
-    conversation_id: str,
-    body: AssistantImportBody,
-    user_id: str = Depends(require_authenticated_user_id),
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    try:
-        conversation, imported = import_messages(
-            db,
-            user_id=user_id,
-            conversation_id=conversation_id,
-            messages=[item.model_dump() for item in body.messages],
-        )
-    except ValueError as exc:
-        raise _history_error(exc) from exc
-    return {"ok": True, "data": {**conversation_dict(conversation), "imported": imported}}
-
-
 @router.delete("/conversations/{conversation_id}")
 def archive_assistant_conversation(
     conversation_id: str,
     user_id: str = Depends(require_authenticated_user_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    if not archive_conversation(db, user_id=user_id, conversation_id=conversation_id):
+    # A single assistant thread is always available. Keep DELETE as a safe
+    # compatibility no-op so an old client cannot make the shared chat vanish.
+    row = get_primary_conversation(db, user_id=user_id)
+    if conversation_id != row.conversationId:
         raise HTTPException(status_code=404, detail="conversation not found")
-    return {"ok": True, "data": {"conversationId": conversation_id, "stat": "archived"}}
+    db.commit()
+    return {"ok": True, "data": {"conversationId": row.conversationId, "stat": row.stat}}
 
 
 @router.post("/message")
@@ -293,6 +279,7 @@ def assistant_message(
         raise HTTPException(status_code=503, detail="DSH assistant is unavailable")
     event = _event_context(body, user_id, settings)
     history = _prepare_history(body, user_id=user_id, db=db)
+    event["conversationId"] = history.conversation.conversationId
     db.commit()
     if history.replay_response:
         return {
@@ -350,6 +337,7 @@ def assistant_stream(
         raise HTTPException(status_code=503, detail="DSH assistant is unavailable")
     event = _event_context(body, user_id, settings)
     history = _prepare_history(body, user_id=user_id, db=db)
+    event["conversationId"] = history.conversation.conversationId
     db.commit()
     if history.replay_response:
         return StreamingResponse(
