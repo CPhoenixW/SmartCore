@@ -231,6 +231,7 @@
     "send": "Send",
     "sending": "Working…",
     "thinking": "The assistant is working…",
+    "loading": "Opening this conversation…",
     "error": "The assistant is temporarily unavailable; your draft was kept",
     "clear": "Clear search",
     "you": "You",
@@ -248,10 +249,7 @@
     "noSearchResults": "No matching messages",
     "historyError": "Conversation history is unavailable",
     "searchError": "Search is temporarily unavailable",
-    "pending": "Generating a response…",
-    "quickToday": "Show today’s plan",
-    "quickCapture": "Capture a task",
-    "quickDeadline": "Find recent deadlines"
+    "pending": "Generating a response…"
   },
   "add": {
     "title": "Add event",
