@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     llm_provider: str = "tokendance"
     llm_api_key: str = ""
     llm_base_url: str = "https://tokendance.space/gateway/v1"
-    llm_model: str = "deepseek-v4-flash-0731"
+    llm_model: str = "deepseek-v4.1-flash-1017"
     llm_max_retries: int = 2
     llm_timeout_seconds: int = 120
     # Images use Qwen's native multimodal input; documents remain storage-only.
