@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useViewport } from "@/composables/useViewport";
 import { useMutation, useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
@@ -13,6 +14,7 @@ import type { CurrentUser } from "@/types/user";
 import { notificationsApi, vapidKeyBytes } from "@/api/notifications";
 
 const { t } = useI18n();
+const { isMobile } = useViewport();
 const store = useUserStore();
 const toast = useToast();
 const form = reactive<CurrentUser>({ displayName: "", language: "zh", reminderChannel: "screen", avatarUrl: "" });
@@ -201,9 +203,9 @@ async function togglePush(): Promise<void> {
           <button v-else class="button" :class="{ 'button--primary': !pushEnabled, 'button--ghost': pushEnabled }" type="button" :disabled="pushBusy" @click="togglePush">{{ pushEnabled ? t("settings.pushDisable") : t("settings.pushEnable") }}</button>
         </div>
       </BaseCard>
-      <BaseCard :title="t('settings.toolsTitle')" :subtitle="t('settings.toolsHint')">
+      <BaseCard v-if="isMobile" :title="t('settings.toolsTitle')" :subtitle="t('settings.toolsHint')">
         <nav class="settings-tools" :aria-label="t('settings.toolsTitle')">
-          <RouterLink v-for="item in ['dailySummary', 'course', 'ideas', 'device', 'logs']" :key="item" class="settings-tool" :to="{ name: item }"><span>{{ t(`nav.${item}`) }}</span><span aria-hidden="true">›</span></RouterLink>
+          <RouterLink v-for="item in ['dailySummary', 'course', 'ideas', 'device', 'logs', 'add', 'update']" :key="item" class="settings-tool" :to="{ name: item }"><span>{{ t(`nav.${item}`) }}</span><span aria-hidden="true">›</span></RouterLink>
         </nav>
       </BaseCard>
       <BaseCard v-if="accountSecurityAvailable" :title="t('settings.securityTitle')" :subtitle="t('settings.securityHint')">
