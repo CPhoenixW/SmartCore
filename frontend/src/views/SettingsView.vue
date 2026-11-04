@@ -205,7 +205,7 @@ async function togglePush(): Promise<void> {
       </BaseCard>
       <BaseCard v-if="isMobile" :title="t('settings.toolsTitle')" :subtitle="t('settings.toolsHint')">
         <nav class="settings-tools" :aria-label="t('settings.toolsTitle')">
-          <RouterLink v-for="item in ['dailySummary', 'course', 'ideas', 'device', 'logs', 'add', 'update']" :key="item" class="settings-tool" :to="{ name: item }"><span>{{ t(`nav.${item}`) }}</span><span aria-hidden="true">›</span></RouterLink>
+          <RouterLink v-for="item in ['memory', 'dailySummary', 'course', 'ideas', 'device', 'logs', 'add', 'update']" :key="item" class="settings-tool" :to="{ name: item }"><span>{{ t(`nav.${item}`) }}</span><span aria-hidden="true">›</span></RouterLink>
         </nav>
       </BaseCard>
       <BaseCard v-if="accountSecurityAvailable" :title="t('settings.securityTitle')" :subtitle="t('settings.securityHint')">

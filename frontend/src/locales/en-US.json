@@ -24,7 +24,8 @@
     "device": "Device",
     "ideas": "Ideas",
     "logs": "Logs",
-    "settings": "Settings"
+    "settings": "Settings",
+    "memory": "Memory"
   },
   "common": {
     "loading": "Loading…",
@@ -662,5 +663,36 @@
     "openScreen": "Copy screen link",
     "confirm": "Confirm device",
     "kind": {"screen": "Screen", "pi": "Raspberry Pi", "computer": "Mac monitor", "browser": "Computer agent"}
+  },
+  "memory": {
+    "title": "Memory",
+    "subtitle": "Long-term facts the assistant remembers about you. The most relevant ones are used in each chat; edit or delete them any time.",
+    "disabled": "Long-term memory is turned off; the assistant will not read or add memories.",
+    "addTitle": "Add manually",
+    "addHint": "You can also tell the assistant \"remember…\" (记住…) or \"forget…\" (忘掉…).",
+    "placeholder": "e.g. I like doing hard tasks in the morning",
+    "type": "Type",
+    "autoType": "Detect type",
+    "add": "Add",
+    "listTitle": "{count} memories",
+    "all": "All",
+    "empty": "No memories yet.",
+    "sourceExplicit": "Told by you",
+    "sourceAuto": "Auto-extracted",
+    "updatedAt": "Updated",
+    "lastUsed": "Last used",
+    "expiresAt": "Expires",
+    "saved": "Remembered",
+    "updated": "Memory updated",
+    "deleted": "Memory deleted",
+    "confirmDelete": "Delete this memory?\n{content}",
+    "types": {
+      "profile": "Profile",
+      "preference": "Preference",
+      "habit": "Habit",
+      "goal": "Goal",
+      "relationship": "Relationship",
+      "fact": "Fact"
+    }
   }
 }

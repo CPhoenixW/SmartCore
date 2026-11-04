@@ -17,6 +17,7 @@ from app.server.api.daily_summary_routes import router as dailySummaryApiRouter
 from app.server.api.device_state_routes import router as deviceStateApiRouter
 from app.server.api.event_view_routes import router as eventViewApiRouter
 from app.server.api.idea_media_routes import router as ideaMediaApiRouter
+from app.server.api.memory_routes import router as memoryApiRouter
 from app.server.api.notification_routes import router as notificationApiRouter
 from app.server.api.routes import router as apiRouter
 from app.server.api.runtime_routes import router as runtimeApiRouter
@@ -176,6 +177,7 @@ def create_app() -> FastAPI:
     app.include_router(dailySummaryApiRouter)
     app.include_router(eventViewApiRouter)
     app.include_router(ideaMediaApiRouter)
+    app.include_router(memoryApiRouter)
     app.include_router(notificationApiRouter)
     app.include_router(weatherApiRouter)
     app.include_router(apiRouter)

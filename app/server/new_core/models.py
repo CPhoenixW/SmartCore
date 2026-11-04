@@ -942,3 +942,34 @@ class CodexWorkReport(Base):
     evidence: Mapped[dict | list | None] = mapped_column(JSON)
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
     updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+
+
+class UserMemory(Base):
+    """Long-term, owner-scoped facts the assistant may recall (D024)."""
+
+    __tablename__ = "userMemory"
+    __table_args__ = (
+        CheckConstraint(
+            "memType IN ('profile', 'preference', 'habit', 'goal', 'relationship', 'fact')",
+            name="ck_userMemory_type",
+        ),
+        CheckConstraint(
+            "source IN ('auto_extracted', 'user_explicit')",
+            name="ck_userMemory_source",
+        ),
+        Index("idx_userMemory_user_active", "userId", "deletedAt", "updatedAt"),
+    )
+
+    memoryId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    memType: Mapped[str] = mapped_column(String(20), nullable=False, default="fact")
+    content: Mapped[str] = mapped_column(String(300), nullable=False)
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="auto_extracted")
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.7)
+    createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    updatedAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
+    lastUsedAt: Mapped[str | None] = mapped_column(String(64))
+    expiresAt: Mapped[str | None] = mapped_column(String(64))
+    deletedAt: Mapped[str | None] = mapped_column(String(64))

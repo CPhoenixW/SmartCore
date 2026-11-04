@@ -29,6 +29,7 @@ export const router = createRouter({
         },
         { path: "ideas", alias: "inspire", name: "ideas", component: () => import("@/views/IdeaView.vue") },
         { path: "logs", alias: "log", name: "logs", component: () => import("@/views/LogView.vue") },
+        { path: "memory", name: "memory", component: () => import("@/views/MemoryView.vue") },
         { path: "settings", name: "settings", component: () => import("@/views/SettingsView.vue") },
       ],
     },
