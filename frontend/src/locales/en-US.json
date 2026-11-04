@@ -131,6 +131,9 @@
     "projectTitle": "Project follow-up"
   },
   "overview": {
+    "mobileTodo": "To do today",
+    "mobileDone": "Done today",
+    "mobileNext72h": "Next 72h",
     "title": "Overview",
     "subtitle": "Today's events, deadlines and device state",
     "serverClock": "Server time",
@@ -576,6 +579,8 @@
     "allStatus": "All statuses"
   },
   "settings": {
+    "mobileMemoryHint": "Review what the assistant remembers",
+    "mobileLogout": "Log out",
     "title": "Settings",
     "subtitle": "User, language and reminder preferences",
     "displayName": "Display name",
