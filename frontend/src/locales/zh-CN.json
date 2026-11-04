@@ -228,6 +228,7 @@
     "empty": "从一句话开始",
     "examples": "例如：今天下午三点提醒我准备周五的课程汇报",
     "placeholder": "告诉我今天要做什么…",
+    "placeholderBusy": "回复生成中，也可先打下一句…",
     "send": "发送",
     "sending": "处理中…",
     "thinking": "助手正在处理…",
