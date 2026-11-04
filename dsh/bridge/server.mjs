@@ -273,6 +273,10 @@ class DshRuntime {
         const content = data.message?.content || [];
         const text = content.filter((block) => block?.type === "text").map((block) => block.text || "").join("");
         if (text) {
+          // DSH assistant/message payloads are cumulative snapshots for the
+          // current turn. Replace instead of concatenating so done/response
+          // is the latest answer rather than a glued-together draft.
+          textParts.length = 0;
           textParts.push(text);
           emit({ type: "message", text, mode: "new" });
           emit({ type: "status", phase: content.some((block) => block?.type === "tool-call") ? "tool" : "responding", message: content.some((block) => block?.type === "tool-call") ? "准备查询你的资料…" : "正在整理答案…" });

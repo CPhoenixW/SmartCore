@@ -173,7 +173,13 @@ def _stream_dsh(
                 event_type = payload.get("type")
                 if event_type in {"status", "message", "tool", "done", "error"}:
                     if event_type == "message" and str(payload.get("text") or "").strip():
-                        response_parts.append(str(payload["text"]))
+                        chunk = str(payload["text"])
+                        mode = str(payload.get("mode") or "").strip().lower()
+                        # mode=new means a full snapshot of the current reply.
+                        if mode in {"", "new"} or not response_parts:
+                            response_parts[:] = [chunk]
+                        else:
+                            response_parts.append(chunk)
                     if event_type == "done":
                         response_text = str(payload.get("response") or "").strip() or "".join(response_parts).strip()
                         complete_response(db, history, response_text)
