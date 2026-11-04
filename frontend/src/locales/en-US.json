@@ -228,6 +228,7 @@
     "empty": "Start with one sentence",
     "examples": "For example: remind me at 3 PM to prepare Friday's class presentation",
     "placeholder": "Tell me what you need to do…",
+    "placeholderBusy": "Replying… you can draft the next message",
     "send": "Send",
     "sending": "Working…",
     "thinking": "The assistant is working…",

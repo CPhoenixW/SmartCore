@@ -18,14 +18,45 @@ function inline(value: string) {
 function render(value: string) {
   const lines = value.replace(/\r\n/g, "\n").split("\n");
   const output: string[] = [];
-  let list = false;
+  let list: "ul" | "ol" | null = null;
   let code = false;
-  const closeList = () => { if (list) { output.push("</ul>"); list = false; } };
+  const closeList = () => {
+    if (list) {
+      output.push(list === "ul" ? "</ul>" : "</ol>");
+      list = null;
+    }
+  };
   for (const line of lines) {
-    if (line.startsWith("```")) { closeList(); output.push(code ? "</code></pre>" : "<pre><code>"); code = !code; continue; }
-    if (code) { output.push(`${escapeHtml(line)}\n`); continue; }
-    const item = line.match(/^[-*]\s+(.+)$/);
-    if (item) { if (!list) { output.push("<ul>"); list = true; } output.push(`<li>${inline(item[1] ?? "")}</li>`); continue; }
+    if (line.startsWith("```")) {
+      closeList();
+      output.push(code ? "</code></pre>" : "<pre><code>");
+      code = !code;
+      continue;
+    }
+    if (code) {
+      output.push(`${escapeHtml(line)}\n`);
+      continue;
+    }
+    const unordered = line.match(/^[-*]\s+(.+)$/);
+    if (unordered) {
+      if (list !== "ul") {
+        closeList();
+        output.push("<ul>");
+        list = "ul";
+      }
+      output.push(`<li>${inline(unordered[1] ?? "")}</li>`);
+      continue;
+    }
+    const ordered = line.match(/^\d+\.\s+(.+)$/);
+    if (ordered) {
+      if (list !== "ol") {
+        closeList();
+        output.push("<ol>");
+        list = "ol";
+      }
+      output.push(`<li>${inline(ordered[1] ?? "")}</li>`);
+      continue;
+    }
     closeList();
     if (line.startsWith("### ")) output.push(`<h3>${inline(line.slice(4))}</h3>`);
     else if (line.startsWith("## ")) output.push(`<h2>${inline(line.slice(3))}</h2>`);
