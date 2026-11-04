@@ -298,3 +298,15 @@ PWA/DSH 的无图片文本请求和 Server 通用自然语言入口使用 `deeps
 
 原因：新模型是用户指定的助手模型，且网关已提供该精确 ID；保留图片和结构化分析的独立路由，
 避免把未针对这些 schema 验证的模型变化扩大到后台分析任务。
+
+## D023 日报完成后投递到 PWA 助手与 Web Push
+
+状态：已采用。
+
+飞书主动汇报从默认链路删除后，`daily_summary` 仍由 Server scheduler 触发、DSH 生成并
+写回 `DailySummary`。完成后额外做两件事：向 owner 的单一助手会话写入一条已完成的助手
+消息（`clientMessageId=daily-summary:{userId}:{date}` 幂等），并用现有 VAPID Web Push
+投递摘要（deep link `/work/assistant`，`notifyLog` 去重）。用户编辑日报内容不会再次投递。
+
+原因：PWA 是唯一交互入口；提醒路径已有浏览器推送，日报不应只落库而不主动触达。
+

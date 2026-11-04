@@ -277,12 +277,11 @@ onBeforeUnmount(() => {
         <article v-if="streamingText" class="assistant-message assistant-message--assistant assistant-message--streaming">
           <span class="assistant-message__label">{{ t("assistant.bot") }}</span>
           <MarkdownContent :content="streamingText" />
-          <span class="assistant-message__cursor" aria-hidden="true" />
         </article>
-        <article v-if="sending || !online" class="assistant-progress" :class="{ 'assistant-progress--offline': !online }" role="status" aria-live="polite">
+        <div v-if="sending || !online" class="assistant-progress" :class="{ 'assistant-progress--offline': !online }" role="status" aria-live="polite">
           <span class="assistant-progress__spinner" aria-hidden="true"><WifiOff v-if="!online" :size="14" /></span>
-          <div class="assistant-progress__body"><strong>{{ online ? t("assistant.bot") : t("assistant.offlineShort") }}</strong><p>{{ online ? activity || t("assistant.thinking") : t("assistant.offline") }}</p><small v-if="activeTool">{{ activeTool }}</small></div>
-        </article>
+          <span class="assistant-progress__text">{{ online ? (activity || activeTool || t("assistant.thinking")) : t("assistant.offline") }}</span>
+        </div>
       </div>
       <p v-if="error" class="assistant-error" role="alert">{{ error }}</p>
       <form ref="composerRoot" class="assistant-composer" @submit.prevent="send">
@@ -455,59 +454,43 @@ onBeforeUnmount(() => {
   padding: 42px 16px;
 }
 .assistant-progress {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   justify-self: start;
   min-width: 0;
-  max-width: min(720px, 88%);
-  padding: 11px 14px;
-  border: 1px solid #e2e8f0;
-  border-radius: 18px;
-  background: #fff;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
-  color: #334155;
+  max-width: min(720px, 92%);
+  margin: 2px 2px 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.4;
 }
 .assistant-progress--offline {
-  border-color: #fed7aa;
-  background: #fff7ed;
-  color: #9a3412;
+  color: #c2410c;
 }
 .assistant-progress__spinner {
   display: grid;
   place-items: center;
-  flex: 0 0 16px;
-  width: 16px;
-  height: 16px;
-  margin-top: 2px;
-  border: 2px solid #bfdbfe;
-  border-top-color: #2563eb;
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #cbd5e1;
+  border-top-color: #64748b;
   border-radius: 50%;
   animation: assistant-spin .8s linear infinite;
 }
 .assistant-progress--offline .assistant-progress__spinner {
-  border-color: #fed7aa;
+  border-color: #fdba74;
   border-top-color: #c2410c;
   animation: none;
 }
-.assistant-progress__body {
+.assistant-progress__text {
   min-width: 0;
-}
-.assistant-progress__body strong {
-  display: block;
-  font-size: 11px;
-  color: #64748b;
-}
-.assistant-progress__body p {
-  margin: 2px 0 0;
   overflow-wrap: anywhere;
-  line-height: 1.45;
-}
-.assistant-progress__body small {
-  display: block;
-  margin-top: 4px;
-  color: #64748b;
-  font-size: 11px;
 }
 .assistant-message {
   position: relative;
@@ -541,7 +524,7 @@ onBeforeUnmount(() => {
   border-color: #dbeafe;
 }
 .assistant-message--streaming {
-  border-color: #dbeafe;
+  border-color: #e8eef5;
 }
 .assistant-message__label {
   display: block;
@@ -610,15 +593,6 @@ onBeforeUnmount(() => {
 .assistant-message--user time {
   color: #bfdbfe;
 }
-.assistant-message__cursor {
-  display: inline-block;
-  width: 2px;
-  height: 1.05em;
-  margin-left: 3px;
-  vertical-align: -0.15em;
-  background: #2563eb;
-  animation: assistant-blink 1s steps(2, end) infinite;
-}
 .assistant-error {
   margin: 0;
   padding: 10px 18px;
@@ -664,9 +638,6 @@ onBeforeUnmount(() => {
 }
 @keyframes assistant-spin {
   to { transform: rotate(360deg); }
-}
-@keyframes assistant-blink {
-  50% { opacity: 0; }
 }
 @media (max-width: 760px) {
   .assistant-page {
@@ -716,8 +687,8 @@ onBeforeUnmount(() => {
   }
   .assistant-progress {
     max-width: 94%;
-    padding: 10px 12px;
-    border-radius: 16px;
+    margin-left: 2px;
+    font-size: 12px;
   }
   .assistant-composer {
     position: sticky;
