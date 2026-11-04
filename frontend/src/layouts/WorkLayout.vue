@@ -41,7 +41,7 @@ const pushBusy = ref(false);
 const pushMessage = ref("");
 let stopStagedWheelScroll: (() => void) | undefined;
 
-/** Desktop keeps the full workbench nav; phone keeps the PWA four-tab shell. */
+/** Desktop keeps the full workbench nav; phone keeps a three-tab PWA shell. */
 const desktopPrimaryNav = [
   { key: "overview", name: "overview", icon: House },
   { key: "assistant", name: "assistant", icon: Bot },
@@ -59,11 +59,20 @@ const desktopSecondaryNav = [
   { key: "settings", name: "settings", icon: Settings },
 ] as const;
 const mobilePrimaryNav = [
-  { key: "overview", name: "overview", icon: House },
   { key: "assistant", name: "assistant", icon: Bot },
-  { key: "schedule", name: "schedule", icon: Calendar },
+  { key: "overview", name: "overview", icon: House },
   { key: "settings", name: "settings", icon: Settings },
 ] as const;
+/** Pages reached from a tab (e.g. 记忆 from 设置) keep that tab highlighted. */
+const mobileTabRoutes: Record<string, readonly string[]> = {
+  assistant: ["assistant"],
+  overview: ["overview", "schedule", "add", "update"],
+  settings: ["settings", "memory"],
+};
+const activeMobileTab = computed(() => {
+  const name = String(route.name || "");
+  return Object.keys(mobileTabRoutes).find((key) => mobileTabRoutes[key]!.includes(name)) ?? "";
+});
 
 const primaryNav = computed(() => (isMobile.value ? mobilePrimaryNav : desktopPrimaryNav));
 const secondaryNav = computed(() => (isMobile.value ? [] : desktopSecondaryNav));
@@ -168,7 +177,7 @@ async function enablePush(): Promise<void> {
 
 <template>
   <div class="app-shell" :class="{ 'app-shell--mobile': isMobile, 'app-shell--desktop': !isMobile }">
-    <aside class="sidebar" :class="{ 'sidebar--open': mobileOpen }">
+    <aside v-if="!isMobile" class="sidebar" :class="{ 'sidebar--open': mobileOpen }">
       <RouterLink class="brand" :to="{ name: 'overview' }" @click="mobileOpen = false">
         <span class="brand-mark"><img :src="smartcoreMarkBlue" alt="" aria-hidden="true" /></span>
         <span>
@@ -215,10 +224,10 @@ async function enablePush(): Promise<void> {
       </template>
       <button class="sidebar-logout" type="button" :disabled="loggingOut" @click="logout">{{ logoutLabel }}</button>
     </aside>
-    <div v-if="mobileOpen" class="sidebar-backdrop" @click="mobileOpen = false" />
+    <div v-if="mobileOpen && !isMobile" class="sidebar-backdrop" @click="mobileOpen = false" />
     <section class="workspace">
       <header class="topbar">
-        <button class="mobile-menu" type="button" :aria-label="t('app.menu')" @click="mobileOpen = true">
+        <button v-if="!isMobile" class="mobile-menu" type="button" :aria-label="t('app.menu')" @click="mobileOpen = true">
           <Menu :size="20" aria-hidden="true" />
         </button>
         <strong v-if="isMobile" class="topbar-title">{{ pageTitle }}</strong>
@@ -250,6 +259,19 @@ async function enablePush(): Promise<void> {
       </header>
       <main ref="pageRoot" class="page"><RouterView /></main>
     </section>
+    <nav v-if="isMobile" class="mobile-tabbar" :aria-label="t('app.navigation')">
+      <RouterLink
+        v-for="item in mobilePrimaryNav"
+        :key="item.key"
+        class="mobile-tabbar__item"
+        :class="{ 'mobile-tabbar__item--active': activeMobileTab === item.key }"
+        :aria-current="activeMobileTab === item.key ? 'page' : undefined"
+        :to="{ name: item.name }"
+      >
+        <component :is="item.icon" :size="22" :stroke-width="1.8" aria-hidden="true" />
+        <span>{{ t(`nav.${item.key}`) }}</span>
+      </RouterLink>
+    </nav>
   </div>
 </template>
 
@@ -347,12 +369,46 @@ async function enablePush(): Promise<void> {
 .sidebar-logout:disabled {
   opacity: 0.55;
 }
+.app-shell--mobile {
+  --mobile-tabbar-height: calc(58px + env(safe-area-inset-bottom));
+}
+.mobile-tabbar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  height: var(--mobile-tabbar-height);
+  padding-bottom: env(safe-area-inset-bottom);
+  border-top: 1px solid var(--border-color);
+  background: rgb(255 255 255 / 96%);
+  backdrop-filter: blur(12px);
+}
+.mobile-tabbar__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+}
+.mobile-tabbar__item--active {
+  color: #1d4ed8;
+}
 @media (max-width: 760px) {
   .nav-more-toggle {
     margin-top: 12px;
   }
   .page {
     padding-bottom: 24px;
+  }
+  .app-shell--mobile .page {
+    padding-bottom: calc(24px + var(--mobile-tabbar-height));
   }
 }
 </style>

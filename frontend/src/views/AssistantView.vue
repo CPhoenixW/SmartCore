@@ -641,10 +641,10 @@ onBeforeUnmount(() => {
 }
 @media (max-width: 760px) {
   .assistant-page {
-    height: calc(100dvh - 56px);
-    max-height: calc(100dvh - 56px);
+    height: calc(100dvh - 56px - var(--mobile-tabbar-height, 0px));
+    max-height: calc(100dvh - 56px - var(--mobile-tabbar-height, 0px));
     min-height: 0;
-    margin: -18px -14px -24px;
+    margin: -18px -14px calc(-24px - var(--mobile-tabbar-height, 0px));
     overflow: hidden;
   }
   .assistant-shell {
@@ -694,7 +694,7 @@ onBeforeUnmount(() => {
     position: sticky;
     bottom: 0;
     z-index: 6;
-    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    padding: 8px 10px;
     gap: 8px;
     background: rgb(255 255 255 / 96%);
     backdrop-filter: blur(10px);
