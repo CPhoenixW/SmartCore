@@ -99,6 +99,13 @@ class Settings(BaseSettings):
     pwa_push_vapid_subject: str = ""
     pwa_push_timeout_seconds: int = 10
 
+    # Long-term personal memory (D024). Short-term context is unchanged.
+    memory_enabled: bool = True
+    memory_inject_limit: int = 16
+    memory_inject_max_chars: int = 1500
+    memory_max_active: int = 200
+    memory_extraction_model: str = ""
+
     agent_api_token: str = ""
     device_api_token: str = ""
     device_heartbeat_interval_seconds: int = 10

@@ -1,5 +1,6 @@
 -- Drop all SmartCore work tables (reverse dependency order).
 
+DROP TABLE IF EXISTS userMemory;
 DROP TABLE IF EXISTS assistantMessageFts;
 DROP TABLE IF EXISTS assistantMessage;
 DROP TABLE IF EXISTS assistantConversation;

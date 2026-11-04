@@ -24,7 +24,8 @@
     "device": "设备",
     "ideas": "灵感",
     "logs": "日志",
-    "settings": "设置"
+    "settings": "设置",
+    "memory": "记忆"
   },
   "common": {
     "loading": "正在加载…",
@@ -662,5 +663,36 @@
     "openScreen": "复制副屏链接",
     "confirm": "确认此设备",
     "kind": {"screen": "副屏", "pi": "树莓派", "computer": "Mac 监视器", "browser": "电脑后台"}
+  },
+  "memory": {
+    "title": "记忆",
+    "subtitle": "助手长期记住的关于你的信息。每次对话会参考最相关的几条，你可以随时修改或删除。",
+    "disabled": "长期记忆当前已关闭，助手不会读取或新增记忆。",
+    "addTitle": "手动添加",
+    "addHint": "也可以直接在助手里说“记住……”或“忘掉……”。",
+    "placeholder": "例如：我喜欢早上处理难的任务",
+    "type": "类型",
+    "autoType": "自动判断类型",
+    "add": "添加",
+    "listTitle": "已记住 {count} 条",
+    "all": "全部",
+    "empty": "还没有记忆。和助手多聊聊，或者说“记住……”。",
+    "sourceExplicit": "你告诉我的",
+    "sourceAuto": "自动整理",
+    "updatedAt": "更新于",
+    "lastUsed": "最近使用",
+    "expiresAt": "到期",
+    "saved": "已记住",
+    "updated": "记忆已更新",
+    "deleted": "记忆已删除",
+    "confirmDelete": "确定删除这条记忆吗？\n{content}",
+    "types": {
+      "profile": "个人信息",
+      "preference": "偏好",
+      "habit": "习惯",
+      "goal": "目标",
+      "relationship": "关系",
+      "fact": "事实"
+    }
   }
 }

@@ -331,6 +331,26 @@ CREATE INDEX IF NOT EXISTS idx_assistantMessage_conversation_created
 CREATE INDEX IF NOT EXISTS idx_assistantMessage_user_created
     ON assistantMessage(userId, createdAt);
 
+CREATE TABLE IF NOT EXISTS userMemory (
+    memoryId VARCHAR(32) PRIMARY KEY,
+    userId VARCHAR(32) NOT NULL,
+    memType VARCHAR(20) NOT NULL DEFAULT 'fact',
+    content VARCHAR(300) NOT NULL,
+    source VARCHAR(20) NOT NULL DEFAULT 'auto_extracted',
+    confidence FLOAT NOT NULL DEFAULT 0.7,
+    createdAt VARCHAR(64) NOT NULL,
+    updatedAt VARCHAR(64) NOT NULL,
+    lastUsedAt VARCHAR(64),
+    expiresAt VARCHAR(64),
+    deletedAt VARCHAR(64),
+    FOREIGN KEY (userId) REFERENCES appUser(userId) ON DELETE CASCADE,
+    CHECK (memType IN ('profile', 'preference', 'habit', 'goal', 'relationship', 'fact')),
+    CHECK (source IN ('auto_extracted', 'user_explicit'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_userMemory_user_active
+    ON userMemory(userId, deletedAt, updatedAt);
+
 CREATE TABLE IF NOT EXISTS computerHourlyAnalysis (
     analysisId VARCHAR(32) PRIMARY KEY,
     userId VARCHAR(32) NOT NULL REFERENCES appUser(userId) ON DELETE CASCADE,
