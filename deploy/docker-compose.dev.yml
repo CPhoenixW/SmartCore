@@ -11,6 +11,11 @@ services:
       DSH_EVENTS_ENDPOINT: http://dsh-runtime:18790/api/smartcore/events
       DSH_EVENTS_TOKEN: smartcore-dev-dsh-token
       AGENT_API_TOKEN: smartcore-dev-agent-token
+      # Optional: export LLM_* before deploy_dev.sh to exercise memory extraction.
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://tokendance.space/gateway/v1}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-v4.1-flash-1017}
+      MEMORY_ENABLED: "true"
     volumes:
       - smartcore-dev-data:/app/data
       - smartcore-dev-backups:/app/backups

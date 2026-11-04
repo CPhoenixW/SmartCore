@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+import logging
+from collections.abc import Callable, Iterator
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
@@ -28,6 +29,13 @@ from app.server.new_core.assistant_history import (
     recent_context_messages,
     search_messages,
 )
+from app.server.new_core.memory import (
+    handle_explicit_command,
+    schedule_extraction,
+    select_for_prompt,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
@@ -104,6 +112,69 @@ def _attach_conversation_context(
     )
 
 
+def _attach_memory(
+    event: dict[str, Any],
+    *,
+    user_id: str,
+    settings: Settings,
+    db: Session,
+) -> bool:
+    """Inject long-term memories and apply explicit 记住/忘掉 (D024).
+
+    Runs after the history transaction is committed so a memory failure can
+    roll back safely without touching the user's message. Returns whether an
+    explicit memory command was handled in this turn.
+    """
+    if not settings.memory_enabled:
+        return False
+    handled = False
+    try:
+        command = handle_explicit_command(db, user_id=user_id, text=str(event.get("text") or ""))
+        lines = select_for_prompt(
+            db,
+            user_id=user_id,
+            query_text=str(event.get("text") or ""),
+            limit=settings.memory_inject_limit,
+            max_chars=settings.memory_inject_max_chars,
+        )
+        db.commit()
+    except Exception:  # noqa: BLE001 - memory must never block the assistant
+        db.rollback()
+        logger.warning("memory injection failed for user=%s", user_id, exc_info=True)
+        return False
+    event["memoryEnabled"] = True
+    if lines:
+        event["userMemory"] = lines
+    if command is not None:
+        event["memoryAction"] = command.summary
+        handled = True
+    return handled
+
+
+def _memory_follow_up(
+    *,
+    user_id: str,
+    user_text: str,
+    settings: Settings,
+    skip: bool,
+) -> Callable[[str], None] | None:
+    if skip or not settings.memory_enabled:
+        return None
+
+    def follow_up(response_text: str) -> None:
+        try:
+            schedule_extraction(
+                user_id=user_id,
+                user_text=user_text,
+                assistant_text=response_text,
+                settings=settings,
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("memory extraction scheduling failed", exc_info=True)
+
+    return follow_up
+
+
 def _history_error(exc: ValueError) -> HTTPException:
     detail = str(exc)
     return HTTPException(status_code=404 if "not found" in detail else 422, detail=detail)
@@ -140,6 +211,7 @@ def _stream_dsh(
     token: str,
     history: PreparedAssistantRequest,
     db: Session,
+    on_complete: Callable[[str], None] | None = None,
 ) -> Iterator[str]:
     # The first status is intentionally local: it is visible even while the
     # bridge is opening a model session, which is the important perceived-
@@ -184,6 +256,8 @@ def _stream_dsh(
                         response_text = str(payload.get("response") or "").strip() or "".join(response_parts).strip()
                         complete_response(db, history, response_text)
                         completed = True
+                        if on_complete is not None and history.assistant_message.stat == "complete":
+                            on_complete(response_text)
                         # DSH's session id is intentionally different from
                         # the server-owned conversation id. Return both so
                         # the browser keeps reading the same conversation
@@ -320,6 +394,7 @@ def assistant_message(
             },
             "errors": [],
         }
+    memory_handled = _attach_memory(event, user_id=user_id, settings=settings, db=db)
     try:
         response = httpx.post(
             _query_endpoint(endpoint),
@@ -343,6 +418,11 @@ def assistant_message(
             db.rollback()
         raise HTTPException(status_code=503, detail="DSH assistant returned no response")
     complete_response(db, history, str(data["response"]))
+    follow_up = _memory_follow_up(
+        user_id=user_id, user_text=event["text"], settings=settings, skip=memory_handled
+    )
+    if follow_up is not None:
+        follow_up(str(data["response"]))
     return {
         "ok": True,
         "data": {
@@ -380,8 +460,18 @@ def assistant_stream(
                 "X-Accel-Buffering": "no",
             },
         )
+    memory_handled = _attach_memory(event, user_id=user_id, settings=settings, db=db)
     return StreamingResponse(
-        _stream_dsh(event, endpoint=endpoint, token=token, history=history, db=db),
+        _stream_dsh(
+            event,
+            endpoint=endpoint,
+            token=token,
+            history=history,
+            db=db,
+            on_complete=_memory_follow_up(
+                user_id=user_id, user_text=event["text"], settings=settings, skip=memory_handled
+            ),
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache, no-transform",
