@@ -104,7 +104,7 @@ function eventText(event) {
 }
 
 function safePrompt(event) {
-  const omit = new Set(["agentScope", "attachments"]);
+  const omit = new Set(["agentScope", "attachments", "memoryAction", "memoryEnabled"]);
   const context = {};
   for (const [key, value] of Object.entries(event || {})) {
     if (!omit.has(key) && ["string", "number", "boolean"].includes(typeof value)) context[key] = value;
@@ -119,8 +119,19 @@ function safePrompt(event) {
     : Array.isArray(event.attachments) && event.attachments.length
       ? "上下文包含图片附件。需要理解图片时先调用 mcp__smartcore__smartcore_media_context，并传入上下文中的 uploadId 列表；不要猜测图片内容。"
       : "";
+  const memoryLines = Array.isArray(event.userMemory)
+    ? event.userMemory.filter((item) => typeof item === "string" && item.trim()).slice(0, 40).map((item) => `- ${item.trim().slice(0, 200)}`)
+    : [];
+  const memoryBlock = memoryLines.length
+    ? `关于用户（Server 保存的长期记忆，仅用于个性化回答；与当前输入冲突时以当前输入为准，不要逐条复述）：\n${memoryLines.join("\n").slice(0, 2400)}`
+    : "";
+  const memoryInstruction = event.memoryEnabled === true
+    ? "长期记忆由 Server 自动维护。用户说“记住…”或“忘掉…”这类个人信息时，不要创建日程、提醒或灵感，只需简短确认。" + (typeof event.memoryAction === "string" && event.memoryAction.trim() ? `本轮 Server 已处理：${event.memoryAction.trim().slice(0, 400)}` : "")
+    : "";
   return [
     "你是 SmartCore 的个人工作助手。请用中文，简洁、直接地帮助用户完成当前请求。",
+    memoryBlock,
+    memoryInstruction,
     "你只能通过 mcp__smartcore__* 工具读写 SmartCore；不要猜测事件 id，不要访问文件系统、shell 或数据库。",
     "涉及日期时间时，绝对以事件上下文中的 serverNow 和 timezone 为准，禁止自行猜测年份或当前日期；向 Server 传入带时区的绝对 ISO 8601 时间。先查询再修改；完成、删除或转化前确认目标明确。",
     "这是一个连续的个人助手对话。若事件上下文包含 conversationHistory，把它当作最近的对话背景；当前用户输入优先，不要重复旧操作。",
@@ -129,7 +140,7 @@ function safePrompt(event) {
     "工具操作成功后用一句话说明结果；如果无法安全执行，说明缺少的字段。",
     `用户输入：${eventText(event)}`,
     `事件上下文：${JSON.stringify(context, null, 2)}`,
-  ].join("\n\n").slice(0, 24000);
+  ].filter(Boolean).join("\n\n").slice(0, 24000);
 }
 
 function sessionIdFor(event) {

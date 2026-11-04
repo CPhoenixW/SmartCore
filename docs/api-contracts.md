@@ -216,3 +216,11 @@ upload -> queued -> processing -> ready -> consumed
   `GET /agent/daily-work-context`，按项目使用 Codex 报告、Computer 工作块和 Plan 人工结果，
   失败不能保存为 completed。事实冲突优先级为人工 Plan 结果、Codex 报告、工作块推断；
   项目投入时长只使用 Server 汇总的 active seconds。
+
+## 长期记忆
+
+- `GET /api/memory`：返回 `{enabled, items, types}`，仅当前用户的活跃记忆，`includeExpired=true` 含已过期项。
+- `POST /api/memory`：`{content, type?, expiresAt?}`，来源记为 `user_explicit`；相似内容合并而不是重复新增。
+- `PATCH /api/memory/{memoryId}`：`{content?, type?, expiresAt?, clearExpiry?}`。
+- `DELETE /api/memory/{memoryId}`：软删除（写 `deletedAt`），不再注入也不再展示。
+- 全部需要浏览器 Session；他人或已删除的 `memoryId` 返回 404，校验失败返回 422。

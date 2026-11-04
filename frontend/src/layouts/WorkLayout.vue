@@ -4,6 +4,7 @@ import {
   Bell,
   BookOpen,
   Bot,
+  Brain,
   Calendar,
   CalendarPlus,
   House,
@@ -54,6 +55,7 @@ const desktopSecondaryNav = [
   { key: "device", name: "device", icon: Monitor },
   { key: "ideas", name: "ideas", icon: Lightbulb },
   { key: "logs", name: "logs", icon: List },
+  { key: "memory", name: "memory", icon: Brain },
   { key: "settings", name: "settings", icon: Settings },
 ] as const;
 const mobilePrimaryNav = [
