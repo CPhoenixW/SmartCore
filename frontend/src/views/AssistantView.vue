@@ -639,7 +639,6 @@ onBeforeUnmount(() => {
 @keyframes assistant-spin {
   to { transform: rotate(360deg); }
 }
-}
 @media (max-width: 760px) {
   .assistant-page {
     height: calc(100dvh - 56px);
