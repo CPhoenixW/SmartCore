@@ -467,3 +467,67 @@ def test_daily_summary_defaults_to_2359() -> None:
 
     assert settings.daily_summary_hour == 23
     assert settings.daily_summary_minute == 59
+
+def test_completed_daily_summary_reaches_pwa_chat_and_push_dedup(app_env, app, monkeypatch) -> None:
+    from sqlalchemy import select
+
+    from app.server.db.session import SessionLocal
+    from app.server.new_core.assistant_history import get_primary_conversation
+    from app.server.new_core.daily_summary_service import store_daily_summary
+    from app.server.new_core.models import AppUser, AssistantMessage
+
+    pushes: list[dict] = []
+
+    def _fake_push(db, *, user_id, title, content, evt_id=None, url=None, settings=None):
+        pushes.append(
+            {
+                "user_id": user_id,
+                "title": title,
+                "content": content,
+                "evt_id": evt_id,
+                "url": url,
+            }
+        )
+        return True, None
+
+    monkeypatch.setattr("app.server.new_core.notify.send_web_push", _fake_push)
+
+    db = SessionLocal()
+    try:
+        db.add(AppUser(userId="owner", loginName="owner", displayName="Owner"))
+        db.commit()
+        payload = "- completed SmartCore PWA proactive report\n- verified Web Push"
+        first = store_daily_summary(
+            db,
+            user_id="owner",
+            report_date="2026-11-04",
+            stat="complete",
+            content=payload,
+        )
+        assert first["stat"] == "complete"
+        second = store_daily_summary(
+            db,
+            user_id="owner",
+            report_date="2026-11-04",
+            stat="complete",
+            content=payload,
+        )
+        assert second["stat"] == "complete"
+        conversation = get_primary_conversation(db, user_id="owner")
+        messages = db.scalars(
+            select(AssistantMessage).where(
+                AssistantMessage.userId == "owner",
+                AssistantMessage.conversationId == conversation.conversationId,
+                AssistantMessage.role == "assistant",
+            )
+        ).all()
+        assert len(messages) == 1
+        assert "2026-11-04" in messages[0].text
+        assert "Web Push" in messages[0].text or "verified Web Push" in messages[0].text
+    finally:
+        db.close()
+
+    assert len(pushes) == 1
+    assert pushes[0]["user_id"] == "owner"
+    assert pushes[0]["url"] == "/work/assistant"
+    assert "2026-11-04" in pushes[0]["title"]
