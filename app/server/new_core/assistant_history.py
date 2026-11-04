@@ -228,6 +228,55 @@ def fail_response(db: Session, request: PreparedAssistantRequest, message: str) 
     db.commit()
 
 
+def post_proactive_assistant_message(
+    db: Session,
+    *,
+    user_id: str,
+    text: str,
+    client_message_id: str | None = None,
+) -> AssistantMessage:
+    """Append a completed assistant message to the owner primary chat.
+
+    Used for server-initiated reports (for example daily summary) so the PWA
+    conversation can show proactive updates without a user turn. When
+    client_message_id is provided, repeats are idempotent.
+    """
+    clean = str(text or "").strip()
+    if not clean:
+        raise ValueError("assistant message cannot be empty")
+    if len(clean) > MAX_MESSAGE_TEXT:
+        raise ValueError("assistant message is too long")
+    client_id = _assistant_client_id(client_message_id)
+    conversation = get_primary_conversation(db, user_id=user_id)
+    if client_id:
+        existing = db.scalar(
+            select(AssistantMessage).where(
+                AssistantMessage.userId == user_id,
+                AssistantMessage.clientMessageId == client_id,
+            )
+        )
+        if existing is not None:
+            if existing.conversationId != conversation.conversationId:
+                raise ValueError("clientMessageId is already used by another conversation")
+            return existing
+    now = nowIso()
+    message = AssistantMessage(
+        conversationId=conversation.conversationId,
+        userId=user_id,
+        role="assistant",
+        text=clean[:MAX_MESSAGE_TEXT],
+        clientMessageId=client_id,
+        stat="complete",
+        createdAt=now,
+    )
+    db.add(message)
+    conversation.updatedAt = now
+    conversation.lastMessageAt = now
+    db.commit()
+    db.refresh(message)
+    return message
+
+
 def conversation_dict(row: AssistantConversation) -> dict[str, Any]:
     return {
         "conversationId": row.conversationId,

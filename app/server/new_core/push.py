@@ -30,6 +30,7 @@ def send_web_push(
     title: str,
     content: str,
     evt_id: str | None = None,
+    url: str | None = None,
     settings: Settings | None = None,
 ) -> tuple[bool, str | None]:
     settings = settings or get_settings()
@@ -45,11 +46,14 @@ def send_web_push(
     except ImportError:
         return False, "browser push dependency is unavailable"
 
+    target = str(url or "/work/overview").strip() or "/work/overview"
+    if not target.startswith("/"):
+        target = "/work/overview"
     payload: dict[str, Any] = {
         "title": title,
         "body": content,
         "tag": f"smartcore-{evt_id or 'notice'}",
-        "url": "/work/overview",
+        "url": target,
     }
     sent = 0
     for row in rows:

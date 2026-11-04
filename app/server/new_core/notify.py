@@ -41,6 +41,7 @@ def sendReminder(
     dedupKey: str | None = None,
     phase: str = "end",
     userId: str = crud.DEFAULT_USER_ID,
+    url: str | None = None,
 ) -> dict[str, str]:
     """Deliver a reminder to browser Push first, then the optional Screen client."""
     if dedupKey and crud.notifyDedupExists(db, dedupKey):
@@ -51,6 +52,7 @@ def sendReminder(
         title=title,
         content=content,
         evt_id=evtId,
+        url=url,
     )
     if browser_ok:
         crud.writeNotifyLog(
@@ -90,6 +92,7 @@ def routeNotify(
     evtId: str | None = None,
     phase: str = "end",
     userId: str = crud.DEFAULT_USER_ID,
+    url: str | None = None,
 ) -> dict[str, str]:
     """Route deterministic reminders to browser Push, with Screen fallback."""
     if dedupKey and crud.notifyDedupExists(db, dedupKey):
@@ -100,6 +103,7 @@ def routeNotify(
         title=title,
         content=content,
         evt_id=evtId,
+        url=url,
     )
     if browser_ok:
         crud.writeNotifyLog(

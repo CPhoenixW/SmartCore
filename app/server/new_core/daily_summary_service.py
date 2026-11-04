@@ -91,6 +91,56 @@ def queue_daily_summary(
     return existing, True
 
 
+
+def _push_snippet(content: str, *, limit: int = 160) -> str:
+    compact = " ".join(str(content or "").split())
+    if len(compact) <= limit:
+        return compact
+    return compact[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _deliver_completed_daily_summary(
+    db: Session,
+    *,
+    user_id: str,
+    report_date: str,
+    content: str,
+) -> None:
+    """Mirror the old Feishu daily report into PWA chat + Web Push.
+
+    Generation still happens through the scheduler/DSH path; this only restores
+    the missing user-facing delivery after Feishu was removed from the default
+    channel.
+    """
+    from app.server.new_core.assistant_history import (
+        MAX_MESSAGE_TEXT,
+        post_proactive_assistant_message,
+    )
+    from app.server.new_core.notify import sendReminder
+
+    prefix = "### " + report_date + " 每日工作汇报\n\n"
+    body = content.strip()
+    room = max(200, MAX_MESSAGE_TEXT - len(prefix) - 8)
+    if len(body) > room:
+        body = body[:room].rstrip() + "\n\n…"
+    post_proactive_assistant_message(
+        db,
+        user_id=user_id,
+        text=prefix + body,
+        client_message_id=f"daily-summary:{user_id}:{report_date}",
+    )
+    sendReminder(
+        db,
+        evtId=f"daily-summary-{report_date}",
+        title=f"{report_date} 工作汇报",
+        content=_push_snippet(content),
+        channel="browser",
+        dedupKey=f"daily-summary-push:{user_id}:{report_date}",
+        userId=user_id,
+        url="/work/assistant",
+    )
+
+
 def store_daily_summary(
     db: Session,
     *,
@@ -129,6 +179,14 @@ def store_daily_summary(
     row.updatedAt = now
     db.commit()
     db.refresh(row)
+    if normalized_stat == "complete" and clean_content:
+        _deliver_completed_daily_summary(
+            db,
+            user_id=user_id,
+            report_date=normalized_date,
+            content=clean_content,
+        )
+        db.refresh(row)
     return daily_summary_dict(row)
 
 
