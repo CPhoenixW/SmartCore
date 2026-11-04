@@ -53,6 +53,7 @@ beforeEach(() => {
     expect(wrapper.find(".assistant-progress").exists()).toBe(true);
     expect(wrapper.find(".assistant-progress").text()).toContain("正在查询你的安排");
     expect(wrapper.find(".assistant-message--streaming").text()).toContain("我来帮你查一下");
+    expect(wrapper.find(".assistant-message__cursor").exists()).toBe(false);
     expect(wrapper.find(".assistant-status").exists()).toBe(false);
     expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined();
 
