@@ -131,6 +131,9 @@
     "projectTitle": "项目跟进"
   },
   "overview": {
+    "mobileTodo": "今日待办",
+    "mobileDone": "今日完成",
+    "mobileNext72h": "72 小时内",
     "title": "总览",
     "subtitle": "查看今天的事项、截止时间与设备状态",
     "serverClock": "服务器时间",
@@ -576,6 +579,8 @@
     "allStatus": "全部状态"
   },
   "settings": {
+    "mobileMemoryHint": "查看和管理助手记住的信息",
+    "mobileLogout": "退出登录",
     "title": "设置",
     "subtitle": "管理用户、语言和提醒偏好",
     "displayName": "用户名称",
