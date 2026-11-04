@@ -82,6 +82,12 @@ async function changePassword() {
   }
 }
 
+const loggingOut = ref(false);
+async function logout() {
+  loggingOut.value = true;
+  try { await authApi.logout(); } finally { window.location.href = "/work/login"; }
+}
+
 async function logoutAll() {
   try { await authApi.logoutAll(); } finally { window.location.href = "/work/login"; }
 }
@@ -175,6 +181,31 @@ async function togglePush(): Promise<void> {
 </script>
 
 <template>
+  <!-- Phone: one column with only the everyday settings; desktop keeps the full workbench below. -->
+  <div v-if="isMobile" class="m-settings">
+    <section class="m-settings__card card">
+      <div class="m-settings__profile">
+        <div class="avatar m-settings__avatar"><img v-if="previewUrl" :src="previewUrl" :alt="t('settings.avatarPreview')" /><span v-else>{{ initials }}</span></div>
+        <div><strong>{{ form.displayName || 'SmartCore' }}</strong><small>{{ form.language === 'en' ? 'English' : t('settings.chinese') }}</small></div>
+      </div>
+      <form class="m-settings__form" @submit.prevent="save">
+        <label class="field"><span>{{ t("settings.displayName") }}</span><input v-model="form.displayName" required /></label>
+        <label class="field"><span>{{ t("settings.language") }}</span><select v-model="form.language"><option value="zh">{{ t("settings.chinese") }}</option><option value="en">English</option></select></label>
+        <button class="button button--primary" type="submit" :disabled="saving">{{ saving ? t("common.saving") : t("common.save") }}</button>
+      </form>
+    </section>
+    <section class="m-settings__card card">
+      <div class="m-settings__row">
+        <div><strong>{{ t("settings.pushTitle") }}</strong><small>{{ pushMessage || (pushSupported ? t("settings.pushHint") : t("settings.pushUnsupported")) }}</small></div>
+        <button v-if="pushSupported" class="button" :class="{ 'button--primary': !pushEnabled, 'button--ghost': pushEnabled }" type="button" :disabled="pushBusy" @click="togglePush">{{ pushEnabled ? t("settings.pushDisable") : t("settings.pushEnable") }}</button>
+      </div>
+    </section>
+    <nav class="m-settings__card card" :aria-label="t('settings.toolsTitle')">
+      <RouterLink class="m-settings__link" :to="{ name: 'memory' }"><span><strong>{{ t("nav.memory") }}</strong><small>{{ t("settings.mobileMemoryHint") }}</small></span><span aria-hidden="true">›</span></RouterLink>
+    </nav>
+    <button class="button button--danger m-settings__logout" type="button" :disabled="loggingOut" @click="logout">{{ t("settings.mobileLogout") }}</button>
+  </div>
+  <template v-else>
   <PageHeader :title="t('settings.title')" :subtitle="t('settings.subtitle')" />
   <section class="settings-scroll-layout">
     <div class="settings-scroll-column" data-staged-wheel-scroll>
@@ -234,6 +265,7 @@ async function togglePush(): Promise<void> {
       </BaseCard>
     </aside>
   </section>
+  </template>
 </template>
 
 <style scoped>
@@ -249,4 +281,20 @@ async function togglePush(): Promise<void> {
 .browser-session-list strong span { margin-left: 5px; color: var(--color-primary); font-size: 10px; }
 .browser-session-list small { margin-top: 4px; color: var(--color-text-muted); font-size: 10px; }
 .logout-all-button { width: 100%; margin-top: 12px; }
+.m-settings { display: grid; gap: 12px; min-width: 0; }
+.m-settings__card { display: grid; gap: 14px; padding: 14px; }
+.m-settings__profile { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.m-settings__profile > div:last-child { display: grid; gap: 2px; min-width: 0; }
+.m-settings__profile strong { font-size: 17px; }
+.m-settings__profile small, .m-settings__row small, .m-settings__link small { color: var(--color-text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.m-settings__avatar { flex: 0 0 48px; width: 48px; height: 48px; border-radius: 14px; }
+.m-settings__form { display: grid; gap: 12px; }
+.m-settings__form .button { width: 100%; min-height: 44px; }
+.m-settings__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.m-settings__row > div { display: grid; gap: 3px; min-width: 0; }
+.m-settings__row .button { flex: 0 0 auto; min-height: 40px; }
+.m-settings__link { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; color: var(--color-text); }
+.m-settings__link > span:first-child { display: grid; gap: 3px; min-width: 0; }
+.m-settings__link > span:last-child { color: var(--color-text-muted); font-size: 20px; }
+.m-settings__logout { width: 100%; min-height: 46px; margin-top: 4px; }
 </style>

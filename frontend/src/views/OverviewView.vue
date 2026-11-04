@@ -8,6 +8,8 @@ import BaseCard from "@/components/base/BaseCard.vue";
 import EmptyState from "@/components/base/EmptyState.vue";
 import EventCard from "@/components/events/EventCard.vue";
 import EventStatusToggle from "@/components/events/EventStatusToggle.vue";
+import MobileOverview from "@/components/overview/MobileOverview.vue";
+import { useViewport } from "@/composables/useViewport";
 import { eventApi } from "@/api/event";
 import { runtimeApi } from "@/api/runtime";
 import { ideaApi } from "@/api/idea";
@@ -20,6 +22,7 @@ const { t, locale } = useI18n();
 const router = useRouter();
 const toast = useToast();
 const queryClient = useQueryClient();
+const { isMobile } = useViewport();
 const clockQuery = useQuery({ queryKey: ["runtime-clock"], queryFn: () => runtimeApi.clock(), refetchInterval: 60_000 });
 const serverDate = computed(() => clockQuery.data.value?.serverNow?.slice(0, 10) || todayKey());
 const serverTimestamp = computed(() => {
@@ -60,7 +63,8 @@ function formatServerTime(value?: string): string {
 </script>
 
 <template>
-  <div class="overview-page">
+  <MobileOverview v-if="isMobile" />
+  <div v-else class="overview-page">
     <section class="overview-focus card">
       <div class="overview-focus__header"><div><span class="eyebrow"><Clock3 :size="14" aria-hidden="true" />{{ t("overview.serverClock") }}</span><strong>{{ formatServerTime(clockQuery.data.value?.serverNow) }}</strong><small>{{ clockQuery.data.value?.timezone || t("overview.clockLoading") }}</small></div><RouterLink class="button button--ghost" :to="{ name: 'schedule' }">{{ t("overview.openSchedule") }}<ArrowRight :size="15" aria-hidden="true" /></RouterLink></div>
       <div class="overview-focus__action"><div class="overview-focus__icon"><Sparkles :size="20" aria-hidden="true" /></div><div><span>{{ t("overview.nextAction") }}</span><strong v-if="nextAction">{{ nextAction.title }}</strong><p v-if="nextAction">{{ nextAction.desc || t("preview.noDescription") }}</p><EmptyState v-else :text="t('overview.emptyToday')" /></div><RouterLink v-if="nextAction" class="button button--primary" :to="{ name: 'update', query: { date: eventDateKey(nextAction), evtId: nextAction.evtId } }">{{ t("common.open") }}</RouterLink></div>
