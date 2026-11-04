@@ -40,7 +40,7 @@ beforeEach(() => {
     streamMock.mockImplementation((_text: string, _conversationId: string, onEvent: (event: object) => void) => {
       onEvent({ type: "status", phase: "thinking", message: "我先理解一下你的请求…" });
       onEvent({ type: "tool", state: "start", name: "evtQuery", message: "正在查询你的安排…" });
-      onEvent({ type: "message", text: "我来帮你查一下。" });
+      onEvent({ type: "message", text: "我来帮你查一下。", mode: "new" });
       return new Promise<{ sessionId: string; response: string }>((resolve) => { resolveStream = resolve; });
     });
     const wrapper = mount(AssistantView, { global: { plugins: [i18n] } });
@@ -54,11 +54,35 @@ beforeEach(() => {
     expect(wrapper.find(".assistant-progress").text()).toContain("正在查询你的安排");
     expect(wrapper.find(".assistant-message--streaming").text()).toContain("我来帮你查一下");
     expect(wrapper.find(".assistant-status").exists()).toBe(false);
+    expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined();
 
     resolveStream?.({ sessionId: "pwa-test", response: "已创建计划" });
     await flushPromises();
     expect(wrapper.find(".assistant-progress").exists()).toBe(false);
     expect(wrapper.text()).toContain("已创建计划");
+  });
+
+  it("renders assistant markdown instead of plain paragraphs", async () => {
+    readMock.mockResolvedValueOnce({
+      conversationId: "pwa-test",
+      title: "Markdown",
+      stat: "active",
+      createdAt: "2026-07-31T10:00:00+08:00",
+      updatedAt: "2026-07-31T10:00:00+08:00",
+      lastMessageAt: "2026-07-31T10:00:00+08:00",
+      messages: [{
+        messageId: "assistant-md",
+        conversationId: "pwa-test",
+        role: "assistant",
+        text: "## 安排\n- 复习\n- 运动",
+        stat: "complete",
+        createdAt: "2026-07-31T10:00:00+08:00",
+      }],
+    });
+    const wrapper = mount(AssistantView, { global: { plugins: [i18n] } });
+    await flushPromises();
+    expect(wrapper.find(".markdown-content h2").text()).toContain("安排");
+    expect(wrapper.findAll(".markdown-content li")).toHaveLength(2);
   });
 
   it("keeps an empty conversation quiet and focused", async () => {
