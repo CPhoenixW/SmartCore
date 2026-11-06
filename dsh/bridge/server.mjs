@@ -89,6 +89,7 @@ function safeToolName(value) {
 
 function toolStatus(name) {
   const normalized = safeToolName(name).toLowerCase();
+  if (normalized.includes("server")) return "正在查询服务器…";
   if (normalized.includes("query") || normalized.includes("search")) return "正在查询你的安排…";
   if (normalized.includes("create") || normalized.includes("capture")) return "正在帮你记录…";
   if (normalized.includes("update") || normalized.includes("complete") || normalized.includes("delete")) return "正在更新你的事项…";
@@ -104,6 +105,7 @@ function eventText(event) {
 }
 
 function safePrompt(event) {
+  const isPwaAssistant = event.source === "web" && event.event_type === "assistant_message";
   const omit = new Set(["agentScope", "attachments", "memoryAction", "memoryEnabled"]);
   const context = {};
   for (const [key, value] of Object.entries(event || {})) {
@@ -132,7 +134,10 @@ function safePrompt(event) {
     "你是 SmartCore 的个人工作助手。请用中文，简洁、直接地帮助用户完成当前请求。",
     memoryBlock,
     memoryInstruction,
-    "你只能通过 mcp__smartcore__* 工具读写 SmartCore；不要猜测事件 id，不要访问文件系统、shell 或数据库。",
+    isPwaAssistant
+      ? "助手端只使用 smartcore_plan_*、smartcore_remind_*、smartcore_today、smartcore_server_request 和必要的媒体工具。课程直接作为带课程信息的 plan 保存，不要调用旧的 course、ddl、idea 或通用 event 工具。"
+      : "你可以使用已发布的 SmartCore 自动化工具完成当前任务。",
+    "所有 SmartCore 数据读写都必须走 MCP 工具；不要猜测事件 id。不要访问文件系统、shell 或数据库。smartcore_server_request 只能访问已配置的 HTTP 白名单。",
     "涉及日期时间时，绝对以事件上下文中的 serverNow 和 timezone 为准，禁止自行猜测年份或当前日期；向 Server 传入带时区的绝对 ISO 8601 时间。先查询再修改；完成、删除或转化前确认目标明确。",
     "这是一个连续的个人助手对话。若事件上下文包含 conversationHistory，把它当作最近的对话背景；当前用户输入优先，不要重复旧操作。",
     "需要调用工具时，先用一句自然语言告诉用户你将查询或修改什么，再调用工具；工具完成后再给出简短结果。不要让用户在工具调用期间长时间无反馈。",
@@ -201,10 +206,11 @@ class RpcClient {
 }
 
 class DshRuntime {
-  constructor(userId, profile = "text") {
+  constructor(userId, profile = "text", mode = "automation") {
     this.userId = userId;
     this.profile = profile;
-    this.key = safePart(`${userId}-${profile}`);
+    this.mode = mode;
+    this.key = safePart(`${userId}-${profile}-${mode}`);
     this.model = profile === "vision" ? VISION_MODEL : TEXT_MODEL;
     this.scopeFile = join(SCOPE_ROOT, `${this.key}.json`);
     this.home = join(DSH_HOME_ROOT, this.key);
@@ -231,11 +237,18 @@ class DshRuntime {
       const env = {
         ...process.env,
         DSH_HOME: this.home,
-        DSH_SYSTEM_PROMPT: "你是 SmartCore 的个人工作助手。只使用 mcp__smartcore__* 工具完成工作事项，不访问本地文件、shell 或数据库。",
         SMARTCORE_BASE_URL,
         SMARTCORE_AGENT_TOKEN,
         SMARTCORE_SCOPE_FILE: this.scopeFile,
         SMARTCORE_MCP_SERVER: MCP_SERVER_FILE,
+        SMARTCORE_MCP_MODE: this.mode,
+        DSH_SERVER_BASE_URL: process.env.DSH_SERVER_BASE_URL || SMARTCORE_BASE_URL,
+        DSH_SERVER_ALLOWED_PATHS: process.env.DSH_SERVER_ALLOWED_PATHS || "/healthz",
+        DSH_SERVER_ALLOWED_METHODS: process.env.DSH_SERVER_ALLOWED_METHODS || "GET",
+        DSH_SERVER_HEADERS_JSON: process.env.DSH_SERVER_HEADERS_JSON || "{}",
+        DSH_SYSTEM_PROMPT: this.mode === "assistant"
+          ? "你是 SmartCore 的个人工作助手。只使用 plan、remind、today、server_request 和必要的媒体工具。课程直接作为 plan 保存。"
+          : "你是 SmartCore 的自动化工作助手。只使用已发布的 MCP 工具完成当前任务。",
         LLM_MODEL: this.model,
         DSH_MODEL: this.model,
       };
@@ -317,10 +330,10 @@ class DshRuntime {
   async stop() { try { await this.rpc?.request("shutdown", {}, 10000); } catch {} try { this.child?.kill("SIGTERM"); } catch {} }
 }
 
-function runtimeFor(userId, profile = "text") {
-  const key = safePart(`${userId}-${profile}`);
+function runtimeFor(userId, profile = "text", mode = "automation") {
+  const key = safePart(`${userId}-${profile}-${mode}`);
   let runtime = runtimes.get(key);
-  if (!runtime) { runtime = new DshRuntime(userId, profile); runtimes.set(key, runtime); }
+  if (!runtime) { runtime = new DshRuntime(userId, profile, mode); runtimes.set(key, runtime); }
   runtime.lastUsed = Date.now();
   return runtime;
 }
@@ -328,7 +341,8 @@ function runtimeFor(userId, profile = "text") {
 async function handleEvent(event, { waitForResult = false } = {}) {
   if (!event || typeof event !== "object" || !String(event.userId || "").trim()) throw new Error("event userId is required");
   const hasImage = Array.isArray(event.attachments) && event.attachments.some((item) => String(item?.mimeType || "").startsWith("image/"));
-  const runtime = runtimeFor(String(event.userId), hasImage ? "vision" : "text");
+  const mode = event.source === "web" && event.event_type === "assistant_message" ? "assistant" : "automation";
+  const runtime = runtimeFor(String(event.userId), hasImage ? "vision" : "text", mode);
   const scopeToken = String(event.agentScope || "");
   const sessionId = sessionIdFor(event);
   const work = runtime.query(sessionId, safePrompt(event), scopeToken);
@@ -340,7 +354,8 @@ async function handleEvent(event, { waitForResult = false } = {}) {
 async function streamEvent(event, response) {
   if (!event || typeof event !== "object" || !String(event.userId || "").trim()) throw new Error("event userId is required");
   const hasImage = Array.isArray(event.attachments) && event.attachments.some((item) => String(item?.mimeType || "").startsWith("image/"));
-  const runtime = runtimeFor(String(event.userId), hasImage ? "vision" : "text");
+  const mode = event.source === "web" && event.event_type === "assistant_message" ? "assistant" : "automation";
+  const runtime = runtimeFor(String(event.userId), hasImage ? "vision" : "text", mode);
   const scopeToken = String(event.agentScope || "");
   const sessionId = sessionIdFor(event);
   const queue = [];

@@ -36,6 +36,7 @@ const composerRoot = ref<HTMLElement | null>(null);
 const highlightMessageId = ref("");
 let syncTimer: ReturnType<typeof setInterval> | undefined;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
+const ASSISTANT_CACHE_KEY = "smartcore:assistant:primary:v2";
 
 function newClientId(): string {
   return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -53,6 +54,30 @@ function scrollToLatest(): void {
 function scrollToMessage(messageId: string): void {
   void nextTick(() => document.getElementById(`assistant-message-${messageId}`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
 }
+function persistConversation(conversation: AssistantConversation | null = activeConversation.value): void {
+  if (typeof window === "undefined" || !conversation?.conversationId) return;
+  const cached = {
+    ...conversation,
+    conversationId: conversation.conversationId,
+    messages: messages.value.slice(-80),
+  };
+  try { window.localStorage.setItem(ASSISTANT_CACHE_KEY, JSON.stringify(cached)); } catch {}
+}
+function restoreCachedConversation(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const raw = window.localStorage.getItem(ASSISTANT_CACHE_KEY);
+    if (!raw) return false;
+    const cached = JSON.parse(raw) as AssistantConversation;
+    if (!cached?.conversationId || !Array.isArray(cached.messages)) return false;
+    activeConversation.value = cached;
+    activeConversationId.value = cached.conversationId;
+    messages.value = cached.messages;
+    loading.value = false;
+    scrollToLatest();
+    return true;
+  } catch { return false; }
+}
 function ensureComposerVisible(): void {
   void nextTick(() => {
     const node = composerRoot.value as (HTMLElement & { scrollIntoView?: (arg?: ScrollIntoViewOptions) => void }) | null;
@@ -68,6 +93,7 @@ async function loadConversation(conversationId: string, messageId?: string, sile
     activeConversation.value = result;
     activeConversationId.value = result.conversationId;
     messages.value = result.messages;
+    persistConversation(result);
     highlightMessageId.value = messageId ?? "";
     if (!silent) scrollToLatest();
     if (messageId) scrollToMessage(messageId);
@@ -78,17 +104,18 @@ async function loadConversation(conversationId: string, messageId?: string, sile
   }
 }
 async function loadPrimaryConversation(): Promise<void> {
-  loading.value = true;
+  const restored = restoreCachedConversation();
+  if (!restored) loading.value = true;
   error.value = "";
   try {
     const result = await assistantApi.list();
     const primary = result.items[0] as AssistantConversation | undefined;
     if (!primary) throw new Error(t("assistant.historyError"));
-    await loadConversation(primary.conversationId);
+    await loadConversation(primary.conversationId, undefined, restored);
   } catch (requestError) {
     error.value = requestError instanceof Error ? requestError.message : t("assistant.historyError");
   } finally {
-    loading.value = false;
+    if (!restored) loading.value = false;
   }
 }
 async function syncConversation(): Promise<void> {
@@ -171,6 +198,7 @@ async function send(): Promise<void> {
     createdAt: new Date().toISOString(),
   };
   messages.value.push(optimistic);
+  persistConversation();
   scrollToLatest();
   ensureComposerVisible();
   sending.value = true;
@@ -602,7 +630,7 @@ onBeforeUnmount(() => {
 }
 .assistant-composer {
   display: flex;
-  align-items: flex-end;
+  align-items: stretch;
   gap: 10px;
   flex: 0 0 auto;
   padding: 14px;
@@ -611,7 +639,7 @@ onBeforeUnmount(() => {
 }
 .assistant-composer textarea {
   min-width: 0;
-  min-height: 44px;
+  min-height: 46px;
   max-height: 160px;
   flex: 1;
   resize: vertical;
@@ -634,7 +662,8 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  min-height: 44px;
+  min-height: 46px;
+  align-self: stretch;
 }
 @keyframes assistant-spin {
   to { transform: rotate(360deg); }
@@ -700,7 +729,7 @@ onBeforeUnmount(() => {
     backdrop-filter: blur(10px);
   }
   .assistant-composer textarea {
-    min-height: 44px;
+    min-height: 46px;
     max-height: 120px;
     resize: none;
   }
@@ -708,6 +737,7 @@ onBeforeUnmount(() => {
     width: 46px;
     min-width: 46px;
     height: 46px;
+    min-height: 46px;
     padding: 0;
     justify-content: center;
   }

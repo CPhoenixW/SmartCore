@@ -4,6 +4,21 @@ import process from "node:process";
 const baseUrl = String(process.env.SMARTCORE_BASE_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
 const agentToken = String(process.env.SMARTCORE_AGENT_TOKEN || "");
 const scopeFile = String(process.env.SMARTCORE_SCOPE_FILE || "");
+const mode = String(process.env.SMARTCORE_MCP_MODE || "automation").trim().toLowerCase();
+const serverBaseUrl = String(process.env.DSH_SERVER_BASE_URL || baseUrl).replace(/\/$/, "");
+const serverAllowedPaths = String(process.env.DSH_SERVER_ALLOWED_PATHS || "/healthz")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+const serverAllowedMethods = new Set(String(process.env.DSH_SERVER_ALLOWED_METHODS || "GET")
+  .split(",")
+  .map((value) => value.trim().toUpperCase())
+  .filter(Boolean));
+let serverHeaders = {};
+try {
+  const parsed = JSON.parse(String(process.env.DSH_SERVER_HEADERS_JSON || "{}"));
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) serverHeaders = parsed;
+} catch {}
 
 const textSchema = { type: "string" };
 const objectSchema = (properties = {}, required = []) => ({
@@ -21,7 +36,7 @@ const eventProperties = {
 
 const mediaToolNames = new Set(["smartcore_media_context", "smartcore_media_job_context"]);
 
-const tools = [
+const internalTools = [
   {
     name: "smartcore_today",
     description: "Read the user's day context, current plans, deadlines, and reminders.",
@@ -146,7 +161,94 @@ const tools = [
     method: "POST", path: "/agent/computer/daily-log",
     inputSchema: objectSchema({ deviceId: textSchema, logDate: textSchema, status: textSchema, title: textSchema, summary: textSchema, topics: { type: "array" }, planAssessments: { type: "array" }, reminderSummary: { type: "array" }, hourlyAnalysisIds: { type: "array" }, workBlockIds: { type: "array" }, phase: textSchema, model: textSchema, promptVersion: textSchema }, ["deviceId", "logDate", "status"]),
   },
-];
+ ];
+
+const assistantTool = (name, description, method, path, inputSchema) => ({ name, description, method, path, inputSchema });
+const assistantTools = [
+  internalTools.find((tool) => tool.name === "smartcore_today"),
+  assistantTool(
+    "smartcore_plan_query",
+    "Query the user's plans. A course request is represented as a plan with course details in its description.",
+    "POST",
+    "/agent/db/query_events",
+    objectSchema({ evtId: textSchema, text: textSchema, stat: { oneOf: [textSchema, { type: "array", items: textSchema }] }, timeRange: { type: "object" }, limit: { type: "integer" } }),
+  ),
+  assistantTool(
+    "smartcore_plan_create",
+    "Create one owned plan. Use absolute ISO date-times. For a course, include courseName, teacher, location, weekday, semesterStart, startWeek, and endWeek and it will be stored as plan context.",
+    "POST",
+    "/agent/db/create_event",
+    objectSchema({ title: textSchema, desc: textSchema, stTime: textSchema, durationMin: { type: "integer", minimum: 1 }, prio: textSchema, courseName: textSchema, teacher: textSchema, location: textSchema, weekday: { type: "integer", minimum: 1, maximum: 7 }, semesterStart: textSchema, startWeek: { type: "integer", minimum: 1 }, endWeek: { type: "integer", minimum: 1 } }, ["title", "stTime"]),
+  ),
+  assistantTool(
+    "smartcore_plan_update",
+    "Update one owned plan by id.",
+    "POST",
+    "/agent/db/update_event",
+    objectSchema({ evtId: textSchema, title: textSchema, desc: textSchema, stTime: textSchema, durationMin: { type: "integer", minimum: 1 }, prio: textSchema, stat: textSchema }, ["evtId"]),
+  ),
+  assistantTool(
+    "smartcore_plan_complete",
+    "Mark one owned plan complete and save the user's outcome.",
+    "POST",
+    "/agent/db/complete_event",
+    objectSchema({ evtId: textSchema, summary: { type: "string", minLength: 1, maxLength: 4000 } }, ["evtId", "summary"]),
+  ),
+  assistantTool(
+    "smartcore_plan_delete",
+    "Cancel one owned plan after the user clearly asks to remove it.",
+    "POST",
+    "/agent/db/delete_event",
+    objectSchema({ evtId: textSchema }, ["evtId"]),
+  ),
+  assistantTool(
+    "smartcore_remind_query",
+    "Query the user's standalone reminders.",
+    "POST",
+    "/agent/db/query_events",
+    objectSchema({ evtId: textSchema, text: textSchema, stat: { oneOf: [textSchema, { type: "array", items: textSchema }] }, timeRange: { type: "object" }, limit: { type: "integer" } }),
+  ),
+  assistantTool(
+    "smartcore_remind_create",
+    "Create one standalone reminder at an absolute ISO date-time.",
+    "POST",
+    "/agent/db/create_event",
+    objectSchema({ title: textSchema, desc: textSchema, triggerTime: textSchema, prio: textSchema }, ["title", "triggerTime"]),
+  ),
+  assistantTool(
+    "smartcore_remind_update",
+    "Update one owned reminder by id.",
+    "POST",
+    "/agent/db/update_event",
+    objectSchema({ evtId: textSchema, title: textSchema, desc: textSchema, triggerTime: textSchema, prio: textSchema, stat: textSchema }, ["evtId"]),
+  ),
+  assistantTool(
+    "smartcore_remind_complete",
+    "Mark one owned reminder complete and save the user's outcome.",
+    "POST",
+    "/agent/db/complete_event",
+    objectSchema({ evtId: textSchema, summary: { type: "string", minLength: 1, maxLength: 4000 } }, ["evtId", "summary"]),
+  ),
+  assistantTool(
+    "smartcore_remind_delete",
+    "Cancel one owned reminder after the user clearly asks to remove it.",
+    "POST",
+    "/agent/db/delete_event",
+    objectSchema({ evtId: textSchema }, ["evtId"]),
+  ),
+  internalTools.find((tool) => tool.name === "smartcore_media_context"),
+  internalTools.find((tool) => tool.name === "smartcore_media_job_context"),
+  internalTools.find((tool) => tool.name === "smartcore_media_job_complete"),
+  internalTools.find((tool) => tool.name === "smartcore_media_job_fail"),
+].filter(Boolean);
+const directServerTool = {
+  name: "smartcore_server_request",
+  description: "Call an allowlisted HTTP endpoint on the configured SmartCore server. Read-only GET is enabled by default. Never use it to bypass SmartCore ownership rules.",
+  method: "DIRECT",
+  inputSchema: objectSchema({ path: { type: "string", pattern: "^/" }, method: { type: "string", enum: ["GET", "POST", "PUT", "PATCH"] }, body: { type: "object" } }, ["path"]),
+};
+const allTools = [...internalTools, ...assistantTools.filter((tool) => !internalTools.some((item) => item.name === tool.name)), directServerTool];
+const visibleTools = mode === "assistant" ? [...assistantTools, directServerTool] : allTools;
 
 async function scopeToken() {
   if (!scopeFile) throw new Error("SmartCore scope file is not configured");
@@ -156,10 +258,55 @@ async function scopeToken() {
   return value.token;
 }
 
+function pathAllowed(path) {
+  return serverAllowedPaths.some((prefix) => path === prefix || path.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`));
+}
+
+async function callDirectServer(args = {}) {
+  const path = String(args.path || "").trim();
+  const method = String(args.method || "GET").trim().toUpperCase();
+  if (!path.startsWith("/") || path.includes("\0") || !pathAllowed(path)) throw new Error("server path is not allowlisted");
+  if (!serverAllowedMethods.has(method)) throw new Error(`server method is not allowed: ${method}`);
+  const url = new URL(path, `${serverBaseUrl}/`);
+  const options = { method, headers: { Accept: "application/json", ...serverHeaders } };
+  if (["POST", "PUT", "PATCH"].includes(method)) {
+    options.headers["Content-Type"] = "application/json";
+    options.body = JSON.stringify(args.body || {});
+  }
+  const response = await fetch(url, { ...options, signal: AbortSignal.timeout(15000) });
+  const raw = (await response.text()).slice(0, 256 * 1024);
+  let body;
+  try { body = raw ? JSON.parse(raw) : null; } catch { body = raw; }
+  if (!response.ok) throw new Error(`server ${response.status}: ${typeof body === "string" ? body : JSON.stringify(body)}`);
+  return { status: response.status, path, data: body };
+}
+
+function normalizeAssistantArgs(name, args = {}) {
+  const value = { ...args };
+  if (name === "smartcore_plan_query") return { ...value, evtType: "plan", includeLinkedPlans: true };
+  if (name === "smartcore_remind_query") return { ...value, evtType: "remind", includeReminders: true };
+  if (name.startsWith("smartcore_plan_")) value.evtType = "plan";
+  if (name.startsWith("smartcore_remind_")) value.evtType = "remind";
+  if (name === "smartcore_plan_create" && value.courseName) {
+    const details = [
+      `课程：${value.courseName}`,
+      value.teacher ? `教师：${value.teacher}` : "",
+      value.location ? `地点：${value.location}` : "",
+      value.weekday ? `星期：${value.weekday}` : "",
+      value.semesterStart ? `学期开始：${value.semesterStart}` : "",
+      value.startWeek ? `第${value.startWeek}-${value.endWeek || value.startWeek}周` : "",
+    ].filter(Boolean).join("，");
+    value.desc = [value.desc, details].filter(Boolean).join("\n");
+  }
+  return value;
+}
+
 async function callTool(name, args = {}) {
-  const tool = tools.find((item) => item.name === name);
+  const tool = allTools.find((item) => item.name === name);
   if (!tool) throw new Error(`unknown SmartCore tool: ${name}`);
+  if (name === directServerTool.name) return callDirectServer(args);
   const token = await scopeToken();
+  args = normalizeAssistantArgs(name, args);
   const url = new URL(baseUrl + tool.path);
   const options = { method: tool.method, headers: { "X-SmartCore-Agent-Token": agentToken, "X-SmartCore-Agent-Scope": token } };
   if (tool.method === "GET") {
@@ -219,7 +366,7 @@ process.stdin.on("data", (chunk) => {
         if (method === "initialize") {
           reply(id, { protocolVersion: "2025-06-18", capabilities: { tools: { listChanged: false } }, serverInfo: { name: "smartcore", version: "1.0.0" } });
         } else if (method === "tools/list") {
-          reply(id, { tools });
+          reply(id, { tools: visibleTools });
         } else if (method === "tools/call") {
           const value = await callTool(params.name, params.arguments || {});
           reply(id, value?.__mcpContent ? { content: value.__mcpContent } : { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] });

@@ -35,17 +35,17 @@ describe("mobile shell", () => {
     vi.resetModules();
   });
 
-  it("phone layout shows exactly three bottom tabs and no drawer", async () => {
+  it("phone layout opens the left drawer from the top-left menu", async () => {
     stubViewport(true);
     const { default: WorkLayout } = await import("@/layouts/WorkLayout.vue");
     const router = makeRouter();
     await router.push("/overview");
     const wrapper = mount(WorkLayout, { global: { plugins: [i18n, router] } });
     await nextTick();
-    const tabs = wrapper.findAll(".mobile-tabbar__item").map((tab) => tab.text());
-    expect(tabs).toEqual(["助手", "总览", "设置"]);
-    expect(wrapper.find(".sidebar").exists()).toBe(false);
-    expect(wrapper.find(".mobile-menu").exists()).toBe(false);
+    expect(wrapper.find(".mobile-tabbar").exists()).toBe(false);
+    expect(wrapper.find(".sidebar").exists()).toBe(true);
+    expect(wrapper.find(".sidebar--mobile").exists()).toBe(true);
+    expect(wrapper.find(".mobile-menu").exists()).toBe(true);
   });
 
   it("desktop layout keeps the sidebar and has no tab bar", async () => {
