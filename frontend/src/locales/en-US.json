@@ -186,7 +186,13 @@
       "snow": "Snow",
       "storm": "Storm",
       "changeable": "Changeable"
-    }
+    },
+    "restOfDay": "Rest of today",
+    "later": "Later",
+    "laterCounts": "Tomorrow {tomorrow} · Day after {dayAfter}",
+    "now": "Now",
+    "inMinutes": "In {count} min",
+    "inHours": "In {count} h"
   },
   "dailySummary": {
     "title": "Daily summary",
@@ -335,7 +341,11 @@
     "title": "Device",
     "subtitle": "Pair, manage, and inspect each device type independently",
     "sectionNavigation": "Device type",
-    "sections": {"raspberryPi": "RaspberryPi", "computer": "Computer", "screen": "Screen"},
+    "sections": {
+      "raspberryPi": "RaspberryPi",
+      "computer": "Computer",
+      "screen": "Screen"
+    },
     "piTitle": "RaspberryPi",
     "piSubtitle": "Manage the recognition client, state, and camera returns",
     "piPairTitle": "Raspberry Pi pairing and management",
@@ -392,7 +402,6 @@
       "failed": "Failed",
       "expired": "Expired",
       "cancelled": "Cancelled"
-
     }
   },
   "computer": {
@@ -402,12 +411,23 @@
     "device": "Computer",
     "insightDate": "Analysis date",
     "range": "Range",
-    "rangeOption": {"today": "Today", "7d": "7 days", "30d": "30 days"},
+    "rangeOption": {
+      "today": "Today",
+      "7d": "7 days",
+      "30d": "30 days"
+    },
     "view": "Computer view",
     "viewOverview": "Overview",
     "viewActivity": "Activity",
     "viewManagement": "Device management",
-    "state": {"active": "Active", "idle": "Idle", "locked": "Locked", "sleeping": "Sleeping", "paused": "Paused", "offline": "Offline"},
+    "state": {
+      "active": "Active",
+      "idle": "Idle",
+      "locked": "Locked",
+      "sleeping": "Sleeping",
+      "paused": "Paused",
+      "offline": "Offline"
+    },
     "accessibilityMissing": "Accessibility permission is missing; window titles are unavailable.",
     "paused": "Collection is manually paused.",
     "offline": "The monitor is offline. Last synchronized data is shown.",
@@ -415,7 +435,16 @@
     "current": "Current objective state",
     "context": "Current app",
     "analysis": "SmartCore assessment",
-    "analysisState": {"unknown": "Unknown", "plan_active": "Computer use during plan", "computer_active": "Using computer", "at_desk_inactive": "At desk, computer inactive", "away": "Away from desk", "computer_inactive": "Computer inactive", "computer_sleeping": "Computer sleeping", "monitor_paused": "Monitoring paused"},
+    "analysisState": {
+      "unknown": "Unknown",
+      "plan_active": "Computer use during plan",
+      "computer_active": "Using computer",
+      "at_desk_inactive": "At desk, computer inactive",
+      "away": "Away from desk",
+      "computer_inactive": "Computer inactive",
+      "computer_sleeping": "Computer sleeping",
+      "monitor_paused": "Monitoring paused"
+    },
     "analysisPresencePresent": "Raspberry Pi detects presence",
     "analysisPresenceAway": "Raspberry Pi detects absence",
     "analysisComputerOnly": "Based on objective computer state",
@@ -480,11 +509,33 @@
     "smartReminders": "Smart reminder records",
     "noSmartReminders": "No smart reminders on this date",
     "objectiveOverlap": "{percent}% objective active overlap",
-    "semanticAlignment": {"aligned": "Context aligned", "partially_aligned": "Partly aligned", "unrelated": "Context unrelated", "unclear": "Semantics unclear"},
-    "dailyLogPhase": {"preview": "Daily preview", "final": "Final"},
-    "insightStatus": {"queued": "Queued", "running": "Analyzing", "complete": "Complete", "failed": "Failed"},
-    "planExecutionState": {"not_started": "Not started", "partial": "Partially executed", "substantially_executed": "Substantially executed", "unclear": "Unclear"},
-    "confidence": {"high": "High confidence", "medium": "Medium confidence", "low": "Low confidence"},
+    "semanticAlignment": {
+      "aligned": "Context aligned",
+      "partially_aligned": "Partly aligned",
+      "unrelated": "Context unrelated",
+      "unclear": "Semantics unclear"
+    },
+    "dailyLogPhase": {
+      "preview": "Daily preview",
+      "final": "Final"
+    },
+    "insightStatus": {
+      "queued": "Queued",
+      "running": "Analyzing",
+      "complete": "Complete",
+      "failed": "Failed"
+    },
+    "planExecutionState": {
+      "not_started": "Not started",
+      "partial": "Partially executed",
+      "substantially_executed": "Substantially executed",
+      "unclear": "Unclear"
+    },
+    "confidence": {
+      "high": "High confidence",
+      "medium": "Medium confidence",
+      "low": "Low confidence"
+    },
     "managementTitle": "Computer monitor management",
     "managementSummary": "{count} computers connected; runtime details and pairing",
     "queueLabel": "Queued buckets",
@@ -624,18 +675,18 @@
     "revokeSession": "Revoke",
     "sessionRevoked": "Session revoked",
     "noSessions": "No active sessions",
-    "logoutAll": "Log out all sessions"
-    ,"pushTitle": "Phone notifications"
-    ,"pushHint": "Courses, deadlines, and reminders can be delivered to this phone by browser push."
-    ,"pushEnable": "Enable notifications"
-    ,"pushDisable": "Disable notifications"
-    ,"pushEnabled": "Phone notifications enabled"
-    ,"pushDisabled": "Phone notifications disabled"
-    ,"pushDenied": "The browser denied permission. Allow notifications in system settings and try again."
-    ,"pushUnavailable": "Notifications could not be configured in this environment"
-    ,"pushUnsupported": "Push notifications are not supported by this browser or install mode"
-    ,"toolsTitle": "Less frequent tools"
-    ,"toolsHint": "Course maintenance, ideas, devices, and logs stay here until you need them."
+    "logoutAll": "Log out all sessions",
+    "pushTitle": "Phone notifications",
+    "pushHint": "Courses, deadlines, and reminders can be delivered to this phone by browser push.",
+    "pushEnable": "Enable notifications",
+    "pushDisable": "Disable notifications",
+    "pushEnabled": "Phone notifications enabled",
+    "pushDisabled": "Phone notifications disabled",
+    "pushDenied": "The browser denied permission. Allow notifications in system settings and try again.",
+    "pushUnavailable": "Notifications could not be configured in this environment",
+    "pushUnsupported": "Push notifications are not supported by this browser or install mode",
+    "toolsTitle": "Less frequent tools",
+    "toolsHint": "Course maintenance, ideas, devices, and logs stay here until you need them."
   },
   "pair": {
     "title": "Registered devices",
@@ -667,7 +718,12 @@
     "copyFailed": "Could not copy. Select the text and copy it manually.",
     "openScreen": "Copy screen link",
     "confirm": "Confirm device",
-    "kind": {"screen": "Screen", "pi": "Raspberry Pi", "computer": "Mac monitor", "browser": "Computer agent"}
+    "kind": {
+      "screen": "Screen",
+      "pi": "Raspberry Pi",
+      "computer": "Mac monitor",
+      "browser": "Computer agent"
+    }
   },
   "memory": {
     "title": "Memory",
