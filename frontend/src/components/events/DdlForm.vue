@@ -13,7 +13,18 @@ const emit = defineEmits<{
 }>();
 const schema = z.object({ title: z.string().trim().min(1), endTime: z.string().min(1), prio: z.enum(["low", "mid", "high"]) });
 const defaultEnd = new Date(Date.now() + 86_400_000).toISOString();
-const form = reactive({ title: "", desc: "", endTime: toLocalInput(defaultEnd), hardDdl: false, prio: "high" as Priority, plans: defaultDdlPlans(defaultEnd) as DdlPlan[], ddlReminders: [] as DdlReminder[] });
+
+function dayBeforeReminder(endIso: string): DdlReminder {
+  const end = new Date(endIso);
+  return {
+    title: "提前一天",
+    triggerTime: new Date(end.getTime() - 86_400_000).toISOString(),
+    prio: "high",
+    enabled: true,
+  };
+}
+
+const form = reactive({ title: "", desc: "", endTime: toLocalInput(defaultEnd), hardDdl: false, prio: "high" as Priority, plans: defaultDdlPlans(defaultEnd) as DdlPlan[], ddlReminders: [dayBeforeReminder(defaultEnd)] as DdlReminder[] });
 
 function payload(): CreateDdlPayload {
   return {
@@ -32,7 +43,9 @@ watch(() => props.initial, (value) => {
   Object.assign(form, value, {
     endTime: toLocalInput(value.endTime) || form.endTime,
     plans: value.plans ? structuredClone(value.plans).map((plan) => ({ ...plan, enabled: plan.enabled !== false })) : form.plans,
-    ddlReminders: value.ddlReminders ? structuredClone(value.ddlReminders).map((item) => ({ ...item, enabled: item.enabled !== false })) : form.ddlReminders,
+    ddlReminders: value.ddlReminders
+      ? structuredClone(value.ddlReminders).map((item) => ({ ...item, enabled: item.enabled !== false }))
+      : form.ddlReminders.map((item) => item.title === "提前一天" && value.endTime ? { ...item, triggerTime: dayBeforeReminder(value.endTime).triggerTime } : item),
   });
 }, { immediate: true, deep: true });
 watch(form, () => emit("preview", payload()), { immediate: true, deep: true });
@@ -47,6 +60,11 @@ function syncDefaultPlans() {
   for (const item of defaults) {
     if (!form.plans.some((plan) => plan.planRole === item.planRole)) form.plans.push(item);
   }
+  form.ddlReminders = form.ddlReminders.map((item) => (
+    item.title === "提前一天" || item.title?.endsWith("· 提前一天")
+      ? { ...item, triggerTime: dayBeforeReminder(endIso).triggerTime }
+      : item
+  ));
 }
 
 function submit() {

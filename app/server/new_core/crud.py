@@ -24,6 +24,7 @@ from app.server.new_core.models import (
     MsgLog,
     NotifyLog,
     PlanEvt,
+    RemindEvt,
     newId,
     nowIso,
 )
@@ -379,22 +380,29 @@ def createDdlEvt(
     _recordAct(db, userId=userId, src=src, action="create", targetKind="ddlEvt", targetId=base.evtId)
     try:
         end_dt = _parseNow(endTime)
-        defaults = [
-            ("one_day_before", end_dt - timedelta(days=1)),
-            ("one_hour_before", end_dt - timedelta(hours=1)),
-        ]
-        for order, (role, st_dt) in enumerate(defaults):
-            _create_linked_plan(
-                db,
-                userId=userId,
-                ddlEvtId=base.evtId,
-                title=f"{title} · {'提前一天' if role == 'one_day_before' else '提前一小时'}",
-                stTime=st_dt.isoformat(),
-                durationMin=30,
-                planRole=role,
-                sortOrder=order,
-                prio=prio,
-            )
+        reminder_id = newId()
+        now = nowIso()
+        trigger = (end_dt - timedelta(days=1)).isoformat()
+        db.add(EvtBase(
+            evtId=reminder_id, userId=userId, title=f"{title} · 提前一天",
+            desc="截止前一天提醒", evtType="remind", prio=prio, stat="todo",
+            createdAt=now, updatedAt=now,
+        ))
+        db.add(RemindEvt(
+            evtId=reminder_id, planEvtId=None, ddlEvtId=base.evtId, remindKind="ddl_linked",
+            triggerTime=trigger, offsetMin=0, firedAt=None,
+        ))
+        _create_linked_plan(
+            db,
+            userId=userId,
+            ddlEvtId=base.evtId,
+            title=f"{title} · 提前一小时",
+            stTime=(end_dt - timedelta(hours=1)).isoformat(),
+            durationMin=30,
+            planRole="one_hour_before",
+            sortOrder=0,
+            prio=prio,
+        )
     except ValueError:
         pass
     db.commit()

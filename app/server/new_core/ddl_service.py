@@ -35,18 +35,47 @@ def default_ddl_plans(end_time: str) -> list[dict[str, Any]]:
     end_dt = _parse_datetime(end_time)
     return [
         {
-            "planRole": "one_day_before",
-            "stTime": (end_dt - timedelta(days=1)).isoformat(),
-            "durationMin": 30,
-            "sortOrder": 0,
-        },
-        {
             "planRole": "one_hour_before",
             "stTime": (end_dt - timedelta(hours=1)).isoformat(),
             "durationMin": 30,
-            "sortOrder": 1,
+            "sortOrder": 0,
         },
     ]
+
+
+def default_day_before_reminder(title: str, end_time: str, prio: str = "high") -> dict[str, Any]:
+    end_dt = _parse_datetime(end_time)
+    return {
+        "title": f"{title} · 提前一天",
+        "desc": "截止前一天提醒",
+        "triggerTime": (end_dt - timedelta(days=1)).isoformat(),
+        "prio": prio,
+    }
+
+
+def split_day_before_plans(
+    title: str,
+    plan_specs: list[dict[str, Any]],
+    prio: str = "high",
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    plans: list[dict[str, Any]] = []
+    reminders: list[dict[str, Any]] = []
+    for raw in plan_specs:
+        if not isinstance(raw, dict):
+            plans.append(raw)
+            continue
+        role = str(raw.get("planRole") or raw.get("role") or "manual")
+        if role != "one_day_before":
+            plans.append(raw)
+            continue
+        when = raw.get("triggerTime") or raw.get("stTime") or raw.get("at")
+        reminders.append({
+            "title": str(raw.get("title") or f"{title} · 提前一天").strip(),
+            "desc": raw.get("desc") or "截止前一天提醒",
+            "triggerTime": when,
+            "prio": raw.get("prio") or raw.get("priority") or prio,
+        })
+    return plans, reminders
 
 
 def _plan_title(ddl_title: str, role: str, index: int = 0) -> str:
@@ -271,7 +300,10 @@ def replace_ddl_plans(
     ddl = db.get(DdlEvt, ddl_evt_id)
     if ddl_base is None or ddl is None:
         raise ValueError(f"ddl not found: {ddl_evt_id}")
-    normalized = _normalize_plan_specs(ddl_base.title, plans)
+    plan_specs, extra_reminders = split_day_before_plans(
+        ddl_base.title, plans, ddl_base.prio or "high"
+    )
+    normalized = _normalize_plan_specs(ddl_base.title, plan_specs)
     existing_links = db.scalars(
         select(DdlPlan).where(DdlPlan.ddlEvtId == ddl_evt_id)
     ).all()
@@ -312,11 +344,43 @@ def replace_ddl_plans(
     for plan_id in existing:
         if plan_id not in retained:
             _delete_plan_tree(db, plan_id)
+    for spec in _normalize_reminder_specs(ddl_base.title, extra_reminders):
+        _add_ddl_reminder(db, ddl_id=ddl_evt_id, ddl_base=ddl_base, spec=spec, src=src)
 
     db.flush()
     if commit:
         db.commit()
     return get_event(db, ddl_evt_id)
+
+
+
+def convert_one_day_before_plans(db: Session) -> dict[str, int]:
+    """Turn existing one-day-before DDL plans into a single reminder."""
+    links = list(db.scalars(select(DdlPlan).where(DdlPlan.planRole == "one_day_before")).all())
+    converted = 0
+    for link in links:
+        plan = db.get(PlanEvt, link.planEvtId)
+        base = db.get(EvtBase, link.planEvtId)
+        ddl_base = db.get(EvtBase, link.ddlEvtId)
+        if plan is None or base is None or ddl_base is None:
+            continue
+        _add_ddl_reminder(
+            db,
+            ddl_id=link.ddlEvtId,
+            ddl_base=ddl_base,
+            spec={
+                "title": base.title,
+                "desc": base.desc or "截止前一天提醒",
+                "triggerTime": plan.stTime,
+                "prio": base.prio or "high",
+            },
+            src="migration",
+        )
+        _delete_plan_tree(db, link.planEvtId)
+        converted += 1
+    if converted:
+        db.commit()
+    return {"converted": converted}
 
 
 def create_ddl_event(
@@ -337,7 +401,15 @@ def create_ddl_event(
         raise ValueError("title required")
     normalized_end = _parse_datetime(endTime).isoformat()
     crud.getCurrentUser(db, userId=userId)
-    plan_specs = default_ddl_plans(normalized_end) if plans is None else plans
+    if plans is None:
+        plan_specs = default_ddl_plans(normalized_end)
+        extra_reminders = (
+            []
+            if ddlReminders is not None
+            else [default_day_before_reminder(clean_title, normalized_end, prio)]
+        )
+    else:
+        plan_specs, extra_reminders = split_day_before_plans(clean_title, plans, prio)
     normalized = _normalize_plan_specs(clean_title, plan_specs)
 
     now = nowIso()
@@ -371,7 +443,7 @@ def create_ddl_event(
 
     for spec in normalized:
         _add_plan(db, ddl_id=ddl_id, ddl_base=base, spec=spec, src=src)
-    for spec in _normalize_reminder_specs(clean_title, ddlReminders or []):
+    for spec in _normalize_reminder_specs(clean_title, list(ddlReminders or []) + extra_reminders):
         _add_ddl_reminder(db, ddl_id=ddl_id, ddl_base=base, spec=spec, src=src)
 
     try:

@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from app.server.config import get_settings
 from app.server.llm import LLMConfigurationError, LLMGatewayError, complete_chat
-from app.server.new_core.ddl_service import default_ddl_plans
+from app.server.new_core.ddl_service import default_day_before_reminder, default_ddl_plans
 from app.server.new_core.models import nowIso
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -246,6 +246,17 @@ def _normalize_event(data: dict[str, Any]) -> dict[str, Any]:
         end_time = data.get("endTime") or data.get("deadline") or data.get("at")
         ddl_reminders = _normalize_ddl_reminders(data)
         has_explicit_plans = "plans" in data or "linkedPlans" in data
+        reminders_specified = any(
+            key in data for key in ("ddlReminders", "linkedReminders", "reminders")
+        )
+        if not reminders_specified and not has_explicit_plans and end_time:
+            ddl_reminders = [
+                default_day_before_reminder(
+                    normalized["title"] or "截止事项",
+                    str(end_time),
+                    normalized["prio"],
+                )
+            ]
         normalized.update(
             {
                 "endTime": end_time,
@@ -254,7 +265,7 @@ def _normalize_event(data: dict[str, Any]) -> dict[str, Any]:
                 # merely because the model omitted an empty plans array.
                 "plans": (
                     []
-                    if ddl_reminders and not has_explicit_plans
+                    if ddl_reminders and not has_explicit_plans and reminders_specified
                     else _normalize_ddl_plans(data, end_time)
                 ),
                 "ddlReminders": ddl_reminders,
@@ -310,7 +321,9 @@ def _important_date_fallback(text: str) -> dict[str, Any] | None:
         "endTime": date_text,
         "hardDdl": True,
         "plans": [] if reminders else default_ddl_plans(date_text),
-        "ddlReminders": reminders,
+        "ddlReminders": reminders or [
+            default_day_before_reminder(title, date_text, "high")
+        ],
     }
 
 
@@ -372,8 +385,8 @@ DDL 的 plans 是数组，每项格式：
   "stTime": "ISO8601",
   "durationMin": 分钟数
 }}
-如果用户没有特别说明 DDL 安排，默认生成两个计划：截止前一天安排30分钟、截止前一小时安排30分钟。
-如果用户明确提出更多安排，可以输出多个 manual 计划。
+如果用户没有特别说明 DDL 安排，默认只生成一个 plan：截止前一小时、30分钟，planRole 为 one_hour_before。提前一天不是计划，写成一条 ddlReminders，title 为“标题 · 提前一天”，triggerTime 为 endTime 减一天。
+如果用户明确提出更多安排，可以输出多个 manual 计划。不要输出 planRole 为 one_day_before 的计划。
 DDL 的 ddlReminders 是一次性精确提醒数组，每项格式：
 {{"title":"提醒内容","triggerTime":"ISO8601","desc":"可选","prio":"high/mid/low"}}。
 “提前 N 天/小时提醒我做 X”必须生成一条 ddlReminders，触发时间按 DDL endTime 倒推；这不是 plan，不得生成计划开始/结束提醒。只有“安排/花 N 分钟做 X”才生成 plans。
