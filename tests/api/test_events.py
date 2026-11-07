@@ -40,7 +40,8 @@ def test_important_date_natural_language_falls_back_to_a_ddl(app_env, monkeypatc
     assert parsed["prio"] == "high"
     assert parsed["hardDdl"] is True
     assert parsed["endTime"] == "2026-08-28T09:00:00+08:00"
-    assert len(parsed["plans"]) == 2
+    assert [item["planRole"] for item in parsed["plans"]] == ["one_hour_before"]
+    assert [item["title"] for item in parsed["ddlReminders"]] == ["依依宝宝生日礼物 · 提前一天"]
 
 
 @pytest.mark.parametrize(

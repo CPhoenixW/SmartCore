@@ -62,8 +62,7 @@ export function defaultDdlPlans(endTime: string): DdlPlan[] {
   const end = new Date(endTime);
   if (Number.isNaN(end.getTime())) return [];
   return [
-    { planRole: "one_day_before", stTime: new Date(end.getTime() - 86_400_000).toISOString(), durationMin: 30, enabled: true, sortOrder: 0 },
-    { planRole: "one_hour_before", stTime: new Date(end.getTime() - 3_600_000).toISOString(), durationMin: 30, enabled: true, sortOrder: 1 },
+    { planRole: "one_hour_before", stTime: new Date(end.getTime() - 3_600_000).toISOString(), durationMin: 30, enabled: true, sortOrder: 0 },
   ];
 }
 

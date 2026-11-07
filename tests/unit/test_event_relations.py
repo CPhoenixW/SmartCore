@@ -10,6 +10,8 @@ from app.server.api.ai_routes import _important_date_fallback, _normalize_event
 from app.server.db.session import Base
 from app.server.new_core import crud, event_relations, scheduler
 from app.server.new_core.ddl_service import (
+    _add_plan,
+    convert_one_day_before_plans,
     create_ddl_event,
     replace_ddl_plans,
     replace_ddl_reminders,
@@ -241,13 +243,10 @@ def test_create_ddl_with_adjusted_linked_plans() -> None:
         )
 
         assert ddl["evtType"] == "ddl"
-        assert [plan["planRole"] for plan in ddl["plans"]] == [
-            "one_day_before",
-            "one_hour_before",
-        ]
-        assert ddl["plans"][0]["stTime"] == "2026-07-09T18:30:00+08:00"
-        assert ddl["plans"][0]["durationMin"] == 45
-        assert ddl["plans"][1]["durationMin"] == 20
+        assert [plan["planRole"] for plan in ddl["plans"]] == ["one_hour_before"]
+        assert ddl["plans"][0]["durationMin"] == 20
+        assert [item["title"] for item in ddl["ddlReminders"]] == ["提交课程报告 · 提前一天"]
+        assert ddl["ddlReminders"][0]["triggerTime"] == "2026-07-09T18:30:00+08:00"
     finally:
         db.close()
 
@@ -342,11 +341,10 @@ def test_ddl_defaults_to_two_plans_and_can_replace_with_multiple_plans() -> None
             title="Submit report",
             endTime="2026-09-20T20:00:00+08:00",
         )
-        assert len(ddl["plans"]) == 2
-        assert {item["planRole"] for item in ddl["plans"]} == {
-            "one_day_before",
-            "one_hour_before",
-        }
+        assert len(ddl["plans"]) == 1
+        assert ddl["plans"][0]["planRole"] == "one_hour_before"
+        assert [item["title"] for item in ddl["ddlReminders"]] == ["Submit report · 提前一天"]
+        assert ddl["ddlReminders"][0]["triggerTime"].startswith("2026-09-19T20:00:00")
 
         first = ddl["plans"][0]
         updated = replace_ddl_plans(
@@ -374,13 +372,12 @@ def test_ddl_defaults_to_two_plans_and_can_replace_with_multiple_plans() -> None
                 },
             ],
         )
-        assert len(updated["plans"]) == 3
         assert [item["title"] for item in updated["plans"]] == [
-            "Outline report",
             "Check figures",
             "Final proofread",
         ]
-        assert len(get_event(db, ddl["evtId"])["plans"]) == 3
+        assert "Outline report" in [item["title"] for item in updated["ddlReminders"]]
+        assert len(get_event(db, ddl["evtId"])["plans"]) == 2
     finally:
         db.close()
 
@@ -398,7 +395,7 @@ def test_ddl_keeps_linked_reminders_separate_from_plans() -> None:
             ],
         )
         assert [item["title"] for item in ddl["ddlReminders"]] == ["买礼物", "买蛋糕"]
-        assert len(ddl["plans"]) == 2
+        assert len(ddl["plans"]) == 1
         updated = replace_ddl_reminders(
             db,
             ddl["evtId"],
@@ -743,5 +740,40 @@ def test_cancelling_standalone_reminder_returns_cancelled_event() -> None:
         assert result["evtId"] == reminder["evtId"]
         assert result["evtType"] == "remind"
         assert result["stat"] == "cancelled"
+    finally:
+        db.close()
+
+
+def test_existing_one_day_before_plan_becomes_one_reminder() -> None:
+    db = _session()
+    try:
+        ddl = create_ddl_event(
+            db,
+            title="报告",
+            endTime="2026-11-08T23:59:00+08:00",
+            plans=[],
+            ddlReminders=[],
+        )
+        _add_plan(
+            db,
+            ddl_id=ddl["evtId"],
+            ddl_base=db.get(EvtBase, ddl["evtId"]),
+            spec={
+                "planRole": "one_day_before",
+                "stTime": "2026-11-07T23:59:00+08:00",
+                "durationMin": 30,
+                "title": "报告 · 提前一天",
+                "desc": "DDL 关联计划",
+                "sortOrder": 0,
+            },
+            src="test",
+        )
+        db.commit()
+        assert convert_one_day_before_plans(db) == {"converted": 1}
+        current = get_event(db, ddl["evtId"])
+        assert current["plans"] == []
+        assert [item["title"] for item in current["ddlReminders"]] == ["报告 · 提前一天"]
+        assert current["ddlReminders"][0]["triggerTime"].startswith("2026-11-07T23:59:00")
+        assert convert_one_day_before_plans(db) == {"converted": 0}
     finally:
         db.close()
