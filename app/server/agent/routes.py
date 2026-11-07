@@ -20,7 +20,7 @@ from app.server.agent.scope import (
 from app.server.config import Settings, get_settings
 from app.server.db.session import get_db
 from app.server.new_core import crud
-from app.server.new_core.models import Idea, IdeaMediaJob, IdeaUpload, LifeDevice, nowIso
+from app.server.new_core.models import Idea, IdeaMediaJob, IdeaUpload, nowIso
 from app.server.screen.manager import screenManager
 
 AGENT_TOKEN_HEADER = "X-SmartCore-Agent-Token"
