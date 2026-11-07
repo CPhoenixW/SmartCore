@@ -67,8 +67,8 @@ describe("mobile shell", () => {
     await nextTick();
     expect(wrapper.find(".m-overview").exists()).toBe(true);
     expect(wrapper.find(".overview-columns").exists()).toBe(false);
-    expect(wrapper.findAll(".m-overview__tab").map((tab) => tab.text())).toEqual(["今天", "本周", "未来 72 小时"]);
-    expect(wrapper.text()).not.toContain("需要处理");
+    expect(wrapper.text()).toContain("今天剩下");
+    expect(wrapper.find(".natural-input").exists()).toBe(true);
   });
 
   it("phone settings keeps only everyday items", async () => {
@@ -79,7 +79,7 @@ describe("mobile shell", () => {
     expect(wrapper.find(".m-settings").exists()).toBe(true);
     expect(wrapper.find(".settings-scroll-layout").exists()).toBe(false);
     const text = wrapper.text();
-    expect(text).toContain("记忆");
+    expect(text).not.toContain("记忆");
     expect(text).toContain("退出登录");
     for (const removed of ["修改密码", "浏览器会话", "头像 URL", "每日总结", "灵感", "日志"]) expect(text).not.toContain(removed);
   });
