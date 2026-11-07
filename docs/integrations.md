@@ -14,9 +14,11 @@ DSH -> SmartCore /agent/* -> 数据；Server -> PWA/Screen -> 用户
 
 ## DSH 边界
 
-DSH runtime 由 SmartCore Compose 管理；SDK minimal 进程使用持久会话目录，MCP bridge 只提供
-SmartCore 高层工具。DSH 不读取 SQLite、数据库卷、备份、`.env` 或宿主 shell，也不接受用户
-提交的 owner 字段覆盖 scope。
+DSH runtime 由 SmartCore Compose 管理；SDK minimal 进程使用持久会话目录。PWA 助手默认只看
+plan、remind、today 和必要的媒体工具，课程请求会作为带课程上下文的 plan 保存。日常事项必须优先使用这些
+SmartCore 工具。助手另外拥有宿主机读写和命令工具 `server_list`、`server_read`、`server_write`、
+`server_exec`，只在用户明确要求操作服务器时使用。后台日报和自动化任务看不到这些服务器工具。
+DSH 不把调用者提交的 owner 字段当作权限来源。
 
 PWA 的 `/api/assistant/message` 和 `/api/assistant/stream` 从已认证浏览器 session 派生短期 web scope；daily summary
 任务使用日期绑定的 summary scope。scope 不进入模型提示词，用户归属始终由 Server 推导。
@@ -47,7 +49,8 @@ ISO 时间、UTC 时间、IANA 时区和来源标记；客户端不再用自己�
 `GET /agent/tools` 是 Server 工具名、输入 schema、风险信息和版本的唯一权威来源；DSH MCP
 bridge 只对这些 canonical path 做一层高层映射。当前能力覆盖：
 
-- 查询、创建、更新和删除事项，维护 Course、DDL、Plan 和 Reminder 关系；
+- PWA 助手查询、创建、更新和删除 Plan 与 Reminder，Course 请求归并为带课程上下文的 Plan；
+- 后台日报、Computer 和媒体任务继续使用完整的内部工具集；
 - 捕获 Idea、把 Idea 转为事项、处理媒体任务；
 - 持久化日报、完成事项并追加完成总结；
 - 读取脱敏 Computer 工作块证据，提交 Server 规则生成的工作块结果和每日工作日志；

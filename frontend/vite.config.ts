@@ -1,11 +1,24 @@
 import { fileURLToPath, URL } from "node:url";
 
 import vue from "@vitejs/plugin-vue";
-import { defineConfig } from "vitest/config";
+import { defineConfig, type Plugin } from "vitest/config";
+
+function precacheManifest(): Plugin {
+  return {
+    name: "smartcore-precache",
+    apply: "build",
+    generateBundle(_options, bundle) {
+      const files = Object.keys(bundle)
+        .filter((name) => /\.(?:js|css|woff2?|png|svg|webp|gif)$/.test(name))
+        .map((name) => `/work/${name}`);
+      this.emitFile({ type: "asset", fileName: "precache.json", source: JSON.stringify(files) });
+    },
+  };
+}
 
 export default defineConfig({
   base: "/work/",
-  plugins: [vue()],
+  plugins: [vue(), precacheManifest()],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),

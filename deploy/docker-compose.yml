@@ -97,9 +97,15 @@ services:
     build:
       context: ..
       dockerfile: deploy/dsh.Dockerfile
+    user: "0:0"
+    privileged: true
+    pid: host
     env_file:
       - dsh.env
+    environment:
+      DSH_HOST_ROOT: /host
     volumes:
+      - /:/host
       - smartcore-dsh-home:/data/dsh-home
       - smartcore-dsh-scopes:/data/scopes
     networks:

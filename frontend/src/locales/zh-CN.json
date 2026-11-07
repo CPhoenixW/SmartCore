@@ -274,7 +274,7 @@
   },
   "course": {
     "title": "课表",
-    "subtitle": "维护课程模板并生成学期计划",
+    "subtitle": "课程会展开成日程里的计划",
     "name": "课程名称",
     "teacher": "教师",
     "location": "地点",
@@ -287,7 +287,7 @@
     "endTime": "下课时间",
     "sync": "重新生成计划",
     "syncAll": "重新生成全部计划",
-    "created": "课程已创建",
+    "created": "课程已写成日程里的计划",
     "updated": "课程已更新",
     "new": "新建课程",
     "create": "创建课程",

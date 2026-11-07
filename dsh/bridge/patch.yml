@@ -27,8 +27,13 @@
           SMARTCORE_BASE_URL: !!js process.env.SMARTCORE_BASE_URL
           SMARTCORE_AGENT_TOKEN: !!js process.env.SMARTCORE_AGENT_TOKEN
           SMARTCORE_SCOPE_FILE: !!js process.env.SMARTCORE_SCOPE_FILE
+          DSH_SERVER_BASE_URL: !!js process.env.DSH_SERVER_BASE_URL
+          DSH_SERVER_ALLOWED_PATHS: !!js process.env.DSH_SERVER_ALLOWED_PATHS
+          DSH_SERVER_ALLOWED_METHODS: !!js process.env.DSH_SERVER_ALLOWED_METHODS
+          DSH_SERVER_HEADERS_JSON: !!js process.env.DSH_SERVER_HEADERS_JSON
+          DSH_HOST_ROOT: !!js process.env.DSH_HOST_ROOT
         failOnStartupError: true
-        toolCallTimeoutMs: 120000
+        toolCallTimeoutMs: 320000
         reconnect:
           enabled: true
           initialDelayMs: 250
