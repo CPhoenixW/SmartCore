@@ -2,7 +2,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   Bell,
-  BookOpen,
   Bot,
   Brain,
   Calendar,
@@ -45,7 +44,6 @@ let stopStagedWheelScroll: (() => void) | undefined;
 const desktopPrimaryNav = [
   { key: "overview", name: "overview", icon: House },
   { key: "assistant", name: "assistant", icon: Bot },
-  { key: "course", name: "course", icon: BookOpen },
   { key: "add", name: "add", icon: CalendarPlus },
 ] as const;
 const desktopSecondaryNav = [
