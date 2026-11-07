@@ -98,6 +98,10 @@ class Settings(BaseSettings):
     pwa_push_vapid_private_key: str = ""
     pwa_push_vapid_subject: str = ""
     pwa_push_timeout_seconds: int = 10
+    # Chrome subscriptions point at fcm.googleapis.com. When this host cannot
+    # reach Google, the encrypted request is forwarded by a Cloudflare Worker.
+    pwa_push_relay_url: str = ""
+    pwa_push_relay_token: str = ""
 
     # Long-term personal memory (D024). Short-term context is unchanged.
     memory_enabled: bool = True
