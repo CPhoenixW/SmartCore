@@ -734,29 +734,8 @@ def createDevRouter() -> APIRouter:
 
     @router.post("/dev/state", dependencies=[Depends(requireDeviceToken)])
     async def postDevState(body: DevStateBody, db: Session = Depends(get_db)) -> dict[str, Any]:
-        try:
-            state = crud.upsertDevState(
-                db,
-                devId=body.devId,
-                state=body.state,
-                confidence=body.confidence,
-                seenAt=body.seenAt,
-                meta=body.meta,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail="device not found") from exc
-        await screenManager.broadcast(
-            {
-                "kind": "devState",
-                "devId": state["deviceId"],
-                "deviceId": state["deviceId"],
-                "state": state["state"],
-                "confidence": state.get("confidence"),
-                "seenAt": state.get("seenAt"),
-                "meta": state.get("meta"),
-            },
-            userId=db.get(LifeDevice, body.devId).userId,
-        )
-        return {"ok": True, "data": state}
+        del body, db
+        raise HTTPException(status_code=410, detail="raspberry pi support is disabled")
+
 
     return router

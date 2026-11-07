@@ -189,14 +189,14 @@ def test_heartbeat_requires_paired_device_credential(app_env) -> None:
         "present": True,
         "stateConfidence": 0.9,
     }
-    assert client.post("/dev/heartbeat", json=body).status_code == 401
+    assert client.post("/dev/heartbeat", json=body).status_code == 410
     assert (
         client.post(
             "/dev/heartbeat",
             json=body,
             headers={"X-SmartCore-Device-Token": activated["deviceToken"]},
         ).status_code
-        == 200
+        == 410
     )
 
 
@@ -211,7 +211,7 @@ def test_legacy_state_route_requires_life_device_and_preserves_owner(app_env) ->
         json={"devId": "unknown-pi", "state": "working"},
         headers={"X-SmartCore-Device-Token": "device-secret"},
     )
-    assert unknown.status_code == 404
+    assert unknown.status_code == 410
 
     pair = client.post(
         "/api/device/pair/start", json={"deviceName": "Legacy Pi", "deviceKind": "pi"}
@@ -230,7 +230,7 @@ def test_legacy_state_route_requires_life_device_and_preserves_owner(app_env) ->
         json={"devId": device_id, "state": "working"},
         headers={"X-SmartCore-Device-Token": "device-secret"},
     )
-    assert written.status_code == 200
+    assert written.status_code == 410
 
     for path in (
         f"/api/devState/latest?devId={device_id}",
@@ -261,6 +261,6 @@ def test_legacy_state_route_requires_life_device_and_preserves_owner(app_env) ->
     try:
         assert db.get(Device, "unknown-pi") is None
         assert db.get(Device, device_id).userId == "default"
-        assert db.query(DeviceStateLog).filter_by(deviceId=device_id).count() == 1
+        assert db.query(DeviceStateLog).filter_by(deviceId=device_id).count() == 0
     finally:
         db.close()

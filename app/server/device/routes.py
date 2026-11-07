@@ -30,6 +30,10 @@ _ALLOWED_IMAGE_TYPES = {
     "image/webp": ".webp",
 }
 
+def _pi_disabled() -> None:
+    raise HTTPException(status_code=410, detail="raspberry pi support is disabled")
+
+
 router = APIRouter(tags=["device-v2"])
 
 
@@ -113,6 +117,7 @@ async def device_heartbeat(
     settings: Settings = Depends(get_settings),
     token: str | None = Header(default=None, alias=DEVICE_TOKEN_HEADER),
 ) -> dict[str, Any]:
+    _pi_disabled()
     device = requireDevice(db, token)
     if body.devId != device.deviceId:
         raise HTTPException(status_code=403, detail="heartbeat device does not match credential")
@@ -165,6 +170,7 @@ def poll_photo_request(
     db: Session = Depends(get_db),
     token: str | None = Header(default=None, alias=DEVICE_TOKEN_HEADER),
 ) -> dict[str, Any]:
+    _pi_disabled()
     _require_bound_device(db, token, devId)
     return _ok(service.next_pending_photo_request(db, device_id=devId))
 
@@ -180,6 +186,7 @@ async def upload_requested_photo(
     settings: Settings = Depends(get_settings),
     token: str | None = Header(default=None, alias=DEVICE_TOKEN_HEADER),
 ) -> dict[str, Any]:
+    _pi_disabled()
     _require_bound_device(db, token, devId)
     try:
         request_row = service.get_photo_request(db, request_id)
@@ -233,6 +240,7 @@ def report_photo_failure(
     db: Session = Depends(get_db),
     token: str | None = Header(default=None, alias=DEVICE_TOKEN_HEADER),
 ) -> dict[str, Any]:
+    _pi_disabled()
     try:
         _require_bound_device(db, token, body.devId)
         return _ok(
@@ -255,6 +263,7 @@ def create_server_photo_request(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
+    _pi_disabled()
     _require_owned_photo_device(db, device_id, user_id)
     try:
         return _ok(
@@ -275,6 +284,7 @@ def read_server_photo_request(
     user_id: str = Depends(require_authenticated_user_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    _pi_disabled()
     try:
         row = service.get_photo_request(db, request_id)
         _require_owned_photo_device(db, row.deviceId, user_id)
@@ -290,6 +300,7 @@ def list_server_photo_requests(
     user_id: str = Depends(require_authenticated_user_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    _pi_disabled()
     _require_owned_photo_device(db, device_id, user_id)
     return _ok(service.list_photo_requests(db, device_id=device_id, limit=limit))
 
@@ -301,6 +312,7 @@ def download_requested_photo(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> FileResponse:
+    _pi_disabled()
     try:
         row = service.get_photo_request(db, request_id)
         _require_owned_photo_device(db, row.deviceId, user_id)

@@ -6,7 +6,6 @@ const { t } = useI18n();
 
 const sections = [
   { name: "deviceComputer", label: "device.sections.computer" },
-  { name: "deviceRaspberryPi", label: "device.sections.raspberryPi" },
   { name: "deviceScreen", label: "device.sections.screen" },
 ] as const;
 </script>

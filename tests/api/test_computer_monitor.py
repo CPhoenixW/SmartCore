@@ -257,21 +257,6 @@ def test_computer_routes_reject_wrong_device_kind_and_cross_owner(app_env) -> No
 def test_computer_analysis_uses_fresh_owned_pi_presence(app_env) -> None:
     client = TestClient(create_app())
     computer = _setup_computer(client)
-    pi = pair_device(client, name="Desk Pi", kind="pi")
-    pi_heartbeat = {
-        "devId": pi["device"]["deviceId"],
-        "currentTime": datetime.now(UTC).isoformat(),
-        "present": True,
-        "persons": [],
-        "stateConfidence": 0.9,
-        "state": "working",
-    }
-    assert client.post(
-        "/dev/heartbeat",
-        json=pi_heartbeat,
-        headers={"X-SmartCore-Device-Token": pi["deviceToken"]},
-    ).status_code == 200
-
     computer_heartbeat = {
         "currentState": "idle",
         "observedAt": datetime.now(UTC).isoformat(),
@@ -288,9 +273,9 @@ def test_computer_analysis_uses_fresh_owned_pi_presence(app_env) -> None:
         "/api/computer/status",
         params={"deviceId": computer["device"]["deviceId"]},
     ).json()["data"]
-    assert status["analysis"]["state"] == "at_desk_inactive"
-    assert status["analysis"]["presence"]["deviceId"] == pi["device"]["deviceId"]
-    assert status["analysis"]["reasonCodes"] == ["computer.idle", "presence.present"]
+    assert status["analysis"]["state"] == "computer_inactive"
+    assert status["analysis"]["presence"] is None
+    assert status["analysis"]["reasonCodes"] == ["computer.idle"]
 
 
 def test_computer_upload_validation_and_retention_preserve_daily_summary(app_env) -> None:
