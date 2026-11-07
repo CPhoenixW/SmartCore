@@ -317,7 +317,7 @@ onBeforeUnmount(() => {
           v-model="input"
           :disabled="loading"
           :placeholder="sending ? t('assistant.placeholderBusy') : t('assistant.placeholder')"
-          rows="2"
+          rows="1"
           @keydown.enter.exact.prevent="send"
           @focus="ensureComposerVisible"
         />
@@ -638,7 +638,9 @@ onBeforeUnmount(() => {
   background: #fff;
 }
 .assistant-composer textarea {
+  box-sizing: border-box;
   min-width: 0;
+  height: 46px;
   min-height: 46px;
   max-height: 160px;
   flex: 1;
@@ -659,9 +661,12 @@ onBeforeUnmount(() => {
   background: #f8fafc;
 }
 .assistant-send {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
+  height: 46px;
   min-height: 46px;
   align-self: stretch;
 }
@@ -729,16 +734,20 @@ onBeforeUnmount(() => {
     backdrop-filter: blur(10px);
   }
   .assistant-composer textarea {
+    box-sizing: border-box;
+    height: auto;
     min-height: 46px;
     max-height: 120px;
     resize: none;
   }
   .assistant-send {
-    width: 46px;
+    box-sizing: border-box;
+    width: auto;
     min-width: 46px;
-    height: 46px;
+    height: auto;
     min-height: 46px;
-    padding: 0;
+    align-self: stretch;
+    padding: 0 12px;
     justify-content: center;
   }
   .assistant-send span {

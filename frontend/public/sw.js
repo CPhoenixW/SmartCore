@@ -1,4 +1,4 @@
-const CACHE_NAME = "smartcore-work-v5";
+const CACHE_NAME = "smartcore-work-v6";
 const APP_SHELL = [
   "/work/",
   "/work/manifest.webmanifest",
@@ -25,7 +25,17 @@ function isStaticAsset(request, url) {
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
+      .then(async (cache) => {
+        await cache.addAll(APP_SHELL);
+        try {
+          const response = await fetch("/work/precache.json", { cache: "no-store" });
+          if (!response.ok) return;
+          const files = await response.json();
+          if (Array.isArray(files) && files.length) await cache.addAll(files);
+        } catch {
+          // The shell still works; hashed assets are cached on first use.
+        }
+      })
       .then(() => self.skipWaiting()),
   );
 });

@@ -16,7 +16,10 @@ RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 COPY dsh/bridge ./bridge
 
-RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin smartcore \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends util-linux \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 10001 --shell /usr/sbin/nologin smartcore \
     && mkdir -p /data/dsh-home /data/scopes \
     && chown -R smartcore:smartcore /runtime/dsh /data
 

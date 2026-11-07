@@ -15,10 +15,10 @@ DSH -> SmartCore /agent/* -> 数据；Server -> PWA/Screen -> 用户
 ## DSH 边界
 
 DSH runtime 由 SmartCore Compose 管理；SDK minimal 进程使用持久会话目录。PWA 助手默认只看
-plan、remind、today 和必要的媒体工具，课程请求会作为带课程上下文的 plan 保存。DSH 不读取
-SQLite、数据库卷、备份、`.env` 或宿主 shell，也不接受用户提交的 owner 字段覆盖 scope。
-另有 `smartcore_server_request`，只能访问 `DSH_SERVER_ALLOWED_PATHS` 配置的 HTTP 路径，默认
-仅允许 GET `/healthz`，用于受控的服务器级状态查询。
+plan、remind、today 和必要的媒体工具，课程请求会作为带课程上下文的 plan 保存。日常事项必须优先使用这些
+SmartCore 工具。助手另外拥有宿主机读写和命令工具 `server_list`、`server_read`、`server_write`、
+`server_exec`，只在用户明确要求操作服务器时使用。后台日报和自动化任务看不到这些服务器工具。
+DSH 不把调用者提交的 owner 字段当作权限来源。
 
 PWA 的 `/api/assistant/message` 和 `/api/assistant/stream` 从已认证浏览器 session 派生短期 web scope；daily summary
 任务使用日期绑定的 summary scope。scope 不进入模型提示词，用户归属始终由 Server 推导。

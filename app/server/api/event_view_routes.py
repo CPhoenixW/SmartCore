@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.server.auth.security import require_authenticated_user_id
 from app.server.db.session import get_db
+from app.server.new_core.course_fold import fold_course_payload
 from app.server.new_core.course_semester import (
     create_course_event,
     get_course_event,
@@ -135,6 +136,8 @@ def update_actionable_event(
             if base.evtType == "ddl" and ddl_reminders is not None:
                 result = replace_ddl_reminders(db, evtId, ddl_reminders, src="api")
         close_past_course_occurrences(db)
+        if base.evtType == "course":
+            result = fold_course_payload(db, result)
         return {"ok": True, "data": result}
     except ValueError as exc:
         db.rollback()
@@ -234,7 +237,7 @@ def create_relation_course(
     try:
         result = create_course_event(db, **body.model_dump(exclude_none=True), userId=userId, src="api")
         close_past_course_occurrences(db)
-        return {"ok": True, "data": result}
+        return {"ok": True, "data": fold_course_payload(db, result)}
     except ValueError as exc:
         db.rollback()
         raise _error(exc) from exc
@@ -251,10 +254,7 @@ def resync_relation_course(evtId: str, userId: str = Depends(require_authenticat
         close_past_course_occurrences(db)
         return {
             "ok": True,
-            "data": {
-                "course": get_course_event(db, evtId),
-                "plans": plans,
-            },
+            "data": fold_course_payload(db, {"course": get_course_event(db, evtId), "plans": plans}),
         }
     except ValueError as exc:
         db.rollback()

@@ -207,7 +207,7 @@ async function enablePush(): Promise<void> {
       </template>
       <button class="sidebar-logout" type="button" :disabled="loggingOut" @click="logout">{{ logoutLabel }}</button>
     </aside>
-    <div v-if="mobileOpen && !isMobile" class="sidebar-backdrop" @click="mobileOpen = false" />
+    <div v-if="mobileOpen" class="sidebar-backdrop" @click="mobileOpen = false" />
     <section class="workspace">
       <header class="topbar">
         <button v-if="isMobile" class="mobile-menu" type="button" :aria-label="t('app.menu')" @click="mobileOpen = true">
@@ -242,19 +242,6 @@ async function enablePush(): Promise<void> {
       </header>
       <main ref="pageRoot" class="page"><RouterView /></main>
     </section>
-    <nav v-if="isMobile" class="mobile-tabbar" :aria-label="t('app.navigation')">
-      <RouterLink
-        v-for="item in mobilePrimaryNav"
-        :key="item.key"
-        class="mobile-tabbar__item"
-        :class="{ 'mobile-tabbar__item--active': activeMobileTab === item.key }"
-        :aria-current="activeMobileTab === item.key ? 'page' : undefined"
-        :to="{ name: item.name }"
-      >
-        <component :is="item.icon" :size="22" :stroke-width="1.8" aria-hidden="true" />
-        <span>{{ t(`nav.${item.key}`) }}</span>
-      </RouterLink>
-    </nav>
   </div>
 </template>
 

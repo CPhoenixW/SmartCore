@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import process from "node:process";
 
+import { auditHost, execOnHost, listHost, readHost, writeHost } from "./host-access.mjs";
+
 const baseUrl = String(process.env.SMARTCORE_BASE_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
 const agentToken = String(process.env.SMARTCORE_AGENT_TOKEN || "");
 const scopeFile = String(process.env.SMARTCORE_SCOPE_FILE || "");
@@ -247,8 +249,30 @@ const directServerTool = {
   method: "DIRECT",
   inputSchema: objectSchema({ path: { type: "string", pattern: "^/" }, method: { type: "string", enum: ["GET", "POST", "PUT", "PATCH"] }, body: { type: "object" } }, ["path"]),
 };
+const hostTools = [
+  {
+    name: "server_list",
+    description: "List a directory on the SmartCore host. Use only when the user asks to inspect the server.",
+    inputSchema: objectSchema({ path: textSchema }, ["path"]),
+  },
+  {
+    name: "server_read",
+    description: "Read a file on the SmartCore host. Output is capped at 200000 characters.",
+    inputSchema: objectSchema({ path: textSchema, maxBytes: { type: "integer", minimum: 1 } }, ["path"]),
+  },
+  {
+    name: "server_write",
+    description: "Create or overwrite a file on the SmartCore host. Set append true to add to the file.",
+    inputSchema: objectSchema({ path: textSchema, content: textSchema, append: { type: "boolean" } }, ["path", "content"]),
+  },
+  {
+    name: "server_exec",
+    description: "Run a shell command on the SmartCore host. Ordinary plans and reminders must use SmartCore tools instead.",
+    inputSchema: objectSchema({ command: textSchema, cwd: textSchema, timeoutMs: { type: "integer", minimum: 1000, maximum: 300000 } }, ["command"]),
+  },
+];
 const allTools = [...internalTools, ...assistantTools.filter((tool) => !internalTools.some((item) => item.name === tool.name)), directServerTool];
-const visibleTools = mode === "assistant" ? [...assistantTools, directServerTool] : allTools;
+const visibleTools = mode === "assistant" ? [...assistantTools, directServerTool, ...hostTools] : allTools;
 
 async function scopeToken() {
   if (!scopeFile) throw new Error("SmartCore scope file is not configured");
@@ -301,7 +325,22 @@ function normalizeAssistantArgs(name, args = {}) {
   return value;
 }
 
+async function callHostTool(name, args = {}) {
+  let value;
+  if (name === "server_list") value = await listHost(args.path);
+  else if (name === "server_read") value = await readHost(args.path, args.maxBytes);
+  else if (name === "server_write") value = await writeHost(args.path, args.content, Boolean(args.append));
+  else if (name === "server_exec") value = await execOnHost(args.command, args.cwd, args.timeoutMs);
+  else throw new Error(`unknown SmartCore tool: ${name}`);
+  await auditHost({ tool: name, path: value.path || value.cwd || "", command: name === "server_exec" ? String(args.command || "").slice(0, 500) : undefined });
+  return value;
+}
+
 async function callTool(name, args = {}) {
+  if (hostTools.some((tool) => tool.name === name)) {
+    if (mode !== "assistant") throw new Error("server tools are only available to the assistant");
+    return callHostTool(name, args);
+  }
   const tool = allTools.find((item) => item.name === name);
   if (!tool) throw new Error(`unknown SmartCore tool: ${name}`);
   if (name === directServerTool.name) return callDirectServer(args);

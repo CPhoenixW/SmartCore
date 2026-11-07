@@ -15,6 +15,7 @@ from app.server.auth.security import require_authenticated_user_id
 from app.server.config import Settings, get_settings
 from app.server.db.session import get_db
 from app.server.new_core import crud
+from app.server.new_core.course_fold import fold_course_payload
 from app.server.new_core.ddl_service import (
     create_ddl_event,
     replace_ddl_plans,
@@ -357,7 +358,7 @@ def list_course_evt(userId: str = Depends(require_authenticated_user_id), db: Se
 @router.post("/courseEvt")
 def create_course_evt(body: CourseEvtBody, userId: str = Depends(require_authenticated_user_id), db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
-        return ok(create_course_event(db, **body.model_dump(), userId=userId, src="api"))
+        return ok(fold_course_payload(db, create_course_event(db, **body.model_dump(), userId=userId, src="api")))
     except ValueError as exc:
         db.rollback()
         raise _http_error(exc) from exc

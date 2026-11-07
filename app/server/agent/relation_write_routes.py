@@ -14,6 +14,7 @@ from app.server.agent.v2_routes import (
     _resolved_iso,
 )
 from app.server.db.session import get_db
+from app.server.new_core.course_fold import fold_course_payload
 from app.server.new_core.course_semester import create_course_event, update_course_event
 from app.server.new_core.ddl_service import (
     create_ddl_event,
@@ -151,23 +152,26 @@ def createRelationWriteRouter() -> APIRouter:
                 if missing:
                     raise ValueError(f"required fields missing: {', '.join(missing)}")
                 return _done(
-                    create_course_event(
+                    fold_course_payload(
                         db,
-                        title=title,
-                        courseName=str(required["courseName"]),
-                        teacher=body.get("teacher"),
-                        location=body.get("location") or body.get("room"),
-                        semesterStart=str(required["semesterStart"]),
-                        weekDay=required["weekDay"],
-                        stTime=str(required["stTime"]),
-                        endTime=str(required["endTime"]),
-                        startWeek=int(body.get("startWeek") or 1),
-                        endWeek=int(body.get("endWeek") or 16),
-                        weekMode=str(body.get("weekMode") or "all"),
-                        desc=body.get("desc") or body.get("description"),
-                        prio=body.get("prio") or body.get("priority") or "mid",
-                        userId=scope.userId,
-                        src="openclaw",
+                        create_course_event(
+                            db,
+                            title=title,
+                            courseName=str(required["courseName"]),
+                            teacher=body.get("teacher"),
+                            location=body.get("location") or body.get("room"),
+                            semesterStart=str(required["semesterStart"]),
+                            weekDay=required["weekDay"],
+                            stTime=str(required["stTime"]),
+                            endTime=str(required["endTime"]),
+                            startWeek=int(body.get("startWeek") or 1),
+                            endWeek=int(body.get("endWeek") or 16),
+                            weekMode=str(body.get("weekMode") or "all"),
+                            desc=body.get("desc") or body.get("description"),
+                            prio=body.get("prio") or body.get("priority") or "mid",
+                            userId=scope.userId,
+                            src="openclaw",
+                        ),
                     )
                 )
             raise ValueError("unsupported evtType")
@@ -196,7 +200,7 @@ def createRelationWriteRouter() -> APIRouter:
             if base.evtType == "course":
                 if not patch:
                     raise ValueError("no supported update fields")
-                return _done(update_course_event(db, str(evt_id), src="openclaw", **patch))
+                return _done(fold_course_payload(db, update_course_event(db, str(evt_id), src="openclaw", **patch)))
 
             plans = _normalized_plans(body) if ("plans" in body or "linkedPlans" in body) else None
             reminders = _normalized_ddl_reminders(body) if ("ddlReminders" in body or "linkedReminders" in body) else None

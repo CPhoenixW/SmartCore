@@ -135,9 +135,9 @@ function safePrompt(event) {
     memoryBlock,
     memoryInstruction,
     isPwaAssistant
-      ? "助手端只使用 smartcore_plan_*、smartcore_remind_*、smartcore_today、smartcore_server_request 和必要的媒体工具。课程直接作为带课程信息的 plan 保存，不要调用旧的 course、ddl、idea 或通用 event 工具。"
+      ? "助手端优先使用 smartcore_plan_*、smartcore_remind_*、smartcore_today 和必要的媒体工具处理计划、提醒和日程。课程直接作为带课程信息的 plan 保存。只有用户明确要求查看或修改服务器文件、执行命令、查看日志或管理系统时，才使用 server_list、server_read、server_write、server_exec。这些工具拥有宿主机的完整读写和命令权限。不要用它们直接改 SQLite 来代替 SmartCore 的事项接口。"
       : "你可以使用已发布的 SmartCore 自动化工具完成当前任务。",
-    "所有 SmartCore 数据读写都必须走 MCP 工具；不要猜测事件 id。不要访问文件系统、shell 或数据库。smartcore_server_request 只能访问已配置的 HTTP 白名单。",
+    "SmartCore 的计划、提醒和日程必须走对应的 MCP 工具；不要猜测事件 id。",
     "涉及日期时间时，绝对以事件上下文中的 serverNow 和 timezone 为准，禁止自行猜测年份或当前日期；向 Server 传入带时区的绝对 ISO 8601 时间。先查询再修改；完成、删除或转化前确认目标明确。",
     "这是一个连续的个人助手对话。若事件上下文包含 conversationHistory，把它当作最近的对话背景；当前用户输入优先，不要重复旧操作。",
     "需要调用工具时，先用一句自然语言告诉用户你将查询或修改什么，再调用工具；工具完成后再给出简短结果。不要让用户在工具调用期间长时间无反馈。",
@@ -246,8 +246,9 @@ class DshRuntime {
         DSH_SERVER_ALLOWED_PATHS: process.env.DSH_SERVER_ALLOWED_PATHS || "/healthz",
         DSH_SERVER_ALLOWED_METHODS: process.env.DSH_SERVER_ALLOWED_METHODS || "GET",
         DSH_SERVER_HEADERS_JSON: process.env.DSH_SERVER_HEADERS_JSON || "{}",
+        DSH_HOST_ROOT: process.env.DSH_HOST_ROOT || "/host",
         DSH_SYSTEM_PROMPT: this.mode === "assistant"
-          ? "你是 SmartCore 的个人工作助手。只使用 plan、remind、today、server_request 和必要的媒体工具。课程直接作为 plan 保存。"
+          ? "你是 SmartCore 的个人工作助手。计划、提醒和日程优先使用 plan、remind 和 today。用户明确要求操作服务器时，可以使用 server_list、server_read、server_write 和 server_exec。"
           : "你是 SmartCore 的自动化工作助手。只使用已发布的 MCP 工具完成当前任务。",
         LLM_MODEL: this.model,
         DSH_MODEL: this.model,
