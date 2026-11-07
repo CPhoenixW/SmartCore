@@ -200,9 +200,6 @@ async function togglePush(): Promise<void> {
         <button v-if="pushSupported" class="button" :class="{ 'button--primary': !pushEnabled, 'button--ghost': pushEnabled }" type="button" :disabled="pushBusy" @click="togglePush">{{ pushEnabled ? t("settings.pushDisable") : t("settings.pushEnable") }}</button>
       </div>
     </section>
-    <nav class="m-settings__card card" :aria-label="t('settings.toolsTitle')">
-      <RouterLink class="m-settings__link" :to="{ name: 'memory' }"><span><strong>{{ t("nav.memory") }}</strong><small>{{ t("settings.mobileMemoryHint") }}</small></span><span aria-hidden="true">›</span></RouterLink>
-    </nav>
     <button class="button button--danger m-settings__logout" type="button" :disabled="loggingOut" @click="logout">{{ t("settings.mobileLogout") }}</button>
   </div>
   <template v-else>

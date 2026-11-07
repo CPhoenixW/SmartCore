@@ -36,3 +36,11 @@ export const router = createRouter({
   ],
   scrollBehavior: () => ({ top: 0 }),
 });
+
+
+const mobileRoutes = new Set(["login", "overview", "assistant", "settings"]);
+router.beforeEach((to) => {
+  if (typeof window === "undefined" || !window.matchMedia("(max-width: 760px)").matches) return;
+  if (mobileRoutes.has(String(to.name || ""))) return;
+  return { name: "assistant" };
+});
