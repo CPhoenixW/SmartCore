@@ -1,0 +1,8 @@
+name = "smartcore-push-relay"
+main = "worker.js"
+compatibility_date = "2026-11-07"
+workers_dev = false
+
+[[routes]]
+pattern = "smartcore.phoenixw.online/push-relay"
+zone_name = "phoenixw.online"

@@ -370,3 +370,12 @@ PWA 助手在 SmartCore 计划/提醒工具之外，可以使用 `server_list`�
 已经存在的 `one_day_before` 计划在应用启动时转换：保留原标题和开始时间作为提醒触发时间，并删除该计划及其计划提醒。提前一小时的计划不动。
 
 原因：提前一天不需要占用一段工作时间，它只是一次通知。总览里不应再把它显示成计划。
+
+
+## D028 Chrome 推送经 Cloudflare Worker 转发
+
+状态：已采用。
+
+安卓 Chrome 的网页推送地址固定在 `fcm.googleapis.com`。这台服务器直连 Google 不通时，SmartCore 仍按原地址做 VAPID 签名和加密，再把这份请求交给 Cloudflare Worker。Worker 只转发该主机上的 `/fcm/send/` 与 `/wp/`，并要求持有 `RELAY_TOKEN`。Firefox 与 Safari 的推送地址继续由服务器直连。
+
+原因：浏览器不让网页更换推送服务，而 Cloudflare 的地址从这台服务器可以访问，由它代为连接 Google 后，现有的 Chrome 订阅不用重新授权。
