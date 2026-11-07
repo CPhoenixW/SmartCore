@@ -57,7 +57,7 @@ describe("mobile shell", () => {
     await nextTick();
     expect(wrapper.find(".mobile-tabbar").exists()).toBe(false);
     expect(wrapper.find(".sidebar").exists()).toBe(true);
-    expect(wrapper.findAll(".sidebar .nav-list a").map((a) => a.text())).toContain("日程");
+    expect(wrapper.findAll(".sidebar .nav-list a").map((a) => a.text())).toEqual(["助手", "总览", "设置"]);
   });
 
   it("phone overview merges the schedule into one column", async () => {

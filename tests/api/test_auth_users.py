@@ -246,15 +246,15 @@ def test_paired_device_token_can_poll_photo_requests(app_env) -> None:
     token = activated["deviceToken"]
     assert (
         client.post(f"/api/device/{device_id}/photoRequest", json={"reason": "test"}).status_code
-        == 200
+        == 410
     )
     assert (
         client.get(
             f"/dev/photo/request?devId={device_id}", headers={"X-SmartCore-Device-Token": token}
         ).status_code
-        == 200
+        == 410
     )
-    assert client.get(f"/dev/photo/request?devId={device_id}").status_code == 401
+    assert client.get(f"/dev/photo/request?devId={device_id}").status_code == 410
 
 
 def test_pi_photo_web_routes_are_owner_scoped(app_env) -> None:
@@ -262,8 +262,8 @@ def test_pi_photo_web_routes_are_owner_scoped(app_env) -> None:
     activated = _paired_device(owner, "pi")
     device_id = activated["device"]["deviceId"]
     created = owner.post(f"/api/device/{device_id}/photoRequest", json={"reason": "owner"})
-    assert created.status_code == 200
-    request_id = created.json()["data"]["requestId"]
+    assert created.status_code == 410
+    request_id = "disabled"
 
     anonymous = TestClient(create_app())
     assert anonymous.post(f"/api/device/{device_id}/photoRequest", json={}).status_code == 401
@@ -275,10 +275,10 @@ def test_pi_photo_web_routes_are_owner_scoped(app_env) -> None:
         "/api/auth/register",
         json={"loginName": "photo-other", "password": "correct-horse-battery-staple"},
     ).status_code == 200
-    assert other.post(f"/api/device/{device_id}/photoRequest", json={}).status_code == 404
-    assert other.get(f"/api/device/{device_id}/photoRequests").status_code == 404
-    assert other.get(f"/api/device/photoRequest/{request_id}").status_code == 404
-    assert other.get(f"/api/device/photoRequest/{request_id}/image").status_code == 404
+    assert other.post(f"/api/device/{device_id}/photoRequest", json={}).status_code == 410
+    assert other.get(f"/api/device/{device_id}/photoRequests").status_code == 410
+    assert other.get(f"/api/device/photoRequest/{request_id}").status_code == 410
+    assert other.get(f"/api/device/photoRequest/{request_id}/image").status_code == 410
 
 
 def test_screen_websocket_requires_its_device_credential(app_env) -> None:

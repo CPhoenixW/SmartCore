@@ -22,7 +22,6 @@ export const router = createRouter({
           component: () => import("@/views/DeviceView.vue"),
           redirect: { name: "deviceComputer" },
           children: [
-            { path: "raspberry-pi", name: "deviceRaspberryPi", component: () => import("@/views/RaspberryPiView.vue") },
             { path: "computer", name: "deviceComputer", component: () => import("@/views/ComputerView.vue") },
             { path: "screen", name: "deviceScreen", component: () => import("@/views/ScreenView.vue") },
           ],
