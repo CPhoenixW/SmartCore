@@ -19,14 +19,11 @@ describe("event model utilities", () => {
     ).toBe("2026-01-01T00:00:00Z");
   });
 
-  it("creates one-day and one-hour DDL plans", () => {
+  it("creates only the one-hour DDL plan", () => {
     const plans = defaultDdlPlans("2026-07-12T12:00:00Z");
-    expect(plans.map((plan) => plan.planRole)).toEqual([
-      "one_day_before",
-      "one_hour_before",
-    ]);
+    expect(plans.map((plan) => plan.planRole)).toEqual(["one_hour_before"]);
     expect(new Date(plans[0]!.stTime).getTime()).toBe(
-      new Date("2026-07-11T12:00:00Z").getTime(),
+      new Date("2026-07-12T11:00:00Z").getTime(),
     );
   });
 
