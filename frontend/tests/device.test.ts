@@ -44,15 +44,15 @@ describe("device charts", () => {
 });
 
 describe("device routes", () => {
-  it("separates the four device domains and keeps the old entry route", () => {
+  it("keeps computer and screen routes and drops the raspberry pi page", () => {
     expect(router.resolve({ name: "device" }).path).toBe("/device");
-    expect(router.resolve({ name: "deviceRaspberryPi" }).path).toBe("/device/raspberry-pi");
+    expect(router.hasRoute("deviceRaspberryPi")).toBe(false);
     expect(router.resolve({ name: "deviceComputer" }).path).toBe("/device/computer");
     expect(router.resolve({ name: "deviceScreen" }).path).toBe("/device/screen");
   });
 
   it("keeps device pages focused on data without duplicate page headers", () => {
-    for (const view of ["ComputerView.vue", "RaspberryPiView.vue", "ScreenView.vue"]) {
+    for (const view of ["ComputerView.vue", "ScreenView.vue"]) {
       const source = readFileSync(resolve(process.cwd(), `src/views/${view}`), "utf8");
       expect(source).not.toContain("<PageHeader");
     }

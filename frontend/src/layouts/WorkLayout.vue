@@ -2,7 +2,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   Bell,
-  BookOpen,
   Bot,
   Brain,
   Calendar,
@@ -41,34 +40,17 @@ const pushBusy = ref(false);
 const pushMessage = ref("");
 let stopStagedWheelScroll: (() => void) | undefined;
 
-/** Desktop keeps the full workbench nav; phone keeps a three-tab PWA shell. */
-const desktopPrimaryNav = [
-  { key: "overview", name: "overview", icon: House },
+const primaryNav = [
   { key: "assistant", name: "assistant", icon: Bot },
-  { key: "course", name: "course", icon: BookOpen },
-  { key: "add", name: "add", icon: CalendarPlus },
-] as const;
-const desktopSecondaryNav = [
-  { key: "schedule", name: "schedule", icon: Calendar },
-  { key: "dailySummary", name: "dailySummary", icon: Calendar },
-  { key: "update", name: "update", icon: Pencil },
-  { key: "device", name: "device", icon: Monitor },
-  { key: "ideas", name: "ideas", icon: Lightbulb },
-  { key: "logs", name: "logs", icon: List },
-  { key: "memory", name: "memory", icon: Brain },
+  { key: "overview", name: "overview", icon: House },
   { key: "settings", name: "settings", icon: Settings },
 ] as const;
-const primaryNav = computed(() => desktopPrimaryNav);
-const secondaryNav = computed(() => desktopSecondaryNav);
 const initials = computed(() => userStore.user.displayName?.slice(0, 2).toUpperCase() || "SC");
 const logoutLabel = computed(() => (userStore.user.language === "en" ? "Log out" : "退出登录"));
-const knownRouteNames = computed(() => {
-  const names = new Set<string>([
-    ...desktopPrimaryNav.map((item) => item.name),
-    ...desktopSecondaryNav.map((item) => item.name),
-  ]);
-  return names;
-});
+const knownRouteNames = computed(() => new Set<string>([
+  ...primaryNav.map((item) => item.name),
+  "schedule", "dailySummary", "update", "device", "ideas", "logs", "memory", "add", "course",
+]));
 const routeTitleKey = computed(() => {
   const name = String(route.name || "overview");
   if (name.startsWith("device")) return "device";
@@ -180,31 +162,6 @@ async function enablePush(): Promise<void> {
           {{ t(`nav.${item.key}`) }}
         </RouterLink>
       </nav>
-      <template>
-        <button
-          class="nav-more-toggle"
-          type="button"
-          :aria-expanded="secondaryOpen || isMobile"
-          @click="secondaryOpen = !secondaryOpen"
-        >
-          <List class="nav-link__icon" :size="17" :stroke-width="1.8" aria-hidden="true" />
-          {{ t('app.more') }}
-          <span aria-hidden="true">{{ secondaryOpen ? '−' : '+' }}</span>
-        </button>
-        <nav v-show="secondaryOpen || isMobile" class="nav-list nav-list--secondary" :aria-label="t('app.more')">
-          <RouterLink
-            v-for="item in secondaryNav"
-            :key="item.key"
-            class="nav-link"
-            :class="{ 'nav-link--active': item.name === 'device' && route.path.startsWith('/device') }"
-            :to="{ name: item.name }"
-            @click="mobileOpen = false"
-          >
-            <component :is="item.icon" class="nav-link__icon" :size="17" :stroke-width="1.8" aria-hidden="true" />
-            {{ t(`nav.${item.key}`) }}
-          </RouterLink>
-        </nav>
-      </template>
       <button class="sidebar-logout" type="button" :disabled="loggingOut" @click="logout">{{ logoutLabel }}</button>
     </aside>
     <div v-if="mobileOpen" class="sidebar-backdrop" @click="mobileOpen = false" />
@@ -340,7 +297,7 @@ async function enablePush(): Promise<void> {
   opacity: 0.55;
 }
 .sidebar--mobile {
-  width: min(82vw, 300px);
+  width: min(68vw, 220px);
   box-shadow: 16px 0 36px rgb(15 23 42 / 20%);
 }
 @media (max-width: 760px) {

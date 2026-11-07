@@ -122,35 +122,6 @@ services:
       retries: 6
       start_period: 20s
 
-  # Rollback-only OpenClaw service. It is excluded from the default stack and
-  # can be brought back with `--profile legacy-openclaw` if a DSH release needs
-  # to be reverted.
-  openclaw-adapter:
-    profiles: [legacy-openclaw]
-    image: "smartcore-openclaw-adapter:${SMARTCORE_IMAGE_TAG:-latest}"
-    build:
-      context: ..
-      dockerfile: deploy/adapter.Dockerfile
-    env_file:
-      - adapter.env
-    volumes:
-      - "${OPENCLAW_HOME:-/root/.openclaw}:/root/.openclaw"
-      - "${OPENCLAW_WORKSPACE_DIR:-/root/.openclaw-smartcore-workspace}:/root/.openclaw-smartcore-workspace"
-      - smartcore-adapter-logs:/data
-      - smartcore-idea-media:/attachments:ro
-    network_mode: host
-    restart: unless-stopped
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - "import os, urllib.request; urllib.request.urlopen(f'http://{os.environ[\"HOST\"]}:{os.environ[\"PORT\"]}/healthz', timeout=3)"
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 10s
-
 networks:
   smartcore:
     driver: bridge
