@@ -46,7 +46,8 @@ def test_relay_session_posts_the_encrypted_request(monkeypatch: pytest.MonkeyPat
         timeout=5,
     )
     assert captured["url"] == "https://smartcore.example/push-relay"
-    assert captured["headers"] == {"Authorization": "Bearer secret"}
+    assert captured["headers"]["Authorization"] == "Bearer secret"
+    assert captured["headers"]["User-Agent"] == "SmartCorePush/1.0"
     assert captured["timeout"] == 5
     assert captured["json"]["url"] == "https://fcm.googleapis.com/fcm/send/device"
     assert captured["json"]["headers"]["TTL"] == "60"

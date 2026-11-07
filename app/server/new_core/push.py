@@ -51,7 +51,10 @@ class FcmRelaySession(requests.Session):
                 "headers": forwarded,
                 "body": base64.b64encode(bytes(raw)).decode("ascii"),
             },
-            headers={"Authorization": f"Bearer {self._relay_token}"},
+            headers={
+                "Authorization": f"Bearer {self._relay_token}",
+                "User-Agent": "SmartCorePush/1.0",
+            },
             timeout=timeout,
         )
 
