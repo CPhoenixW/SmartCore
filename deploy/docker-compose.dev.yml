@@ -37,6 +37,9 @@ services:
 
   dsh-runtime:
     image: "smartcore-dsh-runtime:${SMARTCORE_IMAGE_TAG:?SMARTCORE_IMAGE_TAG is required}"
+    user: "0:0"
+    privileged: true
+    pid: host
     environment:
       HOST: 0.0.0.0
       PORT: "18790"
@@ -50,7 +53,9 @@ services:
       DSH_PROVIDER: ${LLM_PROVIDER:-tokendance}
       DSH_MODEL: ${LLM_MODEL:-deepseek-v4.1-flash-1017}
       DSH_VISION_MODEL: ${VISION_MODEL:-qwen3.7-plus}
+      DSH_HOST_ROOT: /host
     volumes:
+      - /:/host
       - smartcore-dev-dsh-home:/data/dsh-home
       - smartcore-dev-dsh-scopes:/data/scopes
     networks:

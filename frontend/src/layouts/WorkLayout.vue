@@ -58,31 +58,14 @@ const desktopSecondaryNav = [
   { key: "memory", name: "memory", icon: Brain },
   { key: "settings", name: "settings", icon: Settings },
 ] as const;
-const mobilePrimaryNav = [
-  { key: "assistant", name: "assistant", icon: Bot },
-  { key: "overview", name: "overview", icon: House },
-  { key: "settings", name: "settings", icon: Settings },
-] as const;
-/** Pages reached from a tab (e.g. 记忆 from 设置) keep that tab highlighted. */
-const mobileTabRoutes: Record<string, readonly string[]> = {
-  assistant: ["assistant"],
-  overview: ["overview", "schedule", "add", "update"],
-  settings: ["settings", "memory"],
-};
-const activeMobileTab = computed(() => {
-  const name = String(route.name || "");
-  return Object.keys(mobileTabRoutes).find((key) => mobileTabRoutes[key]!.includes(name)) ?? "";
-});
-
-const primaryNav = computed(() => (isMobile.value ? mobilePrimaryNav : desktopPrimaryNav));
-const secondaryNav = computed(() => (isMobile.value ? [] : desktopSecondaryNav));
+const primaryNav = computed(() => desktopPrimaryNav);
+const secondaryNav = computed(() => desktopSecondaryNav);
 const initials = computed(() => userStore.user.displayName?.slice(0, 2).toUpperCase() || "SC");
 const logoutLabel = computed(() => (userStore.user.language === "en" ? "Log out" : "退出登录"));
 const knownRouteNames = computed(() => {
   const names = new Set<string>([
     ...desktopPrimaryNav.map((item) => item.name),
     ...desktopSecondaryNav.map((item) => item.name),
-    ...mobilePrimaryNav.map((item) => item.name),
   ]);
   return names;
 });
@@ -177,7 +160,7 @@ async function enablePush(): Promise<void> {
 
 <template>
   <div class="app-shell" :class="{ 'app-shell--mobile': isMobile, 'app-shell--desktop': !isMobile }">
-    <aside v-if="!isMobile" class="sidebar" :class="{ 'sidebar--open': mobileOpen }">
+    <aside class="sidebar" :class="{ 'sidebar--open': mobileOpen, 'sidebar--mobile': isMobile }">
       <RouterLink class="brand" :to="{ name: 'overview' }" @click="mobileOpen = false">
         <span class="brand-mark"><img :src="smartcoreMarkBlue" alt="" aria-hidden="true" /></span>
         <span>
@@ -197,18 +180,18 @@ async function enablePush(): Promise<void> {
           {{ t(`nav.${item.key}`) }}
         </RouterLink>
       </nav>
-      <template v-if="!isMobile">
+      <template>
         <button
           class="nav-more-toggle"
           type="button"
-          :aria-expanded="secondaryOpen"
+          :aria-expanded="secondaryOpen || isMobile"
           @click="secondaryOpen = !secondaryOpen"
         >
           <List class="nav-link__icon" :size="17" :stroke-width="1.8" aria-hidden="true" />
           {{ t('app.more') }}
           <span aria-hidden="true">{{ secondaryOpen ? '−' : '+' }}</span>
         </button>
-        <nav v-show="secondaryOpen" class="nav-list nav-list--secondary" :aria-label="t('app.more')">
+        <nav v-show="secondaryOpen || isMobile" class="nav-list nav-list--secondary" :aria-label="t('app.more')">
           <RouterLink
             v-for="item in secondaryNav"
             :key="item.key"
@@ -224,10 +207,10 @@ async function enablePush(): Promise<void> {
       </template>
       <button class="sidebar-logout" type="button" :disabled="loggingOut" @click="logout">{{ logoutLabel }}</button>
     </aside>
-    <div v-if="mobileOpen && !isMobile" class="sidebar-backdrop" @click="mobileOpen = false" />
+    <div v-if="mobileOpen" class="sidebar-backdrop" @click="mobileOpen = false" />
     <section class="workspace">
       <header class="topbar">
-        <button v-if="!isMobile" class="mobile-menu" type="button" :aria-label="t('app.menu')" @click="mobileOpen = true">
+        <button v-if="isMobile" class="mobile-menu" type="button" :aria-label="t('app.menu')" @click="mobileOpen = true">
           <Menu :size="20" aria-hidden="true" />
         </button>
         <strong v-if="isMobile" class="topbar-title">{{ pageTitle }}</strong>
@@ -259,19 +242,6 @@ async function enablePush(): Promise<void> {
       </header>
       <main ref="pageRoot" class="page"><RouterView /></main>
     </section>
-    <nav v-if="isMobile" class="mobile-tabbar" :aria-label="t('app.navigation')">
-      <RouterLink
-        v-for="item in mobilePrimaryNav"
-        :key="item.key"
-        class="mobile-tabbar__item"
-        :class="{ 'mobile-tabbar__item--active': activeMobileTab === item.key }"
-        :aria-current="activeMobileTab === item.key ? 'page' : undefined"
-        :to="{ name: item.name }"
-      >
-        <component :is="item.icon" :size="22" :stroke-width="1.8" aria-hidden="true" />
-        <span>{{ t(`nav.${item.key}`) }}</span>
-      </RouterLink>
-    </nav>
   </div>
 </template>
 
@@ -369,36 +339,9 @@ async function enablePush(): Promise<void> {
 .sidebar-logout:disabled {
   opacity: 0.55;
 }
-.app-shell--mobile {
-  --mobile-tabbar-height: calc(58px + env(safe-area-inset-bottom));
-}
-.mobile-tabbar {
-  position: fixed;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 30;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  height: var(--mobile-tabbar-height);
-  padding-bottom: env(safe-area-inset-bottom);
-  border-top: 1px solid var(--border-color);
-  background: rgb(255 255 255 / 96%);
-  backdrop-filter: blur(12px);
-}
-.mobile-tabbar__item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  min-width: 0;
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 600;
-}
-.mobile-tabbar__item--active {
-  color: #1d4ed8;
+.sidebar--mobile {
+  width: min(82vw, 300px);
+  box-shadow: 16px 0 36px rgb(15 23 42 / 20%);
 }
 @media (max-width: 760px) {
   .nav-more-toggle {
@@ -406,9 +349,6 @@ async function enablePush(): Promise<void> {
   }
   .page {
     padding-bottom: 24px;
-  }
-  .app-shell--mobile .page {
-    padding-bottom: calc(24px + var(--mobile-tabbar-height));
   }
 }
 </style>

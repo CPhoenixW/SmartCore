@@ -31,6 +31,7 @@ from app.server.config import get_settings
 from app.server.db.session import SessionLocal, init_db
 from app.server.device.compatibility import migrate_device_compatibility_on_startup
 from app.server.device.routes import router as deviceRouter
+from app.server.new_core.course_fold import fold_courses_into_plans
 from app.server.new_core.relation_compat import install_relation_compat
 from app.server.new_core.relation_maintenance import (
     close_past_course_occurrences,
@@ -50,6 +51,7 @@ def _sync_event_relations() -> None:
 
         crud.cleanupExpiredIdeaMedia(db)
         cleanup_activity(db, retention_days=get_settings().computer_activity_retention_days)
+        fold_courses_into_plans(db)
     except Exception:
         db.rollback()
         raise

@@ -42,7 +42,8 @@ appUser
   发送结果卡片。Plan 结束后的状态修改由 PWA 或 Screen 完成。
 - Reminder 是推送记录，不出现在普通日程列表；开始提醒不提供完成/延时操作。
 - Course 是学期模板，根据学期起始日、周次、星期和单双周展开为 Plan；
-  `coursePlan` 保留 occurrence 日期和序号。
+  `coursePlan` 保留 occurrence 日期和序号。应用启动以及课程保存之后，这些课次计划会脱离模板：
+  课程名、教师、地点和周次写入计划描述，课程模板和 `coursePlan` 关联被删除，计划和提醒保留。
 - 修改 Plan 时间会同步提醒；显式同步 Course 才会重排它生成的课次。
 - 状态至少包含 `todo`、`done`、`cancelled`；Overview 的快速切换只在 todo/done
   之间操作。
