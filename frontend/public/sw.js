@@ -1,4 +1,5 @@
-const CACHE_NAME = "smartcore-work-v6";
+const CACHE_NAME = "smartcore-work-v7";
+const SHELL_KEY = "/work/shell";
 const APP_SHELL = [
   "/work/",
   "/work/manifest.webmanifest",
@@ -7,10 +8,31 @@ const APP_SHELL = [
   "/work/icon-512.png",
 ];
 
-async function cacheResponse(request, response) {
-  if (!response?.ok || response.type === "opaque") return response;
+async function storeResponse(cacheKey, response) {
+  if (!response?.ok || response.type === "opaque" || response.status === 206) return;
+  const headers = new Headers(response.headers);
+  // The app marks /work as no-store. Cache.put rejects those responses, so the
+  // phone keeps its own copy without that directive.
+  headers.delete("cache-control");
+  headers.delete("expires");
+  headers.delete("pragma");
+  const copy = new Response(await response.clone().arrayBuffer(), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
   const cache = await caches.open(CACHE_NAME);
-  await cache.put(request, response.clone());
+  await cache.put(cacheKey, copy);
+}
+
+function isShellRequest(request) {
+  return request.mode === "navigate" || request.destination === "document";
+}
+
+async function refreshShell(request) {
+  const response = await fetch(request);
+  const type = response.headers.get("content-type") || "";
+  if (response.ok && type.includes("text/html")) await storeResponse(SHELL_KEY, response);
   return response;
 }
 
@@ -23,21 +45,30 @@ function isStaticAsset(request, url) {
 }
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(async (cache) => {
-        await cache.addAll(APP_SHELL);
-        try {
-          const response = await fetch("/work/precache.json", { cache: "no-store" });
-          if (!response.ok) return;
-          const files = await response.json();
-          if (Array.isArray(files) && files.length) await cache.addAll(files);
-        } catch {
-          // The shell still works; hashed assets are cached on first use.
-        }
-      })
-      .then(() => self.skipWaiting()),
-  );
+  event.waitUntil((async () => {
+    await Promise.all(APP_SHELL.map(async (url) => {
+      try {
+        const response = await fetch(url, { cache: "no-store" });
+        const key = url === "/work/" ? SHELL_KEY : url;
+        await storeResponse(key, response);
+      } catch {
+        // A missing icon should not block the shell.
+      }
+    }));
+    try {
+      const response = await fetch("/work/precache.json", { cache: "no-store" });
+      if (!response.ok) return;
+      const files = await response.json();
+      if (!Array.isArray(files)) return;
+      await Promise.all(files.map(async (url) => {
+        const asset = await fetch(url, { cache: "no-store" });
+        await storeResponse(url, asset);
+      }));
+    } catch {
+      // Hashed assets are stored the first time the page requests them.
+    }
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener("activate", (event) => {
@@ -52,19 +83,44 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
   if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
+  if (isShellRequest(request)) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE_NAME);
+      const cached = await cache.match(SHELL_KEY);
+      const refresh = refreshShell(request).catch(async () => cached || cache.match(SHELL_KEY));
+      if (cached) {
+        event.waitUntil(refresh);
+        return cached;
+      }
+      return refresh;
+    })());
+    return;
+  }
   if (isStaticAsset(request, url)) {
-    event.respondWith(
-      caches.match(request).then((cached) => {
-        const update = fetch(request).then((response) => cacheResponse(request, response));
-        return cached || update.catch(() => caches.match("/work/"));
-      }),
-    );
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE_NAME);
+      const cached = await cache.match(request);
+      const refresh = fetch(request)
+        .then(async (response) => {
+          await storeResponse(request, response);
+          return response;
+        })
+        .catch(() => cached || cache.match(SHELL_KEY));
+      if (cached) {
+        event.waitUntil(refresh);
+        return cached;
+      }
+      return refresh;
+    })());
     return;
   }
   event.respondWith(
     fetch(request)
-      .then((response) => cacheResponse(request, response))
-      .catch(() => caches.match(request).then((cached) => cached || caches.match("/work/"))),
+      .then(async (response) => {
+        await storeResponse(request, response);
+        return response;
+      })
+      .catch(() => caches.match(request).then((cached) => cached || caches.match(SHELL_KEY))),
   );
 });
 

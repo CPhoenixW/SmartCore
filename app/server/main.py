@@ -144,7 +144,10 @@ def create_app() -> FastAPI:
         response = reject_request(request, settings, limits)
         if response is None:
             response = await call_next(request)
-        if request.url.path.startswith(("/api/", "/screen", "/work")):
+        path = request.url.path
+        if path.startswith("/work/assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif path.startswith(("/api/", "/screen", "/work")):
             response.headers["Cache-Control"] = "no-store"
             response.headers["Referrer-Policy"] = "no-referrer"
             response.headers["X-Content-Type-Options"] = "nosniff"
