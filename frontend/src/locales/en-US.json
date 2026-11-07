@@ -188,6 +188,9 @@
       "changeable": "Changeable"
     },
     "restOfDay": "Rest of today",
+    "mobileDetail": "Event details",
+    "timeRange": "Time range",
+    "editWithAssistant": "Edit with assistant",
     "later": "Later",
     "laterCounts": "Tomorrow {tomorrow} · Day after {dayAfter}",
     "now": "Now",
