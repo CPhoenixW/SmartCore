@@ -4,11 +4,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import EmptyState from "@/components/base/EmptyState.vue";
+import MobileEventDetail from "@/components/overview/MobileEventDetail.vue";
 import { eventApi } from "@/api/event";
 import { runtimeApi } from "@/api/runtime";
 import { useToast } from "@/composables/useToast";
 import type { SmartCoreEvent } from "@/types/event";
-import { addDays, eventDateKey, getEventPrimaryTime } from "@/utils/date";
+import { addDays, getEventPrimaryTime } from "@/utils/date";
 import { sortEvents } from "@/utils/event";
 
 const { t, locale } = useI18n();
@@ -16,6 +17,7 @@ const router = useRouter();
 const toast = useToast();
 const queryClient = useQueryClient();
 const laterOpen = ref(false);
+const selectedEvent = ref<SmartCoreEvent | null>(null);
 
 const clockQuery = useQuery({ queryKey: ["runtime-clock"], queryFn: () => runtimeApi.clock(), refetchInterval: 60_000 });
 const eventsQuery = useQuery({
@@ -96,7 +98,22 @@ const statusMutation = useMutation({
   onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
 });
 function openEvent(event: SmartCoreEvent): void {
-  void router.push({ name: "update", query: { date: eventDateKey(event), evtId: event.evtId } });
+  selectedEvent.value = event;
+}
+function closeEvent(): void {
+  selectedEvent.value = null;
+}
+function editSelectedEvent(): void {
+  const event = selectedEvent.value;
+  if (!event) return;
+  selectedEvent.value = null;
+  void router.push({ name: "assistant", query: { prompt: "请编辑事项“" + event.title + "”，我需要修改它的内容或时间。" } });
+}
+function markSelectedDone(): void {
+  const event = selectedEvent.value;
+  if (!event) return;
+  selectedEvent.value = null;
+  statusMutation.mutate({ event, stat: "done" });
 }
 </script>
 
@@ -154,6 +171,14 @@ function openEvent(event: SmartCoreEvent): void {
       </ol>
     </section>
 
+    <MobileEventDetail
+      v-if="selectedEvent"
+      :event="selectedEvent"
+      :timezone="timezone"
+      @close="closeEvent"
+      @edit="editSelectedEvent"
+      @done="markSelectedDone"
+    />
   </div>
 </template>
 

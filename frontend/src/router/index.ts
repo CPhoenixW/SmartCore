@@ -38,7 +38,7 @@ export const router = createRouter({
 });
 
 
-const mobileRoutes = new Set(["login", "overview", "assistant", "settings", "add", "update"]);
+const mobileRoutes = new Set(["login", "overview", "assistant", "settings", "add"]);
 router.beforeEach((to) => {
   if (typeof window === "undefined" || !window.matchMedia("(max-width: 760px)").matches) return;
   if (mobileRoutes.has(String(to.name || ""))) return;

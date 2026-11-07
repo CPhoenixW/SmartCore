@@ -188,6 +188,9 @@
       "changeable": "天气多变"
     },
     "restOfDay": "今天剩下",
+    "mobileDetail": "事项详情",
+    "timeRange": "时间段",
+    "editWithAssistant": "让助手编辑",
     "later": "之后",
     "laterCounts": "明天 {tomorrow} 件 · 后天 {dayAfter} 件",
     "now": "现在",
