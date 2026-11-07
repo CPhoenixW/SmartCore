@@ -68,7 +68,7 @@ describe("mobile shell", () => {
     expect(wrapper.find(".m-overview").exists()).toBe(true);
     expect(wrapper.find(".overview-columns").exists()).toBe(false);
     expect(wrapper.text()).toContain("今天剩下");
-    expect(wrapper.find(".natural-input").exists()).toBe(true);
+    expect(wrapper.find(".natural-input").exists()).toBe(false);
   });
 
   it("phone settings keeps only everyday items", async () => {

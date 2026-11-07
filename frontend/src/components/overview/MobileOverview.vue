@@ -8,14 +8,13 @@ import { eventApi } from "@/api/event";
 import { runtimeApi } from "@/api/runtime";
 import { useToast } from "@/composables/useToast";
 import type { SmartCoreEvent } from "@/types/event";
-import { addDays, getEventPrimaryTime } from "@/utils/date";
+import { addDays, eventDateKey, getEventPrimaryTime } from "@/utils/date";
 import { sortEvents } from "@/utils/event";
 
 const { t, locale } = useI18n();
 const router = useRouter();
 const toast = useToast();
 const queryClient = useQueryClient();
-const note = ref("");
 const laterOpen = ref(false);
 
 const clockQuery = useQuery({ queryKey: ["runtime-clock"], queryFn: () => runtimeApi.clock(), refetchInterval: 60_000 });
@@ -97,13 +96,7 @@ const statusMutation = useMutation({
   onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
 });
 function openEvent(event: SmartCoreEvent): void {
-  void router.push({ name: "assistant", query: { prompt: event.title } });
-}
-function ask(): void {
-  const text = note.value.trim();
-  if (!text) return;
-  note.value = "";
-  void router.push({ name: "assistant", query: { prompt: text } });
+  void router.push({ name: "update", query: { date: eventDateKey(event), evtId: event.evtId } });
 }
 </script>
 
@@ -161,10 +154,6 @@ function ask(): void {
       </ol>
     </section>
 
-    <form class="natural-input card" @submit.prevent="ask">
-      <textarea v-model="note" rows="2" :placeholder="t('overview.askPlaceholder')" />
-      <button class="button button--primary" type="submit" :disabled="!note.trim()">{{ t("overview.askAssistant") }}</button>
-    </form>
   </div>
 </template>
 
@@ -190,6 +179,4 @@ function ask(): void {
 .m-overview__later span, .m-overview__later small { color: var(--color-text-muted); font-size: 13px; }
 .m-overview__later strong { flex: 1; font-size: 14px; font-weight: 600; }
 .m-overview__error { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 20px 0; color: var(--color-danger); }
-.natural-input { display: grid; gap: 10px; padding: 12px; }
-.natural-input textarea { width: 100%; min-height: 64px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 10px; font: inherit; resize: none; }
 </style>
