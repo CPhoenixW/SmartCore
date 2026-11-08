@@ -5,12 +5,13 @@ import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import EmptyState from "@/components/base/EmptyState.vue";
 import MobileEventDetail from "@/components/overview/MobileEventDetail.vue";
+import NotificationInbox from "@/components/overview/NotificationInbox.vue";
 import { eventApi } from "@/api/event";
 import { runtimeApi } from "@/api/runtime";
 import { useToast } from "@/composables/useToast";
 import type { SmartCoreEvent } from "@/types/event";
 import { addDays, getEventPrimaryTime } from "@/utils/date";
-import { sortEvents } from "@/utils/event";
+import { eventEndTime, isOverdue, sortEvents } from "@/utils/event";
 
 const { t, locale } = useI18n();
 const router = useRouter();
@@ -49,7 +50,9 @@ function eventDay(event: SmartCoreEvent): string {
   return Number.isFinite(time) ? dateInZone(new Date(time)) : "";
 }
 function clockTime(event: SmartCoreEvent): string {
-  const time = eventInstant(event);
+  return clockTimeAt(eventInstant(event));
+}
+function clockTimeAt(time: number): string {
   if (!Number.isFinite(time)) return "";
   return new Intl.DateTimeFormat(locale.value === "en-US" ? "en-US" : "zh-CN", {
     hour: "2-digit",
@@ -58,10 +61,33 @@ function clockTime(event: SmartCoreEvent): string {
     timeZone: timezone.value,
   }).format(new Date(time));
 }
-const active = computed(() => (eventsQuery.data.value ?? []).filter((event) => event.stat !== "cancelled" && (event.evtType === "plan" || event.evtType === "remind")));
-const upcoming = computed(() => sortEvents(active.value.filter((event) => event.stat === "todo" && eventInstant(event) >= now.value.getTime() - 60_000)));
+function eventTimeRange(event: SmartCoreEvent): string {
+  const start = eventInstant(event);
+  if (!Number.isFinite(start)) return "—";
+  const end = eventEndTime(event);
+  const startLabel = t("overview.scheduledStart", { time: clockTimeAt(start) });
+  if (end <= start) return startLabel;
+  return `${startLabel} · ${t("overview.scheduledEnd", { time: clockTimeAt(end) })}`;
+}
+const active = computed(() => (eventsQuery.data.value ?? []).filter((event) => event.stat !== "cancelled" && event.evtType !== "course"));
+const currentAction = computed(() => active.value.find((event) => {
+  if (event.stat !== "todo" || event.evtType !== "plan") return false;
+  const start = eventInstant(event);
+  const end = eventEndTime(event);
+  return Number.isFinite(start) && start <= now.value.getTime() && now.value.getTime() < end;
+}) ?? null);
+const upcoming = computed(() => sortEvents(active.value.filter((event) => {
+  if (event.stat !== "todo") return false;
+  const start = eventInstant(event);
+  return Number.isFinite(start) && start >= now.value.getTime();
+})));
 const nextAction = computed(() => upcoming.value[0] ?? null);
-const todayRest = computed(() => sortEvents(active.value.filter((event) => event.stat === "todo" && event.evtId !== nextAction.value?.evtId && eventDay(event) === today.value)));
+const focusAction = computed(() => currentAction.value ?? nextAction.value);
+const focusActionLabel = computed(() => currentAction.value
+  ? t("overview.currentAction")
+  : t("overview.nextAction"));
+const todayScheduleTitle = computed(() => t("overview.todaySchedule"));
+const todaySchedule = computed(() => sortEvents(active.value.filter((event) => eventDay(event) === today.value)));
 const tomorrowCount = computed(() => active.value.filter((event) => event.stat === "todo" && eventDay(event) === tomorrow.value).length);
 const dayAfterCount = computed(() => active.value.filter((event) => event.stat === "todo" && eventDay(event) === dayAfter.value).length);
 const laterEvents = computed(() => sortEvents(active.value.filter((event) => event.stat === "todo" && eventDay(event) > today.value)));
@@ -79,8 +105,9 @@ const clockLabel = computed(() => {
   }).format(new Date(raw));
 });
 const soonLabel = computed(() => {
-  const event = nextAction.value;
+  const event = focusAction.value;
   if (!event) return "";
+  if (currentAction.value) return t("overview.current");
   const minutes = Math.round((eventInstant(event) - now.value.getTime()) / 60_000);
   if (minutes <= 0) return t("overview.now");
   if (minutes < 60) return t("overview.inMinutes", { count: minutes });
@@ -121,38 +148,40 @@ function markSelectedDone(): void {
   <div class="m-overview">
     <p class="m-overview__clock">{{ clockLabel }}</p>
 
-    <section v-if="nextAction" class="m-overview__next card">
+    <section v-if="focusAction" class="m-overview__next card" :class="{ 'm-overview__next--current': currentAction }">
       <div class="m-overview__next-top">
-        <span>{{ t("overview.nextAction") }}</span>
-        <strong>{{ clockTime(nextAction) }}</strong>
-        <em>{{ t(`event.type.${nextAction.evtType}`) }}</em>
+        <span>{{ focusActionLabel }}</span>
+        <strong>{{ eventTimeRange(focusAction) }}</strong>
+        <em>{{ t(`event.type.${focusAction.evtType}`) }}</em>
       </div>
-      <h2>{{ nextAction.title }}</h2>
+      <h2>{{ focusAction.title }}</h2>
       <p>{{ soonLabel }}</p>
       <div class="m-overview__actions">
-        <button class="button button--primary" type="button" :disabled="statusMutation.isPending.value" @click="statusMutation.mutate({ event: nextAction, stat: 'done' })">{{ t("event.status.done") }}</button>
-        <button class="button" type="button" @click="openEvent(nextAction)">{{ t("common.open") }}</button>
+        <button v-if="focusAction.stat === 'todo'" class="button button--primary" type="button" :disabled="statusMutation.isPending.value" @click="statusMutation.mutate({ event: focusAction, stat: 'done' })">{{ t("event.status.done") }}</button>
+        <button class="button" type="button" @click="openEvent(focusAction)">{{ t("common.open") }}</button>
       </div>
     </section>
 
     <section class="card m-overview__day">
-      <h2>{{ t("overview.restOfDay") }}</h2>
+      <h2>{{ todayScheduleTitle }}</h2>
       <div v-if="eventsQuery.isPending.value" class="empty-state">{{ t("common.loading") }}</div>
       <div v-else-if="eventsQuery.isError.value" class="m-overview__error">
         {{ t("schedule.error") }}
         <button class="button" type="button" @click="eventsQuery.refetch()">{{ t("common.retry") }}</button>
       </div>
-      <ol v-else-if="todayRest.length" class="m-overview__timeline">
-        <li v-for="event in todayRest" :key="event.evtId">
-          <time>{{ clockTime(event) }}</time>
+      <ol v-else-if="todaySchedule.length" class="m-overview__timeline">
+        <li v-for="event in todaySchedule" :key="event.evtId" :class="[`m-overview__timeline-item--${event.stat}`, { 'm-overview__timeline-item--current': currentAction?.evtId === event.evtId, 'm-overview__timeline-item--overdue': isOverdue(event, now.getTime()) }]">
+          <time>{{ eventTimeRange(event) }}</time>
           <button type="button" @click="openEvent(event)">
             <strong>{{ event.title }}</strong>
-            <small>{{ t(`event.type.${event.evtType}`) }}</small>
+            <small>{{ t(`event.type.${event.evtType}`) }} · {{ t(`event.status.${event.stat}`) }}</small>
           </button>
         </li>
       </ol>
       <EmptyState v-else :text="t('schedule.empty')" />
     </section>
+
+    <NotificationInbox />
 
     <section class="card m-overview__later">
       <button type="button" @click="laterOpen = !laterOpen">
@@ -162,7 +191,7 @@ function markSelectedDone(): void {
       </button>
       <ol v-if="laterOpen && laterEvents.length" class="m-overview__timeline">
         <li v-for="event in laterEvents" :key="event.evtId">
-          <time>{{ clockTime(event) }}</time>
+          <time>{{ eventTimeRange(event) }}</time>
           <button type="button" @click="openEvent(event)">
             <strong>{{ event.title }}</strong>
             <small>{{ eventDay(event) }} · {{ t(`event.type.${event.evtType}`) }}</small>
@@ -187,6 +216,8 @@ function markSelectedDone(): void {
 .m-overview__clock { margin: 0; color: var(--color-text-muted); font-size: 13px; }
 .m-overview__next, .m-overview__day, .m-overview__later { padding: 14px; }
 .m-overview__next { display: grid; gap: 6px; background: #eff6ff; }
+.m-overview__next--current { background: #f0fdf4; }
+.m-overview__next--current .m-overview__next-top { color: #15803d; }
 .m-overview__next-top { display: flex; align-items: center; gap: 8px; color: #1d4ed8; font-size: 13px; }
 .m-overview__next-top strong { color: var(--color-text); font-size: 15px; }
 .m-overview__next-top em { margin-left: auto; font-style: normal; }
@@ -195,7 +226,10 @@ function markSelectedDone(): void {
 .m-overview__actions { display: flex; gap: 8px; margin-top: 6px; }
 .m-overview__day h2 { margin-bottom: 8px; font-size: 16px; }
 .m-overview__timeline { display: grid; margin: 0; padding: 0; list-style: none; }
-.m-overview__timeline li { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px; align-items: center; padding: 10px 0; border-top: 1px solid var(--border-color); }
+.m-overview__timeline li { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 8px; align-items: center; padding: 10px 8px; border-top: 1px solid var(--border-color); border-left: 3px solid #3b82f6; }
+.m-overview__timeline li.m-overview__timeline-item--done { border-left-color: #22c55e; opacity: .78; }
+.m-overview__timeline li.m-overview__timeline-item--current { border-left-color: #16a34a; background: #f0fdf4; }
+.m-overview__timeline li.m-overview__timeline-item--overdue { border-left-color: #f59e0b; background: #fffbeb; }
 .m-overview__timeline time { color: var(--color-text-muted); font-size: 13px; }
 .m-overview__timeline button { display: grid; gap: 2px; min-width: 0; padding: 0; border: 0; background: transparent; text-align: left; font: inherit; }
 .m-overview__timeline strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

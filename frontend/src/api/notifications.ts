@@ -10,7 +10,20 @@ export interface PushPublicKeyResult {
   publicKey: string | null;
 }
 
+export interface NotificationRecord {
+  notifyId: string;
+  evtId?: string | null;
+  channel: string;
+  title: string;
+  content: string;
+  scheduledAt: string;
+  sentAt?: string | null;
+  stat: string;
+  failReason?: string | null;
+}
+
 export const notificationsApi = {
+  list: (limit = 8) => apiRequest<NotificationRecord[]>(`/api/notifications?limit=${Math.max(1, Math.min(limit, 100))}`),
   publicKey: () => apiRequest<PushPublicKeyResult>("/api/notifications/push/public-key"),
   subscribe: (payload: PushSubscriptionPayload) => apiRequest<{ subscribed: boolean }>("/api/notifications/push-subscription", {
     method: "POST",

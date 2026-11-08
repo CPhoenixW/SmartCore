@@ -379,3 +379,14 @@ PWA 助手在 SmartCore 计划/提醒工具之外，可以使用 `server_list`�
 安卓 Chrome 的网页推送地址固定在 `fcm.googleapis.com`。这台服务器直连 Google 不通时，SmartCore 仍按原地址做 VAPID 签名和加密，再把这份请求交给 Cloudflare Worker。Worker 只转发该主机上的 `/fcm/send/` 与 `/wp/`，并要求持有 `RELAY_TOKEN`。Firefox 与 Safari 的推送地址继续由服务器直连。
 
 原因：浏览器不让网页更换推送服务，而 Cloudflare 的地址从这台服务器可以访问，由它代为连接 Google 后，现有的 Chrome 订阅不用重新授权。
+
+## D029 PMA 通知统一入口
+
+状态：已采用。
+
+计划开始/结束、DDL 到期和注意力提醒等高信号通知保留浏览器 Push → Screen fallback，并以稳定的
+`clientMessageId` 幂等追加到 owner 的 PWA 主助手会话。天气等低信号信息继续走原有提醒链路，
+不自动灌入对话。总览显示最近通知列表，通知项可直接打开事项或回到助手；助手对话是完整通知记录。
+
+原因：Push 或屏幕不在线时，用户仍能在助手里看到提醒；总览提供可见的近期入口，又不会为通知
+再拆出一条孤立的产品路径。按信号分级可以减少天气等信息对行动流的干扰。
