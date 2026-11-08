@@ -131,6 +131,34 @@ function reminderCard(message: AssistantMessage): ReminderCard | null {
 }
 
 const reminderCards = computed(() => new Map(messages.value.map((message) => [message.messageId, reminderCard(message)])));
+function messageDayKey(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value.slice(0, 10) : localDateKey(date);
+}
+
+function shouldShowDateDivider(index: number): boolean {
+  if (index === 0) return true;
+  const current = messages.value[index];
+  const previous = messages.value[index - 1];
+  return Boolean(current && previous && messageDayKey(current.createdAt) !== messageDayKey(previous.createdAt));
+}
+
+function dateDividerLabel(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const now = new Date();
+  const today = localDateKey(now);
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const key = localDateKey(date);
+  if (key === today) return t("assistant.dateToday");
+  if (key === localDateKey(yesterday)) return t("assistant.dateYesterday");
+  return new Intl.DateTimeFormat(locale.value === "en-US" ? "en-US" : "zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    weekday: "short",
+  }).format(date);
+}
 function attachmentUrl(attachment: AssistantAttachment): string {
   return attachment.url || assistantApi.attachmentUrl(attachment.uploadId);
 }
@@ -427,13 +455,13 @@ onBeforeUnmount(() => {
       <div ref="messagesRoot" class="assistant-messages" aria-live="polite">
         <div v-if="loading" class="assistant-loading" role="status"><span class="assistant-progress__spinner" aria-hidden="true" />{{ t("assistant.loading") }}</div>
         <div v-else-if="!messages.length && !sending" class="assistant-empty"><strong>{{ t("assistant.empty") }}</strong></div>
-        <article
-          v-for="message in messages"
-          :id="`assistant-message-${message.messageId}`"
-          :key="message.messageId"
-          class="assistant-message"
-          :class="[`assistant-message--${message.role}`, { 'assistant-message--report': isReportMessage(message), 'assistant-message--highlight': highlightMessageId === message.messageId, 'assistant-message--failed': message.stat === 'failed', 'assistant-message--pending': message.stat === 'pending' }]"
-        >
+        <template v-for="(message, index) in messages" :key="message.messageId">
+          <div v-if="shouldShowDateDivider(index)" class="assistant-date-divider"><span>{{ dateDividerLabel(message.createdAt) }}</span></div>
+          <article
+            :id="`assistant-message-${message.messageId}`"
+            class="assistant-message"
+            :class="[`assistant-message--${message.role}`, { 'assistant-message--report': isReportMessage(message), 'assistant-message--reminder': Boolean(reminderCards.get(message.messageId)), 'assistant-message--highlight': highlightMessageId === message.messageId, 'assistant-message--failed': message.stat === 'failed', 'assistant-message--pending': message.stat === 'pending' }]"
+          >
           <header class="assistant-message__header">
             <div class="assistant-message__identity">
               <span class="assistant-message__label">{{ message.role === "user" ? t("assistant.you") : t("assistant.bot") }}</span>
@@ -469,7 +497,8 @@ onBeforeUnmount(() => {
               <span><strong>{{ attachmentLabel(attachment) }}</strong><small>{{ formatAttachmentSize(attachment.sizeBytes) }}</small></span>
             </a>
           </div>
-        </article>
+          </article>
+        </template>
         <article v-if="streamingText" class="assistant-message assistant-message--assistant assistant-message--streaming">
           <header class="assistant-message__header"><span class="assistant-message__label">{{ t("assistant.bot") }}</span></header>
           <div class="assistant-message__body"><MarkdownContent :content="streamingText" /></div>
@@ -494,7 +523,6 @@ onBeforeUnmount(() => {
             <button type="button" :aria-label="`${t('common.delete')} ${attachmentLabel(attachment)}`" @click="removeAttachment(attachment)"><X :size="13" aria-hidden="true" /></button>
           </span>
         </div>
-        <p class="assistant-capabilities">{{ t("assistant.capabilities") }}</p>
         <div class="assistant-composer__row">
           <button class="assistant-attach" type="button" :aria-label="t('assistant.addAttachment')" :title="t('assistant.addAttachment')" :disabled="sending || loading" @click="openFilePicker"><Paperclip :size="17" aria-hidden="true" /></button>
           <input ref="fileInput" class="assistant-file-input" type="file" multiple accept="image/*,.pdf,.txt,.md,.csv,.docx,.zip" @change="addAttachments" />
@@ -988,7 +1016,6 @@ onBeforeUnmount(() => {
 .assistant-attachment-chip{display:inline-flex;align-items:center;gap:6px;max-width:230px;padding:5px 7px;border:1px solid #dbe4ef;border-radius:8px;background:#fff;color:#475569;font-size:11px}
 .assistant-attachment-chip img{width:24px;height:22px;border-radius:4px;object-fit:cover}
 .assistant-attachment-chip>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.assistant-capabilities{width:100%;margin:0;color:#94a3b8;font-size:10px;line-height:1.35}
 @media (max-width:760px){.assistant-messages{padding:14px 12px 18px}.assistant-message__meta time{display:none}.assistant-message__header{gap:8px}.assistant-message--report{max-width:96%}.assistant-composer{padding:8px 10px 10px}}
 /* Final responsive layer: keep the chat surface consistent on every viewport. */
 .assistant-page {
@@ -1248,7 +1275,6 @@ onBeforeUnmount(() => {
   gap: 8px;
   width: 100%;
 }
-.assistant-capabilities { width: 100%; margin: 0; color: #8390a3; font-size: 11px; line-height: 1.35; }
 .assistant-composer textarea {
   width: 100%;
   height: 48px;
@@ -1332,7 +1358,6 @@ onBeforeUnmount(() => {
   .assistant-attach,
   .assistant-send { width: 42px; min-width: 42px; height: 42px; min-height: 42px; border-radius: 12px; }
   .assistant-send { width: 44px; min-width: 44px; }
-  .assistant-capabilities { font-size: 10px; }
   .assistant-quote-preview > span { max-width: calc(100vw - 86px); }
 }
 .assistant-identity {
@@ -1458,5 +1483,117 @@ onBeforeUnmount(() => {
   .assistant-message--report { width: 100%; max-width: 100%; }
   .assistant-reminder-card { min-width: 0; padding: 11px 12px; }
   .assistant-reminder-card__main strong { white-space: normal; }
+}
+.assistant-page,
+.assistant-shell { background: #f7f8fa; }
+.assistant-shell__header {
+  flex-basis: 56px;
+  min-height: 56px;
+  padding: 8px max(14px, calc((100% - 760px) / 2));
+  border-bottom: 1px solid #edf0f4;
+  background: #fff;
+}
+.assistant-identity__avatar { width: 30px; height: 30px; flex-basis: 30px; border-radius: 10px; }
+.assistant-identity__copy strong { font-size: 14px; font-weight: 700; }
+.assistant-identity__copy small { color: #97a1b0; font-size: 10px; }
+.assistant-search-toggle { width: 34px; height: 34px; border-color: #e2e7ee; border-radius: 10px; box-shadow: none; }
+.assistant-search { border-color: #e2e7ee; border-radius: 10px; box-shadow: none; }
+.assistant-search-results { top: 58px; right: max(14px, calc((100% - 760px) / 2)); }
+.assistant-messages {
+  align-items: stretch;
+  gap: 10px;
+  padding: 12px max(14px, calc((100% - 760px) / 2)) 24px;
+  background: #f7f8fa;
+}
+.assistant-date-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 7px 0 2px;
+  color: #9aa4b2;
+  font-size: 10px;
+  letter-spacing: .02em;
+  text-align: center;
+}
+.assistant-date-divider::before,
+.assistant-date-divider::after { height: 1px; flex: 1 1 auto; background: #e5e9ef; content: ""; }
+.assistant-message {
+  max-width: 84%;
+  padding: 10px 13px;
+  border: 0;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: none;
+}
+.assistant-message--assistant { border-radius: 5px 14px 14px 14px; }
+.assistant-message--user {
+  max-width: 78%;
+  border-radius: 14px 14px 5px 14px;
+  background: #2f6fed;
+  box-shadow: none;
+}
+.assistant-message--report { width: 100%; max-width: 100%; border: 1px solid #e8edf2; background: #fff; }
+.assistant-message__header { min-height: 20px; margin-bottom: 5px; }
+.assistant-message__label { color: #8b96a5; font-size: 10px; font-weight: 650; }
+.assistant-message__action { width: 24px; height: 24px; color: #a2acb9; }
+.assistant-message__meta { gap: 4px; }
+.assistant-message__kind { padding: 2px 6px; font-size: 9px; }
+.assistant-message__body { line-height: 1.55; }
+.assistant-message :deep(.markdown-content) { font-size: 15px; line-height: 1.58; }
+.assistant-message :deep(.markdown-content p) { margin-bottom: .58em; }
+.assistant-message--reminder {
+  width: fit-content;
+  max-width: min(100%, 390px);
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.assistant-message--reminder .assistant-message__header { padding: 0 3px; }
+.assistant-reminder-card {
+  width: min(100%, 360px);
+  min-width: 0;
+  gap: 7px;
+  padding: 10px 11px;
+  border-color: #e1e7ee;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 3%);
+}
+.assistant-reminder-card__icon { width: 28px; height: 28px; flex-basis: 28px; border-radius: 9px; }
+.assistant-reminder-card__main strong { font-size: 12px; }
+.assistant-reminder-card__main small { font-size: 10px; }
+.assistant-reminder-card__relative { padding: 3px 6px; font-size: 9px; }
+.assistant-reminder-card__time { font-size: 12px; }
+.assistant-composer {
+  gap: 0;
+  padding: 8px max(14px, calc((100% - 760px) / 2)) max(10px, env(safe-area-inset-bottom));
+  border-top: 1px solid #e9edf2;
+  background: #fff;
+  backdrop-filter: none;
+}
+.assistant-composer__row { grid-template-columns: 42px minmax(0, 1fr) 44px; gap: 7px; }
+.assistant-composer textarea {
+  height: 44px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-color: #e0e5eb;
+  border-radius: 12px;
+  background: #f8fafc;
+  box-shadow: none;
+}
+.assistant-attach,
+.assistant-send { width: 42px; min-width: 42px; height: 42px; min-height: 42px; border-radius: 11px; box-shadow: none; }
+.assistant-send { width: 44px; min-width: 44px; }
+@media (max-width: 760px) {
+  .assistant-shell__header { flex-basis: 52px; min-height: 52px; padding: 8px 14px; }
+  .assistant-search-results { top: 56px; right: 14px; }
+  .assistant-messages { gap: 9px; padding: 10px 14px 18px; }
+  .assistant-message { max-width: 88%; padding: 9px 11px; }
+  .assistant-message--user { max-width: 88%; }
+  .assistant-message--report { width: 100%; max-width: 100%; }
+  .assistant-message--reminder { max-width: 96%; }
+  .assistant-date-divider { margin: 6px 0 1px; }
+  .assistant-composer { padding: 8px 10px max(10px, env(safe-area-inset-bottom)); }
 }
 </style>

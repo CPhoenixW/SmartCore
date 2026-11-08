@@ -309,7 +309,9 @@
     "reminderInMinutes": "In {count} minutes",
     "reminderInHours": "In {count} hours",
     "reminderScheduled": "Scheduled",
-    "reminderPending": "Reminder pending"
+    "reminderPending": "Reminder pending",
+    "dateToday": "Today",
+    "dateYesterday": "Yesterday"
   },
   "add": {
     "title": "Add event",

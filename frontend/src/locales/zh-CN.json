@@ -309,7 +309,9 @@
     "reminderInMinutes": "还有 {count} 分钟",
     "reminderInHours": "还有 {count} 小时",
     "reminderScheduled": "已安排",
-    "reminderPending": "待提醒"
+    "reminderPending": "待提醒",
+    "dateToday": "今天",
+    "dateYesterday": "昨天"
   },
   "add": {
     "title": "添加事件",

@@ -107,6 +107,8 @@ beforeEach(() => {
     await flushPromises();
 
     expect(wrapper.find(".assistant-identity").text()).toContain("SmartCore 助手");
+    expect(wrapper.find(".assistant-date-divider").exists()).toBe(true);
+    expect(wrapper.find(".assistant-capabilities").exists()).toBe(false);
     expect(wrapper.find(".assistant-reminder-card").exists()).toBe(true);
     expect(wrapper.find(".assistant-reminder-card").text()).not.toContain("2026-11-08T14:00:00+08:00");
     expect(wrapper.find(".assistant-reminder-card").text()).toContain("计划开始");
