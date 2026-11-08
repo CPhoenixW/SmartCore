@@ -47,6 +47,15 @@ while (($#)); do
     esac
 done
 
+# Dev and production share one Docker daemon. Protect the active and rollback
+# revisions recorded by production even when dev cleanup runs first.
+STATE_FILE="${SMARTCORE_DEPLOY_STATE_FILE:-/var/lib/smartcore-deploy/state}"
+if [[ -r "$STATE_FILE" ]]; then
+    while IFS= read -r state_tag; do
+        [[ "$state_tag" =~ ^[0-9a-f]{40}$ ]] && protected_tags+=("$state_tag")
+    done < <(awk -F= '/^(CURRENT|PREVIOUS)=/{print $2}' "$STATE_FILE")
+fi
+
 is_protected_tag() {
     local repo="$1" tag="$2" value
     for value in "${protected_tags[@]}"; do
