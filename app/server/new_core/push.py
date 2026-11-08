@@ -107,7 +107,7 @@ def send_web_push(
             "keys": {"p256dh": row.p256dh, "auth": row.auth},
         }
         try:
-            webpush(
+            response = webpush(
                 subscription_info=subscription,
                 data=json.dumps(payload, ensure_ascii=False),
                 vapid_private_key=settings.pwa_push_vapid_private_key,
@@ -116,6 +116,10 @@ def send_web_push(
                 ttl=3600,
                 requests_session=session,
             )
+            provider_status = getattr(response, "status_code", None)
+            if provider_status is not None and not 200 <= int(provider_status) < 300:
+                logger.warning("browser push provider rejected status=%s", provider_status)
+                continue
             sent += 1
         except WebPushException as exc:
             status = getattr(getattr(exc, "response", None), "status_code", None)

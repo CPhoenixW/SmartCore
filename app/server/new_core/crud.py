@@ -848,7 +848,7 @@ def writeNotifyLog(
         title=title,
         content=content,
         scheduledAt=nowIso(),
-        sentAt=nowIso(),
+        sentAt=nowIso() if stat in {"sent", "fallback"} else None,
         stat=stat,
         failReason=failReason,
         dedupKey=dedupKey,

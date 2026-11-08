@@ -26,6 +26,29 @@ class PushSubscriptionBody(BaseModel):
     keys: PushKeys
 
 
+def _delivery_state(row: NotifyLog) -> str:
+    """Describe what the server knows about delivery, without claiming device display.
+
+    Web Push providers acknowledge receipt of the encrypted message, but they do
+    not acknowledge that the phone displayed it. The API therefore exposes
+    ``accepted`` for a browser provider 2xx response and ``connected`` for a
+    screen websocket write; both remain distinct from a device-level receipt.
+    """
+    if row.stat == "sent" and row.channel == "browser":
+        return "accepted"
+    if row.stat == "sent" and row.channel == "screen":
+        return "connected"
+    return row.stat
+
+
+def _delivery_detail(row: NotifyLog) -> str | None:
+    if row.stat == "sent" and row.channel == "browser":
+        return "push_provider_accepted"
+    if row.stat == "sent" and row.channel == "screen":
+        return "screen_socket_accepted"
+    return row.failReason
+
+
 def _notify_dict(row: NotifyLog) -> dict[str, Any]:
     return {
         "notifyId": row.notifyId,
@@ -36,6 +59,8 @@ def _notify_dict(row: NotifyLog) -> dict[str, Any]:
         "scheduledAt": row.scheduledAt,
         "sentAt": row.sentAt,
         "stat": row.stat,
+        "deliveryState": _delivery_state(row),
+        "deliveryDetail": _delivery_detail(row),
         "failReason": row.failReason,
     }
 

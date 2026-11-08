@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.server.db.session import SessionLocal
+from app.server.new_core import crud
 from app.server.new_core.models import PushSubscription
 
 
@@ -51,3 +52,37 @@ def test_push_subscription_is_owned_by_authenticated_user(signed_client_factory)
     finally:
         db.close()
 
+
+
+def test_notification_api_distinguishes_provider_acceptance_from_device_display(signed_client_factory) -> None:
+    db = SessionLocal()
+    try:
+        crud.writeNotifyLog(
+            db,
+            dedupKey="api:accepted",
+            channel="browser",
+            title="推送服务接收",
+            content="手机是否显示仍未确认",
+            stat="sent",
+        )
+        crud.writeNotifyLog(
+            db,
+            dedupKey="api:failed",
+            channel="browser",
+            title="推送失败",
+            content="provider timeout",
+            stat="failed",
+            failReason="provider timeout",
+        )
+    finally:
+        db.close()
+
+    response = signed_client_factory("default").get("/api/notifications?limit=10")
+
+    assert response.status_code == 200
+    rows = {row["stat"]: row for row in response.json()["data"]}
+    assert rows["sent"]["deliveryState"] == "accepted"
+    assert rows["sent"]["deliveryDetail"] == "push_provider_accepted"
+    assert rows["failed"]["deliveryState"] == "failed"
+    assert rows["failed"]["sentAt"] is None
+    assert rows["failed"]["deliveryDetail"] == "provider timeout"
