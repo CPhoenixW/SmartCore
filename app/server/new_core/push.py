@@ -118,6 +118,8 @@ def send_web_push(
             )
             provider_status = getattr(response, "status_code", None)
             if provider_status is not None and not 200 <= int(provider_status) < 300:
+                if int(provider_status) in {404, 410}:
+                    db.delete(row)
                 logger.warning("browser push provider rejected status=%s", provider_status)
                 continue
             sent += 1

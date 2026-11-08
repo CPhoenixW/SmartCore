@@ -77,3 +77,47 @@ def test_web_push_non_2xx_response_is_a_failure(monkeypatch: pytest.MonkeyPatch)
     )
     assert ok is False
     assert reason == "all browser push deliveries failed"
+
+
+def test_web_push_expired_subscription_is_removed(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Response:
+        status_code = 410
+
+    class Row:
+        endpoint = "https://fcm.googleapis.com/fcm/send/expired"
+        p256dh = "p" * 32
+        auth = "a" * 16
+
+    class Result:
+        def all(self):
+            return [row]
+
+    class Database:
+        deleted = None
+
+        def scalars(self, _query):
+            return Result()
+
+        def delete(self, value):
+            self.deleted = value
+
+    row = Row()
+    database = Database()
+
+    monkeypatch.setattr("pywebpush.webpush", lambda **_kwargs: Response())
+    settings = Settings(
+        pwa_push_enabled=True,
+        pwa_push_vapid_public_key="public",
+        pwa_push_vapid_private_key="private",
+        pwa_push_vapid_subject="https://smartcore.example",
+    )
+    ok, reason = send_web_push(
+        database,
+        user_id="default",
+        title="测试",
+        content="订阅过期",
+        settings=settings,
+    )
+
+    assert (ok, reason) == (False, "all browser push deliveries failed")
+    assert database.deleted is row
