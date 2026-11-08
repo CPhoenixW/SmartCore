@@ -16,6 +16,7 @@
   "nav": {
     "overview": "Overview",
     "assistant": "Assistant",
+    "notifications": "Notifications",
     "schedule": "Schedule",
     "dailySummary": "Daily summary",
     "add": "Add event",
@@ -203,6 +204,9 @@
     "scheduledEnd": "Ends {time}"
   },
   "notifications": {
+    "pageTitle": "Notifications",
+    "pageHint": "Click the bell to review recent notifications. Important reminders also appear in assistant chat.",
+    "backToOverview": "Back to overview",
     "inboxTitle": "Recent notifications",
     "inboxHint": "Important reminders also appear in the assistant chat; this keeps the latest ones visible.",
     "empty": "No notifications need attention right now.",
@@ -212,7 +216,10 @@
       "screen": "Screen reminder"
     },
     "status": {
-      "sent": "Delivered",
+      "accepted": "Push service accepted (phone display unconfirmed)",
+      "connected": "Screen channel connected",
+      "pending": "Delivery pending",
+      "recorded": "Recorded",
       "failed": "Delivery failed"
     }
   },

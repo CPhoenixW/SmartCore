@@ -5,7 +5,6 @@ import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import EmptyState from "@/components/base/EmptyState.vue";
 import MobileEventDetail from "@/components/overview/MobileEventDetail.vue";
-import NotificationInbox from "@/components/overview/NotificationInbox.vue";
 import { eventApi } from "@/api/event";
 import { runtimeApi } from "@/api/runtime";
 import { useToast } from "@/composables/useToast";
@@ -181,7 +180,6 @@ function markSelectedDone(): void {
       <EmptyState v-else :text="t('schedule.empty')" />
     </section>
 
-    <NotificationInbox />
 
     <section class="card m-overview__later">
       <button type="button" @click="laterOpen = !laterOpen">

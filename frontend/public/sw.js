@@ -1,4 +1,4 @@
-const CACHE_NAME = "smartcore-work-v7";
+const CACHE_NAME = "smartcore-work-v8";
 const SHELL_KEY = "/work/shell";
 const APP_SHELL = [
   "/work/",

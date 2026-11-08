@@ -22,7 +22,6 @@ import smartcoreMarkBlue from "@/assets/smartcore-mark-blue.png";
 import { useUserStore } from "@/stores/user";
 import { useViewport } from "@/composables/useViewport";
 import { bindStagedWheelScroll } from "@/utils/scroll";
-import { notificationsApi, vapidKeyBytes } from "@/api/notifications";
 
 const route = useRoute();
 const router = useRouter();
@@ -34,22 +33,19 @@ const mobileOpen = ref(false);
 const loggingOut = ref(false);
 const pageRoot = ref<HTMLElement | null>(null);
 const secondaryOpen = ref(false);
-const pushSupported = ref(false);
-const pushEnabled = ref(false);
-const pushBusy = ref(false);
-const pushMessage = ref("");
 let stopStagedWheelScroll: (() => void) | undefined;
 
 const primaryNav = [
   { key: "assistant", name: "assistant", icon: Bot },
   { key: "overview", name: "overview", icon: House },
+  { key: "notifications", name: "notifications", icon: Bell },
   { key: "settings", name: "settings", icon: Settings },
 ] as const;
 const initials = computed(() => userStore.user.displayName?.slice(0, 2).toUpperCase() || "SC");
 const logoutLabel = computed(() => (userStore.user.language === "en" ? "Log out" : "退出登录"));
 const knownRouteNames = computed(() => new Set<string>([
   ...primaryNav.map((item) => item.name),
-  "schedule", "dailySummary", "update", "device", "ideas", "logs", "memory", "add", "course",
+  "schedule", "dailySummary", "update", "device", "ideas", "logs", "memory", "add", "course", "notifications",
 ]));
 const routeTitleKey = computed(() => {
   const name = String(route.name || "overview");
@@ -71,7 +67,6 @@ watch(isMobile, (mobile) => {
 onMounted(() => {
   if (!userStore.loaded) void userStore.load();
   if (pageRoot.value) stopStagedWheelScroll = bindStagedWheelScroll(pageRoot.value);
-  void loadPushState();
 });
 onBeforeUnmount(() => stopStagedWheelScroll?.());
 
@@ -88,56 +83,6 @@ async function logout() {
   }
 }
 
-async function loadPushState(): Promise<void> {
-  pushSupported.value =
-    typeof window !== "undefined" &&
-    "serviceWorker" in navigator &&
-    "Notification" in window &&
-    "PushManager" in window;
-  if (!pushSupported.value) return;
-  try {
-    const registration = await navigator.serviceWorker.ready;
-    pushEnabled.value = Boolean(await registration.pushManager.getSubscription());
-  } catch {
-    pushEnabled.value = false;
-  }
-}
-
-async function enablePush(): Promise<void> {
-  if (!pushSupported.value || pushBusy.value) return;
-  pushBusy.value = true;
-  pushMessage.value = "";
-  try {
-    const permission =
-      Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
-    if (permission !== "granted") {
-      pushMessage.value = t("app.notificationsDenied");
-      return;
-    }
-    const config = await notificationsApi.publicKey();
-    if (!config.enabled || !config.publicKey) {
-      pushMessage.value = t("app.notificationsUnavailable");
-      return;
-    }
-    const registration = await navigator.serviceWorker.ready;
-    const subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: vapidKeyBytes(config.publicKey),
-    });
-    const json = subscription.toJSON();
-    if (!json.endpoint || !json.keys?.p256dh || !json.keys.auth) throw new Error("invalid push subscription");
-    await notificationsApi.subscribe({
-      endpoint: json.endpoint,
-      keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
-    });
-    pushEnabled.value = true;
-    pushMessage.value = t("app.notificationsEnabled");
-  } catch {
-    pushMessage.value = t("app.notificationsUnavailable");
-  } finally {
-    pushBusy.value = false;
-  }
-}
 </script>
 
 <template>
@@ -176,18 +121,14 @@ async function enablePush(): Promise<void> {
           <input v-model="search" :placeholder="t('common.search')" />
         </form>
         <div class="topbar-user">
-          <button
-            v-if="pushSupported"
+          <RouterLink
             class="notification-button"
-            type="button"
-            :title="pushMessage || (pushEnabled ? t('app.notificationsEnabled') : t('app.enableNotifications'))"
-            :aria-label="pushMessage || (pushEnabled ? t('app.notificationsEnabled') : t('app.enableNotifications'))"
-            :disabled="pushBusy || pushEnabled"
-            @click="enablePush"
+            :to="{ name: 'notifications' }"
+            :title="t('nav.notifications')"
+            :aria-label="t('nav.notifications')"
           >
             <Bell :size="18" aria-hidden="true" />
-            <span v-if="pushEnabled" class="notification-button__dot" />
-          </button>
+          </RouterLink>
           <span v-if="!isMobile" class="api-pill" :class="{ 'api-pill--loading': !userStore.loaded }">
             {{ userStore.loaded ? t('app.apiReady') : t('common.loading') }}
           </span>
@@ -259,23 +200,12 @@ async function enablePush(): Promise<void> {
   border-radius: 10px;
   background: #fff;
   color: #475569;
+  text-decoration: none;
+  cursor: pointer;
 }
 .notification-button:hover {
   border-color: #93c5fd;
   color: #1d4ed8;
-}
-.notification-button:disabled {
-  cursor: default;
-  opacity: 0.7;
-}
-.notification-button__dot {
-  position: absolute;
-  top: 7px;
-  right: 7px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #16a34a;
 }
 .sidebar-logout {
   position: absolute;

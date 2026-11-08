@@ -16,6 +16,7 @@
   "nav": {
     "overview": "总览",
     "assistant": "助手",
+    "notifications": "通知",
     "schedule": "日程",
     "dailySummary": "每日总结",
     "add": "添加事件",
@@ -203,6 +204,9 @@
     "scheduledEnd": "结束 {time}"
   },
   "notifications": {
+    "pageTitle": "通知",
+    "pageHint": "点击铃铛查看最近通知；重要提醒也会同步到助手对话。",
+    "backToOverview": "返回总览",
     "inboxTitle": "最近通知",
     "inboxHint": "重要提醒会同步到助手对话，这里保留最近记录。",
     "empty": "暂时没有需要处理的通知。",
@@ -212,7 +216,10 @@
       "screen": "屏幕提醒"
     },
     "status": {
-      "sent": "已送达",
+      "accepted": "推送服务已接收（手机显示未确认）",
+      "connected": "屏幕通道已连接",
+      "pending": "等待投递",
+      "recorded": "已记录",
       "failed": "投递失败"
     }
   },

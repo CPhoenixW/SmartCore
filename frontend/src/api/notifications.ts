@@ -19,6 +19,8 @@ export interface NotificationRecord {
   scheduledAt: string;
   sentAt?: string | null;
   stat: string;
+  deliveryState?: string | null;
+  deliveryDetail?: string | null;
   failReason?: string | null;
 }
 

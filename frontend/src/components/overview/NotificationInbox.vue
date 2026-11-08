@@ -43,7 +43,12 @@ function channelLabel(channel: string): string {
 }
 
 function statusLabel(row: NotificationRecord): string {
-  return row.stat === "sent" ? t("notifications.status.sent") : t("notifications.status.failed");
+  const state = row.deliveryState || (row.stat === "sent" ? "accepted" : row.stat);
+  if (state === "accepted") return t("notifications.status.accepted");
+  if (state === "connected") return t("notifications.status.connected");
+  if (state === "pending") return t("notifications.status.pending");
+  if (state === "failed") return t("notifications.status.failed");
+  return t("notifications.status.recorded");
 }
 
 function openNotification(row: NotificationRecord): void {
@@ -77,7 +82,7 @@ function refresh(): void {
         <span class="notification-inbox__main">
           <strong>{{ row.title }}</strong>
           <small>{{ row.content }}</small>
-          <span class="notification-inbox__meta"><time>{{ formatTime(row.scheduledAt) }}</time><em>{{ channelLabel(row.channel) }} · {{ statusLabel(row) }}</em></span>
+          <span class="notification-inbox__meta"><time>{{ formatTime(row.scheduledAt) }}</time><em :title="row.deliveryDetail || undefined">{{ channelLabel(row.channel) }} · {{ statusLabel(row) }}</em></span>
         </span>
         <ExternalLink :size="15" aria-hidden="true" />
       </button>

@@ -22,7 +22,7 @@ const Blank = defineComponent({ template: "<div />" });
 function makeRouter() {
   return createRouter({
     history: createMemoryHistory(),
-    routes: ["overview", "assistant", "settings", "memory", "schedule", "add", "update", "course", "dailySummary", "device", "ideas", "logs", "login"].map(
+    routes: ["overview", "assistant", "notifications", "settings", "memory", "schedule", "add", "update", "course", "dailySummary", "device", "ideas", "logs", "login"].map(
       (name) => ({ path: `/${name}`, name, component: Blank }),
     ),
   });
@@ -46,6 +46,7 @@ describe("mobile shell", () => {
     expect(wrapper.find(".sidebar").exists()).toBe(true);
     expect(wrapper.find(".sidebar--mobile").exists()).toBe(true);
     expect(wrapper.find(".mobile-menu").exists()).toBe(true);
+    expect(wrapper.find(".notification-button").attributes("href")).toContain("/notifications");
   });
 
   it("desktop layout keeps the sidebar and has no tab bar", async () => {
@@ -57,7 +58,7 @@ describe("mobile shell", () => {
     await nextTick();
     expect(wrapper.find(".mobile-tabbar").exists()).toBe(false);
     expect(wrapper.find(".sidebar").exists()).toBe(true);
-    expect(wrapper.findAll(".sidebar .nav-list a").map((a) => a.text())).toEqual(["助手", "总览", "设置"]);
+    expect(wrapper.findAll(".sidebar .nav-list a").map((a) => a.text())).toEqual(["助手", "总览", "通知", "设置"]);
   });
 
   it("phone overview merges the schedule into one column", async () => {

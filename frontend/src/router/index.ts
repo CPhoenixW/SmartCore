@@ -11,6 +11,7 @@ export const router = createRouter({
       children: [
         { path: "", alias: "overview", name: "overview", component: () => import("@/views/OverviewView.vue") },
         { path: "assistant", name: "assistant", component: () => import("@/views/AssistantView.vue") },
+        { path: "notifications", name: "notifications", component: () => import("@/views/NotificationsView.vue") },
         { path: "schedule", name: "schedule", component: () => import("@/views/ScheduleView.vue") },
         { path: "daily-summary", name: "dailySummary", component: () => import("@/views/DailySummaryView.vue") },
         { path: "add", name: "add", component: () => import("@/views/AddEventView.vue") },
@@ -38,7 +39,7 @@ export const router = createRouter({
 });
 
 
-const mobileRoutes = new Set(["login", "overview", "assistant", "settings", "add"]);
+const mobileRoutes = new Set(["login", "overview", "assistant", "notifications", "settings", "add"]);
 router.beforeEach((to) => {
   if (typeof window === "undefined" || !window.matchMedia("(max-width: 760px)").matches) return;
   if (mobileRoutes.has(String(to.name || ""))) return;

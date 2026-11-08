@@ -9,7 +9,6 @@ import EmptyState from "@/components/base/EmptyState.vue";
 import EventCard from "@/components/events/EventCard.vue";
 import EventStatusToggle from "@/components/events/EventStatusToggle.vue";
 import MobileOverview from "@/components/overview/MobileOverview.vue";
-import NotificationInbox from "@/components/overview/NotificationInbox.vue";
 import { useViewport } from "@/composables/useViewport";
 import { eventApi } from "@/api/event";
 import { runtimeApi } from "@/api/runtime";
@@ -108,7 +107,6 @@ function eventTimeRange(event: SmartCoreEvent): string {
       <BaseCard :title="t('overview.next72Title')"><div class="overview-event-list"><EventCard v-for="event in next72h" :key="event.evtId" :event="event" @select="openEvent" /><EmptyState v-if="!next72h.length" :text="t('overview.emptyDeadline')" /></div></BaseCard>
       <BaseCard :title="t('overview.inboxTitle')"><div class="overview-inbox"><RouterLink class="overview-inbox__row" :to="{ name: 'ideas' }"><span>{{ t("overview.openIdeas") }}</span><strong>{{ openIdeas.length }}</strong><ArrowRight :size="15" aria-hidden="true" /></RouterLink><RouterLink class="overview-inbox__row" :to="{ name: 'settings' }"><span>{{ t("overview.notifications") }}</span><span class="overview-inbox__muted">{{ t("overview.manageInSettings") }}</span><ArrowRight :size="15" aria-hidden="true" /></RouterLink></div></BaseCard>
     </section>
-    <NotificationInbox />
     <RouterLink class="overview-add" :to="{ name: 'add' }" :aria-label="t('overview.addEvent')"><Plus :size="20" aria-hidden="true" /></RouterLink>
   </div>
 </template>

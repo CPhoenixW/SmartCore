@@ -15,6 +15,8 @@ const { pushMock, rows } = vi.hoisted(() => ({
       scheduledAt: "2026-07-31T09:50:00+08:00",
       sentAt: "2026-07-31T09:50:01+08:00",
       stat: "sent",
+      deliveryState: "accepted",
+      deliveryDetail: "push_provider_accepted",
     },
     {
       notifyId: "n-2",
@@ -44,6 +46,7 @@ describe("NotificationInbox", () => {
 
     expect(wrapper.findAll(".notification-inbox__row")).toHaveLength(2);
     expect(wrapper.find(".notification-inbox__row--failed").exists()).toBe(true);
+    expect(wrapper.text()).toContain("推送服务已接收（手机显示未确认）");
     await wrapper.find(".notification-inbox__row").trigger("click");
 
     expect(pushMock).toHaveBeenCalledWith({ name: "update", query: { evtId: "evt-1" } });
