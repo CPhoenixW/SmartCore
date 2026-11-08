@@ -19,9 +19,7 @@ RUN --mount=type=cache,id=smartcore-dsh-npm,target=/root/.npm \
 
 COPY dsh/bridge ./bridge
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends util-linux \
-    && rm -rf /var/lib/apt/lists/* \
+RUN command -v nsenter >/dev/null \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin smartcore \
     && mkdir -p /data/dsh-home /data/scopes \
     && chown -R smartcore:smartcore /runtime/dsh /data
