@@ -17,12 +17,14 @@ COPY dsh/package.json dsh/package-lock.json ./
 RUN --mount=type=cache,id=smartcore-dsh-npm,target=/root/.npm \
     npm ci --omit=dev --ignore-scripts
 
-COPY dsh/bridge ./bridge
-
 RUN command -v nsenter >/dev/null \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin smartcore \
     && mkdir -p /data/dsh-home /data/scopes \
-    && chown -R smartcore:smartcore /runtime/dsh /data
+    && chown smartcore:smartcore /data/dsh-home /data/scopes
+
+# Bridge sources are immutable at runtime; copy them with the runtime owner
+# without recursively chowning the large node_modules tree.
+COPY --chown=smartcore:smartcore dsh/bridge ./bridge
 
 ARG VCS_REF=unknown
 LABEL org.opencontainers.image.revision="${VCS_REF}"
