@@ -52,6 +52,13 @@
     handle @public_delete {
         import smartcore_proxy
     }
+
+    @ntfy path /ntfy /ntfy/* /ntfy/*/* /ntfy/*/*/* /ntfy/*/*/*/* /ntfy/*/*/*/*/*
+    handle @ntfy {
+        uri strip_prefix /ntfy
+        reverse_proxy ntfy:80
+    }
+
     handle {
         respond "Not Found" 404
     }
