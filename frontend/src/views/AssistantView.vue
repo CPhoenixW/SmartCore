@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { Copy, FileText, ImagePlus, Paperclip, Quote, Search, Send, WifiOff, X } from "@lucide/vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { Bell, Bot, Copy, FileText, Paperclip, Quote, Search, Send, WifiOff, X } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import { assistantApi } from "@/api/assistant";
@@ -61,6 +61,76 @@ function scrollToMessage(messageId: string): void {
 function isReportMessage(message: AssistantMessage): boolean {
   return message.role === "assistant" && /(每日工作汇报|每日总结|工作汇报|daily summary)/i.test(message.text);
 }
+type ReminderCard = {
+  title: string;
+  targetLabel: string;
+  relativeLabel: string;
+  detail: string;
+  phaseLabel: string;
+};
+
+function localDateKey(value: Date): string {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+}
+
+function reminderTargetLabel(target: Date): string {
+  const now = new Date();
+  const today = localDateKey(now);
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const targetKey = localDateKey(target);
+  const day = targetKey === today
+    ? t("assistant.reminderToday")
+    : targetKey === localDateKey(tomorrow)
+      ? t("assistant.reminderTomorrow")
+      : new Intl.DateTimeFormat(locale.value === "en-US" ? "en-US" : "zh-CN", { month: "numeric", day: "numeric" }).format(target);
+  const clock = new Intl.DateTimeFormat(locale.value === "en-US" ? "en-US" : "zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(target);
+  return `${day} ${clock}`;
+}
+
+function reminderRelativeLabel(target: Date): string {
+  const delta = target.getTime() - Date.now();
+  if (delta < -60_000) return t("assistant.reminderStarted");
+  if (delta < 60_000) return t("assistant.reminderInMinute");
+  const minutes = Math.max(1, Math.ceil(delta / 60_000));
+  if (minutes < 60) return t("assistant.reminderInMinutes", { count: minutes });
+  return t("assistant.reminderInHours", { count: Math.ceil(minutes / 60) });
+}
+
+function reminderCard(message: AssistantMessage): ReminderCard | null {
+  if (message.role !== "assistant") return null;
+  const text = message.text.trim();
+  if (!text || (!/^🔔/.test(text) && !/(?:计划将在|plan (?:starts|ends)|starts in|ends in)/i.test(text))) return null;
+  const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const title = (lines.shift() || t("assistant.reminderTitle")).replace(/^🔔\s*/, "").trim();
+  const body = lines.join(" ");
+  const iso = body.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?/i)?.[0];
+  let target: Date | null = iso ? new Date(iso) : null;
+  if (!target || Number.isNaN(target.getTime())) {
+    const clock = body.match(/(?:今天|明天|today|tomorrow)?\s*(\d{1,2}):(\d{2})/i);
+    if (clock) {
+      target = new Date();
+      target.setHours(Number(clock[1]), Number(clock[2]), 0, 0);
+      if (/明天|tomorrow/i.test(clock[0] || "")) target.setDate(target.getDate() + 1);
+    }
+  }
+  const ending = /(结束|ends?|end)/i.test(body);
+  const normalizedDetail = body
+    .replace(iso || "", "")
+    .replace(/计划将在\s*10\s*分钟后(?:开始|结束)\s*[：:]?/i, "")
+    .replace(/the plan\s+(?:starts|ends)\s+in\s+10\s+minutes\s*[：:]?/i, "")
+    .trim();
+  const detail = target && !Number.isNaN(target.getTime()) ? "" : normalizedDetail;
+  return {
+    title,
+    targetLabel: target && !Number.isNaN(target.getTime()) ? reminderTargetLabel(target) : t("assistant.reminderScheduled"),
+    relativeLabel: target && !Number.isNaN(target.getTime()) ? reminderRelativeLabel(target) : (body.match(/(?:还有\s*[^，。]+|in\s+[^,.]+)/i)?.[0] || t("assistant.reminderPending")),
+    detail,
+    phaseLabel: ending ? t("assistant.reminderEnd") : t("assistant.reminderStart"),
+  };
+}
+
+const reminderCards = computed(() => new Map(messages.value.map((message) => [message.messageId, reminderCard(message)])));
 function attachmentUrl(attachment: AssistantAttachment): string {
   return attachment.url || assistantApi.attachmentUrl(attachment.uploadId);
 }
@@ -337,6 +407,10 @@ onBeforeUnmount(() => {
   <div class="assistant-page">
     <section class="assistant-shell card">
       <header class="assistant-shell__header">
+        <div class="assistant-identity">
+          <span class="assistant-identity__avatar" aria-hidden="true"><Bot :size="18" :stroke-width="2" /></span>
+          <span class="assistant-identity__copy"><strong>{{ t("assistant.title") }}</strong><small>{{ t("assistant.ready") }}</small></span>
+        </div>
         <button v-if="!searchExpanded" class="assistant-search-toggle" type="button" :aria-label="t('assistant.openSearch')" :title="t('assistant.openSearch')" @click="searchExpanded = true"><Search :size="17" aria-hidden="true" /></button>
         <form v-else class="assistant-search" role="search" @submit.prevent="runSearch">
           <Search :size="16" aria-hidden="true" />
@@ -376,7 +450,16 @@ onBeforeUnmount(() => {
             <p>{{ message.replyToText }}</p>
           </div>
           <div class="assistant-message__body">
-            <MarkdownContent v-if="message.role === 'assistant'" :content="message.text || t('assistant.pending')" />
+            <div v-if="reminderCards.get(message.messageId)" class="assistant-reminder-card">
+              <div class="assistant-reminder-card__top">
+                <span class="assistant-reminder-card__icon" aria-hidden="true"><Bell :size="17" /></span>
+                <div class="assistant-reminder-card__main"><strong>{{ reminderCards.get(message.messageId)?.title }}</strong><small>{{ reminderCards.get(message.messageId)?.phaseLabel }}</small></div>
+                <span class="assistant-reminder-card__relative">{{ reminderCards.get(message.messageId)?.relativeLabel }}</span>
+              </div>
+              <div class="assistant-reminder-card__time"><time>{{ reminderCards.get(message.messageId)?.targetLabel }}</time><span aria-hidden="true">·</span><span>{{ reminderCards.get(message.messageId)?.relativeLabel }}</span></div>
+              <p v-if="reminderCards.get(message.messageId)?.detail" class="assistant-reminder-card__detail">{{ reminderCards.get(message.messageId)?.detail }}</p>
+            </div>
+            <MarkdownContent v-else-if="message.role === 'assistant'" :content="message.text || t('assistant.pending')" />
             <p v-else>{{ message.text || t("assistant.pending") }}</p>
           </div>
           <div v-if="message.attachments?.length" class="assistant-attachments" :aria-label="t('assistant.attachments')">
@@ -1251,5 +1334,129 @@ onBeforeUnmount(() => {
   .assistant-send { width: 44px; min-width: 44px; }
   .assistant-capabilities { font-size: 10px; }
   .assistant-quote-preview > span { max-width: calc(100vw - 86px); }
+}
+.assistant-identity {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  margin-right: auto;
+}
+.assistant-identity__avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border: 1px solid #bfdbfe;
+  border-radius: 11px;
+  background: linear-gradient(145deg, #e0ecff, #fff);
+  color: #2563eb;
+}
+.assistant-identity__copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+.assistant-identity__copy strong {
+  overflow: hidden;
+  color: #1e293b;
+  font-size: 13px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.assistant-identity__copy small {
+  overflow: hidden;
+  color: #8a98aa;
+  font-size: 10px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.assistant-messages {
+  gap: 14px;
+  background: #f8fafc;
+}
+.assistant-message {
+  max-width: min(820px, 88%);
+  border-color: #e6ebf2;
+  box-shadow: 0 2px 9px rgb(15 23 42 / 4%);
+}
+.assistant-message--user { max-width: min(680px, 82%); }
+.assistant-message--report { width: min(900px, 100%); }
+.assistant-reminder-card {
+  display: grid;
+  gap: 9px;
+  min-width: min(300px, 100%);
+  max-width: 100%;
+  padding: 12px 13px;
+  border: 1px solid #d8e5f3;
+  border-radius: 13px;
+  background: linear-gradient(145deg, #f5f9ff, #fff 76%);
+  color: #1e293b;
+}
+.assistant-reminder-card__top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.assistant-reminder-card__icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 10px;
+  background: #e0ecff;
+  color: #2563eb;
+}
+.assistant-reminder-card__main {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 2px;
+}
+.assistant-reminder-card__main strong {
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.assistant-reminder-card__main small {
+  color: #718096;
+  font-size: 11px;
+}
+.assistant-reminder-card__relative {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #eaf2ff;
+  color: #2563eb;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.assistant-reminder-card__time {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+}
+.assistant-reminder-card__time span:last-child { color: #2563eb; font-weight: 600; }
+.assistant-reminder-card__detail { color: #718096; font-size: 11px; line-height: 1.45; }
+@media (max-width: 760px) {
+  .assistant-identity__copy strong { font-size: 12px; }
+  .assistant-identity__copy small { display: none; }
+  .assistant-messages { gap: 12px; background: #f8fafc; }
+  .assistant-message { max-width: 91%; }
+  .assistant-message--user { max-width: 88%; }
+  .assistant-message--report { width: 100%; max-width: 100%; }
+  .assistant-reminder-card { min-width: 0; padding: 11px 12px; }
+  .assistant-reminder-card__main strong { white-space: normal; }
 }
 </style>

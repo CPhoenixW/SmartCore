@@ -298,7 +298,18 @@
     "addAttachment": "添加图片或文档",
     "attachmentPrompt": "请分析我附加的文件",
     "attachments": "消息附件",
-    "capabilities": "支持图片理解；PDF、TXT、Markdown、CSV、DOCX 会提取文字，ZIP 仅作为附件保存。"
+    "capabilities": "支持图片理解；PDF、TXT、Markdown、CSV、DOCX 会提取文字，ZIP 仅作为附件保存。",
+    "reminderTitle": "计划提醒",
+    "reminderToday": "今天",
+    "reminderTomorrow": "明天",
+    "reminderStart": "计划开始",
+    "reminderEnd": "计划结束",
+    "reminderStarted": "已开始",
+    "reminderInMinute": "不到 1 分钟",
+    "reminderInMinutes": "还有 {count} 分钟",
+    "reminderInHours": "还有 {count} 小时",
+    "reminderScheduled": "已安排",
+    "reminderPending": "待提醒"
   },
   "add": {
     "title": "添加事件",

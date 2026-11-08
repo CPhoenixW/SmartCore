@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -21,6 +23,7 @@ from app.server.new_core.event_relations import (
     create_course_event,
     create_plan_event,
     expand_course_dates,
+    format_plan_reminder_content,
     get_event,
     list_events,
     query_events,
@@ -289,6 +292,17 @@ def test_plan_keeps_two_hidden_automatic_reminders() -> None:
         assert list_reminder_events(db) == []
     finally:
         db.close()
+
+
+def test_plan_reminder_content_uses_human_date_and_relative_time() -> None:
+    reference = datetime.fromisoformat("2026-11-08T13:50:00+08:00")
+    target = datetime.fromisoformat("2026-11-08T14:00:00+08:00")
+
+    content = format_plan_reminder_content(target, "开始", reference=reference)
+
+    assert content == "计划将在今天 14:00 开始 · 还有 10 分钟"
+    assert "T" not in content
+    assert "+08:00" not in content
 
 
 def test_standalone_reminder_can_be_created_listed_and_updated() -> None:
@@ -561,6 +575,8 @@ def test_plan_owns_start_and_end_minus_ten_reminders(monkeypatch) -> None:
         assert calls[0]["phase"] == "start"
         assert calls[0]["evtId"] == event["evtId"]
         assert "开始前 10 分钟" in calls[0]["title"]
+        assert "今天 10:00" in calls[0]["content"]
+        assert "T" not in calls[0]["content"]
 
         calls.clear()
         scheduler.runReminderTick(

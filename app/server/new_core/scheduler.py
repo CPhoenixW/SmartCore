@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.server.new_core import crud
-from app.server.new_core.event_relations import mark_reminder_fired
+from app.server.new_core.event_relations import format_plan_reminder_content, mark_reminder_fired
 from app.server.new_core.models import AppUser, DdlEvt, EvtBase, PlanEvt, RemindEvt
 from app.server.new_core.notify import routeNotify
 from app.server.new_core.relation_maintenance import (
@@ -37,6 +37,8 @@ def _plan_reminder_copy(
     db: Session,
     reminder: RemindEvt,
     plan_base: EvtBase,
+    *,
+    now: datetime | None = None,
 ) -> tuple[str, str]:
     plan = db.get(PlanEvt, reminder.planEvtId)
     if plan is None:
@@ -51,12 +53,12 @@ def _plan_reminder_copy(
         phase = "ends" if ending else "starts"
         return (
             f"{plan_base.title} · 10 min before it {phase}",
-            f"The plan {phase} in 10 minutes: {target.isoformat()}",
+            format_plan_reminder_content(target, phase, reference=now, english=True),
         )
     phase = "结束" if ending else "开始"
     return (
         f"{plan_base.title} · {phase}前 10 分钟",
-        f"计划将在 10 分钟后{phase}：{target.isoformat()}",
+        format_plan_reminder_content(target, phase, reference=now),
     )
 
 
@@ -98,7 +100,7 @@ def runReminderTick(
                 db.commit()
                 continue
             target_evt_id = reminder.planEvtId
-            title, content = _plan_reminder_copy(db, reminder, plan_base)
+            title, content = _plan_reminder_copy(db, reminder, plan_base, now=nowDt)
 
         if nowDt - trigger > _REMINDER_DELIVERY_WINDOW:
             mark_reminder_fired(db, reminder_base.evtId, fired_at=nowDt.isoformat())

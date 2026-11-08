@@ -298,7 +298,18 @@
     "addAttachment": "Add image or document",
     "attachmentPrompt": "Please analyze the attached files",
     "attachments": "Message attachments",
-    "capabilities": "Images are analyzed natively; PDF, TXT, Markdown, CSV, and DOCX text is extracted, while ZIP files stay as attachments."
+    "capabilities": "Images are analyzed natively; PDF, TXT, Markdown, CSV, and DOCX text is extracted, while ZIP files stay as attachments.",
+    "reminderTitle": "Plan reminder",
+    "reminderToday": "Today",
+    "reminderTomorrow": "Tomorrow",
+    "reminderStart": "Plan starts",
+    "reminderEnd": "Plan ends",
+    "reminderStarted": "Started",
+    "reminderInMinute": "In less than a minute",
+    "reminderInMinutes": "In {count} minutes",
+    "reminderInHours": "In {count} hours",
+    "reminderScheduled": "Scheduled",
+    "reminderPending": "Reminder pending"
   },
   "add": {
     "title": "Add event",

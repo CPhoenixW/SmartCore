@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import date, datetime, time, timedelta
+from math import ceil
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -47,6 +48,42 @@ def _parse_clock(value: str) -> time:
         except ValueError:
             continue
     raise ValueError(f"invalid course time: {value}")
+
+
+def format_plan_reminder_content(
+    target: datetime,
+    phase: str,
+    *,
+    reference: datetime | None = None,
+    english: bool = False,
+) -> str:
+    """Return a human-readable reminder without exposing an ISO timestamp."""
+    target = target.astimezone(_DEFAULT_TZ)
+    reference = (reference or datetime.now(_DEFAULT_TZ)).astimezone(_DEFAULT_TZ)
+    if target.date() == reference.date():
+        day = "today" if english else "今天"
+    elif target.date() == (reference + timedelta(days=1)).date():
+        day = "tomorrow" if english else "明天"
+    elif english:
+        day = f"{target.strftime('%b')} {target.day}"
+    else:
+        day = f"{target.month}月{target.day}日"
+    clock = f"{target.hour:02d}:{target.minute:02d}"
+    delta_seconds = (target - reference).total_seconds()
+    if delta_seconds < -60:
+        relative = "started" if english else "已开始"
+    elif delta_seconds < 60:
+        relative = "in less than 1 minute" if english else "不到 1 分钟"
+    else:
+        minutes = max(1, ceil(delta_seconds / 60))
+        if minutes < 60:
+            relative = f"in {minutes} minutes" if english else f"还有 {minutes} 分钟"
+        else:
+            hours = max(1, ceil(minutes / 60))
+            relative = f"in {hours} hours" if english else f"还有 {hours} 小时"
+    if english:
+        return f"The plan {phase} at {day} {clock} · {relative}"
+    return f"计划将在{day} {clock} {phase} · {relative}"
 
 
 def _actor_kind(src: str) -> str:
@@ -387,12 +424,12 @@ def sync_plan_reminders(
         "plan_start_10m": (
             start - timedelta(minutes=_REMINDER_OFFSET_MIN),
             f"{base.title} · 开始前 10 分钟",
-            f"计划将在 10 分钟后开始：{start.isoformat()}",
+            format_plan_reminder_content(start, "开始"),
         ),
         "plan_end_10m": (
             end - timedelta(minutes=_REMINDER_OFFSET_MIN),
             f"{base.title} · 结束前 10 分钟",
-            f"计划将在 10 分钟后结束：{end.isoformat()}",
+            format_plan_reminder_content(end, "结束"),
         ),
     }
     existing = {

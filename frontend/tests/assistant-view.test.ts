@@ -86,6 +86,32 @@ beforeEach(() => {
     expect(wrapper.findAll(".markdown-content li")).toHaveLength(2);
   });
 
+  it("renders reminder notifications as compact human-readable cards", async () => {
+    readMock.mockResolvedValueOnce({
+      conversationId: "pwa-test",
+      title: "提醒",
+      stat: "active",
+      createdAt: "2026-07-31T10:00:00+08:00",
+      updatedAt: "2026-07-31T10:00:00+08:00",
+      lastMessageAt: "2026-07-31T10:00:00+08:00",
+      messages: [{
+        messageId: "assistant-reminder",
+        conversationId: "pwa-test",
+        role: "assistant",
+        text: "🔔 计算机网络作业 · 开始前 10 分钟\n\n计划将在 10 分钟后开始：2026-11-08T14:00:00+08:00",
+        stat: "complete",
+        createdAt: "2026-07-31T10:00:00+08:00",
+      }],
+    });
+    const wrapper = mount(AssistantView, { global: { plugins: [i18n] } });
+    await flushPromises();
+
+    expect(wrapper.find(".assistant-identity").text()).toContain("SmartCore 助手");
+    expect(wrapper.find(".assistant-reminder-card").exists()).toBe(true);
+    expect(wrapper.find(".assistant-reminder-card").text()).not.toContain("2026-11-08T14:00:00+08:00");
+    expect(wrapper.find(".assistant-reminder-card").text()).toContain("计划开始");
+  });
+
   it("keeps an empty conversation quiet and focused", async () => {
     readMock.mockResolvedValueOnce({ conversationId: "pwa-test", title: "SmartCore 助手", stat: "active", createdAt: "2026-07-31T10:00:00+08:00", updatedAt: "2026-07-31T10:00:00+08:00", lastMessageAt: null, messages: [] });
     const wrapper = mount(AssistantView, { global: { plugins: [i18n] } });
