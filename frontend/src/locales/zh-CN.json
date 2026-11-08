@@ -140,6 +140,8 @@
     "clockLoading": "正在同步时间…",
     "openSchedule": "查看日程",
     "nextAction": "下一项行动",
+    "currentAction": "当前行动",
+    "todaySchedule": "今日安排",
     "askPlaceholder": "直接告诉助手你要查什么或记录什么",
     "askAssistant": "问助手",
     "todayList": "今天",
@@ -187,7 +189,7 @@
       "storm": "雷雨",
       "changeable": "天气多变"
     },
-    "restOfDay": "今天剩下",
+    "restOfDay": "今日安排",
     "mobileDetail": "事项详情",
     "timeRange": "时间段",
     "editWithAssistant": "让助手编辑",
@@ -195,7 +197,24 @@
     "laterCounts": "明天 {tomorrow} 件 · 后天 {dayAfter} 件",
     "now": "现在",
     "inMinutes": "还有 {count} 分钟",
-    "inHours": "还有 {count} 小时"
+    "inHours": "还有 {count} 小时",
+    "current": "进行中",
+    "scheduledStart": "开始 {time}",
+    "scheduledEnd": "结束 {time}"
+  },
+  "notifications": {
+    "inboxTitle": "最近通知",
+    "inboxHint": "重要提醒会同步到助手对话，这里保留最近记录。",
+    "empty": "暂时没有需要处理的通知。",
+    "openPrompt": "请查看通知",
+    "channel": {
+      "browser": "手机推送",
+      "screen": "屏幕提醒"
+    },
+    "status": {
+      "sent": "已送达",
+      "failed": "投递失败"
+    }
   },
   "dailySummary": {
     "title": "每日总结",

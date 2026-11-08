@@ -1,9 +1,12 @@
+# syntax=docker/dockerfile:1.7
+
 FROM node:22-alpine AS frontend-deps
 
 WORKDIR /frontend
 
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci --no-audit --no-fund
+RUN --mount=type=cache,id=smartcore-npm,target=/root/.npm \
+    npm ci --no-audit --no-fund
 
 
 FROM frontend-deps AS frontend-builder
@@ -28,7 +31,8 @@ ARG PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
 
 COPY requirements.lock ./
 
-RUN pip install --no-cache-dir \
+RUN --mount=type=cache,id=smartcore-pip,target=/root/.cache/pip \
+    pip install --cache-dir /root/.cache/pip \
     --index-url "${PIP_INDEX_URL}" \
     --trusted-host "${PIP_TRUSTED_HOST}" \
     --prefix=/python-deps \
@@ -49,7 +53,8 @@ ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 ARG PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
 
 COPY requirements-dev.lock ./
-RUN pip install --no-cache-dir \
+RUN --mount=type=cache,id=smartcore-pip,target=/root/.cache/pip \
+    pip install --cache-dir /root/.cache/pip \
     --index-url "${PIP_INDEX_URL}" \
     --trusted-host "${PIP_TRUSTED_HOST}" \
     -r requirements-dev.lock

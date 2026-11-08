@@ -67,7 +67,8 @@ describe("mobile shell", () => {
     await nextTick();
     expect(wrapper.find(".m-overview").exists()).toBe(true);
     expect(wrapper.find(".overview-columns").exists()).toBe(false);
-    expect(wrapper.text()).toContain("今天剩下");
+    expect(wrapper.text()).toContain("今日安排");
+    expect(wrapper.text()).not.toContain("今天剩下");
     expect(wrapper.find(".natural-input").exists()).toBe(false);
   });
 

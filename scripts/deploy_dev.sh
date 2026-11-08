@@ -186,6 +186,11 @@ main() {
     dsh_image_id="$(docker image inspect --format '{{.Id}}' "$DSH_IMAGE_REPO:$sha")"
     write_candidate_state "$sha" "$app_image_id" "$dsh_image_id"
 
+    # Keep the verified candidate and recent rollback images, while dropping
+    # stale tags. BuildKit cache is retained here so a follow-up promote can
+    # reuse it; production promotion performs the cache TTL cleanup.
+    SMARTCORE_PRUNE_BUILD_CACHE=0 "$ROOT/scripts/prune_docker_artifacts.sh" --keep-tag "$sha" --no-build-cache || log "warning: Docker artifact cleanup failed"
+
     log "candidate verified: $sha"
     log "dev health: http://127.0.0.1:${SMARTCORE_DEV_PORT:-18000}/healthz"
     log "after manual confirmation run /opt/smartcore/scripts/promote_prod.sh"

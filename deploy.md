@@ -25,6 +25,16 @@ ssh server 'cd /opt/smartcore-dev && ./scripts/deploy_dev.sh'
 ssh server 'cd /opt/smartcore && ./scripts/promote_prod.sh'
 ```
 
+候选构建复用 Docker 的 npm、pip 和 DSH 依赖缓存；提升生产后会自动清理旧的
+SmartCore/DSH 镜像标签、悬空层和超过 7 天的 BuildKit 缓存。清理不会触碰 Docker
+卷、SQLite 数据库或备份。默认每个镜像仓库保留最近 3 个版本和当前/上一版本，
+可通过 `SMARTCORE_IMAGE_RETENTION`、`SMARTCORE_BUILD_CACHE_TTL` 调整；需要只预览
+清理内容时运行：
+
+```bash
+ssh server 'SMARTCORE_PRUNE_DRY_RUN=1 /opt/smartcore-dev/scripts/prune_docker_artifacts.sh --keep-tag <candidate-sha>'
+```
+
 涉及 SmartCore Agent 模型时，在候选镜像通过后检查 DSH Runtime 的健康、MCP 工具发现和
 一次 PWA 助手请求。DSH 配置由 `deploy/dsh.env` 注入，不在候选机外保存密钥。
 

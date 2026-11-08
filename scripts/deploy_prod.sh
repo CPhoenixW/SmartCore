@@ -265,6 +265,12 @@ promote() {
     fi
 
     write_state "$new_sha" "$deployed_sha"
+
+    # Named images are retained for the current release and one rollback path;
+    # old verification tags, dangling layers, and expired BuildKit cache are
+    # safe to reclaim. Volumes and database backups are never pruned.
+    SMARTCORE_PRUNE_BUILD_CACHE=1 "$ROOT/scripts/prune_docker_artifacts.sh" --keep-tag "$new_sha" --keep-tag "$deployed_sha" || log "warning: Docker artifact cleanup failed"
+
     log "deployment complete"
     log "revision: $new_sha"
     compose ps

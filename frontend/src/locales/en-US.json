@@ -140,6 +140,8 @@
     "clockLoading": "Syncing time…",
     "openSchedule": "View schedule",
     "nextAction": "Next action",
+    "currentAction": "Current action",
+    "todaySchedule": "Today's schedule",
     "askPlaceholder": "Tell the assistant what to find or capture",
     "askAssistant": "Ask assistant",
     "todayList": "Today",
@@ -187,7 +189,7 @@
       "storm": "Storm",
       "changeable": "Changeable"
     },
-    "restOfDay": "Rest of today",
+    "restOfDay": "Today's schedule",
     "mobileDetail": "Event details",
     "timeRange": "Time range",
     "editWithAssistant": "Edit with assistant",
@@ -195,7 +197,24 @@
     "laterCounts": "Tomorrow {tomorrow} · Day after {dayAfter}",
     "now": "Now",
     "inMinutes": "In {count} min",
-    "inHours": "In {count} h"
+    "inHours": "In {count} h",
+    "current": "In progress",
+    "scheduledStart": "Starts {time}",
+    "scheduledEnd": "Ends {time}"
+  },
+  "notifications": {
+    "inboxTitle": "Recent notifications",
+    "inboxHint": "Important reminders also appear in the assistant chat; this keeps the latest ones visible.",
+    "empty": "No notifications need attention right now.",
+    "openPrompt": "Please review this notification",
+    "channel": {
+      "browser": "Phone push",
+      "screen": "Screen reminder"
+    },
+    "status": {
+      "sent": "Delivered",
+      "failed": "Delivery failed"
+    }
   },
   "dailySummary": {
     "title": "Daily summary",
