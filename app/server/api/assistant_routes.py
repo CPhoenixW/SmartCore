@@ -1,22 +1,27 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 from collections.abc import Callable, Iterator
 from datetime import datetime
+from io import BytesIO
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.server.agent.scope import issue_agent_scope
 from app.server.auth.security import require_authenticated_user_id
 from app.server.config import Settings, get_settings
 from app.server.db.session import get_db
+from app.server.new_core import crud
 from app.server.new_core.assistant_history import (
     PreparedAssistantRequest,
     complete_response,
@@ -34,6 +39,7 @@ from app.server.new_core.memory import (
     schedule_extraction,
     select_for_prompt,
 )
+from app.server.new_core.models import IdeaUpload
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +52,39 @@ class AssistantMessageBody(BaseModel):
     sessionId: str | None = Field(default=None, min_length=1, max_length=160)
     clientMessageId: str | None = Field(default=None, min_length=1, max_length=120)
     timezone: str | None = Field(default=None, min_length=1, max_length=64)
+    attachmentIds: list[str] = Field(default_factory=list, max_length=10)
+    replyToMessageId: str | None = Field(default=None, min_length=1, max_length=32)
 
 
 class AssistantConversationBody(BaseModel):
     title: str | None = Field(default=None, max_length=300)
+
+
+_ASSISTANT_UPLOAD_ALLOWED = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "application/pdf",
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/zip",
+    "application/x-zip-compressed",
+}
+_ASSISTANT_UPLOAD_EXT = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "application/pdf": ".pdf",
+    "text/plain": ".txt",
+    "text/markdown": ".md",
+    "text/csv": ".csv",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/zip": ".zip",
+    "application/x-zip-compressed": ".zip",
+}
+_DOCUMENT_MAX_CHARS = 16_000
 
 
 def _query_endpoint(endpoint: str) -> str:
@@ -110,6 +145,88 @@ def _attach_conversation_context(
         conversation_id=history.conversation.conversationId,
         exclude_message_id=history.user_message.messageId,
     )
+
+
+def _extract_document_text(path: Path, mime_type: str) -> str | None:
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return None
+    if mime_type in {"text/plain", "text/markdown", "text/csv"}:
+        return raw.decode("utf-8", errors="replace")[:_DOCUMENT_MAX_CHARS].strip() or None
+    if mime_type == "application/pdf":
+        try:
+            from pypdf import PdfReader
+
+            text = "\n\n".join(
+                str(page.extract_text() or "") for page in PdfReader(BytesIO(raw)).pages
+            )
+            return text[:_DOCUMENT_MAX_CHARS].strip() or None
+        except Exception:  # noqa: BLE001 - a non-text PDF remains a safe attachment
+            return None
+    if mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        try:
+            from xml.etree import ElementTree
+            from zipfile import ZipFile
+
+            with ZipFile(path) as archive:
+                xml = archive.read("word/document.xml")
+            root = ElementTree.fromstring(xml)
+            paragraphs: list[str] = []
+            for paragraph in root.iter(
+                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p"
+            ):
+                parts = [
+                    str(node.text or "")
+                    for node in paragraph.iter(
+                        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t"
+                    )
+                ]
+                if parts:
+                    paragraphs.append("".join(parts))
+            return "\n".join(paragraphs)[:_DOCUMENT_MAX_CHARS].strip() or None
+        except Exception:  # noqa: BLE001 - malformed documents stay storage-only
+            return None
+    return None
+
+
+def _attach_message_context(
+    event: dict[str, Any],
+    history: PreparedAssistantRequest,
+    db: Session,
+) -> None:
+    uploads = db.scalars(
+        select(IdeaUpload).where(
+            IdeaUpload.assistantMessageId == history.user_message.messageId,
+            IdeaUpload.userId == history.user_message.userId,
+        )
+    ).all()
+    if uploads:
+        by_id = {upload.uploadId: upload for upload in uploads}
+        ordered = [by_id[upload_id] for upload_id in by_id]
+        event["attachments"] = [
+            {
+                "uploadId": upload.uploadId,
+                "fileName": upload.fileName,
+                "mimeType": upload.mimeType,
+                "sizeBytes": upload.sizeBytes,
+            }
+            for upload in ordered
+        ]
+        document_context: list[dict[str, str]] = []
+        for upload in ordered:
+            if upload.mimeType.startswith("image/"):
+                continue
+            text = _extract_document_text(Path(upload.storagePath), upload.mimeType)
+            if text:
+                document_context.append({"fileName": upload.fileName, "text": text})
+        if document_context:
+            event["documentContext"] = document_context
+    if history.user_message.replyToMessageId and history.user_message.replyToText:
+        event["replyTo"] = {
+            "messageId": history.user_message.replyToMessageId,
+            "text": history.user_message.replyToText,
+        }
 
 
 def _attach_memory(
@@ -175,6 +292,112 @@ def _memory_follow_up(
     return follow_up
 
 
+def _upload_mime(file: UploadFile) -> str:
+    mime = (file.content_type or "").lower().strip()
+    if mime in _ASSISTANT_UPLOAD_ALLOWED:
+        return mime
+    suffix = Path(file.filename or "").suffix.lower()
+    by_suffix = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".pdf": "application/pdf",
+        ".txt": "text/plain",
+        ".md": "text/markdown",
+        ".csv": "text/csv",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".zip": "application/zip",
+    }
+    return by_suffix.get(suffix, mime)
+
+
+@router.post("/attachments")
+async def upload_assistant_attachments(
+    files: list[UploadFile] = File(...),
+    user_id: str = Depends(require_authenticated_user_id),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    crud.cleanupExpiredIdeaMedia(db)
+    if not files or len(files) > 10:
+        raise HTTPException(status_code=400, detail="upload 1 to 10 files")
+    results: list[dict[str, Any]] = []
+    for file in files:
+        mime = _upload_mime(file)
+        if mime not in _ASSISTANT_UPLOAD_ALLOWED:
+            raise HTTPException(
+                status_code=415,
+                detail="only images, PDF, TXT, Markdown, CSV, DOCX, and ZIP are supported",
+            )
+        content = await file.read(settings.idea_media_max_bytes + 1)
+        if not content or len(content) > settings.idea_media_max_bytes:
+            raise HTTPException(status_code=413, detail="attachment is empty or exceeds 20 MB")
+        name = Path(file.filename or "attachment").name[:300]
+        destination = settings.idea_media_path / f"{uuid4().hex}{_ASSISTANT_UPLOAD_EXT[mime]}"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(content)
+        try:
+            row = crud.createIdeaUpload(
+                db,
+                userId=user_id,
+                fileName=name,
+                mimeType=mime,
+                storagePath=str(destination),
+                sizeBytes=len(content),
+            )
+        except Exception:
+            destination.unlink(missing_ok=True)
+            raise
+        results.append({key: row[key] for key in ("uploadId", "fileName", "mimeType", "sizeBytes")})
+    return {"ok": True, "data": results}
+
+
+@router.get("/attachments/{upload_id}")
+def download_assistant_attachment(
+    upload_id: str,
+    user_id: str = Depends(require_authenticated_user_id),
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    row = db.scalar(
+        select(IdeaUpload).where(IdeaUpload.uploadId == upload_id, IdeaUpload.userId == user_id)
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="assistant attachment not found")
+    path = Path(row.storagePath)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="assistant attachment file not found")
+    disposition = "inline" if row.mimeType.startswith("image/") else "attachment"
+    return FileResponse(
+        path,
+        media_type=row.mimeType or mimetypes.guess_type(row.fileName)[0],
+        filename=row.fileName,
+        content_disposition_type=disposition,
+    )
+
+
+@router.delete("/attachments/{upload_id}")
+def delete_assistant_attachment(
+    upload_id: str,
+    user_id: str = Depends(require_authenticated_user_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    row = db.scalar(
+        select(IdeaUpload).where(IdeaUpload.uploadId == upload_id, IdeaUpload.userId == user_id)
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="assistant attachment not found")
+    if row.assistantMessageId:
+        raise HTTPException(
+            status_code=409, detail="assistant attachment is already part of a message"
+        )
+    path = Path(row.storagePath)
+    db.delete(row)
+    db.commit()
+    path.unlink(missing_ok=True)
+    return {"ok": True, "data": {"uploadId": upload_id}}
+
+
 def _history_error(exc: ValueError) -> HTTPException:
     detail = str(exc)
     return HTTPException(status_code=404 if "not found" in detail else 422, detail=detail)
@@ -193,6 +416,8 @@ def _prepare_history(
             conversation_id=_conversation_id(body),
             text=body.text,
             client_message_id=body.clientMessageId,
+            attachment_ids=body.attachmentIds,
+            reply_to_message_id=body.replyToMessageId,
         )
     except ValueError as exc:
         raise _history_error(exc) from exc
@@ -253,7 +478,10 @@ def _stream_dsh(
                         else:
                             response_parts.append(chunk)
                     if event_type == "done":
-                        response_text = str(payload.get("response") or "").strip() or "".join(response_parts).strip()
+                        response_text = (
+                            str(payload.get("response") or "").strip()
+                            or "".join(response_parts).strip()
+                        )
                         complete_response(db, history, response_text)
                         completed = True
                         if on_complete is not None and history.assistant_message.stat == "complete":
@@ -264,7 +492,11 @@ def _stream_dsh(
                         # after the stream closes.
                         payload = {**payload, "conversationId": history.conversation.conversationId}
                     if event_type == "error" and not completed:
-                        fail_response(db, history, str(payload.get("message") or "助手暂时不可用，请稍后重试。"))
+                        fail_response(
+                            db,
+                            history,
+                            str(payload.get("message") or "助手暂时不可用，请稍后重试。"),
+                        )
                         completed = True
                     yield _sse(payload)
     except (httpx.HTTPError, ValueError):
@@ -383,6 +615,7 @@ def assistant_message(
     history = _prepare_history(body, user_id=user_id, db=db)
     event["conversationId"] = history.conversation.conversationId
     _attach_conversation_context(event, history, db)
+    _attach_message_context(event, history, db)
     db.commit()
     if history.replay_response:
         return {
@@ -449,6 +682,7 @@ def assistant_stream(
     history = _prepare_history(body, user_id=user_id, db=db)
     event["conversationId"] = history.conversation.conversationId
     _attach_conversation_context(event, history, db)
+    _attach_message_context(event, history, db)
     db.commit()
     if history.replay_response:
         return StreamingResponse(

@@ -9,12 +9,20 @@ from typing import Any
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
-from app.server.new_core.models import AssistantConversation, AssistantMessage, nowIso
+from app.server.new_core.models import (
+    AssistantConversation,
+    AssistantMessage,
+    IdeaUpload,
+    NotifyLog,
+    nowIso,
+)
 
 MAX_CONVERSATION_ID = 160
 MAX_CLIENT_MESSAGE_ID = 120
 MAX_MESSAGE_TEXT = 12_000
 MAX_SEARCH_QUERY = 120
+MAX_ATTACHMENT_IDS = 10
+MAX_QUOTE_TEXT = 3_000
 
 
 def new_conversation_id() -> str:
@@ -117,6 +125,13 @@ def _assistant_client_id(client_message_id: str | None) -> str | None:
     return value
 
 
+def _attachment_ids(values: list[str] | None) -> list[str]:
+    ids = list(dict.fromkeys(str(item).strip() for item in (values or []) if str(item).strip()))
+    if len(ids) > MAX_ATTACHMENT_IDS:
+        raise ValueError("an assistant message supports at most 10 attachments")
+    return ids
+
+
 @dataclass
 class PreparedAssistantRequest:
     conversation: AssistantConversation
@@ -132,6 +147,8 @@ def prepare_request(
     conversation_id: str | None,
     text: str,
     client_message_id: str | None,
+    attachment_ids: list[str] | None = None,
+    reply_to_message_id: str | None = None,
 ) -> PreparedAssistantRequest:
     text = text.strip()
     if not text:
@@ -139,10 +156,25 @@ def prepare_request(
     if len(text) > MAX_MESSAGE_TEXT:
         raise ValueError("assistant message is too long")
     client_id = _assistant_client_id(client_message_id)
+    upload_ids = _attachment_ids(attachment_ids)
     # The web assistant is intentionally one continuous conversation. Ignore
     # stale ids sent by older clients and always resolve the server-owned
     # primary row so multiple devices converge on the same history.
     conversation = get_primary_conversation(db, user_id=user_id)
+    reply_id = str(reply_to_message_id or "").strip() or None
+    reply_text = None
+    if reply_id:
+        quoted = db.scalar(
+            select(AssistantMessage).where(
+                AssistantMessage.messageId == reply_id,
+                AssistantMessage.userId == user_id,
+                AssistantMessage.conversationId == conversation.conversationId,
+                AssistantMessage.stat != "pending",
+            )
+        )
+        if quoted is None:
+            raise ValueError("quoted message not found")
+        reply_text = quoted.text[:MAX_QUOTE_TEXT]
     user_message = None
     if client_id:
         user_message = db.scalar(
@@ -160,6 +192,8 @@ def prepare_request(
             userId=user_id,
             role="user",
             text=text,
+            replyToMessageId=reply_id,
+            replyToText=reply_text,
             clientMessageId=client_id,
             stat="complete",
         )
@@ -167,6 +201,19 @@ def prepare_request(
         db.flush()
         if conversation.title == "新会话":
             conversation.title = _title_from_text(text)
+
+    if upload_ids:
+        uploads = db.scalars(
+            select(IdeaUpload).where(
+                IdeaUpload.uploadId.in_(upload_ids), IdeaUpload.userId == user_id
+            )
+        ).all()
+        if len(uploads) != len(upload_ids):
+            raise ValueError("one or more assistant attachments are unavailable")
+        for upload in uploads:
+            if upload.assistantMessageId not in {None, user_message.messageId}:
+                raise ValueError("assistant attachment is already used by another message")
+            upload.assistantMessageId = user_message.messageId
 
     assistant_client_id = f"{client_id}:assistant" if client_id else None
     assistant_message = None
@@ -234,6 +281,7 @@ def post_proactive_assistant_message(
     user_id: str,
     text: str,
     client_message_id: str | None = None,
+    create_notification: bool = True,
 ) -> AssistantMessage:
     """Append a completed assistant message to the owner primary chat.
 
@@ -258,6 +306,30 @@ def post_proactive_assistant_message(
         if existing is not None:
             if existing.conversationId != conversation.conversationId:
                 raise ValueError("clientMessageId is already used by another conversation")
+            if create_notification:
+                from app.server.new_core import crud
+
+                has_log = db.scalar(
+                    select(NotifyLog).where(
+                        NotifyLog.userId == user_id,
+                        NotifyLog.channel == "assistant",
+                        NotifyLog.receiver == existing.messageId,
+                    )
+                )
+                if has_log is None:
+                    try:
+                        crud.writeNotifyLog(
+                            db,
+                            dedupKey=f"assistant:{existing.messageId}",
+                            channel="assistant",
+                            title="助手有一条新消息",
+                            content=existing.text[:500],
+                            stat="recorded",
+                            targetId=existing.messageId,
+                            userId=user_id,
+                        )
+                    except Exception:  # noqa: BLE001
+                        db.rollback()
             return existing
     now = nowIso()
     message = AssistantMessage(
@@ -274,6 +346,22 @@ def post_proactive_assistant_message(
     conversation.lastMessageAt = now
     db.commit()
     db.refresh(message)
+    if create_notification:
+        try:
+            from app.server.new_core import crud
+
+            crud.writeNotifyLog(
+                db,
+                dedupKey=f"assistant:{message.messageId}",
+                channel="assistant",
+                title="助手有一条新消息",
+                content=clean[:500],
+                stat="recorded",
+                targetId=message.messageId,
+                userId=user_id,
+            )
+        except Exception:  # noqa: BLE001 - chat history must not fail on inbox logging
+            db.rollback()
     return message
 
 
@@ -289,11 +377,24 @@ def conversation_dict(row: AssistantConversation) -> dict[str, Any]:
 
 
 def message_dict(row: AssistantMessage) -> dict[str, Any]:
+    attachments = [
+        {
+            "uploadId": upload.uploadId,
+            "fileName": upload.fileName,
+            "mimeType": upload.mimeType,
+            "sizeBytes": upload.sizeBytes,
+            "url": f"/api/assistant/attachments/{upload.uploadId}",
+        }
+        for upload in getattr(row, "_assistant_attachments", [])
+    ]
     return {
         "messageId": row.messageId,
         "conversationId": row.conversationId,
         "role": row.role,
         "text": row.text,
+        "replyToMessageId": row.replyToMessageId,
+        "replyToText": row.replyToText,
+        "attachments": attachments,
         "stat": row.stat,
         "createdAt": row.createdAt,
     }
@@ -324,6 +425,22 @@ def get_conversation(
         .order_by(AssistantMessage.createdAt.asc())
         .limit(max(1, min(message_limit, 1000)))
     ).all()
+    attachment_rows = (
+        db.scalars(
+            select(IdeaUpload).where(
+                IdeaUpload.assistantMessageId.in_([message.messageId for message in messages])
+            )
+        ).all()
+        if messages
+        else []
+    )
+    attachments_by_message: dict[str, list[IdeaUpload]] = {}
+    for attachment in attachment_rows:
+        attachments_by_message.setdefault(str(attachment.assistantMessageId), []).append(attachment)
+    for message in messages:
+        message.__dict__["_assistant_attachments"] = attachments_by_message.get(
+            message.messageId, []
+        )
     return {
         **conversation_dict(row),
         "messages": [message_dict(message) for message in messages],
@@ -369,7 +486,10 @@ def recent_context_messages(
         if remaining <= 0:
             break
         text = text[: min(1800, remaining)]
-        result.append({"role": row.role, "text": text})
+        item = {"role": row.role, "text": text}
+        if row.replyToText:
+            item["replyTo"] = row.replyToText[:MAX_QUOTE_TEXT]
+        result.append(item)
         used += len(text)
     return result
 
@@ -440,5 +560,3 @@ def archive_conversation(db: Session, *, user_id: str, conversation_id: str) -> 
     row.updatedAt = nowIso()
     db.commit()
     return True
-
-

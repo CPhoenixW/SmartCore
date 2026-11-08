@@ -213,13 +213,14 @@
     "openPrompt": "请查看通知",
     "channel": {
       "browser": "手机推送",
-      "screen": "屏幕提醒"
+      "screen": "屏幕提醒",
+      "assistant": "助手对话"
     },
     "status": {
       "accepted": "推送服务已接收（手机显示未确认）",
       "connected": "屏幕通道已连接",
       "pending": "等待投递",
-      "recorded": "已记录",
+      "recorded": "已同步到助手对话",
       "failed": "投递失败"
     }
   },
@@ -289,7 +290,15 @@
     "noSearchResults": "没有找到相关消息",
     "historyError": "历史会话暂时无法加载",
     "searchError": "搜索暂时不可用",
-    "pending": "正在生成回答…"
+    "pending": "正在生成回答…",
+    "quote": "引用这条消息",
+    "copy": "复制消息",
+    "quotedMessage": "引用消息",
+    "dailyReport": "每日报告",
+    "addAttachment": "添加图片或文档",
+    "attachmentPrompt": "请分析我附加的文件",
+    "attachments": "消息附件",
+    "capabilities": "支持图片理解；PDF、TXT、Markdown、CSV、DOCX 会提取文字，ZIP 仅作为附件保存。"
   },
   "add": {
     "title": "添加事件",

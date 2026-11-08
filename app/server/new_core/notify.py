@@ -57,6 +57,7 @@ def _mirror_to_assistant(
                 title=title,
                 content=content,
             ),
+            create_notification=False,
         )
     except Exception:  # noqa: BLE001 - chat mirroring must not block delivery
         db.rollback()
@@ -103,6 +104,7 @@ def sendReminder(
     behavior by default. Callers can opt in to the assistant inbox for a
     high-signal reminder without changing the push/screen fallback.
     """
+
     def mirror() -> None:
         if mirrorAssistant:
             _mirror_to_assistant(
@@ -176,6 +178,7 @@ def routeNotify(
     even when a browser push or screen is unavailable. The mirror is idempotent
     and can be disabled by lower-signal callers.
     """
+
     def mirror() -> None:
         if mirrorAssistant:
             _mirror_to_assistant(
@@ -220,7 +223,9 @@ def routeNotify(
             content=content,
             stat="failed",
             evtId=evtId,
-            failReason=f"{browser_fail}; screen websocket offline" if browser_fail else "screen websocket offline",
+            failReason=f"{browser_fail}; screen websocket offline"
+            if browser_fail
+            else "screen websocket offline",
             userId=userId,
         )
         mirror()

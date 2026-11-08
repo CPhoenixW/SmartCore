@@ -49,7 +49,16 @@ def _ensure_user(db: Session, userId: str = DEFAULT_USER_ID) -> AppUser:
         if userId != DEFAULT_USER_ID:
             raise ValueError("user is unavailable")
         now = nowIso()
-        user = AppUser(userId=userId, loginName=userId, role="admin" if userId == DEFAULT_USER_ID else "user", displayName="默认用户", language="zh", avatarUrl=None, createdAt=now, updatedAt=now)
+        user = AppUser(
+            userId=userId,
+            loginName=userId,
+            role="admin" if userId == DEFAULT_USER_ID else "user",
+            displayName="默认用户",
+            language="zh",
+            avatarUrl=None,
+            createdAt=now,
+            updatedAt=now,
+        )
         db.add(user)
         db.flush()
     return user
@@ -188,14 +197,24 @@ def _ideaDict(idea: Idea) -> dict[str, Any]:
 
 
 def _attachmentDict(row: IdeaAttachment) -> dict[str, Any]:
-    return {"attachmentId": row.attachmentId, "fileName": row.fileName, "mimeType": row.mimeType,
-            "url": f"/api/idea/attachments/{row.attachmentId}", "sizeBytes": row.sizeBytes, "createdAt": row.createdAt}
+    return {
+        "attachmentId": row.attachmentId,
+        "fileName": row.fileName,
+        "mimeType": row.mimeType,
+        "url": f"/api/idea/attachments/{row.attachmentId}",
+        "sizeBytes": row.sizeBytes,
+        "createdAt": row.createdAt,
+    }
 
 
 def _attachIdeaMedia(db: Session, ideas: list[Idea]) -> None:
     if not ideas:
         return
-    rows = db.scalars(select(IdeaAttachment).where(IdeaAttachment.ideaId.in_([idea.ideaId for idea in ideas])).order_by(IdeaAttachment.createdAt)).all()
+    rows = db.scalars(
+        select(IdeaAttachment)
+        .where(IdeaAttachment.ideaId.in_([idea.ideaId for idea in ideas]))
+        .order_by(IdeaAttachment.createdAt)
+    ).all()
     by_idea: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         by_idea.setdefault(row.ideaId, []).append(_attachmentDict(row))
@@ -335,7 +354,9 @@ def createPlanEvt(
     plan = PlanEvt(evtId=base.evtId, stTime=stTime, durationMin=durationMin)
     db.add(plan)
     result = _planDict(base, plan)
-    _recordAct(db, userId=userId, src=src, action="create", targetKind="planEvt", targetId=base.evtId)
+    _recordAct(
+        db, userId=userId, src=src, action="create", targetKind="planEvt", targetId=base.evtId
+    )
     db.commit()
     return result
 
@@ -352,12 +373,21 @@ def _create_linked_plan(
     sortOrder: int,
     prio: str,
 ) -> None:
-    base = _base_event(userId=userId, title=title, evtType="plan", desc="DDL 自动生成计划", prio=prio)
+    base = _base_event(
+        userId=userId, title=title, evtType="plan", desc="DDL 自动生成计划", prio=prio
+    )
     db.add(base)
     db.flush()
     db.add(PlanEvt(evtId=base.evtId, stTime=stTime, durationMin=durationMin))
     db.add(DdlPlan(ddlEvtId=ddlEvtId, planEvtId=base.evtId, planRole=planRole, sortOrder=sortOrder))
-    _recordAct(db, userId=userId, actorKind="system", action="auto_create", targetKind="planEvt", targetId=base.evtId)
+    _recordAct(
+        db,
+        userId=userId,
+        actorKind="system",
+        action="auto_create",
+        targetKind="planEvt",
+        targetId=base.evtId,
+    )
 
 
 def createDdlEvt(
@@ -377,21 +407,38 @@ def createDdlEvt(
     db.flush()
     ddl = DdlEvt(evtId=base.evtId, endTime=endTime, hardDdl=hardDdl)
     db.add(ddl)
-    _recordAct(db, userId=userId, src=src, action="create", targetKind="ddlEvt", targetId=base.evtId)
+    _recordAct(
+        db, userId=userId, src=src, action="create", targetKind="ddlEvt", targetId=base.evtId
+    )
     try:
         end_dt = _parseNow(endTime)
         reminder_id = newId()
         now = nowIso()
         trigger = (end_dt - timedelta(days=1)).isoformat()
-        db.add(EvtBase(
-            evtId=reminder_id, userId=userId, title=f"{title} · 提前一天",
-            desc="截止前一天提醒", evtType="remind", prio=prio, stat="todo",
-            createdAt=now, updatedAt=now,
-        ))
-        db.add(RemindEvt(
-            evtId=reminder_id, planEvtId=None, ddlEvtId=base.evtId, remindKind="ddl_linked",
-            triggerTime=trigger, offsetMin=0, firedAt=None,
-        ))
+        db.add(
+            EvtBase(
+                evtId=reminder_id,
+                userId=userId,
+                title=f"{title} · 提前一天",
+                desc="截止前一天提醒",
+                evtType="remind",
+                prio=prio,
+                stat="todo",
+                createdAt=now,
+                updatedAt=now,
+            )
+        )
+        db.add(
+            RemindEvt(
+                evtId=reminder_id,
+                planEvtId=None,
+                ddlEvtId=base.evtId,
+                remindKind="ddl_linked",
+                triggerTime=trigger,
+                offsetMin=0,
+                firedAt=None,
+            )
+        )
         _create_linked_plan(
             db,
             userId=userId,
@@ -430,7 +477,9 @@ def createCourseEvt(
     userId: str = DEFAULT_USER_ID,
 ) -> dict[str, Any]:
     _ensure_user(db, userId)
-    base = _base_event(userId=userId, title=title or courseName, evtType="course", desc=desc, prio=prio)
+    base = _base_event(
+        userId=userId, title=title or courseName, evtType="course", desc=desc, prio=prio
+    )
     db.add(base)
     db.flush()
     course = CourseEvt(
@@ -448,7 +497,9 @@ def createCourseEvt(
         weekMode=weekMode,
     )
     db.add(course)
-    _recordAct(db, userId=userId, src=src, action="create", targetKind="courseEvt", targetId=base.evtId)
+    _recordAct(
+        db, userId=userId, src=src, action="create", targetKind="courseEvt", targetId=base.evtId
+    )
     db.commit()
     return _courseDict(base, course)
 
@@ -470,15 +521,29 @@ def createIdea(
     db.add(idea)
     db.flush()
     if uploadIds:
-        rows = db.scalars(select(IdeaUpload).where(IdeaUpload.uploadId.in_(uploadIds), IdeaUpload.userId == userId)).all()
+        rows = db.scalars(
+            select(IdeaUpload).where(
+                IdeaUpload.uploadId.in_(uploadIds), IdeaUpload.userId == userId
+            )
+        ).all()
         if len(rows) != len(set(uploadIds)):
             raise ValueError("one or more attachments are unavailable")
         for row in rows:
-            db.add(IdeaAttachment(ideaId=idea.ideaId, fileName=row.fileName, mimeType=row.mimeType, storagePath=row.storagePath, sizeBytes=row.sizeBytes))
+            db.add(
+                IdeaAttachment(
+                    ideaId=idea.ideaId,
+                    fileName=row.fileName,
+                    mimeType=row.mimeType,
+                    storagePath=row.storagePath,
+                    sizeBytes=row.sizeBytes,
+                )
+            )
             db.delete(row)
     _attachIdeaMedia(db, [idea])
     result = _ideaDict(idea)
-    _recordAct(db, userId=userId, src="api", action="create", targetKind="idea", targetId=idea.ideaId)
+    _recordAct(
+        db, userId=userId, src="api", action="create", targetKind="idea", targetId=idea.ideaId
+    )
     db.commit()
     return result
 
@@ -512,18 +577,18 @@ def updateIdea(
 
     add_ids = list(dict.fromkeys(addUploadIds or []))
     remove_ids = list(dict.fromkeys(removeAttachmentIds or []))
-    existing = db.scalars(
-        select(IdeaAttachment).where(IdeaAttachment.ideaId == ideaId)
-    ).all()
+    existing = db.scalars(select(IdeaAttachment).where(IdeaAttachment.ideaId == ideaId)).all()
     existing_by_id = {item.attachmentId: item for item in existing}
     if any(item_id not in existing_by_id for item_id in remove_ids):
         raise ValueError("one or more attachments are unavailable")
 
-    uploads = db.scalars(
-        select(IdeaUpload).where(
-            IdeaUpload.uploadId.in_(add_ids), IdeaUpload.userId == userId
-        )
-    ).all() if add_ids else []
+    uploads = (
+        db.scalars(
+            select(IdeaUpload).where(IdeaUpload.uploadId.in_(add_ids), IdeaUpload.userId == userId)
+        ).all()
+        if add_ids
+        else []
+    )
     if len(uploads) != len(add_ids):
         raise ValueError("one or more uploads are unavailable")
     upload_by_id = {item.uploadId: item for item in uploads}
@@ -558,9 +623,7 @@ def updateIdea(
                 sizeBytes=upload.sizeBytes,
             )
         )
-        job = db.scalar(
-            select(IdeaMediaJob).where(IdeaMediaJob.uploadId == upload_id)
-        )
+        job = db.scalar(select(IdeaMediaJob).where(IdeaMediaJob.uploadId == upload_id))
         if job is not None:
             job.stat = "consumed"
             job.updatedAt = nowIso()
@@ -570,7 +633,9 @@ def updateIdea(
     db.flush()
     _attachIdeaMedia(db, [row])
     result = _ideaDict(row)
-    _recordAct(db, userId=row.userId, src="api", action="update", targetKind="idea", targetId=ideaId)
+    _recordAct(
+        db, userId=row.userId, src="api", action="update", targetKind="idea", targetId=ideaId
+    )
     db.commit()
     _unlink_media(removed_paths)
     return result
@@ -613,8 +678,9 @@ def cleanupExpiredIdeaMedia(
             old_enough = _parseNow(upload.createdAt) <= cutoff
         except ValueError:
             old_enough = False
-        if upload.uploadId in expired_job_upload_ids or (
-            old_enough and upload.uploadId not in protected_upload_ids
+        if upload.assistantMessageId is None and (
+            upload.uploadId in expired_job_upload_ids
+            or (old_enough and upload.uploadId not in protected_upload_ids)
         ):
             expired_uploads.append(upload)
 
@@ -632,19 +698,19 @@ def deleteIdea(db: Session, ideaId: str, *, userId: str) -> dict[str, Any]:
     row = db.get(Idea, ideaId)
     if row is None or row.userId != userId:
         raise ValueError(f"idea not found: {ideaId}")
-    attachments = db.scalars(
-        select(IdeaAttachment).where(IdeaAttachment.ideaId == ideaId)
-    ).all()
+    attachments = db.scalars(select(IdeaAttachment).where(IdeaAttachment.ideaId == ideaId)).all()
     paths = [item.storagePath for item in attachments]
-    jobs = db.scalars(
-        select(IdeaMediaJob).where(IdeaMediaJob.ideaId == ideaId)
-    ).all()
+    jobs = db.scalars(select(IdeaMediaJob).where(IdeaMediaJob.ideaId == ideaId)).all()
     job_upload_ids = [item.uploadId for item in jobs]
-    pending_uploads = db.scalars(
-        select(IdeaUpload).where(
-            IdeaUpload.uploadId.in_(job_upload_ids), IdeaUpload.userId == userId
-        )
-    ).all() if job_upload_ids else []
+    pending_uploads = (
+        db.scalars(
+            select(IdeaUpload).where(
+                IdeaUpload.uploadId.in_(job_upload_ids), IdeaUpload.userId == userId
+            )
+        ).all()
+        if job_upload_ids
+        else []
+    )
     paths.extend(item.storagePath for item in pending_uploads)
     for upload in pending_uploads:
         db.delete(upload)
@@ -652,7 +718,9 @@ def deleteIdea(db: Session, ideaId: str, *, userId: str) -> dict[str, Any]:
         db.delete(job)
     _attachIdeaMedia(db, [row])
     result = _ideaDict(row)
-    _recordAct(db, userId=row.userId, src="api", action="delete", targetKind="idea", targetId=ideaId)
+    _recordAct(
+        db, userId=row.userId, src="api", action="delete", targetKind="idea", targetId=ideaId
+    )
     db.delete(row)
     db.commit()
     _unlink_media(paths)
@@ -660,7 +728,9 @@ def deleteIdea(db: Session, ideaId: str, *, userId: str) -> dict[str, Any]:
 
 
 def listEvt(db: Session, *, userId: str = DEFAULT_USER_ID) -> list[dict[str, Any]]:
-    rows = db.scalars(select(EvtBase).where(EvtBase.userId == userId).order_by(EvtBase.createdAt.asc())).all()
+    rows = db.scalars(
+        select(EvtBase).where(EvtBase.userId == userId).order_by(EvtBase.createdAt.asc())
+    ).all()
     results: list[dict[str, Any]] = []
     for base in rows:
         if base.evtType == "plan":
@@ -691,17 +761,33 @@ def listCourseEvt(db: Session) -> list[dict[str, Any]]:
 
 
 def listIdeas(db: Session, *, userId: str = DEFAULT_USER_ID) -> list[dict[str, Any]]:
-    rows = db.scalars(select(Idea).where(Idea.userId == userId).order_by(Idea.createdAt.asc())).all()
+    rows = db.scalars(
+        select(Idea).where(Idea.userId == userId).order_by(Idea.createdAt.asc())
+    ).all()
     _attachIdeaMedia(db, rows)
     return [_ideaDict(row) for row in rows]
 
 
-def createIdeaUpload(db: Session, *, userId: str, fileName: str, mimeType: str, storagePath: str, sizeBytes: int) -> dict[str, Any]:
-    row = IdeaUpload(userId=userId, fileName=fileName, mimeType=mimeType, storagePath=storagePath, sizeBytes=sizeBytes)
+def createIdeaUpload(
+    db: Session, *, userId: str, fileName: str, mimeType: str, storagePath: str, sizeBytes: int
+) -> dict[str, Any]:
+    row = IdeaUpload(
+        userId=userId,
+        fileName=fileName,
+        mimeType=mimeType,
+        storagePath=storagePath,
+        sizeBytes=sizeBytes,
+    )
     db.add(row)
     db.commit()
     db.refresh(row)
-    return {"uploadId": row.uploadId, "fileName": row.fileName, "mimeType": row.mimeType, "sizeBytes": row.sizeBytes, "storagePath": row.storagePath}
+    return {
+        "uploadId": row.uploadId,
+        "fileName": row.fileName,
+        "mimeType": row.mimeType,
+        "sizeBytes": row.sizeBytes,
+        "storagePath": row.storagePath,
+    }
 
 
 def getIdeaAttachment(db: Session, attachmentId: str, *, userId: str) -> IdeaAttachment:
@@ -758,7 +844,9 @@ def upsertDevState(
     # Compatibility state writes must still resolve ownership through
     # lifeDevice. Never recreate the old implicit "default" owner here.
     ensure_legacy_device(db, devId)
-    row = DeviceStateLog(deviceId=devId, state=state, confidence=confidence, seenAt=seenAt or nowIso(), meta=meta)
+    row = DeviceStateLog(
+        deviceId=devId, state=state, confidence=confidence, seenAt=seenAt or nowIso(), meta=meta
+    )
     db.add(row)
     _recordAct(db, actorKind="device", action="update", targetKind="device", targetId=devId)
     db.commit()
@@ -889,10 +977,17 @@ def createMsgLog(
 
 def msgLogExists(db: Session, *, src: str, externalId: str) -> bool:
     channel = src if src in _ALLOWED_MSG_CHANNELS else "system"
-    return db.scalars(select(MsgLog).where(MsgLog.channel == channel, MsgLog.externalId == externalId)).first() is not None
+    return (
+        db.scalars(
+            select(MsgLog).where(MsgLog.channel == channel, MsgLog.externalId == externalId)
+        ).first()
+        is not None
+    )
 
 
-def applyReminderAction(db: Session, *, evtId: str, action: str, now: str, src: str) -> dict[str, Any]:
+def applyReminderAction(
+    db: Session, *, evtId: str, action: str, now: str, src: str
+) -> dict[str, Any]:
     base = db.get(EvtBase, evtId)
     if base is None:
         raise ValueError(f"evt not found: {evtId}")

@@ -6,7 +6,7 @@ CONFIG_PATH="$OPENCLAW_HOME_DIR/openclaw.json"
 BACKUP_DIR="$OPENCLAW_HOME_DIR/backups"
 SERVICE_NAME="${OPENCLAW_SERVICE_NAME:-openclaw-gateway.service}"
 TEXT_MODEL_REF="tokendance/deepseek-v4-flash-0731"
-VISION_MODEL_REF="tokendance/qwen3.7-plus"
+VISION_MODEL_REF="tokendance/deepseek-v4.1-flash-1017"
 
 log() {
     printf '[smartcore-openclaw] %s\n' "$*"
@@ -55,7 +55,7 @@ status() {
     text_model="$("$(openclaw_bin)" models --agent smartcore status --json | jq -r '.resolvedDefault // empty')"
     vision_model="$("$(openclaw_bin)" models --agent smartcore-vision status --json | jq -r '.resolvedDefault // empty')"
     text_input="$("$(openclaw_bin)" models --agent smartcore list --json | jq -r '.models[] | select(.key == "tokendance/deepseek-v4-flash-0731") | .input')"
-    vision_input="$("$(openclaw_bin)" models --agent smartcore-vision list --json | jq -r '.models[] | select(.key == "tokendance/qwen3.7-plus") | .input')"
+    vision_input="$("$(openclaw_bin)" models --agent smartcore-vision list --json | jq -r '.models[] | select(.key == "tokendance/deepseek-v4.1-flash-1017") | .input')"
     skills="$(jq -r '.agents.list[] | select(.id == "smartcore") | (.skills // []) | join(",")' "$CONFIG_PATH")"
     tools="$(jq -r '.agents.list[] | select(.id == "smartcore") | (.tools.allow // []) | join(",")' "$CONFIG_PATH")"
     log "smartcore_model=${text_model:-missing} smartcore_vision_model=${vision_model:-missing} text_input=${text_input:-missing} vision_input=${vision_input:-missing} skills=${skills:-missing} tools=${tools:-missing} gateway=$(systemctl --user is-active "$SERVICE_NAME" 2>/dev/null || true)"
@@ -81,7 +81,7 @@ apply_config() {
         .models.mode = "merge"
         | .models.providers.tokendance.models = (
             ((.models.providers.tokendance.models // [])
-            | map(select(.id != "deepseek-v4-flash-0731" and .id != "qwen3.7-plus")))
+            | map(select(.id != "deepseek-v4-flash-0731" and .id != "deepseek-v4.1-flash-1017")))
             + [
                 {
                     id: "deepseek-v4-flash-0731",
@@ -90,8 +90,8 @@ apply_config() {
                     contextWindow: 1000000
                 },
                 {
-                    id: "qwen3.7-plus",
-                    name: "Qwen3.7 Plus via Tokendance",
+                    id: "deepseek-v4.1-flash-1017",
+                    name: "DeepSeek V4.1 Flash 1017 via Tokendance",
                     input: ["text", "image"],
                     contextWindow: 1000000
                 }
@@ -127,7 +127,7 @@ apply_config() {
     if ! validate_active_config || ! restart_gateway; then
         install -m 600 "$backup" "$CONFIG_PATH"
         restart_gateway || true
-        die "Qwen configuration failed; restored $backup"
+        die "multimodal configuration failed; restored $backup"
     fi
     log "configured text=$TEXT_MODEL_REF vision=$VISION_MODEL_REF; backup=$backup"
     status
@@ -140,7 +140,7 @@ rollback() {
     [[ -n "$requested" ]] || die "rollback requires an explicit backup path"
     [[ -f "$requested" ]] || die "backup does not exist: $requested"
     resolved="$(realpath "$requested")"
-    [[ "$resolved" == "$BACKUP_DIR"/openclaw-before-routing-*.json || "$resolved" == "$BACKUP_DIR"/openclaw-before-qwen-*.json ]] \
+    [[ "$resolved" == "$BACKUP_DIR"/openclaw-before-routing-*.json || "$resolved" == "$BACKUP_DIR"/openclaw-before-multimodal-*.json ]] \
         || die "backup must be an OpenClaw routing backup under $BACKUP_DIR"
     install -m 600 "$resolved" "$CONFIG_PATH"
     validate_active_config || die "restored config is invalid"

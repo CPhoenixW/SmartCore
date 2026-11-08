@@ -6,6 +6,14 @@ export interface AssistantMessageResult {
   response: string;
 }
 
+export interface AssistantAttachment {
+  uploadId: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  url?: string;
+}
+
 export interface AssistantConversationSummary {
   conversationId: string;
   title: string;
@@ -20,6 +28,9 @@ export interface AssistantMessage {
   conversationId: string;
   role: "user" | "assistant";
   text: string;
+  replyToMessageId?: string | null;
+  replyToText?: string | null;
+  attachments?: AssistantAttachment[];
   stat: "complete" | "failed" | "pending";
   createdAt: string;
 }
@@ -62,11 +73,20 @@ export const assistantApi = {
     conversationId: string | undefined,
     onEvent: (event: AssistantStreamEvent) => void,
     clientMessageId?: string,
+    options?: { attachmentIds?: string[]; replyToMessageId?: string },
   ): Promise<AssistantMessageResult> {
     const response = await fetch("/api/assistant/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify({ text, conversationId, sessionId: conversationId, clientMessageId, timezone: localTimezone() }),
+      body: JSON.stringify({
+        text,
+        conversationId,
+        sessionId: conversationId,
+        clientMessageId,
+        timezone: localTimezone(),
+        attachmentIds: options?.attachmentIds ?? [],
+        replyToMessageId: options?.replyToMessageId,
+      }),
       cache: "no-store",
     });
     if (!response.ok || !response.body) {
@@ -106,6 +126,13 @@ export const assistantApi = {
     if (!result) throw new Error("助手没有返回结果");
     return result;
   },
+  uploadAttachments: (files: File[]) => {
+    const body = new FormData();
+    files.forEach((file) => body.append("files", file));
+    return apiRequest<AssistantAttachment[]>("/api/assistant/attachments", { method: "POST", body });
+  },
+  removeAttachment: (uploadId: string) => apiRequest<{ uploadId: string }>(`/api/assistant/attachments/${encodeURIComponent(uploadId)}`, { method: "DELETE" }),
+  attachmentUrl: (uploadId: string) => `/api/assistant/attachments/${encodeURIComponent(uploadId)}`,
   list(query?: string, limit = 30): Promise<{ items: AssistantConversationSummary[] | AssistantSearchResult[]; query: string }> {
     return apiRequest<{ items: AssistantConversationSummary[] | AssistantSearchResult[]; query: string }>(`/api/assistant/conversations${buildQuery({ q: query, limit })}`);
   },

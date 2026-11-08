@@ -28,7 +28,7 @@ IMAGE_SUFFIXES = {
 TEXT_AGENT_DEFAULT = "smartcore"
 VISION_AGENT_DEFAULT = "smartcore-vision"
 TEXT_MODEL_DEFAULT = "tokendance/deepseek-v4-flash-0731"
-VISION_MODEL_DEFAULT = "tokendance/qwen3.7-plus"
+VISION_MODEL_DEFAULT = "tokendance/deepseek-v4.1-flash-1017"
 SAFE_ATTACHMENT_FIELDS = ("uploadId", "fileName", "mimeType", "sizeBytes")
 
 
@@ -168,7 +168,9 @@ def event_attachments(event: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def has_supported_image(event: dict[str, Any]) -> bool:
-    return any(str(item.get("mimeType") or "") in IMAGE_SUFFIXES for item in event_attachments(event))
+    return any(
+        str(item.get("mimeType") or "") in IMAGE_SUFFIXES for item in event_attachments(event)
+    )
 
 
 def openclaw_profile(event: dict[str, Any]) -> tuple[str, str, bool]:
@@ -249,7 +251,9 @@ def sanitize_event(event: dict[str, Any]) -> dict[str, Any]:
 
 def stage_event_images(event: dict[str, Any], workspace: Path) -> tuple[list[str], Path | None]:
     attachments = [
-        item for item in event_attachments(event) if str(item.get("mimeType") or "") in IMAGE_SUFFIXES
+        item
+        for item in event_attachments(event)
+        if str(item.get("mimeType") or "") in IMAGE_SUFFIXES
     ]
     if not attachments:
         return [], None
@@ -945,7 +949,9 @@ def run_openclaw(event: dict[str, Any]) -> None:
             execution_error = exc
             failure_type = "transport_error"
         final_text = extract_final_text(result.stdout if result is not None else "")
-        transport_failed = bool(execution_error) or result is None or result.returncode != 0 or not final_text
+        transport_failed = (
+            bool(execution_error) or result is None or result.returncode != 0 or not final_text
+        )
         validation_error: str | None = None
         if not transport_failed and (
             event.get("event_type") in {"computer_work_block_analysis", "computer_daily_work_log"}
@@ -956,7 +962,11 @@ def run_openclaw(event: dict[str, Any]) -> None:
         daily_validation_error: str | None = None
         if not transport_failed and validation_error is None and event_attachments(event):
             final_text = normalize_media_reply(final_text)
-        if not transport_failed and validation_error is None and event.get("event_type") == "daily_summary":
+        if (
+            not transport_failed
+            and validation_error is None
+            and event.get("event_type") == "daily_summary"
+        ):
             final_text, daily_validation_error = normalize_daily_report(
                 final_text,
                 str(event.get("reportDate") or ""),
@@ -1056,7 +1066,11 @@ def run_openclaw(event: dict[str, Any]) -> None:
             failure_reason = (
                 validation_error
                 or daily_validation_error
-                or (f"OpenClaw execution failed: {type(execution_error).__name__}" if execution_error else None)
+                or (
+                    f"OpenClaw execution failed: {type(execution_error).__name__}"
+                    if execution_error
+                    else None
+                )
             )
             mark_daily_summary_failed(
                 event,
@@ -1089,7 +1103,9 @@ def run_openclaw(event: dict[str, Any]) -> None:
             failure_type=failure_type,
             **summarize_openclaw(
                 result.stdout if result is not None else "",
-                result.stderr if result is not None else (str(execution_error) if execution_error else ""),
+                result.stderr
+                if result is not None
+                else (str(execution_error) if execution_error else ""),
             ),
         )
     except Exception as exc:

@@ -17,7 +17,6 @@ const DSH_BIN = resolve(process.env.DSH_BIN || "/runtime/dsh/node_modules/.bin/d
 const DSH_CWD = resolve(process.env.DSH_CWD || "/runtime");
 const MODEL_PROVIDER = String(process.env.DSH_PROVIDER || process.env.LLM_PROVIDER || "tokendance");
 const TEXT_MODEL = String(process.env.DSH_MODEL || process.env.LLM_MODEL || "deepseek-v4.1-flash-1017");
-const VISION_MODEL = String(process.env.DSH_VISION_MODEL || process.env.VISION_MODEL || TEXT_MODEL);
 const STARTUP_TIMEOUT_MS = Number(process.env.DSH_STARTUP_TIMEOUT_MS || 30000);
 const REQUEST_TIMEOUT_MS = Number(process.env.DSH_REQUEST_TIMEOUT_MS || 600000);
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
@@ -116,10 +115,12 @@ function safePrompt(event) {
     context.conversationHistory = event.conversationHistory;
   }
   if (event.attachments && Array.isArray(event.attachments)) context.attachments = event.attachments.map((item) => ({ uploadId: item.uploadId, fileName: item.fileName, mimeType: item.mimeType, sizeBytes: item.sizeBytes }));
+  if (event.replyTo && typeof event.replyTo === "object") context.replyTo = event.replyTo;
+  if (event.documentContext && Array.isArray(event.documentContext)) context.documentContext = event.documentContext;
   const mediaInstruction = event.event_type === "idea_media_edit" && event.jobId
     ? `这是一个图片媒体任务。先调用 mcp__smartcore__smartcore_media_job_context，读取图片后再调用 mcp__smartcore__smartcore_media_job_complete 或 mcp__smartcore__smartcore_media_job_fail。`
     : Array.isArray(event.attachments) && event.attachments.length
-      ? "上下文包含图片附件。需要理解图片时先调用 mcp__smartcore__smartcore_media_context，并传入上下文中的 uploadId 列表；不要猜测图片内容。"
+      ? "上下文包含附件。图片需要理解时先调用 mcp__smartcore__smartcore_media_context，并传入上下文中的 uploadId 列表；PDF、TXT、Markdown、CSV、DOCX 的可提取文本已经放在 documentContext 中；ZIP 只作为文件记录，不要猜测其内容。"
       : "";
   const memoryLines = Array.isArray(event.userMemory)
     ? event.userMemory.filter((item) => typeof item === "string" && item.trim()).slice(0, 40).map((item) => `- ${item.trim().slice(0, 200)}`)
@@ -140,6 +141,7 @@ function safePrompt(event) {
     "SmartCore 的计划、提醒和日程必须走对应的 MCP 工具；不要猜测事件 id。",
     "涉及日期时间时，绝对以事件上下文中的 serverNow 和 timezone 为准，禁止自行猜测年份或当前日期；向 Server 传入带时区的绝对 ISO 8601 时间。先查询再修改；完成、删除或转化前确认目标明确。",
     "这是一个连续的个人助手对话。若事件上下文包含 conversationHistory，把它当作最近的对话背景；当前用户输入优先，不要重复旧操作。",
+    "如果事件上下文包含 replyTo，这是用户正在回复的原消息；回答时先理解引用内容，再处理当前输入。",
     "需要调用工具时，先用一句自然语言告诉用户你将查询或修改什么，再调用工具；工具完成后再给出简短结果。不要让用户在工具调用期间长时间无反馈。",
     mediaInstruction,
     "工具操作成功后用一句话说明结果；如果无法安全执行，说明缺少的字段。",
@@ -211,7 +213,7 @@ class DshRuntime {
     this.profile = profile;
     this.mode = mode;
     this.key = safePart(`${userId}-${profile}-${mode}`);
-    this.model = profile === "vision" ? VISION_MODEL : TEXT_MODEL;
+    this.model = TEXT_MODEL;
     this.scopeFile = join(SCOPE_ROOT, `${this.key}.json`);
     this.home = join(DSH_HOME_ROOT, this.key);
     this.child = null;
@@ -341,9 +343,8 @@ function runtimeFor(userId, profile = "text", mode = "automation") {
 
 async function handleEvent(event, { waitForResult = false } = {}) {
   if (!event || typeof event !== "object" || !String(event.userId || "").trim()) throw new Error("event userId is required");
-  const hasImage = Array.isArray(event.attachments) && event.attachments.some((item) => String(item?.mimeType || "").startsWith("image/"));
   const mode = event.source === "web" && event.event_type === "assistant_message" ? "assistant" : "automation";
-  const runtime = runtimeFor(String(event.userId), hasImage ? "vision" : "text", mode);
+  const runtime = runtimeFor(String(event.userId), "text", mode);
   const scopeToken = String(event.agentScope || "");
   const sessionId = sessionIdFor(event);
   const work = runtime.query(sessionId, safePrompt(event), scopeToken);
@@ -354,9 +355,8 @@ async function handleEvent(event, { waitForResult = false } = {}) {
 
 async function streamEvent(event, response) {
   if (!event || typeof event !== "object" || !String(event.userId || "").trim()) throw new Error("event userId is required");
-  const hasImage = Array.isArray(event.attachments) && event.attachments.some((item) => String(item?.mimeType || "").startsWith("image/"));
   const mode = event.source === "web" && event.event_type === "assistant_message" ? "assistant" : "automation";
-  const runtime = runtimeFor(String(event.userId), hasImage ? "vision" : "text", mode);
+  const runtime = runtimeFor(String(event.userId), "text", mode);
   const scopeToken = String(event.agentScope || "");
   const sessionId = sessionIdFor(event);
   const queue = [];
@@ -386,7 +386,7 @@ async function streamEvent(event, response) {
 
 const server = createServer(async (request, response) => {
   try {
-    if (request.method === "GET" && request.url === "/healthz") return send(response, 200, { status: "ok", runtimeCount: runtimes.size, provider: MODEL_PROVIDER, model: TEXT_MODEL, visionModel: VISION_MODEL });
+    if (request.method === "GET" && request.url === "/healthz") return send(response, 200, { status: "ok", runtimeCount: runtimes.size, provider: MODEL_PROVIDER, model: TEXT_MODEL });
     const authorization = String(request.headers.authorization || "");
     if (!equalSecret(authorization.startsWith("Bearer ") ? authorization.slice(7) : "", EVENT_TOKEN)) return send(response, 401, { detail: "invalid or missing DSH event token" });
     if (request.method !== "POST" || !["/api/smartcore/events", "/api/smartcore/query", "/api/smartcore/stream"].includes(request.url)) return send(response, 404, { detail: "not found" });

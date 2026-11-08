@@ -67,9 +67,7 @@ class EvtBase(Base):
 
 class DailySummary(Base):
     __tablename__ = "dailySummary"
-    __table_args__ = (
-        UniqueConstraint("userId", "reportDate", name="uq_daily_summary_user_date"),
-    )
+    __table_args__ = (UniqueConstraint("userId", "reportDate", name="uq_daily_summary_user_date"),)
 
     summaryId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
     userId: Mapped[str] = mapped_column(
@@ -222,11 +220,16 @@ class IdeaUpload(Base):
     __tablename__ = "ideaUpload"
 
     uploadId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
     fileName: Mapped[str] = mapped_column(String(300), nullable=False)
     mimeType: Mapped[str] = mapped_column(String(120), nullable=False)
     storagePath: Mapped[str] = mapped_column(String(700), nullable=False)
     sizeBytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    assistantMessageId: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("assistantMessage.messageId", ondelete="CASCADE")
+    )
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
 
 
@@ -381,9 +384,7 @@ class MsgLog(Base):
 
 class AssistantConversation(Base):
     __tablename__ = "assistantConversation"
-    __table_args__ = (
-        Index("idx_assistantConversation_user_updated", "userId", "updatedAt"),
-    )
+    __table_args__ = (Index("idx_assistantConversation_user_updated", "userId", "updatedAt"),)
 
     conversationId: Mapped[str] = mapped_column(String(160), primary_key=True)
     userId: Mapped[str] = mapped_column(
@@ -403,18 +404,24 @@ class AssistantMessage(Base):
         Index("idx_assistantMessage_conversation_created", "conversationId", "createdAt"),
         Index("idx_assistantMessage_user_created", "userId", "createdAt"),
         CheckConstraint("role IN ('user', 'assistant')", name="ck_assistantMessage_role"),
-        CheckConstraint("stat IN ('pending', 'complete', 'failed')", name="ck_assistantMessage_stat"),
+        CheckConstraint(
+            "stat IN ('pending', 'complete', 'failed')", name="ck_assistantMessage_stat"
+        ),
     )
 
     messageId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
     conversationId: Mapped[str] = mapped_column(
-        String(160), ForeignKey("assistantConversation.conversationId", ondelete="CASCADE"), nullable=False
+        String(160),
+        ForeignKey("assistantConversation.conversationId", ondelete="CASCADE"),
+        nullable=False,
     )
     userId: Mapped[str] = mapped_column(
         String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
     )
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    replyToMessageId: Mapped[str | None] = mapped_column(String(32))
+    replyToText: Mapped[str | None] = mapped_column(Text)
     clientMessageId: Mapped[str | None] = mapped_column(String(120))
     stat: Mapped[str] = mapped_column(String(20), nullable=False, default="complete")
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
@@ -425,8 +432,12 @@ class UserSession(Base):
 
     sessionId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
     tokenHash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
-    actorUserId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
-    activeUserId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    actorUserId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    activeUserId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
     expiresAt: Mapped[str] = mapped_column(String(64), nullable=False)
     revokedAt: Mapped[str | None] = mapped_column(String(64))
     userAgent: Mapped[str | None] = mapped_column(String(300))
@@ -470,7 +481,9 @@ class LifeDevice(Base):
     __tablename__ = "lifeDevice"
 
     deviceId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
     deviceName: Mapped[str] = mapped_column(String(100), nullable=False)
     deviceKind: Mapped[str] = mapped_column(String(30), nullable=False)
     stat: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
@@ -483,7 +496,9 @@ class DeviceKey(Base):
     __tablename__ = "deviceKey"
 
     keyId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    deviceId: Mapped[str] = mapped_column(String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), nullable=False)
+    deviceId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), nullable=False
+    )
     tokenHash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
     lastUsedAt: Mapped[str | None] = mapped_column(String(64))
@@ -494,9 +509,15 @@ class DevicePair(Base):
     __tablename__ = "devicePair"
 
     pairId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
-    deviceId: Mapped[str | None] = mapped_column(String(32), ForeignKey("lifeDevice.deviceId", ondelete="SET NULL"))
-    botId: Mapped[str | None] = mapped_column(String(32), ForeignKey("feishuBot.botId", ondelete="SET NULL"))
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    deviceId: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("lifeDevice.deviceId", ondelete="SET NULL")
+    )
+    botId: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("feishuBot.botId", ondelete="SET NULL")
+    )
     deviceName: Mapped[str] = mapped_column(String(100), nullable=False)
     deviceKind: Mapped[str] = mapped_column(String(30), nullable=False)
     claimCode: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
@@ -512,8 +533,12 @@ class FeishuBot(Base):
     __tablename__ = "feishuBot"
 
     botId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
-    deviceId: Mapped[str | None] = mapped_column(String(32), ForeignKey("lifeDevice.deviceId", ondelete="SET NULL"))
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    deviceId: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("lifeDevice.deviceId", ondelete="SET NULL")
+    )
     botName: Mapped[str] = mapped_column(String(100), nullable=False)
     appId: Mapped[str] = mapped_column(String(200), nullable=False)
     appSecretCipher: Mapped[str] = mapped_column(Text, nullable=False)
@@ -531,12 +556,20 @@ class FeishuBot(Base):
 
 class FeishuBind(Base):
     __tablename__ = "feishuBind"
-    __table_args__ = (UniqueConstraint("botId", "identityId", "chatId", name="uq_feishu_bind_endpoint"),)
+    __table_args__ = (
+        UniqueConstraint("botId", "identityId", "chatId", name="uq_feishu_bind_endpoint"),
+    )
 
     bindId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
-    botId: Mapped[str] = mapped_column(String(32), ForeignKey("feishuBot.botId", ondelete="CASCADE"), nullable=False)
-    identityId: Mapped[str] = mapped_column(String(32), ForeignKey("lifeIdentity.identityId", ondelete="CASCADE"), nullable=False)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    botId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("feishuBot.botId", ondelete="CASCADE"), nullable=False
+    )
+    identityId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("lifeIdentity.identityId", ondelete="CASCADE"), nullable=False
+    )
     chatId: Mapped[str] = mapped_column(String(300), nullable=False)
     chatType: Mapped[str] = mapped_column(String(20), default="p2p", nullable=False)
     stat: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
@@ -597,11 +630,17 @@ class FeishuChatPair(Base):
     __tablename__ = "feishuChatPair"
 
     pairId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
-    botId: Mapped[str] = mapped_column(String(32), ForeignKey("feishuBot.botId", ondelete="CASCADE"), nullable=False)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    botId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("feishuBot.botId", ondelete="CASCADE"), nullable=False
+    )
     claimCode: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     stat: Mapped[str] = mapped_column(String(20), default="created", nullable=False)
-    identityId: Mapped[str | None] = mapped_column(String(32), ForeignKey("lifeIdentity.identityId", ondelete="SET NULL"))
+    identityId: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("lifeIdentity.identityId", ondelete="SET NULL")
+    )
     chatId: Mapped[str | None] = mapped_column(String(300))
     chatType: Mapped[str | None] = mapped_column(String(20))
     expiresAt: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -612,11 +651,17 @@ class FeishuChatPair(Base):
 
 class LifeIdentity(Base):
     __tablename__ = "lifeIdentity"
-    __table_args__ = (UniqueConstraint("provider", "externalId", name="uq_life_identity_provider_external"),)
+    __table_args__ = (
+        UniqueConstraint("provider", "externalId", name="uq_life_identity_provider_external"),
+    )
 
     identityId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
-    deviceId: Mapped[str | None] = mapped_column(String(32), ForeignKey("lifeDevice.deviceId", ondelete="SET NULL"))
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    deviceId: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("lifeDevice.deviceId", ondelete="SET NULL")
+    )
     provider: Mapped[str] = mapped_column(String(30), nullable=False)
     externalId: Mapped[str] = mapped_column(String(200), nullable=False)
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
@@ -626,8 +671,12 @@ class DeviceDispatch(Base):
     __tablename__ = "deviceDispatch"
 
     dispatchId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    deviceId: Mapped[str] = mapped_column(String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), nullable=False)
-    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    deviceId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), nullable=False
+    )
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
     kind: Mapped[str] = mapped_column(String(50), nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     stat: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
@@ -641,8 +690,12 @@ class DeviceReceipt(Base):
     __table_args__ = (UniqueConstraint("dispatchId", name="uq_device_receipt_dispatch"),)
 
     receiptId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    dispatchId: Mapped[str] = mapped_column(String(32), ForeignKey("deviceDispatch.dispatchId", ondelete="CASCADE"), nullable=False)
-    deviceId: Mapped[str] = mapped_column(String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), nullable=False)
+    dispatchId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("deviceDispatch.dispatchId", ondelete="CASCADE"), nullable=False
+    )
+    deviceId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), nullable=False
+    )
     result: Mapped[str] = mapped_column(String(30), nullable=False)
     detail: Mapped[dict | None] = mapped_column(JSON)
     createdAt: Mapped[str] = mapped_column(String(64), default=nowIso, nullable=False)
@@ -655,7 +708,9 @@ class ComputerActivityContext(Base):
     )
 
     contextId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
     fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     bundleId: Mapped[str] = mapped_column(String(300), nullable=False)
     appName: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -676,7 +731,9 @@ class ComputerActivityBucket(Base):
     )
 
     bucketId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
     deviceId: Mapped[str] = mapped_column(String(32), nullable=False)
     sessionId: Mapped[str | None] = mapped_column(String(64))
     bucketStart: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -692,8 +749,14 @@ class ComputerActivitySlice(Base):
     __tablename__ = "computerActivitySlice"
 
     sliceId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    bucketId: Mapped[str] = mapped_column(String(32), ForeignKey("computerActivityBucket.bucketId", ondelete="CASCADE"), nullable=False)
-    contextId: Mapped[str | None] = mapped_column(String(32), ForeignKey("computerActivityContext.contextId", ondelete="SET NULL"))
+    bucketId: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("computerActivityBucket.bucketId", ondelete="CASCADE"),
+        nullable=False,
+    )
+    contextId: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("computerActivityContext.contextId", ondelete="SET NULL")
+    )
     state: Mapped[str] = mapped_column(String(20), nullable=False)
     seconds: Mapped[int] = mapped_column(Integer, nullable=False)
 
@@ -701,8 +764,12 @@ class ComputerActivitySlice(Base):
 class ComputerMonitorStatus(Base):
     __tablename__ = "computerMonitorStatus"
 
-    deviceId: Mapped[str] = mapped_column(String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), primary_key=True)
-    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    deviceId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), primary_key=True
+    )
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
     currentState: Mapped[str] = mapped_column(String(20), default="offline", nullable=False)
     currentAppName: Mapped[str | None] = mapped_column(String(200))
     currentWindowTitle: Mapped[str | None] = mapped_column(String(300))
@@ -723,7 +790,9 @@ class ComputerDailyUsage(Base):
     )
 
     dailyUsageId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
     deviceId: Mapped[str] = mapped_column(String(32), nullable=False)
     usageDate: Mapped[str] = mapped_column(String(10), nullable=False)
     activeSeconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -742,7 +811,11 @@ class ComputerDailyAppUsage(Base):
     )
 
     dailyAppUsageId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    dailyUsageId: Mapped[str] = mapped_column(String(32), ForeignKey("computerDailyUsage.dailyUsageId", ondelete="CASCADE"), nullable=False)
+    dailyUsageId: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("computerDailyUsage.dailyUsageId", ondelete="CASCADE"),
+        nullable=False,
+    )
     bundleId: Mapped[str] = mapped_column(String(300), nullable=False)
     appName: Mapped[str] = mapped_column(String(200), nullable=False)
     activeSeconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -751,12 +824,18 @@ class ComputerDailyAppUsage(Base):
 class ComputerHourlyAnalysis(Base):
     __tablename__ = "computerHourlyAnalysis"
     __table_args__ = (
-        UniqueConstraint("userId", "deviceId", "hourStart", name="uq_computer_hourly_user_device_hour"),
+        UniqueConstraint(
+            "userId", "deviceId", "hourStart", name="uq_computer_hourly_user_device_hour"
+        ),
     )
 
     analysisId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
-    deviceId: Mapped[str] = mapped_column(String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), nullable=False)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    deviceId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), nullable=False
+    )
     hourStart: Mapped[str] = mapped_column(String(64), nullable=False)
     hourEnd: Mapped[str] = mapped_column(String(64), nullable=False)
     timezone: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -870,12 +949,18 @@ class ComputerWorkBlockAnalysisRun(Base):
 class ComputerDailyWorkLog(Base):
     __tablename__ = "computerDailyWorkLog"
     __table_args__ = (
-        UniqueConstraint("userId", "deviceId", "logDate", name="uq_computer_daily_log_user_device_date"),
+        UniqueConstraint(
+            "userId", "deviceId", "logDate", name="uq_computer_daily_log_user_device_date"
+        ),
     )
 
     logId: Mapped[str] = mapped_column(String(32), primary_key=True, default=newId)
-    userId: Mapped[str] = mapped_column(String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False)
-    deviceId: Mapped[str] = mapped_column(String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), nullable=False)
+    userId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("appUser.userId", ondelete="CASCADE"), nullable=False
+    )
+    deviceId: Mapped[str] = mapped_column(
+        String(32), ForeignKey("lifeDevice.deviceId", ondelete="CASCADE"), nullable=False
+    )
     logDate: Mapped[str] = mapped_column(String(10), nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="queued", nullable=False)
     title: Mapped[str | None] = mapped_column(String(40))

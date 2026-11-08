@@ -138,7 +138,7 @@ async function logout() {
           </RouterLink>
         </div>
       </header>
-      <main ref="pageRoot" class="page"><RouterView /></main>
+      <main ref="pageRoot" class="page" :class="{ 'page--assistant': route.name === 'assistant' }"><RouterView /></main>
     </section>
   </div>
 </template>

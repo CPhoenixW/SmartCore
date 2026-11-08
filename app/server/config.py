@@ -31,11 +31,24 @@ class Settings(BaseSettings):
     def validate_public_access(self):
         if self.public_access_enabled:
             origin = urlsplit(self.public_origin)
-            if (origin.scheme != "https" or not origin.hostname or origin.username
-                    or origin.password or origin.path or origin.query or origin.fragment):
+            if (
+                origin.scheme != "https"
+                or not origin.hostname
+                or origin.username
+                or origin.password
+                or origin.path
+                or origin.query
+                or origin.fragment
+            ):
                 raise ValueError("PUBLIC_ORIGIN must be an HTTPS origin without a path")
-            if not self.auth_cookie_secure or self.auth_registration_enabled or self.auth_setup_enabled:
-                raise ValueError("public access requires Secure cookies and disabled registration/setup")
+            if (
+                not self.auth_cookie_secure
+                or self.auth_registration_enabled
+                or self.auth_setup_enabled
+            ):
+                raise ValueError(
+                    "public access requires Secure cookies and disabled registration/setup"
+                )
         return self
 
     semester_start: date | None = None
@@ -46,8 +59,9 @@ class Settings(BaseSettings):
     llm_model: str = "deepseek-v4.1-flash-1017"
     llm_max_retries: int = 2
     llm_timeout_seconds: int = 120
-    # Images use Qwen's native multimodal input; documents remain storage-only.
-    vision_model: str = "qwen3.7-plus"
+    # Kept as a compatibility alias for older deployments. Image requests use
+    # the same multimodal DeepSeek model as the normal LLM gateway.
+    vision_model: str = "deepseek-v4.1-flash-1017"
     vision_max_image_bytes: int = 10 * 1024 * 1024
     vision_max_output_tokens: int = 128
     vision_max_retries: int = 0

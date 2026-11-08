@@ -17,7 +17,7 @@ def test_default_natural_language_gateway_config() -> None:
     assert settings.llm_provider == "tokendance"
     assert settings.llm_base_url == "https://tokendance.space/gateway/v1"
     assert settings.llm_model == "deepseek-v4.1-flash-1017"
-    assert settings.vision_model == "qwen3.7-plus"
+    assert settings.vision_model == "deepseek-v4.1-flash-1017"
     assert settings.vision_max_output_tokens == 128
     assert settings.vision_max_retries == 0
     assert settings.vision_timeout_seconds == 60
@@ -110,7 +110,7 @@ def test_image_gateway_bounds_ocr_output_and_timeout(monkeypatch: pytest.MonkeyP
     gateway._build_client.cache_clear()
     settings = Settings(
         llm_api_key="test-key",
-        vision_model="qwen3.7-plus",
+        llm_model="deepseek-v4.1-flash-1017",
         vision_max_output_tokens=64,
         vision_max_retries=0,
         vision_timeout_seconds=30,
@@ -133,7 +133,7 @@ def test_image_gateway_bounds_ocr_output_and_timeout(monkeypatch: pytest.MonkeyP
     assert client_options["max_retries"] == 0
     request = captured["request"]
     assert isinstance(request, dict)
-    assert request["model"] == "qwen3.7-plus"
+    assert request["model"] == "deepseek-v4.1-flash-1017"
     assert request["max_tokens"] == 64
 
 

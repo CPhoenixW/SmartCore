@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { Search, Send, WifiOff, X } from "@lucide/vue";
+import { Copy, FileText, ImagePlus, Paperclip, Quote, Search, Send, WifiOff, X } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import { assistantApi } from "@/api/assistant";
 import type {
   AssistantConversation,
+  AssistantAttachment,
   AssistantMessage,
   AssistantSearchResult,
   AssistantStreamEvent,
@@ -16,6 +17,8 @@ import { formatDateTime } from "@/utils/date";
 const { t, locale } = useI18n();
 const route = useRoute() as ReturnType<typeof useRoute> | undefined;
 const input = ref("");
+const pendingAttachments = ref<AssistantAttachment[]>([]);
+const quotedMessage = ref<{ messageId: string; text: string; role: "user" | "assistant" } | null>(null);
 const searchQuery = ref("");
 const searchResults = ref<AssistantSearchResult[]>([]);
 const searchOpen = ref(false);
@@ -33,6 +36,7 @@ const streamingText = ref("");
 const online = ref(typeof navigator === "undefined" ? true : navigator.onLine);
 const messagesRoot = ref<HTMLElement | null>(null);
 const composerRoot = ref<HTMLElement | null>(null);
+const fileInput = ref<HTMLInputElement | null>(null);
 const highlightMessageId = ref("");
 let syncTimer: ReturnType<typeof setInterval> | undefined;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -53,6 +57,54 @@ function scrollToLatest(): void {
 }
 function scrollToMessage(messageId: string): void {
   void nextTick(() => document.getElementById(`assistant-message-${messageId}`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
+}
+function isReportMessage(message: AssistantMessage): boolean {
+  return message.role === "assistant" && /(每日工作汇报|每日总结|工作汇报|daily summary)/i.test(message.text);
+}
+function attachmentUrl(attachment: AssistantAttachment): string {
+  return attachment.url || assistantApi.attachmentUrl(attachment.uploadId);
+}
+function attachmentLabel(attachment: AssistantAttachment): string {
+  return attachment.fileName || (attachment.mimeType.startsWith("image/") ? "图片" : "附件");
+}
+function formatAttachmentSize(sizeBytes: number): string {
+  if (sizeBytes < 1024) return `${sizeBytes} B`;
+  if (sizeBytes < 1024 * 1024) return `${Math.round(sizeBytes / 1024)} KB`;
+  return `${(sizeBytes / 1024 / 1024).toFixed(1)} MB`;
+}
+function quoteMessage(message: AssistantMessage): void {
+  const text = message.text.trim();
+  if (!text) return;
+  quotedMessage.value = { messageId: message.messageId, text: text.slice(0, 300), role: message.role };
+  ensureComposerVisible();
+}
+function clearQuote(): void { quotedMessage.value = null; }
+async function copyMessage(message: AssistantMessage): Promise<void> {
+  if (!navigator.clipboard) return;
+  await navigator.clipboard.writeText(message.text);
+}
+function openFilePicker(): void { fileInput.value?.click(); }
+async function addAttachments(event: Event): Promise<void> {
+  const target = event.target as HTMLInputElement;
+  const files = Array.from(target.files || []);
+  target.value = "";
+  if (!files.length) return;
+  if (pendingAttachments.value.length + files.length > 10) {
+    error.value = "一条消息最多附加 10 个文件";
+    return;
+  }
+  try {
+    const added = await assistantApi.uploadAttachments(files);
+    pendingAttachments.value.push(...added);
+    error.value = "";
+    ensureComposerVisible();
+  } catch (requestError) {
+    error.value = requestError instanceof Error ? requestError.message : "附件上传失败";
+  }
+}
+async function removeAttachment(attachment: AssistantAttachment): Promise<void> {
+  pendingAttachments.value = pendingAttachments.value.filter((item) => item.uploadId !== attachment.uploadId);
+  try { await assistantApi.removeAttachment(attachment.uploadId); } catch { /* cleanup will remove abandoned uploads */ }
 }
 function persistConversation(conversation: AssistantConversation | null = activeConversation.value): void {
   if (typeof window === "undefined" || !conversation?.conversationId) return;
@@ -111,7 +163,7 @@ async function loadPrimaryConversation(): Promise<void> {
     const result = await assistantApi.list();
     const primary = result.items[0] as AssistantConversation | undefined;
     if (!primary) throw new Error(t("assistant.historyError"));
-    await loadConversation(primary.conversationId, undefined, restored);
+    await loadConversation(primary.conversationId, String(route?.query?.messageId || "") || undefined, restored);
   } catch (requestError) {
     error.value = requestError instanceof Error ? requestError.message : t("assistant.historyError");
   } finally {
@@ -176,7 +228,9 @@ async function openSearchResult(result: AssistantSearchResult): Promise<void> {
   scrollToMessage(result.messageId);
 }
 async function send(): Promise<void> {
-  const text = input.value.trim();
+  const outgoingAttachments = pendingAttachments.value.slice();
+  const outgoingQuote = quotedMessage.value;
+  const text = input.value.trim() || (outgoingAttachments.length ? t("assistant.attachmentPrompt") : "");
   if (!text || sending.value) return;
   if (!online.value) {
     error.value = t("assistant.offline");
@@ -187,6 +241,8 @@ async function send(): Promise<void> {
     if (!activeConversationId.value) return;
   }
   input.value = "";
+  pendingAttachments.value = [];
+  quotedMessage.value = null;
   error.value = "";
   const clientMessageId = newClientId();
   const optimistic: AssistantMessage = {
@@ -194,6 +250,9 @@ async function send(): Promise<void> {
     conversationId: activeConversationId.value,
     role: "user",
     text,
+    replyToMessageId: outgoingQuote?.messageId,
+    replyToText: outgoingQuote?.text,
+    attachments: outgoingAttachments,
     stat: "complete",
     createdAt: new Date().toISOString(),
   };
@@ -206,10 +265,7 @@ async function send(): Promise<void> {
   activeTool.value = "";
   streamingText.value = "";
   try {
-    const result = await assistantApi.stream(
-      text,
-      activeConversationId.value,
-      (event: AssistantStreamEvent) => {
+    const onEvent = (event: AssistantStreamEvent) => {
         if (event.type === "status") activity.value = event.message || t("assistant.thinking");
         if (event.type === "tool") {
           activity.value = event.message || t("assistant.toolWorking");
@@ -222,9 +278,13 @@ async function send(): Promise<void> {
           if (event.response?.trim()) appendStreamingText(event.response, "new");
           activity.value = t("assistant.done");
         }
-      },
-      clientMessageId,
-    );
+      };
+    const streamOptions = outgoingAttachments.length || outgoingQuote
+      ? { attachmentIds: outgoingAttachments.map((item) => item.uploadId), replyToMessageId: outgoingQuote?.messageId }
+      : undefined;
+    const result = streamOptions
+      ? await assistantApi.stream(text, activeConversationId.value, onEvent, clientMessageId, streamOptions)
+      : await assistantApi.stream(text, activeConversationId.value, onEvent, clientMessageId);
     activeConversationId.value = result.conversationId || result.sessionId || activeConversationId.value;
     await loadConversation(activeConversationId.value, undefined, true);
   } catch (requestError) {
@@ -258,6 +318,9 @@ onMounted(() => {
 });
 watch(() => route?.query?.prompt, (value) => {
   if (value) input.value = String(value);
+});
+watch(() => route?.query?.messageId, (value) => {
+  if (value) scrollToMessage(String(value));
 });
 onBeforeUnmount(() => {
   window.removeEventListener("online", onOnline);
@@ -295,16 +358,38 @@ onBeforeUnmount(() => {
           :id="`assistant-message-${message.messageId}`"
           :key="message.messageId"
           class="assistant-message"
-          :class="[`assistant-message--${message.role}`, { 'assistant-message--highlight': highlightMessageId === message.messageId, 'assistant-message--failed': message.stat === 'failed', 'assistant-message--pending': message.stat === 'pending' }]"
+          :class="[`assistant-message--${message.role}`, { 'assistant-message--report': isReportMessage(message), 'assistant-message--highlight': highlightMessageId === message.messageId, 'assistant-message--failed': message.stat === 'failed', 'assistant-message--pending': message.stat === 'pending' }]"
         >
-          <span class="assistant-message__label">{{ message.role === "user" ? t("assistant.you") : t("assistant.bot") }}</span>
-          <MarkdownContent v-if="message.role === 'assistant'" :content="message.text || t('assistant.pending')" />
-          <p v-else>{{ message.text || t("assistant.pending") }}</p>
-          <time>{{ dateLabel(message.createdAt) }}</time>
+          <header class="assistant-message__header">
+            <div class="assistant-message__identity">
+              <span class="assistant-message__label">{{ message.role === "user" ? t("assistant.you") : t("assistant.bot") }}</span>
+              <span v-if="isReportMessage(message)" class="assistant-message__kind"><FileText :size="13" aria-hidden="true" />{{ t("assistant.dailyReport") }}</span>
+            </div>
+            <div class="assistant-message__meta">
+              <time>{{ dateLabel(message.createdAt) }}</time>
+              <button class="assistant-message__action" type="button" :title="t('assistant.quote')" :aria-label="t('assistant.quote')" @click.stop="quoteMessage(message)"><Quote :size="14" aria-hidden="true" /></button>
+              <button class="assistant-message__action" type="button" :title="t('assistant.copy')" :aria-label="t('assistant.copy')" @click.stop="copyMessage(message)"><Copy :size="14" aria-hidden="true" /></button>
+            </div>
+          </header>
+          <div v-if="message.replyToText" class="assistant-message__quote" @click="message.replyToMessageId && scrollToMessage(message.replyToMessageId)">
+            <span>{{ t("assistant.quotedMessage") }}</span>
+            <p>{{ message.replyToText }}</p>
+          </div>
+          <div class="assistant-message__body">
+            <MarkdownContent v-if="message.role === 'assistant'" :content="message.text || t('assistant.pending')" />
+            <p v-else>{{ message.text || t("assistant.pending") }}</p>
+          </div>
+          <div v-if="message.attachments?.length" class="assistant-attachments" :aria-label="t('assistant.attachments')">
+            <a v-for="attachment in message.attachments" :key="attachment.uploadId" class="assistant-attachment" :href="attachmentUrl(attachment)" target="_blank" rel="noopener noreferrer">
+              <img v-if="attachment.mimeType.startsWith('image/')" :src="attachmentUrl(attachment)" :alt="attachmentLabel(attachment)" />
+              <FileText v-else :size="20" aria-hidden="true" />
+              <span><strong>{{ attachmentLabel(attachment) }}</strong><small>{{ formatAttachmentSize(attachment.sizeBytes) }}</small></span>
+            </a>
+          </div>
         </article>
         <article v-if="streamingText" class="assistant-message assistant-message--assistant assistant-message--streaming">
-          <span class="assistant-message__label">{{ t("assistant.bot") }}</span>
-          <MarkdownContent :content="streamingText" />
+          <header class="assistant-message__header"><span class="assistant-message__label">{{ t("assistant.bot") }}</span></header>
+          <div class="assistant-message__body"><MarkdownContent :content="streamingText" /></div>
         </article>
         <div v-if="sending || !online" class="assistant-progress" :class="{ 'assistant-progress--offline': !online }" role="status" aria-live="polite">
           <span class="assistant-progress__spinner" aria-hidden="true"><WifiOff v-if="!online" :size="14" /></span>
@@ -313,6 +398,23 @@ onBeforeUnmount(() => {
       </div>
       <p v-if="error" class="assistant-error" role="alert">{{ error }}</p>
       <form ref="composerRoot" class="assistant-composer" @submit.prevent="send">
+        <div v-if="quotedMessage" class="assistant-quote-preview">
+          <Quote :size="14" aria-hidden="true" />
+          <span><strong>{{ t("assistant.quotedMessage") }}</strong>{{ quotedMessage.text }}</span>
+          <button type="button" class="assistant-composer__clear" :aria-label="t('common.close')" @click="clearQuote"><X :size="15" aria-hidden="true" /></button>
+        </div>
+        <div v-if="pendingAttachments.length" class="assistant-attachment-strip">
+          <span v-for="attachment in pendingAttachments" :key="attachment.uploadId" class="assistant-attachment-chip">
+            <img v-if="attachment.mimeType.startsWith('image/')" :src="attachmentUrl(attachment)" :alt="attachmentLabel(attachment)" />
+            <FileText v-else :size="15" aria-hidden="true" />
+            <span>{{ attachmentLabel(attachment) }}</span>
+            <button type="button" :aria-label="`${t('common.delete')} ${attachmentLabel(attachment)}`" @click="removeAttachment(attachment)"><X :size="13" aria-hidden="true" /></button>
+          </span>
+        </div>
+        <p class="assistant-capabilities">{{ t("assistant.capabilities") }}</p>
+        <div class="assistant-composer__row">
+          <button class="assistant-attach" type="button" :aria-label="t('assistant.addAttachment')" :title="t('assistant.addAttachment')" :disabled="sending || loading" @click="openFilePicker"><Paperclip :size="17" aria-hidden="true" /></button>
+          <input ref="fileInput" class="assistant-file-input" type="file" multiple accept="image/*,.pdf,.txt,.md,.csv,.docx,.zip" @change="addAttachments" />
         <textarea
           v-model="input"
           :disabled="loading"
@@ -325,11 +427,12 @@ onBeforeUnmount(() => {
           class="button button--primary assistant-send"
           type="submit"
           :aria-label="sending ? t('assistant.sending') : t('assistant.send')"
-          :disabled="sending || loading || !input.trim()"
+          :disabled="sending || loading || !(input.trim() || pendingAttachments.length)"
         >
           <Send :size="16" aria-hidden="true" />
           <span>{{ sending ? t("assistant.sending") : t("assistant.send") }}</span>
         </button>
+        </div>
       </form>
     </section>
   </div>
@@ -759,4 +862,49 @@ onBeforeUnmount(() => {
     width: calc(100% - 20px);
   }
 }
+.assistant-page{height:calc(100dvh - 72px);min-height:calc(100dvh - 72px)}
+.assistant-shell{height:100%;min-height:100%;border:0;border-radius:0;box-shadow:none}
+.assistant-messages{padding:30px clamp(18px,5vw,88px) 34px}
+.assistant-message{max-width:min(900px,88%);user-select:none;-webkit-user-select:none}
+.assistant-message__header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:8px}
+.assistant-message__identity,.assistant-message__meta{display:flex;align-items:center;gap:8px;min-width:0}
+.assistant-message__meta{color:#94a3b8;font-size:10px}
+.assistant-message__label{margin:0}
+.assistant-message__kind{display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:999px;background:#ecfdf5;color:#047857;font-size:10px;font-weight:700}
+.assistant-message__action{display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:7px;background:transparent;color:#94a3b8}
+.assistant-message__action:hover{background:#eff6ff;color:#1d4ed8}
+.assistant-message__body{min-width:0}
+.assistant-message__quote,.assistant-quote-preview{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:6px 8px;margin:0 0 10px;padding:8px 10px;border-left:3px solid #93c5fd;border-radius:0 8px 8px 0;background:#f8fafc;color:#475569;font-size:12px}
+.assistant-message__quote{cursor:pointer}
+.assistant-message__quote>span,.assistant-quote-preview strong{color:#1d4ed8;font-size:11px}
+.assistant-message__quote p{grid-column:2;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.assistant-message--user .assistant-message__quote{border-left-color:#bfdbfe;background:rgb(255 255 255 / 12%);color:#dbeafe}
+.assistant-message--user .assistant-message__quote>span{color:#dbeafe}
+.assistant-message--report{max-width:min(980px,94%);border-color:#bbf7d0;background:linear-gradient(145deg,#f0fdf4,#fff 62%);box-shadow:0 8px 24px rgb(22 101 52 / 7%)}
+.assistant-message--report::before{position:absolute;inset:0 auto 0 0;width:4px;border-radius:18px 0 0 18px;background:#22c55e;content:""}
+.assistant-message--user .assistant-message__meta{color:#bfdbfe}
+.assistant-message--user .assistant-message__action{color:#dbeafe}
+.assistant-message--user .assistant-message__action:hover{background:rgb(255 255 255 / 16%);color:#fff}
+.assistant-attachments,.assistant-attachment-strip{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.assistant-attachment{display:inline-flex;align-items:center;gap:8px;min-width:0;max-width:280px;padding:7px 9px;border:1px solid #dbe4ef;border-radius:10px;background:#f8fafc;color:inherit;text-decoration:none}
+.assistant-attachment:hover{border-color:#93c5fd;background:#eff6ff}
+.assistant-attachment img{width:48px;height:38px;border-radius:6px;object-fit:cover}
+.assistant-attachment span{display:grid;min-width:0;gap:2px}
+.assistant-attachment strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.assistant-attachment small{color:#64748b;font-size:10px}
+.assistant-composer{flex-direction:column;padding:12px clamp(14px,5vw,88px) 16px}
+.assistant-composer__row{display:flex;align-items:stretch;gap:10px;width:100%}
+.assistant-composer__row textarea{min-width:0}
+.assistant-attach{display:grid;place-items:center;width:44px;flex:0 0 44px;border:1px solid var(--border-color);border-radius:11px;background:#f8fafc;color:#475569}
+.assistant-attach:hover{border-color:#93c5fd;color:#1d4ed8;background:#eff6ff}
+.assistant-file-input{display:none}
+.assistant-quote-preview{width:100%;grid-template-columns:auto minmax(0,1fr) auto;margin:0}
+.assistant-quote-preview>span{display:grid;gap:2px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.assistant-composer__clear,.assistant-attachment-chip button{display:grid;place-items:center;border:0;background:transparent;color:#64748b}
+.assistant-composer__clear:hover,.assistant-attachment-chip button:hover{color:#dc2626}
+.assistant-attachment-chip{display:inline-flex;align-items:center;gap:6px;max-width:230px;padding:5px 7px;border:1px solid #dbe4ef;border-radius:8px;background:#fff;color:#475569;font-size:11px}
+.assistant-attachment-chip img{width:24px;height:22px;border-radius:4px;object-fit:cover}
+.assistant-attachment-chip>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.assistant-capabilities{width:100%;margin:0;color:#94a3b8;font-size:10px;line-height:1.35}
+@media (max-width:760px){.assistant-messages{padding:14px 12px 18px}.assistant-message__meta time{display:none}.assistant-message__header{gap:8px}.assistant-message--report{max-width:96%}.assistant-composer{padding:8px 10px 10px}}
 </style>

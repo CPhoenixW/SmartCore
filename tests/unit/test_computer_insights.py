@@ -210,7 +210,7 @@ def test_hourly_result_rejects_substantial_without_seventy_percent_overlap(db_se
                     }
                 ],
                 "topics": [],
-                "model": "qwen3.7-plus",
+                "model": "deepseek-v4.1-flash-1017",
                 "promptVersion": "computer-analysis-v1",
             },
         )
@@ -239,7 +239,7 @@ def test_hourly_result_accepts_equivalent_zulu_hour_start(db_session) -> None:
             "summary": "本小时主要进行了开发工作。",
             "planAssessments": [],
             "topics": [],
-            "model": "qwen3.7-plus",
+            "model": "deepseek-v4.1-flash-1017",
             "promptVersion": "computer-analysis-v1",
         },
     )
@@ -276,7 +276,7 @@ def test_zero_active_cannot_be_marked_partial(db_session) -> None:
                     }
                 ],
                 "topics": [],
-                "model": "qwen3.7-plus",
+                "model": "deepseek-v4.1-flash-1017",
                 "promptVersion": "computer-analysis-v1",
             },
         )

@@ -155,6 +155,8 @@ CREATE TABLE IF NOT EXISTS ideaUpload (
     storagePath VARCHAR(700) NOT NULL,
     sizeBytes INTEGER NOT NULL,
     createdAt VARCHAR(64) NOT NULL,
+    assistantMessageId VARCHAR(32),
+    FOREIGN KEY (assistantMessageId) REFERENCES assistantMessage(messageId) ON DELETE CASCADE,
     FOREIGN KEY (userId) REFERENCES appUser(userId) ON DELETE CASCADE
 );
 
@@ -314,6 +316,8 @@ CREATE TABLE IF NOT EXISTS assistantMessage (
     userId VARCHAR(32) NOT NULL,
     role VARCHAR(20) NOT NULL,
     text TEXT NOT NULL DEFAULT '',
+    replyToMessageId VARCHAR(32),
+    replyToText TEXT,
     clientMessageId VARCHAR(120),
     stat VARCHAR(20) NOT NULL DEFAULT 'complete',
     createdAt VARCHAR(64) NOT NULL,
@@ -330,6 +334,8 @@ CREATE INDEX IF NOT EXISTS idx_assistantMessage_conversation_created
     ON assistantMessage(conversationId, createdAt);
 CREATE INDEX IF NOT EXISTS idx_assistantMessage_user_created
     ON assistantMessage(userId, createdAt);
+CREATE INDEX IF NOT EXISTS idx_ideaUpload_assistant_message
+    ON ideaUpload(assistantMessageId, createdAt);
 
 CREATE TABLE IF NOT EXISTS userMemory (
     memoryId VARCHAR(32) PRIMARY KEY,

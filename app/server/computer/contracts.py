@@ -6,10 +6,10 @@ from typing import Literal, TypeAlias
 from pydantic import BaseModel, ConfigDict, Field
 
 ComputerAnalysisModel: TypeAlias = Literal[
-    "qwen3.7-plus", "deepseek-v4-flash", "deepseek-v4-flash-0731"
+    "deepseek-v4.1-flash-1017", "deepseek-v4-flash", "deepseek-v4-flash-0731"
 ]
 SUPPORTED_COMPUTER_ANALYSIS_MODELS = {
-    "qwen3.7-plus",
+    "deepseek-v4.1-flash-1017",
     "deepseek-v4-flash",
     "deepseek-v4-flash-0731",
 }

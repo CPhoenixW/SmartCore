@@ -13,6 +13,7 @@ export interface PushPublicKeyResult {
 export interface NotificationRecord {
   notifyId: string;
   evtId?: string | null;
+  targetId?: string | null;
   channel: string;
   title: string;
   content: string;

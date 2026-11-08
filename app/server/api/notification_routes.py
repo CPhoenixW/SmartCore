@@ -38,6 +38,8 @@ def _delivery_state(row: NotifyLog) -> str:
         return "accepted"
     if row.stat == "sent" and row.channel == "screen":
         return "connected"
+    if row.stat == "recorded" and row.channel == "assistant":
+        return "recorded"
     return row.stat
 
 
@@ -46,6 +48,8 @@ def _delivery_detail(row: NotifyLog) -> str | None:
         return "push_provider_accepted"
     if row.stat == "sent" and row.channel == "screen":
         return "screen_socket_accepted"
+    if row.stat == "recorded" and row.channel == "assistant":
+        return "assistant_history_recorded"
     return row.failReason
 
 
@@ -53,6 +57,7 @@ def _notify_dict(row: NotifyLog) -> dict[str, Any]:
     return {
         "notifyId": row.notifyId,
         "evtId": row.evtId,
+        "targetId": row.receiver,
         "channel": row.channel,
         "title": row.title,
         "content": row.content,
@@ -106,7 +111,9 @@ def save_push_subscription(
         raise HTTPException(status_code=422, detail="push endpoint must use HTTPS")
     row = db.scalar(select(PushSubscription).where(PushSubscription.endpoint == body.endpoint))
     if row is None:
-        row = PushSubscription(endpoint=body.endpoint, userId=user_id, p256dh=body.keys.p256dh, auth=body.keys.auth)
+        row = PushSubscription(
+            endpoint=body.endpoint, userId=user_id, p256dh=body.keys.p256dh, auth=body.keys.auth
+        )
         db.add(row)
     else:
         row.userId = user_id

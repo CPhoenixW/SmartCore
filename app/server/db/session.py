@@ -86,12 +86,15 @@ def _execute_sqlite_script(db_path: Path, script_path: Path) -> None:
             try:
                 conn.execute(statement)
             except sqlite3.OperationalError as exc:
-                statement_without_comments = "\n".join(
-                    part for part in statement.splitlines() if not part.strip().startswith("--")
-                ).lstrip().upper()
-                if (
-                    "NO SUCH COLUMN" in str(exc).upper()
-                    and statement_without_comments.startswith(("CREATE INDEX", "CREATE UNIQUE INDEX"))
+                statement_without_comments = (
+                    "\n".join(
+                        part for part in statement.splitlines() if not part.strip().startswith("--")
+                    )
+                    .lstrip()
+                    .upper()
+                )
+                if "NO SUCH COLUMN" in str(exc).upper() and statement_without_comments.startswith(
+                    ("CREATE INDEX", "CREATE UNIQUE INDEX")
                 ):
                     # An old table can be rebuilt by the migration pass after
                     # this schema script. Do not fail startup only because its
@@ -127,7 +130,9 @@ def _add_sqlite_column(conn: object, table: str, column: str, ddl: str) -> None:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
 
 
-def _rebuild_table_if_incompatible(conn: object, table: str, required_columns: set[str], create_sql: str) -> None:
+def _rebuild_table_if_incompatible(
+    conn: object, table: str, required_columns: set[str], create_sql: str
+) -> None:
     cols = _sqlite_columns(conn, table)
     if not required_columns.issubset(cols):
         conn.execute(f"DROP TABLE IF EXISTS {table}")
@@ -168,7 +173,9 @@ def _rebuild_evt_base_for_reminders(conn: object) -> None:
     type_expr = "evtType" if "evtType" in columns else "'plan'"
     prio_expr = "prio" if "prio" in columns else "'mid'"
     stat_expr = "stat" if "stat" in columns else "'todo'"
-    created_expr = "createdAt" if "createdAt" in columns else "strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')"
+    created_expr = (
+        "createdAt" if "createdAt" in columns else "strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')"
+    )
     updated_expr = "COALESCE(updatedAt, createdAt)" if "updatedAt" in columns else "createdAt"
     if "createdAt" not in columns:
         updated_expr = "strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')"
@@ -186,7 +193,9 @@ def _rebuild_evt_base_for_reminders(conn: object) -> None:
     )
     conn.execute("DROP TABLE evtBase")
     conn.execute("ALTER TABLE evtBase_new RENAME TO evtBase")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_evtBase_user_stat_time ON evtBase(userId, stat, updatedAt)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_evtBase_user_stat_time ON evtBase(userId, stat, updatedAt)"
+    )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_evtBase_user_type ON evtBase(userId, evtType)")
 
 
@@ -236,7 +245,9 @@ def _rebuild_remind_evt_for_standalone(conn: object) -> None:
     conn.execute("ALTER TABLE remindEvt_new RENAME TO remindEvt")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_remindEvt_trigger ON remindEvt(triggerTime)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_remindEvt_plan ON remindEvt(planEvtId)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_remindEvt_ddl_trigger ON remindEvt(ddlEvtId, triggerTime)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_remindEvt_ddl_trigger ON remindEvt(ddlEvtId, triggerTime)"
+    )
 
 
 def _rebuild_act_log_for_user_targets(conn: object) -> None:
@@ -299,16 +310,16 @@ def _rebuild_act_log_for_user_targets(conn: object) -> None:
         if "targetType" in columns
         else "'evt'"
     )
-    target_id_expr = (
-        "COALESCE(CAST(targetId AS TEXT), '')" if "targetId" in columns else "''"
-    )
+    target_id_expr = "COALESCE(CAST(targetId AS TEXT), '')" if "targetId" in columns else "''"
     result_expr = (
         "CASE WHEN stat IN ('failed', 'error') THEN 'failed' ELSE 'ok' END"
         if "stat" in columns
         else "'ok'"
     )
     error_expr = "NULL"
-    created_expr = "createdAt" if "createdAt" in columns else "strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')"
+    created_expr = (
+        "createdAt" if "createdAt" in columns else "strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')"
+    )
     conn.execute(
         f"""
         INSERT INTO actLog_new (
@@ -396,22 +407,36 @@ def _apply_sqlite_migrations(db_path: Path) -> None:
     conn = sqlite3.connect(db_path)
     try:
         conn.execute("PRAGMA foreign_keys = OFF")
-        tables = {str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        tables = {
+            str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
         if "appUser" in tables:
             _add_sqlite_column(conn, "appUser", "loginName", "loginName VARCHAR(100)")
             _add_sqlite_column(conn, "appUser", "role", "role VARCHAR(20) NOT NULL DEFAULT 'user'")
-            _add_sqlite_column(conn, "appUser", "stat", "stat VARCHAR(20) NOT NULL DEFAULT 'active'")
-            _add_sqlite_column(conn, "appUser", "sessionVersion", "sessionVersion INTEGER NOT NULL DEFAULT 1")
+            _add_sqlite_column(
+                conn, "appUser", "stat", "stat VARCHAR(20) NOT NULL DEFAULT 'active'"
+            )
+            _add_sqlite_column(
+                conn, "appUser", "sessionVersion", "sessionVersion INTEGER NOT NULL DEFAULT 1"
+            )
             _add_sqlite_column(conn, "appUser", "lastLoginAt", "lastLoginAt VARCHAR(64)")
-            _add_sqlite_column(conn, "appUser", "language", "language VARCHAR(10) NOT NULL DEFAULT 'zh'")
+            _add_sqlite_column(
+                conn, "appUser", "language", "language VARCHAR(10) NOT NULL DEFAULT 'zh'"
+            )
             _add_sqlite_column(conn, "appUser", "avatarUrl", "avatarUrl VARCHAR(500)")
             _add_sqlite_column(conn, "appUser", "updatedAt", "updatedAt VARCHAR(64)")
-            conn.execute("UPDATE appUser SET role = CASE WHEN userId = 'default' THEN 'admin' ELSE COALESCE(role, 'user') END")
+            conn.execute(
+                "UPDATE appUser SET role = CASE WHEN userId = 'default' THEN 'admin' ELSE COALESCE(role, 'user') END"
+            )
             conn.execute("UPDATE appUser SET language = COALESCE(language, 'zh')")
-            conn.execute("UPDATE appUser SET updatedAt = COALESCE(updatedAt, createdAt, strftime('%Y-%m-%dT%H:%M:%f+08:00', 'now')) WHERE updatedAt IS NULL")
+            conn.execute(
+                "UPDATE appUser SET updatedAt = COALESCE(updatedAt, createdAt, strftime('%Y-%m-%dT%H:%M:%f+08:00', 'now')) WHERE updatedAt IS NULL"
+            )
             _repair_duplicate_login_names(conn)
         if "evtBase" in tables:
-            _add_sqlite_column(conn, "evtBase", "userId", "userId VARCHAR(32) NOT NULL DEFAULT 'default'")
+            _add_sqlite_column(
+                conn, "evtBase", "userId", "userId VARCHAR(32) NOT NULL DEFAULT 'default'"
+            )
             conn.execute("UPDATE evtBase SET userId = COALESCE(userId, 'default')")
             _rebuild_evt_base_for_reminders(conn)
         if "remindEvt" in tables:
@@ -432,12 +457,31 @@ def _apply_sqlite_migrations(db_path: Path) -> None:
                     "revision",
                     "revision INTEGER NOT NULL DEFAULT 1",
                 )
+        if "ideaUpload" in tables:
+            _add_sqlite_column(
+                conn,
+                "ideaUpload",
+                "assistantMessageId",
+                "assistantMessageId VARCHAR(32)",
+            )
         if "actLog" in tables:
             _rebuild_act_log_for_user_targets(conn)
             _rebuild_table_if_incompatible(
                 conn,
                 "actLog",
-                {"actId", "userId", "actorKind", "actorId", "action", "targetKind", "targetId", "sourceDeviceId", "result", "errorMessage", "createdAt"},
+                {
+                    "actId",
+                    "userId",
+                    "actorKind",
+                    "actorId",
+                    "action",
+                    "targetKind",
+                    "targetId",
+                    "sourceDeviceId",
+                    "result",
+                    "errorMessage",
+                    "createdAt",
+                },
                 """
                 CREATE TABLE actLog (
                     actId VARCHAR(32) PRIMARY KEY,
@@ -458,7 +502,22 @@ def _apply_sqlite_migrations(db_path: Path) -> None:
             _rebuild_table_if_incompatible(
                 conn,
                 "notifyLog",
-                {"notifyId", "userId", "evtId", "channel", "receiver", "sourceDeviceId", "routeReason", "title", "content", "scheduledAt", "sentAt", "stat", "failReason", "dedupKey"},
+                {
+                    "notifyId",
+                    "userId",
+                    "evtId",
+                    "channel",
+                    "receiver",
+                    "sourceDeviceId",
+                    "routeReason",
+                    "title",
+                    "content",
+                    "scheduledAt",
+                    "sentAt",
+                    "stat",
+                    "failReason",
+                    "dedupKey",
+                },
                 """
                 CREATE TABLE notifyLog (
                     notifyId VARCHAR(32) PRIMARY KEY,
@@ -482,7 +541,18 @@ def _apply_sqlite_migrations(db_path: Path) -> None:
             _rebuild_table_if_incompatible(
                 conn,
                 "msgLog",
-                {"msgId", "userId", "channel", "direction", "externalId", "sourceDeviceId", "rawText", "intent", "stat", "createdAt"},
+                {
+                    "msgId",
+                    "userId",
+                    "channel",
+                    "direction",
+                    "externalId",
+                    "sourceDeviceId",
+                    "rawText",
+                    "intent",
+                    "stat",
+                    "createdAt",
+                },
                 """
                 CREATE TABLE msgLog (
                     msgId VARCHAR(32) PRIMARY KEY,
@@ -501,10 +571,16 @@ def _apply_sqlite_migrations(db_path: Path) -> None:
         if "devicePair" in tables:
             _add_sqlite_column(conn, "devicePair", "botId", "botId VARCHAR(32)")
         if "computerActivityContext" in tables:
-            _add_sqlite_column(conn, "computerActivityContext", "contextKind", "contextKind VARCHAR(20)")
+            _add_sqlite_column(
+                conn, "computerActivityContext", "contextKind", "contextKind VARCHAR(20)"
+            )
             _add_sqlite_column(conn, "computerActivityContext", "domain", "domain VARCHAR(253)")
-            _add_sqlite_column(conn, "computerActivityContext", "workspace", "workspace VARCHAR(300)")
-            _add_sqlite_column(conn, "computerActivityContext", "documentName", "documentName VARCHAR(300)")
+            _add_sqlite_column(
+                conn, "computerActivityContext", "workspace", "workspace VARCHAR(300)"
+            )
+            _add_sqlite_column(
+                conn, "computerActivityContext", "documentName", "documentName VARCHAR(300)"
+            )
         if "computerDailyWorkLog" in tables:
             _add_sqlite_column(conn, "computerDailyWorkLog", "workBlockIds", "workBlockIds JSON")
             _add_sqlite_column(
@@ -554,6 +630,19 @@ def _apply_sqlite_migrations(db_path: Path) -> None:
                 "computerDailyWorkLog",
                 "nextRetryAt",
                 "nextRetryAt VARCHAR(64)",
+            )
+        if "assistantMessage" in tables:
+            _add_sqlite_column(
+                conn,
+                "assistantMessage",
+                "replyToMessageId",
+                "replyToMessageId VARCHAR(32)",
+            )
+            _add_sqlite_column(
+                conn,
+                "assistantMessage",
+                "replyToText",
+                "replyToText TEXT",
             )
         conn.commit()
         conn.execute("PRAGMA foreign_keys = ON")

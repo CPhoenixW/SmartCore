@@ -31,6 +31,7 @@ function formatTime(value: string): string {
 }
 
 function tone(row: NotificationRecord): "critical" | "failed" | "info" {
+  if (row.channel === "assistant") return "info";
   if (row.stat !== "sent") return "failed";
   if (/ddl|截止|逾期|deadline|overdue|ends|结束/i.test(`${row.title} ${row.content}`)) return "critical";
   return "info";
@@ -39,6 +40,7 @@ function tone(row: NotificationRecord): "critical" | "failed" | "info" {
 function channelLabel(channel: string): string {
   if (channel === "browser") return t("notifications.channel.browser");
   if (channel === "screen") return t("notifications.channel.screen");
+  if (channel === "assistant") return t("notifications.channel.assistant");
   return channel;
 }
 
@@ -52,6 +54,10 @@ function statusLabel(row: NotificationRecord): string {
 }
 
 function openNotification(row: NotificationRecord): void {
+  if (row.channel === "assistant" && row.targetId) {
+    void router.push({ name: "assistant", query: { messageId: row.targetId } });
+    return;
+  }
   if (row.evtId) {
     void router.push({ name: "update", query: { evtId: row.evtId } });
     return;

@@ -91,7 +91,6 @@ def queue_daily_summary(
     return existing, True
 
 
-
 def _push_snippet(content: str, *, limit: int = 160) -> str:
     compact = " ".join(str(content or "").split())
     if len(compact) <= limit:
@@ -128,6 +127,7 @@ def _deliver_completed_daily_summary(
         user_id=user_id,
         text=prefix + body,
         client_message_id=f"daily-summary:{user_id}:{report_date}",
+        create_notification=False,
     )
     sendReminder(
         db,

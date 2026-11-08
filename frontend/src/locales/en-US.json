@@ -213,13 +213,14 @@
     "openPrompt": "Please review this notification",
     "channel": {
       "browser": "Phone push",
-      "screen": "Screen reminder"
+      "screen": "Screen reminder",
+      "assistant": "Assistant chat"
     },
     "status": {
       "accepted": "Push service accepted (phone display unconfirmed)",
       "connected": "Screen channel connected",
       "pending": "Delivery pending",
-      "recorded": "Recorded",
+      "recorded": "Synced to assistant chat",
       "failed": "Delivery failed"
     }
   },
@@ -289,7 +290,15 @@
     "noSearchResults": "No matching messages",
     "historyError": "Conversation history is unavailable",
     "searchError": "Search is temporarily unavailable",
-    "pending": "Generating a response…"
+    "pending": "Generating a response…",
+    "quote": "Quote this message",
+    "copy": "Copy message",
+    "quotedMessage": "Quoted message",
+    "dailyReport": "Daily report",
+    "addAttachment": "Add image or document",
+    "attachmentPrompt": "Please analyze the attached files",
+    "attachments": "Message attachments",
+    "capabilities": "Images are analyzed natively; PDF, TXT, Markdown, CSV, and DOCX text is extracted, while ZIP files stay as attachments."
   },
   "add": {
     "title": "Add event",

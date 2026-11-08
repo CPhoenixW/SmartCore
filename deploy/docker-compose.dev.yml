@@ -52,7 +52,6 @@ services:
       LLM_MODEL: ${LLM_MODEL:-deepseek-v4.1-flash-1017}
       DSH_PROVIDER: ${LLM_PROVIDER:-tokendance}
       DSH_MODEL: ${LLM_MODEL:-deepseek-v4.1-flash-1017}
-      DSH_VISION_MODEL: ${VISION_MODEL:-qwen3.7-plus}
       DSH_HOST_ROOT: /host
     volumes:
       - /:/host

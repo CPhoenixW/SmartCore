@@ -25,6 +25,8 @@ from app.server.screen.manager import screenManager
 
 AGENT_TOKEN_HEADER = "X-SmartCore-Agent-Token"
 DEVICE_TOKEN_HEADER = "X-SmartCore-Device-Token"
+
+
 def _schema_object(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
     schema: dict[str, Any] = {
         "type": "object",
@@ -128,7 +130,7 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
                 "model": {
                     "type": "string",
                     "enum": [
-                        "qwen3.7-plus",
+                        "deepseek-v4.1-flash-1017",
                         "deepseek-v4-flash",
                         "deepseek-v4-flash-0731",
                     ],
@@ -176,7 +178,7 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
                 "model": {
                     "type": "string",
                     "enum": [
-                        "qwen3.7-plus",
+                        "deepseek-v4.1-flash-1017",
                         "deepseek-v4-flash",
                         "deepseek-v4-flash-0731",
                     ],
@@ -219,7 +221,7 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
                 "model": {
                     "type": "string",
                     "enum": [
-                        "qwen3.7-plus",
+                        "deepseek-v4.1-flash-1017",
                         "deepseek-v4-flash",
                         "deepseek-v4-flash-0731",
                     ],
@@ -441,6 +443,7 @@ _AGENT_TOOLS: list[dict[str, Any]] = [
         ),
     },
 ]
+
 
 def _failed(errors: list[str]) -> dict[str, Any]:
     return {"ok": False, "stat": "failed", "data": None, "errors": errors}
@@ -736,6 +739,5 @@ def createDevRouter() -> APIRouter:
     async def postDevState(body: DevStateBody, db: Session = Depends(get_db)) -> dict[str, Any]:
         del body, db
         raise HTTPException(status_code=410, detail="raspberry pi support is disabled")
-
 
     return router

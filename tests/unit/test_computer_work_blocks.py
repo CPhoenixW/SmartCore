@@ -133,7 +133,7 @@ def test_active_five_minutes_queues_start_and_creates_one_block(db_session) -> N
             "topicKey": "api-development",
             "evidenceContextIds": ["ctx-a"],
             "planSemanticAssessments": [],
-            "model": "qwen3.7-plus",
+            "model": "deepseek-v4.1-flash-1017",
             "promptVersion": "computer-work-block-v1",
         },
     )
@@ -149,7 +149,7 @@ def test_active_five_minutes_queues_start_and_creates_one_block(db_session) -> N
             "action": "start",
             "title": "另一个标题",
             "summary": "重复提交不应创建第二个工作块。",
-            "model": "qwen3.7-plus",
+            "model": "deepseek-v4.1-flash-1017",
             "promptVersion": "computer-work-block-v1",
         },
     )
@@ -183,7 +183,7 @@ def test_open_block_refreshes_at_twenty_active_minutes_and_then_hourly(db_sessio
             "topicKey": "smartcore",
             "evidenceContextIds": ["ctx-a"],
             "planSemanticAssessments": [],
-            "model": "qwen3.7-plus",
+            "model": "deepseek-v4.1-flash-1017",
             "promptVersion": "computer-work-block-v1",
         },
     )
@@ -228,7 +228,7 @@ def test_open_block_refreshes_at_twenty_active_minutes_and_then_hourly(db_sessio
             "topicKey": "smartcore",
             "evidenceContextIds": ["ctx-a"],
             "planSemanticAssessments": [],
-            "model": "qwen3.7-plus",
+            "model": "deepseek-v4.1-flash-1017",
             "promptVersion": "computer-work-block-v1",
         },
     )
@@ -428,7 +428,7 @@ def test_idle_twenty_minutes_queues_complete(db_session) -> None:
             "action": "start",
             "title": "接口开发",
             "summary": "围绕服务接口推进实现并形成可继续验证的代码结果。",
-            "model": "qwen3.7-plus",
+            "model": "deepseek-v4.1-flash-1017",
             "promptVersion": "computer-work-block-v1",
         },
     )
@@ -453,7 +453,7 @@ def test_idle_twenty_minutes_queues_complete(db_session) -> None:
             "status": "complete",
             # Compatibility input is ignored; the Server derives complete from the trigger.
             "action": "ignore",
-            "model": "qwen3.7-plus",
+            "model": "deepseek-v4.1-flash-1017",
             "promptVersion": "computer-work-block-v1",
         },
     )
@@ -601,7 +601,7 @@ def test_plan_overlap_uses_elapsed_plan_time_not_full_duration(db_session) -> No
             "title": "实习开发",
             "summary": "围绕实习任务推进开发并形成了阶段性的代码结果。",
             "planSemanticAssessments": [],
-            "model": "qwen3.7-plus",
+            "model": "deepseek-v4.1-flash-1017",
             "promptVersion": "computer-work-block-v1",
         },
     )
@@ -633,7 +633,7 @@ def test_plan_end_requeues_semantic_assessment_once(db_session) -> None:
                     "evidenceCodes": ["matching-context"],
                 }
             ],
-            "model": "qwen3.7-plus",
+            "model": "deepseek-v4.1-flash-1017",
             "promptVersion": "computer-work-block-v1",
         },
     )
@@ -664,7 +664,7 @@ def test_plan_end_requeues_semantic_assessment_once(db_session) -> None:
                     "evidenceCodes": ["completed-window"],
                 }
             ],
-            "model": "qwen3.7-plus",
+            "model": "deepseek-v4.1-flash-1017",
             "promptVersion": "computer-work-block-v1",
         },
     )
@@ -752,7 +752,7 @@ def test_switch_requires_new_context_to_dominate_fifteen_minutes(db_session) -> 
             "topicKey": "research",
             "evidenceContextIds": ["ctx-b"],
             "planSemanticAssessments": [],
-            "model": "qwen3.7-plus",
+            "model": "deepseek-v4.1-flash-1017",
             "promptVersion": "computer-work-block-v1",
         },
     )
@@ -958,7 +958,7 @@ def test_daily_preview_only_requeues_when_work_block_source_changes(db_session) 
             "title": "接口推进",
             "summary": "当天围绕服务接口完成了连续开发，并形成了可以继续验证的实现结果。",
             "workBlockIds": [block.blockId],
-            "model": "qwen3.7-plus",
+            "model": "deepseek-v4.1-flash-1017",
             "promptVersion": "computer-work-block-v1",
         },
     )
@@ -1147,7 +1147,7 @@ def test_daily_final_dispatch_promotes_preview_and_late_preview_cannot_downgrade
             "phase": "preview",
             "title": "开发推进",
             "summary": "当天围绕服务开发持续推进，并保留了可继续验证的阶段结果。",
-            "model": "qwen3.7-plus",
+            "model": "deepseek-v4.1-flash-1017",
             "promptVersion": "computer-work-block-v1",
         },
     )

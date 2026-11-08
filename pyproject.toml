@@ -21,6 +21,7 @@ dependencies = [
     "cryptography",
     "websockets",
     "pywebpush>=2.5.0",
+    "pypdf>=6.0.0",
 ]
 
 [project.optional-dependencies]

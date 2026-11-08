@@ -57,9 +57,7 @@ def complete_chat(
     active_settings = settings or get_settings()
     api_key = _effective_api_key(active_settings)
     if not api_key:
-        raise LLMConfigurationError(
-            "LLM_API_KEY 未配置；请在 deploy/.env 中填写中转站 API Key"
-        )
+        raise LLMConfigurationError("LLM_API_KEY 未配置；请在 deploy/.env 中填写中转站 API Key")
 
     client = _build_client(
         api_key,
@@ -83,9 +81,7 @@ def complete_chat(
         response = client.chat.completions.create(**request)
     except openai.APIStatusError as exc:
         request_id = f"，request_id={exc.request_id}" if exc.request_id else ""
-        raise LLMGatewayError(
-            f"中转站返回 HTTP {exc.status_code}{request_id}"
-        ) from exc
+        raise LLMGatewayError(f"中转站返回 HTTP {exc.status_code}{request_id}") from exc
     except openai.APIConnectionError as exc:
         raise LLMGatewayError(f"无法连接中转站：{exc}") from exc
     except openai.APIError as exc:
@@ -119,7 +115,7 @@ def analyze_image(
     prompt: str,
     settings: Settings | None = None,
 ) -> str:
-    """Describe an inbound image through the configured Qwen multimodal model."""
+    """Describe an inbound image through the configured multimodal model."""
     active_settings = settings or get_settings()
     api_key = _effective_api_key(active_settings)
     if not api_key:
@@ -136,7 +132,7 @@ def analyze_image(
     )
     try:
         response = client.chat.completions.create(
-            model=active_settings.vision_model,
+            model=active_settings.llm_model,
             messages=[
                 {
                     "role": "user",
@@ -154,14 +150,14 @@ def analyze_image(
         )
     except openai.APIStatusError as exc:
         request_id = f"，request_id={exc.request_id}" if exc.request_id else ""
-        raise LLMGatewayError(f"视觉模型返回 HTTP {exc.status_code}{request_id}") from exc
+        raise LLMGatewayError(f"多模态模型返回 HTTP {exc.status_code}{request_id}") from exc
     except openai.APIConnectionError as exc:
-        raise LLMGatewayError(f"无法连接视觉模型：{exc}") from exc
+        raise LLMGatewayError(f"无法连接多模态模型：{exc}") from exc
     except openai.APIError as exc:
-        raise LLMGatewayError(f"视觉模型请求失败：{exc}") from exc
+        raise LLMGatewayError(f"多模态模型请求失败：{exc}") from exc
     if not response.choices:
-        raise LLMGatewayError("视觉模型没有返回候选结果")
+        raise LLMGatewayError("多模态模型没有返回候选结果")
     content = response.choices[0].message.content
     if not isinstance(content, str) or not content.strip():
-        raise LLMGatewayError("视觉模型返回了空内容")
+        raise LLMGatewayError("多模态模型返回了空内容")
     return content.strip()

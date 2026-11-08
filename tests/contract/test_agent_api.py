@@ -48,7 +48,7 @@ def test_agent_tools_keep_stable_names_and_canonical_paths() -> None:
         "computerWorkBlockAnalysisComplete",
     ):
         assert tools[name]["inputSchema"]["properties"]["model"]["enum"] == [
-            "qwen3.7-plus",
+            "deepseek-v4.1-flash-1017",
             "deepseek-v4-flash",
             "deepseek-v4-flash-0731",
         ]
