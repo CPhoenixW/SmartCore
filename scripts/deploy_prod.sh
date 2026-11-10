@@ -125,9 +125,16 @@ wait_for_release() {
     [[ "$(docker inspect --format '{{.State.Running}}' "$cloudflared_id")" == true ]]
 }
 
+refresh_proxy_config() {
+    # Git replaces tracked files atomically. Recreate the proxies so single-file
+    # bind mounts follow the current Caddyfiles instead of the previous inode.
+    compose up --detach --no-deps --no-build --force-recreate caddy tunnel-boundary
+}
+
 activate_release() {
     local tag="$1"
     SMARTCORE_IMAGE_TAG="$tag" compose up --detach --no-build
+    refresh_proxy_config
 }
 
 write_state() {
@@ -251,6 +258,7 @@ promote() {
     compose config --quiet
     if [[ "$deployed_revision_known" == true && "$new_sha" == "$deployed_sha" ]] \
         && wait_for_release; then
+        refresh_proxy_config
         log "revision $new_sha is already running and healthy"
         return 0
     fi
