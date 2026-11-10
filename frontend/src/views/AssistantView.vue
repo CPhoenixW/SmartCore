@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { Bell, Bot, Copy, FileText, Paperclip, Quote, Search, Send, WifiOff, X } from "@lucide/vue";
+import { Bell, Bot, Copy, FileText, Plus, Quote, Search, Send, WifiOff, X } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import { assistantApi } from "@/api/assistant";
@@ -524,7 +524,7 @@ onBeforeUnmount(() => {
           </span>
         </div>
         <div class="assistant-composer__row">
-          <button class="assistant-attach" type="button" :aria-label="t('assistant.addAttachment')" :title="t('assistant.addAttachment')" :disabled="sending || loading" @click="openFilePicker"><Paperclip :size="17" aria-hidden="true" /></button>
+          <button class="assistant-attach" type="button" :aria-label="t('assistant.addAttachment')" :title="t('assistant.addAttachment')" :disabled="sending || loading" @click="openFilePicker"><Plus :size="19" :stroke-width="2.2" aria-hidden="true" /></button>
           <input ref="fileInput" class="assistant-file-input" type="file" multiple accept="image/*,.pdf,.txt,.md,.csv,.docx,.zip" @change="addAttachments" />
         <textarea
           v-model="input"
@@ -1595,5 +1595,94 @@ onBeforeUnmount(() => {
   .assistant-message--reminder { max-width: 96%; }
   .assistant-date-divider { margin: 6px 0 1px; }
   .assistant-composer { padding: 8px 10px max(10px, env(safe-area-inset-bottom)); }
+}
+.assistant-composer {
+  position: sticky;
+  bottom: 0;
+  z-index: 8;
+  width: 100%;
+  padding: 10px max(14px, calc((100% - 760px) / 2)) max(12px, env(safe-area-inset-bottom));
+  border-top: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+.assistant-composer__row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 7px;
+  width: min(100%, 760px);
+  margin: 0 auto;
+  padding: 5px;
+  border: 1px solid rgb(210 218 229 / 88%);
+  border-radius: 25px;
+  background: rgb(255 255 255 / 92%);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 10%), 0 1px 3px rgb(15 23 42 / 7%);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+.assistant-composer__row textarea {
+  width: 100%;
+  height: 42px;
+  min-height: 42px;
+  max-height: 120px;
+  padding: 10px 5px;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+  resize: none;
+}
+.assistant-composer__row textarea:focus {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.assistant-attach,
+.assistant-send {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  min-height: 42px;
+  padding: 0;
+  border-radius: 50%;
+  box-shadow: none;
+}
+.assistant-attach {
+  border: 1px solid #e1e6ed;
+  background: #f7f8fa;
+  color: #667487;
+}
+.assistant-attach:hover:not(:disabled) { border-color: #cbd5e1; background: #eef2f6; color: #334155; }
+.assistant-send {
+  width: 44px;
+  min-width: 44px;
+  border-color: #2f6fed;
+  background: #2f6fed;
+  color: #fff;
+}
+.assistant-send:disabled {
+  border-color: #dfe7f5;
+  background: #dfe7f5;
+  color: #9bb4e4;
+  box-shadow: none;
+}
+.assistant-send:hover:not(:disabled) { border-color: #245dcc; background: #245dcc; }
+.assistant-send span { display: none; }
+@media (max-width: 760px) {
+  .assistant-composer {
+    padding: 8px 10px max(12px, env(safe-area-inset-bottom));
+  }
+  .assistant-composer__row {
+    width: 100%;
+    border-radius: 24px;
+  }
+  .assistant-composer__row textarea { height: 40px; min-height: 40px; padding: 9px 4px; }
+  .assistant-attach,
+  .assistant-send { width: 40px; min-width: 40px; height: 40px; min-height: 40px; }
+  .assistant-send { width: 42px; min-width: 42px; }
 }
 </style>
