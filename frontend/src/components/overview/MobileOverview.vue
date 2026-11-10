@@ -27,8 +27,8 @@ const clockQuery = useQuery({
 });
 const serverDate = computed(() => clockQuery.data.value?.serverNow?.slice(0, 10) || "");
 const eventWindow = computed(() => ({
-  start: serverDate.value ? \`\${serverDate.value}T00:00:00\` : undefined,
-  end: serverDate.value ? \`\${addDays(serverDate.value, 3)}T23:59:59\` : undefined,
+  start: serverDate.value ? serverDate.value + "T00:00:00" : undefined,
+  end: serverDate.value ? addDays(serverDate.value, 3) + "T23:59:59" : undefined,
 }));
 const eventsQuery = useQuery({
   queryKey: computed(() => ["overview", "window", serverDate.value]),
