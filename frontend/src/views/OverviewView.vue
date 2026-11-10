@@ -41,21 +41,44 @@ const eventsQuery = useQuery({
   staleTime: 30_000,
 });
 const ideasQuery = useQuery({ queryKey: ["ideas", "overview"], queryFn: ideaApi.list, staleTime: 30_000 });
+function serverDay(time: number): string {
+  if (!Number.isFinite(time)) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: clockQuery.data.value?.timezone || undefined,
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(time));
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
 const activeToday = computed(() => sortEvents((eventsQuery.data.value ?? []).filter((event) => {
-  const primaryTime = getEventPrimaryTime(event);
-  return event.stat !== "cancelled" && primaryTime.slice(0, 10) === serverDate.value;
+  if (event.stat === "cancelled" || event.evtType === "course") return false;
+  const start = new Date(getEventPrimaryTime(event)).getTime();
+  const end = eventEndTime(event);
+  const firstDay = serverDay(start);
+  const lastDay = serverDay(end > start ? end - 1 : start);
+  return Boolean(firstDay && firstDay <= serverDate.value && lastDay >= serverDate.value);
 })));
-const currentAction = computed(() => activeToday.value.find((event) => {
+const currentAction = computed(() => (eventsQuery.data.value ?? []).find((event) => {
   if (event.stat !== "todo" || event.evtType !== "plan") return false;
   const start = new Date(getEventPrimaryTime(event)).getTime();
   const end = eventEndTime(event);
   return Number.isFinite(start) && start <= serverTimestamp.value && serverTimestamp.value < end;
 }) ?? null);
-const nextAction = computed(() => sortEvents((eventsQuery.data.value ?? []).filter((event) => {
+const nextWindowAction = computed(() => sortEvents((eventsQuery.data.value ?? []).filter((event) => {
   if (event.stat !== "todo") return false;
   const start = new Date(getEventPrimaryTime(event)).getTime();
   return Number.isFinite(start) && start >= serverTimestamp.value;
 }))[0] ?? null);
+const futureEventsQuery = useQuery({
+  queryKey: computed(() => ["overview", "future", serverDate.value]),
+  queryFn: () => eventApi.list({ start: eventWindow.value.end, stat: ["todo"], includeReminders: true, includeCourseTemplates: false }),
+  enabled: computed(() => !isMobile.value && Boolean(clockQuery.data.value?.serverNow && eventsQuery.data.value)
+    && !eventsQuery.isPending.value && !eventsQuery.isError.value && !currentAction.value && !nextWindowAction.value),
+  staleTime: 30_000,
+});
+const nextAction = computed(() => nextWindowAction.value ?? (futureEventsQuery.data.value ?? [])
+  .filter((event) => event.stat === "todo" && event.evtType !== "course" && new Date(getEventPrimaryTime(event)).getTime() >= serverTimestamp.value)
+  .sort((a, b) => new Date(getEventPrimaryTime(a)).getTime() - new Date(getEventPrimaryTime(b)).getTime())[0] ?? null);
 const focusAction = computed(() => currentAction.value ?? nextAction.value);
 const focusActionLabel = computed(() => currentAction.value
   ? t("overview.currentAction")

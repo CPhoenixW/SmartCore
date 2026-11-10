@@ -75,4 +75,13 @@ describe("OverviewView", () => {
     expect(wrapper.find(".overview-focus__action").text()).toContain("下一项行动");
     expect(wrapper.find(".overview-focus__action").text()).toContain("明日评审");
   });
+
+  it("keeps a plan crossing midnight as the current action and in today's schedule", () => {
+    const overnight = plan("overnight", "跨午夜的实验", "2026-07-30T23:00:00+08:00", 180);
+    const next = plan("next", "上午复盘", "2026-07-31T09:00:00+08:00", 30);
+    queryValues.splice(0, queryValues.length, { ...clock, serverNow: "2026-07-31T00:30:00+08:00" }, [overnight, next], []);
+    const wrapper = mountOverview();
+    expect(wrapper.get(".overview-focus__action--current").text()).toContain("跨午夜的实验");
+    expect(wrapper.get(".overview-event-row--current").text()).toContain("跨午夜的实验");
+  });
 });

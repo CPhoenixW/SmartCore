@@ -92,16 +92,35 @@ const upcoming = computed(() => sortEvents(active.value.filter((event) => {
   const start = eventInstant(event);
   return Number.isFinite(start) && start >= now.value.getTime();
 })));
-const nextAction = computed(() => upcoming.value[0] ?? null);
+const futureEventsQuery = useQuery({
+  queryKey: computed(() => ["overview", "future", serverDate.value]),
+  queryFn: () => eventApi.list({ start: eventWindow.value.end, stat: ["todo"], includeReminders: true, includeCourseTemplates: false }),
+  enabled: computed(() => Boolean(serverDate.value && eventsQuery.data.value)
+    && !eventsQuery.isPending.value && !eventsQuery.isError.value
+    && (laterOpen.value || (!currentAction.value && !upcoming.value.length))),
+  staleTime: 30_000,
+});
+const futureEvents = computed(() => (futureEventsQuery.data.value ?? [])
+  .filter((event) => event.stat === "todo" && event.evtType !== "course" && eventInstant(event) >= now.value.getTime())
+  .sort((a, b) => eventInstant(a) - eventInstant(b)));
+const nextAction = computed(() => upcoming.value[0] ?? futureEvents.value[0] ?? null);
 const focusAction = computed(() => currentAction.value ?? nextAction.value);
 const focusActionLabel = computed(() => currentAction.value
   ? t("overview.currentAction")
   : t("overview.nextAction"));
 const todayScheduleTitle = computed(() => t("overview.todaySchedule"));
-const todaySchedule = computed(() => sortEvents(active.value.filter((event) => eventDay(event) === today.value)));
+const todaySchedule = computed(() => sortEvents(active.value.filter((event) => {
+  const start = eventInstant(event);
+  if (!Number.isFinite(start)) return false;
+  const end = eventEndTime(event);
+  return eventDay(event) <= today.value && dateInZone(new Date(end > start ? end - 1 : start)) >= today.value;
+})));
 const tomorrowCount = computed(() => active.value.filter((event) => event.stat === "todo" && eventDay(event) === tomorrow.value).length);
 const dayAfterCount = computed(() => active.value.filter((event) => event.stat === "todo" && eventDay(event) === dayAfter.value).length);
-const laterEvents = computed(() => sortEvents(active.value.filter((event) => event.stat === "todo" && eventDay(event) > today.value)));
+const laterEvents = computed(() => {
+  const all = new Map([...active.value, ...futureEvents.value].map((event) => [event.evtId, event]));
+  return sortEvents([...all.values()].filter((event) => event.stat === "todo" && eventDay(event) > today.value));
+});
 const clockLabel = computed(() => {
   const raw = clockQuery.data.value?.serverNow;
   if (!raw) return t("overview.clockLoading");
@@ -194,11 +213,16 @@ function markSelectedDone(): void {
 
 
     <section class="card m-overview__later">
-      <button type="button" @click="laterOpen = !laterOpen">
+      <button type="button" :aria-expanded="laterOpen" @click="laterOpen = !laterOpen">
         <span>{{ t("overview.later") }}</span>
         <strong>{{ t("overview.laterCounts", { tomorrow: tomorrowCount, dayAfter: dayAfterCount }) }}</strong>
         <small>{{ laterOpen ? "−" : "+" }}</small>
       </button>
+      <div v-if="laterOpen && futureEventsQuery.isFetching.value" class="empty-state" role="status">{{ t("common.loading") }}</div>
+      <div v-else-if="laterOpen && futureEventsQuery.isError.value" class="m-overview__error">
+        {{ t("schedule.error") }}
+        <button class="button" type="button" @click="futureEventsQuery.refetch()">{{ t("common.retry") }}</button>
+      </div>
       <ol v-if="laterOpen && laterEvents.length" class="m-overview__timeline">
         <li v-for="event in laterEvents" :key="event.evtId">
           <time>{{ eventTimeRange(event) }}</time>
@@ -208,6 +232,7 @@ function markSelectedDone(): void {
           </button>
         </li>
       </ol>
+      <EmptyState v-else-if="laterOpen && !futureEventsQuery.isPending.value && !futureEventsQuery.isError.value" :text="t('schedule.empty')" />
     </section>
 
     <MobileEventDetail

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useQueryClient } from "@tanstack/vue-query";
 import { Bell, Bot, Copy, FileText, Plus, Quote, Search, Send, Square, WifiOff, X } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
@@ -16,6 +17,7 @@ import { formatDateTime } from "@/utils/date";
 
 const { t, locale } = useI18n();
 const route = useRoute() as ReturnType<typeof useRoute> | undefined;
+const queryClient = useQueryClient();
 const input = ref("");
 const pendingAttachments = ref<AssistantAttachment[]>([]);
 const quotedMessage = ref<{ messageId: string; text: string; role: "user" | "assistant" } | null>(null);
@@ -43,6 +45,7 @@ const activeTool = ref("");
 const streamingText = ref("");
 const online = ref(typeof navigator === "undefined" ? true : navigator.onLine);
 const messagesRoot = ref<HTMLElement | null>(null);
+const messagesContent = ref<HTMLElement | null>(null);
 const composerRoot = ref<HTMLElement | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 const highlightMessageId = ref("");
@@ -55,6 +58,9 @@ const historyExpanded = ref(false);
 let syncTimer: ReturnType<typeof setInterval> | undefined;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 let activeAbortController: AbortController | null = null;
+let followLatest = true;
+let latestScrollFrame: number | undefined;
+let messagesResizeObserver: ResizeObserver | undefined;
 const ASSISTANT_CACHE_KEY = "smartcore:assistant:primary:v2";
 
 function newClientId(): string {
@@ -69,17 +75,38 @@ const visibleMessages = computed(() => messages.value.slice(Math.max(0, messages
 const earlierMessageCount = computed(() => Math.max(0, messages.value.length - historyVisibleCount.value));
 const hasEarlierMessages = computed(() => earlierMessageCount.value > 0);
 function scrollToLatest(): void {
+  followLatest = true;
   void nextTick(() => {
     const node = messagesRoot.value;
-    if (!node) return;
-    const target = node.scrollHeight;
-    if (typeof node.scrollTo === "function") node.scrollTo({ top: target, behavior: "auto" });
-    node.scrollTop = target;
-    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => { node.scrollTop = node.scrollHeight; });
+    if (!node || !followLatest) return;
+    node.scrollTop = node.scrollHeight;
+    if (typeof requestAnimationFrame === "function") {
+      if (latestScrollFrame !== undefined) cancelAnimationFrame(latestScrollFrame);
+      latestScrollFrame = requestAnimationFrame(() => {
+        latestScrollFrame = undefined;
+        if (followLatest) node.scrollTop = node.scrollHeight;
+      });
+    }
   });
 }
 function scrollToMessage(messageId: string): void {
-  void nextTick(() => document.getElementById(`assistant-message-${messageId}`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
+  const index = messages.value.findIndex((message) => message.messageId === messageId);
+  if (index < 0) return;
+  followLatest = false;
+  historyVisibleCount.value = Math.max(historyVisibleCount.value, messages.value.length - index);
+  historyExpanded.value = true;
+  highlightMessageId.value = messageId;
+  void nextTick(() => {
+    const node = messagesRoot.value;
+    const target = Array.from(node?.querySelectorAll<HTMLElement>(".assistant-message") ?? [])
+      .find((message) => message.id === `assistant-message-${messageId}`);
+    if (!node || !target) return;
+    const targetBounds = target.getBoundingClientRect();
+    node.scrollTop += targetBounds.top - node.getBoundingClientRect().top - (node.clientHeight - targetBounds.height) / 2;
+  });
+}
+function followResizedMessages(): void {
+  if (followLatest) scrollToLatest();
 }
 function isReportMessage(message: AssistantMessage): boolean {
   return message.role === "assistant" && /(每日工作汇报|每日总结|工作汇报|daily summary)/i.test(message.text);
@@ -237,12 +264,16 @@ function persistConversation(conversation: AssistantConversation | null = active
   try { window.localStorage.setItem(ASSISTANT_CACHE_KEY, JSON.stringify(cached)); } catch {}
 }
 function replaceMessages(next: AssistantMessage[], resetHistory = false): void {
+  const firstVisibleId = visibleMessages.value[0]?.messageId;
   messages.value = next;
   if (resetHistory || !historyInitialized.value) {
     historyVisibleCount.value = Math.min(INITIAL_HISTORY_MESSAGES, next.length);
     historyExpanded.value = false;
-  } else if (historyExpanded.value) {
-    historyVisibleCount.value = Math.min(next.length, Math.max(INITIAL_HISTORY_MESSAGES, historyVisibleCount.value));
+  } else if (historyExpanded.value || !followLatest) {
+    const firstVisibleIndex = next.findIndex((message) => message.messageId === firstVisibleId);
+    historyVisibleCount.value = firstVisibleIndex < 0
+      ? Math.min(next.length, Math.max(INITIAL_HISTORY_MESSAGES, historyVisibleCount.value))
+      : next.length - firstVisibleIndex;
   } else {
     historyVisibleCount.value = Math.min(INITIAL_HISTORY_MESSAGES, next.length);
   }
@@ -280,16 +311,20 @@ async function loadEarlierMessages(): Promise<void> {
   if (loadingEarlierMessages.value || !hasEarlierMessages.value) return;
   const node = messagesRoot.value;
   const previousHeight = node?.scrollHeight ?? 0;
+  const previousTop = node?.scrollTop ?? 0;
+  followLatest = false;
   loadingEarlierMessages.value = true;
   historyExpanded.value = true;
   historyVisibleCount.value = Math.min(messages.value.length, historyVisibleCount.value + HISTORY_PAGE_SIZE);
   await nextTick();
-  if (node) node.scrollTop += node.scrollHeight - previousHeight;
+  if (node) node.scrollTop = previousTop + node.scrollHeight - previousHeight;
   loadingEarlierMessages.value = false;
 }
 function handleMessagesScroll(): void {
   const node = messagesRoot.value;
-  if (!node || node.scrollTop > 40 || loadingEarlierMessages.value || !hasEarlierMessages.value) return;
+  if (!node) return;
+  followLatest = node.scrollHeight - node.clientHeight - node.scrollTop <= 48;
+  if (node.scrollTop > 40 || loading.value || loadingEarlierMessages.value || !hasEarlierMessages.value) return;
   void loadEarlierMessages();
 }
 async function loadConversation(conversationId: string, messageId?: string, silent = false): Promise<void> {
@@ -301,8 +336,8 @@ async function loadConversation(conversationId: string, messageId?: string, sile
     replaceMessages(result.messages);
     persistConversation(result);
     highlightMessageId.value = messageId ?? "";
-    if (!silent) scrollToLatest();
     if (messageId) scrollToMessage(messageId);
+    else if (followLatest) scrollToLatest();
   } catch (requestError) {
     if (!silent) error.value = requestError instanceof Error ? requestError.message : t("assistant.historyError");
   } finally {
@@ -373,7 +408,7 @@ function appendStreamingText(value: string, mode?: string): void {
     // Delta-style chunk without mode=new.
     streamingText.value = `${current}${next}`;
   }
-  scrollToLatest();
+  if (followLatest) scrollToLatest();
 }
 async function openSearchResult(result: AssistantSearchResult): Promise<void> {
   closeSearch();
@@ -490,6 +525,10 @@ async function runSend(draft: ComposerDraft): Promise<void> {
     }
     await loadConversation(activeConversationId.value, undefined, true);
   } finally {
+    // Mark tool-owned views stale even after a stop; never delay the composer or queue on their network requests.
+    void Promise.allSettled(["overview", "events", "schedule", "ideas", "notifications"].map(
+      (key) => queryClient.invalidateQueries({ queryKey: [key], refetchType: "none" }),
+    ));
     if (activeAbortController === abortController) activeAbortController = null;
     stopping.value = false;
     activity.value = "";
@@ -501,7 +540,7 @@ async function runSend(draft: ComposerDraft): Promise<void> {
     } else {
       sending.value = false;
     }
-    scrollToLatest();
+    if (followLatest) scrollToLatest();
     ensureComposerVisible();
   }
 }
@@ -509,10 +548,16 @@ function onOnline(): void { online.value = true; }
 function onOffline(): void { online.value = false; }
 function onVisibilityChange(): void { if (document.visibilityState === "visible") void syncConversation(); }
 function onViewportResize(): void {
+  followResizedMessages();
   if (sending.value) ensureComposerVisible();
 }
 
 onMounted(() => {
+  if (typeof ResizeObserver !== "undefined") {
+    messagesResizeObserver = new ResizeObserver(followResizedMessages);
+    if (messagesContent.value) messagesResizeObserver.observe(messagesContent.value);
+    if (messagesRoot.value) messagesResizeObserver.observe(messagesRoot.value);
+  }
   window.addEventListener("online", onOnline);
   window.addEventListener("offline", onOffline);
   document.addEventListener("visibilitychange", onVisibilityChange);
@@ -529,6 +574,8 @@ watch(() => route?.query?.messageId, (value) => {
   if (value) scrollToMessage(String(value));
 });
 onBeforeUnmount(() => {
+  messagesResizeObserver?.disconnect();
+  if (latestScrollFrame !== undefined) cancelAnimationFrame(latestScrollFrame);
   activeAbortController?.abort();
   window.removeEventListener("online", onOnline);
   window.removeEventListener("offline", onOffline);
@@ -562,6 +609,7 @@ onBeforeUnmount(() => {
         <p v-else-if="!searchResults.length" class="assistant-search-results__empty">{{ t("assistant.noSearchResults") }}</p>
       </div>
       <div ref="messagesRoot" class="assistant-messages" aria-live="polite" @scroll="handleMessagesScroll">
+        <div ref="messagesContent" class="assistant-messages__content" @load.capture="followResizedMessages">
         <div v-if="loading" class="assistant-loading" role="status"><span class="assistant-progress__spinner" aria-hidden="true" />{{ t("assistant.loading") }}</div>
         <div v-else-if="!messages.length && !sending" class="assistant-empty"><strong>{{ t("assistant.empty") }}</strong></div>
         <button
@@ -625,6 +673,7 @@ onBeforeUnmount(() => {
         <div v-if="sending || !online" class="assistant-progress" :class="{ 'assistant-progress--offline': !online }" role="status" aria-live="polite">
           <span class="assistant-progress__spinner" aria-hidden="true"><WifiOff v-if="!online" :size="14" /></span>
           <span class="assistant-progress__text">{{ online ? (activity || activeTool || t("assistant.thinking")) : t("assistant.offline") }}</span>
+        </div>
         </div>
       </div>
       <p v-if="error" class="assistant-error" role="alert">{{ error }}</p>
@@ -1242,7 +1291,7 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   background: #f6f8fc;
   overscroll-behavior: contain;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
   -webkit-overflow-scrolling: touch;
 }
 .assistant-loading,
@@ -1830,6 +1879,15 @@ onBeforeUnmount(() => {
 }
 .assistant-history-load:hover:not(:disabled) { border-color: #b8c5d6; background: #fff; color: #334155; }
 .assistant-history-load:disabled { cursor: wait; opacity: .68; }
+.assistant-messages__content {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: inherit;
+  min-width: 0;
+  min-height: 100%;
+}
 @media (max-width: 760px) {
   .assistant-composer {
     padding: 8px 10px max(12px, env(safe-area-inset-bottom));
