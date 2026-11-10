@@ -19,10 +19,22 @@ const queryClient = useQueryClient();
 const laterOpen = ref(false);
 const selectedEvent = ref<SmartCoreEvent | null>(null);
 
-const clockQuery = useQuery({ queryKey: ["runtime-clock"], queryFn: () => runtimeApi.clock(), refetchInterval: 60_000 });
+const clockQuery = useQuery({
+  queryKey: ["runtime-clock"],
+  queryFn: () => runtimeApi.clock(),
+  refetchInterval: 60_000,
+  staleTime: 30_000,
+});
+const serverDate = computed(() => clockQuery.data.value?.serverNow?.slice(0, 10) || "");
+const eventWindow = computed(() => ({
+  start: serverDate.value ? \`\${serverDate.value}T00:00:00\` : undefined,
+  end: serverDate.value ? \`\${addDays(serverDate.value, 3)}T23:59:59\` : undefined,
+}));
 const eventsQuery = useQuery({
-  queryKey: ["overview", "all"],
-  queryFn: () => eventApi.list({ includeReminders: true, includeCourseTemplates: false }),
+  queryKey: computed(() => ["overview", "window", serverDate.value]),
+  queryFn: () => eventApi.list({ ...eventWindow.value, includeReminders: true, includeCourseTemplates: false }),
+  enabled: computed(() => Boolean(serverDate.value)),
+  staleTime: 30_000,
 });
 const timezone = computed(() => clockQuery.data.value?.timezone || "Asia/Shanghai");
 const now = computed(() => {

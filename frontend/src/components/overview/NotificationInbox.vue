@@ -14,6 +14,7 @@ const router = useRouter();
 const notificationQuery = useQuery({
   queryKey: computed(() => ["notifications", "inbox", props.limit]),
   queryFn: () => notificationsApi.list(props.limit),
+  staleTime: 30_000,
   refetchInterval: 30_000,
 });
 const rows = computed(() => (notificationQuery.data.value ?? []).slice(0, props.limit));
