@@ -315,3 +315,30 @@ def test_deleted_device_token_is_revoked(app_env) -> None:
         ).status_code
         == 401
     )
+
+
+def test_cached_event_list_revalidates_same_cookie_after_admin_switch(app_env) -> None:
+    admin = _setup_client()
+    other = TestClient(create_app())
+    selected = other.post(
+        "/api/auth/register",
+        json={"loginName": "cache-selected", "password": "correct-horse-battery-staple"},
+    ).json()["data"]
+    for client, title in ((admin, "Admin private event"), (other, "Selected private event")):
+        assert client.post(
+            "/api/planEvt",
+            json={"title": title, "stTime": "2026-11-11T10:00:00+08:00", "durationMin": 30},
+        ).status_code == 200
+    first = admin.get("/api/evt")
+    token = admin.cookies.get("smartcore_session")
+    switched = admin.post("/api/admin/activeUser", json={"userId": selected["userId"]})
+    assert switched.status_code == 200
+    assert admin.cookies.get("smartcore_session") == token
+
+    fresh = admin.get("/api/evt", headers={"If-None-Match": first.headers["etag"]})
+
+    assert fresh.status_code == 200
+    assert fresh.headers["cache-control"] == "private, no-cache, must-revalidate"
+    assert fresh.headers["etag"] != first.headers["etag"]
+    assert {row["title"] for row in fresh.json()["data"]} == {"Selected private event"}
+    assert {row["userId"] for row in fresh.json()["data"]} == {selected["userId"]}

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useViewport } from "@/composables/useViewport";
-import { useMutation, useQuery } from "@tanstack/vue-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import BaseCard from "@/components/base/BaseCard.vue";
 import PageHeader from "@/components/base/PageHeader.vue";
@@ -16,6 +16,7 @@ import { notificationsApi, vapidKeyBytes } from "@/api/notifications";
 const { t } = useI18n();
 const { isMobile } = useViewport();
 const store = useUserStore();
+const queryClient = useQueryClient();
 const toast = useToast();
 const form = reactive<CurrentUser>({ displayName: "", language: "zh", reminderChannel: "screen", avatarUrl: "" });
 const saving = ref(false);
@@ -42,7 +43,12 @@ const accountSecurityAvailable = computed(() => {
 onMounted(() => { void loadPushState(); });
 const switchUser = useMutation({
   mutationFn: (userId: string) => adminApi.switchUser(userId),
-  onSuccess: async () => { await store.load(); window.location.href = "/work"; },
+  onSuccess: async () => {
+    await queryClient.cancelQueries();
+    queryClient.clear();
+    await store.load();
+    window.location.href = "/work";
+  },
   onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
 });
 const revokeSession = useMutation({

@@ -10,5 +10,9 @@ export interface AdminUser {
 
 export const adminApi = {
   users: () => apiRequest<AdminUser[]>("/api/admin/users"),
-  switchUser: (userId: string) => apiRequest<{ activeUser: AdminUser }>("/api/admin/activeUser", { method: "POST", body: JSON.stringify({ userId }) }),
+  async switchUser(userId: string) {
+    const result = await apiRequest<{ activeUser: AdminUser }>("/api/admin/activeUser", { method: "POST", body: JSON.stringify({ userId }) });
+    try { window.localStorage.removeItem("smartcore:assistant:primary:v2"); } catch {}
+    return result;
+  },
 };

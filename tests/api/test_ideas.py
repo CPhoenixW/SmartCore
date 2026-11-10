@@ -384,3 +384,20 @@ def test_browser_image_create_must_use_multimodal_processing(app_env, tmp_path) 
     )
     assert response.status_code == 409
     assert "multimodal processing" in response.json()["detail"]
+
+
+def test_private_idea_attachments_are_not_cached(app_env, tmp_path) -> None:
+    client = _signed_client()
+    db = SessionLocal()
+    try:
+        upload = _upload(db, tmp_path, name="private.txt", mime="text/plain")
+        idea = crud.createIdea(db, title="Private document", uploadIds=[upload["uploadId"]], userId="default")
+        row = next(item for item in crud.listIdeas(db, userId="default") if item["ideaId"] == idea["ideaId"])
+    finally:
+        db.close()
+
+    response = client.get(row["attachments"][0]["url"])
+
+    assert response.status_code == 200
+    assert response.content == b"private.txt"
+    assert response.headers["cache-control"] == "no-store"

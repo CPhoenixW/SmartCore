@@ -25,7 +25,7 @@ def test_notification_reads_are_private_etag_cacheable(signed_client_factory) ->
     first = client.get("/api/notifications")
 
     assert first.status_code == 200
-    assert first.headers["cache-control"] == "private, max-age=15, stale-while-revalidate=30"
+    assert first.headers["cache-control"] == "private, no-cache, must-revalidate"
     etag = first.headers["etag"]
     assert etag
 
@@ -103,3 +103,26 @@ def test_notification_api_distinguishes_provider_acceptance_from_device_display(
     assert rows["failed"]["deliveryState"] == "failed"
     assert rows["failed"]["sentAt"] is None
     assert rows["failed"]["deliveryDetail"] == "provider timeout"
+
+
+def test_event_list_revalidates_after_update(signed_client_factory) -> None:
+    client = signed_client_factory("default")
+    created = client.post(
+        "/api/planEvt",
+        json={"title": "Before edit", "stTime": "2026-11-11T10:00:00+08:00", "durationMin": 30},
+    )
+    assert created.status_code == 200
+    event_id = created.json()["data"]["evtId"]
+    first = client.get("/api/evt")
+    assert first.headers["cache-control"] == "private, no-cache, must-revalidate"
+    updated = client.patch(f"/api/evt/{event_id}", json={"title": "After edit"})
+    assert updated.status_code == 200
+    assert updated.headers["cache-control"] == "no-store"
+
+    fresh = client.get("/api/evt", headers={"If-None-Match": first.headers["etag"]})
+
+    assert fresh.status_code == 200
+    assert fresh.headers["etag"] != first.headers["etag"]
+    assert next(row for row in fresh.json()["data"] if row["evtId"] == event_id)["title"] == "After edit"
+    detail = client.get(f"/api/evt/{event_id}")
+    assert detail.headers["cache-control"] == "no-store"

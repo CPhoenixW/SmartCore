@@ -1,6 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { aiApi } from "@/api/ai";
 import { dailySummaryApi } from "@/api/dailySummary";
+import { adminApi } from "@/api/admin";
+import { eventApi } from "@/api/event";
 import { computerApi } from "@/api/computer";
 import { deviceApi } from "@/api/device";
 import { expectFetch, mockJsonFetch, restoreHttpMocks } from "./helpers/http";
@@ -8,6 +10,20 @@ import { expectFetch, mockJsonFetch, restoreHttpMocks } from "./helpers/http";
 afterEach(restoreHttpMocks);
 
 describe("API clients", () => {
+  it("revalidates GET responses through the browser HTTP cache", async () => {
+    const fetchMock = mockJsonFetch([]);
+    await eventApi.list();
+    expectFetch(fetchMock, "/api/evt", "GET", { cache: "no-cache" });
+  });
+
+  it("removes the previous owner assistant snapshot after switching users", async () => {
+    const removeItem = vi.fn();
+    vi.stubGlobal("localStorage", { removeItem });
+    mockJsonFetch({ activeUser: { userId: "selected" } });
+    await adminApi.switchUser("selected");
+    expect(removeItem).toHaveBeenCalledWith("smartcore:assistant:primary:v2");
+  });
+
   it("unwraps the parsed payload returned by /api/llm/parse", async () => {
     mockJsonFetch({
       status: "ok",

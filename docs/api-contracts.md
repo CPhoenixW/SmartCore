@@ -72,6 +72,22 @@ Agent 接口使用机器稳定的结果：
 `expectedUpdatedAt`；资源不属于当前用户时返回 404，报告已被更新时返回 409，避免
 静默覆盖较新的内容。
 
+## 浏览器读取缓存
+
+仅 `GET /api/evt`、`GET /api/idea` 和 `GET /api/notifications` 的成功列表响应
+提供内容 ETag 与 `Cache-Control: private, no-cache, must-revalidate`，并设置
+`Vary: Cookie`。浏览器每次实际读取都重新完成服务端认证、active user 选择和数据查询，
+内容一致时返回 304。管理员切换 active user 保留同一 Cookie，因此 Cookie Vary
+只负责隔离不同会话，当前 owner 的授权检查仍由每次校验执行。
+
+前端通用 GET 使用 `cache: no-cache`，手动刷新、写入后的 invalidate/refetch 都会校验
+服务器当前数据。总览查询的 30 秒 `staleTime` 只控制 TanStack Query 内存中的温缓存，
+显式 invalidate 会使其失效。管理员切换成功后取消旧查询、清空 QueryClient，删除助手
+本地快照，再重新载入工作台。
+
+列表之外的事项详情、Idea 媒体任务、私有附件、写请求和其他 API 使用 `no-store`。
+带内容 hash 的 `/work/assets/` 静态资源使用一年 immutable 缓存。
+
 ## 事项契约
 
 现行事项类型：

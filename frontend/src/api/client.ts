@@ -47,7 +47,7 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
     ...options,
     method,
     headers,
-    cache: options.cache ?? (method === "GET" ? "default" : undefined),
+    cache: options.cache ?? (method === "GET" ? "no-cache" : undefined),
   });
   const body = (await response.json().catch(() => null)) as ApiEnvelope<T> | ApiErrorBody | null;
   if (!response.ok || body?.ok === false) {

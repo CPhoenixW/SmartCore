@@ -154,10 +154,7 @@ def create_app() -> FastAPI:
             cacheable = (
                 request.method == "GET"
                 and response.status_code == 200
-                and (
-                    path in {"/api/evt", "/api/idea", "/api/notifications"}
-                    or path.startswith(("/api/evt/", "/api/idea/"))
-                )
+                and path in {"/api/evt", "/api/idea", "/api/notifications"}
             )
             body = getattr(response, "body", None)
             if cacheable and body is None and hasattr(response, "body_iterator"):
@@ -171,12 +168,12 @@ def create_app() -> FastAPI:
             if cacheable and body:
                 etag = f'"{hashlib.sha256(body).hexdigest()}"'
                 response.headers["ETag"] = etag
-                response.headers["Cache-Control"] = "private, max-age=15, stale-while-revalidate=30"
+                response.headers["Cache-Control"] = "private, no-cache, must-revalidate"
                 response.headers["Vary"] = "Cookie"
                 if request.headers.get("if-none-match") == etag:
                     response = Response(status_code=304, headers={
                         "ETag": etag,
-                        "Cache-Control": "private, max-age=15, stale-while-revalidate=30",
+                        "Cache-Control": "private, no-cache, must-revalidate",
                         "Vary": "Cookie",
                     })
             else:
