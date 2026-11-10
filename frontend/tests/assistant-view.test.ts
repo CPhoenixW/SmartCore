@@ -89,7 +89,11 @@ beforeEach(() => {
     expect(wrapper.find(".assistant-stop").exists()).toBe(true);
     await textarea.setValue("下一句");
     expect((textarea.element as HTMLTextAreaElement).value).toBe("下一句");
+    expect(wrapper.find(".assistant-stop").exists()).toBe(false);
+    expect(wrapper.get(".assistant-send").attributes("type")).toBe("submit");
 
+    await textarea.setValue("");
+    expect(wrapper.find(".assistant-stop").exists()).toBe(true);
     await wrapper.get(".assistant-stop").trigger("click");
     await new Promise((resolve) => setTimeout(resolve, 150));
     await flushPromises();
@@ -97,6 +101,42 @@ beforeEach(() => {
     expect(signal?.aborted).toBe(true);
     expect(wrapper.find(".assistant-stop").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("助手暂时不可用");
+  });
+
+  it("switches to send and queues a draft during generation", async () => {
+    let resolveFirst: ((value: { sessionId: string; response: string }) => void) | undefined;
+    let resolveSecond: ((value: { sessionId: string; response: string }) => void) | undefined;
+    let callCount = 0;
+    streamMock.mockImplementation(() => new Promise<{ sessionId: string; response: string }>((resolve) => {
+      callCount += 1;
+      if (callCount === 1) resolveFirst = resolve;
+      else resolveSecond = resolve;
+    }));
+    const wrapper = mount(AssistantView, { global: { plugins: [i18n] } });
+    await flushPromises();
+
+    const textarea = wrapper.get("textarea");
+    await textarea.setValue("第一句");
+    void wrapper.get(".assistant-composer").trigger("submit");
+    await flushPromises();
+
+    await textarea.setValue("第二句");
+    expect(wrapper.find(".assistant-stop").exists()).toBe(false);
+    expect(wrapper.get(".assistant-send").attributes("type")).toBe("submit");
+    await wrapper.get(".assistant-composer").trigger("submit");
+    await flushPromises();
+
+    expect(streamMock).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).toContain("已排队 1 条");
+
+    resolveFirst?.({ sessionId: "pwa-test", response: "第一句已完成" });
+    await flushPromises();
+    expect(streamMock).toHaveBeenCalledTimes(2);
+    expect(streamMock.mock.calls[1]?.[0]).toBe("第二句");
+
+    resolveSecond?.({ sessionId: "pwa-test", response: "第二句已完成" });
+    await flushPromises();
+    expect(wrapper.find(".assistant-progress").exists()).toBe(false);
   });
 
   it("renders assistant markdown instead of plain paragraphs", async () => {

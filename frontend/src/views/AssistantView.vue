@@ -30,6 +30,13 @@ const activeConversation = ref<AssistantConversation | null>(null);
 const messages = ref<AssistantMessage[]>([]);
 const sending = ref(false);
 const stopping = ref(false);
+type ComposerDraft = {
+  text: string;
+  attachments: AssistantAttachment[];
+  quote: { messageId: string; text: string; role: "user" | "assistant" } | null;
+};
+const queuedDrafts = ref<ComposerDraft[]>([]);
+const hasComposerContent = computed(() => Boolean(input.value.trim() || pendingAttachments.value.length));
 const error = ref("");
 const activity = ref("");
 const activeTool = ref("");
@@ -333,26 +340,53 @@ async function stopGeneration(): Promise<void> {
   activeAbortController.abort();
 }
 
+function readComposerDraft(): ComposerDraft | null {
+  const text = input.value.trim() || (pendingAttachments.value.length ? t("assistant.attachmentPrompt") : "");
+  if (!text) return null;
+  return {
+    text,
+    attachments: pendingAttachments.value.slice(),
+    quote: quotedMessage.value,
+  };
+}
+
+function clearComposerDraft(): void {
+  input.value = "";
+  pendingAttachments.value = [];
+  quotedMessage.value = null;
+}
+
 async function send(): Promise<void> {
-  const outgoingAttachments = pendingAttachments.value.slice();
-  const outgoingQuote = quotedMessage.value;
-  const text = input.value.trim() || (outgoingAttachments.length ? t("assistant.attachmentPrompt") : "");
-  if (!text || sending.value) return;
+  const draft = readComposerDraft();
+  if (!draft) return;
   if (!online.value) {
     error.value = t("assistant.offline");
     return;
   }
+  if (sending.value) {
+    queuedDrafts.value.push(draft);
+    clearComposerDraft();
+    error.value = "";
+    activity.value = t("assistant.queued", { count: queuedDrafts.value.length });
+    ensureComposerVisible();
+    return;
+  }
+  clearComposerDraft();
+  await runSend(draft);
+}
+
+async function runSend(draft: ComposerDraft): Promise<void> {
   if (!activeConversationId.value) {
     await loadPrimaryConversation();
     if (!activeConversationId.value) return;
   }
-  input.value = "";
-  pendingAttachments.value = [];
-  quotedMessage.value = null;
   error.value = "";
+  const outgoingAttachments = draft.attachments;
+  const outgoingQuote = draft.quote;
+  const text = draft.text;
   const clientMessageId = newClientId();
   const optimistic: AssistantMessage = {
-    messageId: `local-${clientMessageId}`,
+    messageId: "local-" + clientMessageId,
     conversationId: activeConversationId.value,
     role: "user",
     text,
@@ -410,11 +444,16 @@ async function send(): Promise<void> {
     await loadConversation(activeConversationId.value, undefined, true);
   } finally {
     if (activeAbortController === abortController) activeAbortController = null;
-    sending.value = false;
     stopping.value = false;
     activity.value = "";
     activeTool.value = "";
     streamingText.value = "";
+    const nextDraft = queuedDrafts.value.shift();
+    if (nextDraft) {
+      await runSend(nextDraft);
+    } else {
+      sending.value = false;
+    }
     scrollToLatest();
     ensureComposerVisible();
   }
@@ -558,7 +597,7 @@ onBeforeUnmount(() => {
           @focus="ensureComposerVisible"
         />
         <button
-          v-if="sending"
+          v-if="sending && !hasComposerContent"
           class="button assistant-send assistant-stop"
           type="button"
           :aria-label="stopping ? t('assistant.stopping') : t('assistant.stop')"
@@ -573,7 +612,7 @@ onBeforeUnmount(() => {
           class="button button--primary assistant-send"
           type="submit"
           :aria-label="t('assistant.send')"
-          :disabled="loading || !(input.trim() || pendingAttachments.length)"
+          :disabled="loading || stopping || !hasComposerContent"
         >
           <Send :size="16" aria-hidden="true" />
           <span>{{ t("assistant.send") }}</span>
@@ -1668,7 +1707,12 @@ onBeforeUnmount(() => {
   background: transparent;
   box-shadow: none;
   resize: none;
+  border: 0 !important;
+  border-inline: 0 !important;
+  background-image: none !important;
 }
+.assistant-composer__row::before,
+.assistant-composer__row::after { display: none; content: none; }
 .assistant-composer__row textarea:focus {
   border-color: transparent;
   background: transparent;

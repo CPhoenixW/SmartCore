@@ -274,6 +274,7 @@
     "stop": "Stop generating",
     "stopping": "Stopping…",
     "stopped": "Generation stopped",
+    "queued": "{count} message(s) queued; sending after the current reply",
     "thinking": "The assistant is working…",
     "loading": "Opening this conversation…",
     "error": "The assistant is temporarily unavailable; your draft was kept",
