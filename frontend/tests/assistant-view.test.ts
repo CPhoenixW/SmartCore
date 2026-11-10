@@ -2,6 +2,7 @@ import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AssistantView from "@/views/AssistantView.vue";
 import { i18n } from "@/locales";
+import { useAppReload } from "@/composables/useAppReload";
 
 const { streamMock, listMock, readMock, routeMock, invalidateMock } = vi.hoisted(() => ({
   streamMock: vi.fn(),
@@ -54,6 +55,7 @@ beforeEach(() => {
     const textarea = wrapper.get("textarea");
 
     await textarea.setValue("明天上午安排复习");
+    expect(useAppReload().blocked.value).toBe(true);
     await wrapper.get(".assistant-composer").trigger("submit");
     await flushPromises();
 
@@ -66,6 +68,7 @@ beforeEach(() => {
     );
     expect(wrapper.text()).toContain("明天上午安排复习");
     expect(wrapper.text()).toContain("已创建计划");
+    expect(useAppReload().blocked.value).toBe(false);
     for (const key of ["overview", "events", "schedule", "ideas", "notifications"]) {
       expect(invalidateMock).toHaveBeenCalledWith({ queryKey: [key], refetchType: "none" });
     }
@@ -232,6 +235,7 @@ beforeEach(() => {
 
     expect(textarea.attributes("disabled")).toBeUndefined();
     expect(wrapper.find(".assistant-stop").exists()).toBe(true);
+    expect(useAppReload().blocked.value).toBe(true);
     await textarea.setValue("下一句");
     expect((textarea.element as HTMLTextAreaElement).value).toBe("下一句");
     expect(wrapper.find(".assistant-stop").exists()).toBe(false);
@@ -246,6 +250,7 @@ beforeEach(() => {
     expect(signal?.aborted).toBe(true);
     expect(wrapper.find(".assistant-stop").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("助手暂时不可用");
+    expect(useAppReload().blocked.value).toBe(false);
     expect(invalidateMock).toHaveBeenCalledWith({ queryKey: ["overview"], refetchType: "none" });
     expect(invalidateMock).toHaveBeenCalledWith({ queryKey: ["notifications"], refetchType: "none" });
   });

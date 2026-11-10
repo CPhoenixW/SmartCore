@@ -13,11 +13,13 @@ import type {
   AssistantStreamEvent,
 } from "@/api/assistant";
 import MarkdownContent from "@/components/base/MarkdownContent.vue";
+import { useAppReload } from "@/composables/useAppReload";
 import { formatDateTime } from "@/utils/date";
 
 const { t, locale } = useI18n();
 const route = useRoute() as ReturnType<typeof useRoute> | undefined;
 const queryClient = useQueryClient();
+const { blocked: appReloadBlocked } = useAppReload();
 const input = ref("");
 const pendingAttachments = ref<AssistantAttachment[]>([]);
 const quotedMessage = ref<{ messageId: string; text: string; role: "user" | "assistant" } | null>(null);
@@ -39,6 +41,8 @@ type ComposerDraft = {
 };
 const queuedDrafts = ref<ComposerDraft[]>([]);
 const hasComposerContent = computed(() => Boolean(input.value.trim() || pendingAttachments.value.length));
+watch(() => sending.value || Boolean(input.value.length || pendingAttachments.value.length || quotedMessage.value || queuedDrafts.value.length),
+  (blocked) => { appReloadBlocked.value = blocked; }, { immediate: true, flush: "sync" });
 const error = ref("");
 const activity = ref("");
 const activeTool = ref("");
@@ -574,6 +578,7 @@ watch(() => route?.query?.messageId, (value) => {
   if (value) scrollToMessage(String(value));
 });
 onBeforeUnmount(() => {
+  appReloadBlocked.value = false;
   messagesResizeObserver?.disconnect();
   if (latestScrollFrame !== undefined) cancelAnimationFrame(latestScrollFrame);
   activeAbortController?.abort();

@@ -1,5 +1,8 @@
 {
   "app": {
+    "updateAvailable": "An update is available",
+    "updateLater": "Refresh later",
+    "updateWhenReady": "Finish the reply and send or clear your draft before refreshing.",
     "name": "SmartCore",
     "subtitle": "Student assistant",
     "apiReady": "API connected",

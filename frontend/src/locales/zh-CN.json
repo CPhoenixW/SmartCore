@@ -1,5 +1,8 @@
 {
   "app": {
+    "updateAvailable": "有新版本可用",
+    "updateLater": "稍后再刷新",
+    "updateWhenReady": "完成当前回复并发送或清空草稿后，即可刷新。",
     "name": "SmartCore",
     "subtitle": "学生智能助手",
     "apiReady": "API 已连接",
