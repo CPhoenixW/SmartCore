@@ -1,5 +1,7 @@
-const CACHE_NAME = "smartcore-work-v10";
+const CACHE_NAME = "smartcore-work-v11";
+const STATIC_CACHE_NAME = "smartcore-work-v10";
 const SHELL_KEY = "/work/shell";
+let lastNotifiedShell = "";
 const APP_SHELL = [
   "/work/",
   "/work/manifest.webmanifest",
@@ -21,7 +23,7 @@ async function storeResponse(cacheKey, response) {
     statusText: response.statusText,
     headers,
   });
-  const cache = await caches.open(CACHE_NAME);
+  const cache = await caches.open(cacheKey === SHELL_KEY ? CACHE_NAME : STATIC_CACHE_NAME);
   await cache.put(cacheKey, copy);
 }
 
@@ -32,7 +34,18 @@ function isShellRequest(request) {
 async function refreshShell(request) {
   const response = await fetch(request);
   const type = response.headers.get("content-type") || "";
-  if (response.ok && type.includes("text/html")) await storeResponse(SHELL_KEY, response);
+  if (response.ok && type.includes("text/html")) {
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(SHELL_KEY);
+    const html = await response.clone().text();
+    const changed = cached && await cached.text() !== html;
+    await storeResponse(SHELL_KEY, response);
+    if (changed && lastNotifiedShell !== html) {
+      lastNotifiedShell = html;
+      const windows = await self.clients.matchAll({ type: "window" });
+      windows.forEach((client) => client.postMessage({ shellUpdated: true }));
+    }
+  }
   return response;
 }
 
@@ -80,7 +93,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME && key !== STATIC_CACHE_NAME).map((key) => caches.delete(key))))
       .then(() => self.clients.claim()),
   );
 });
@@ -104,7 +117,7 @@ self.addEventListener("fetch", (event) => {
   }
   if (isStaticAsset(request, url)) {
     event.respondWith((async () => {
-      const cache = await caches.open(CACHE_NAME);
+      const cache = await caches.open(STATIC_CACHE_NAME);
       const cached = await cache.match(request);
       if (cached && isFingerprintAsset(url)) return cached;
       const refresh = fetch(request)

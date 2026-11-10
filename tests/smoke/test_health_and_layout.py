@@ -38,6 +38,9 @@ def test_work_pwa_assets_are_public_but_pages_remain_protected(tmp_path: Path) -
     (frontend_dist / "icon-512.png").write_bytes(b"icon-512")
     (frontend_dist / "manifest.webmanifest").write_text("{}", encoding="utf-8")
     (frontend_dist / "sw.js").write_text("self.skipWaiting()", encoding="utf-8")
+    (frontend_dist / "precache.json").write_text(
+        '["/work/assets/index-build.js"]', encoding="utf-8"
+    )
     app = FastAPI()
     _register_work_frontend(app, frontend_dist)
 
@@ -50,6 +53,7 @@ def test_work_pwa_assets_are_public_but_pages_remain_protected(tmp_path: Path) -
                 "icon-512.png",
                 "manifest.webmanifest",
                 "sw.js",
+                "precache.json",
             )
         }
         protected_page = test_client.get("/work/ideas", follow_redirects=False)
@@ -63,5 +67,8 @@ def test_work_pwa_assets_are_public_but_pages_remain_protected(tmp_path: Path) -
     )
     assert assets["sw.js"].headers["content-type"].startswith("application/javascript")
     assert assets["sw.js"].headers["cache-control"] == "no-cache"
+    assert assets["precache.json"].headers["content-type"].startswith("application/json")
+    assert assets["precache.json"].headers["cache-control"] == "no-store"
+    assert assets["precache.json"].json() == ["/work/assets/index-build.js"]
     assert protected_page.status_code == 303
     assert protected_page.headers["location"] == "/work/login?next=/work/ideas"

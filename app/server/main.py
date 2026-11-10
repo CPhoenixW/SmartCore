@@ -96,6 +96,7 @@ def _register_work_frontend(app: FastAPI, frontend_dist: Path | None = None) -> 
             "application/manifest+json",
         ),
         "sw.js": (frontend_dist / "sw.js", "application/javascript"),
+        "precache.json": (frontend_dist / "precache.json", "application/json"),
     }
 
     if frontend_dist.is_dir() and frontend_assets.is_dir():
@@ -107,6 +108,8 @@ def _register_work_frontend(app: FastAPI, frontend_dist: Path | None = None) -> 
             public_file = public_pwa_files.get(path)
             if public_file is not None and public_file[0].is_file():
                 headers = {"Cache-Control": "no-cache"} if path == "sw.js" else None
+                if path == "precache.json":
+                    headers = {"Cache-Control": "no-store"}
                 return FileResponse(public_file[0], media_type=public_file[1], headers=headers)
             user_id = session_user_id_from_request(request)
             if path == "login":
