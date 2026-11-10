@@ -1026,11 +1026,49 @@ def list_events(
         target = _parse_date(date_value)
         start_dt = datetime.combine(target, time.min, tzinfo=_DEFAULT_TZ)
         end_dt = datetime.combine(target, time.max, tzinfo=_DEFAULT_TZ)
-    rows = db.scalars(
-        select(EvtBase)
-        .where(EvtBase.userId == user_id)
-        .order_by(EvtBase.createdAt.asc())
-    ).all()
+    statement = select(EvtBase).where(EvtBase.userId == user_id)
+    if not include_reminders:
+        statement = statement.where(EvtBase.evtType != "remind")
+    if allowed_types:
+        statement = statement.where(EvtBase.evtType.in_(allowed_types))
+    if allowed_stats:
+        statement = statement.where(EvtBase.stat.in_(allowed_stats))
+    if (start_dt is not None or end_dt is not None) and not include_course_templates:
+        statement = statement.where(EvtBase.evtType != "course")
+    statement = statement.order_by(EvtBase.createdAt.asc())
+    if start_dt is not None or end_dt is not None:
+        # Read time fields in one batch before expanding relations. Old history
+        # must not trigger per-event plan/reminder/course queries for a day view.
+        candidates = db.execute(
+            statement.add_columns(
+                PlanEvt.stTime.label("plan_start"),
+                PlanEvt.durationMin.label("duration"),
+                DdlEvt.endTime.label("deadline"),
+                RemindEvt.triggerTime.label("trigger"),
+                CourseEvt.stDate.label("course_start"),
+                CourseEvt.endDate.label("course_end"),
+                CourseEvt.weekDay.label("weekday"),
+            )
+            .outerjoin(PlanEvt, PlanEvt.evtId == EvtBase.evtId)
+            .outerjoin(DdlEvt, DdlEvt.evtId == EvtBase.evtId)
+            .outerjoin(RemindEvt, RemindEvt.evtId == EvtBase.evtId)
+            .outerjoin(CourseEvt, CourseEvt.evtId == EvtBase.evtId)
+        ).all()
+        rows = [
+            row[0] for row in candidates
+            if _event_in_range({
+                "evtType": row[0].evtType,
+                "stTime": row.plan_start,
+                "durationMin": row.duration,
+                "endTime": row.deadline,
+                "triggerTime": row.trigger,
+                "stDate": row.course_start,
+                "endDate": row.course_end,
+                "weekDay": row.weekday,
+            }, start_dt, end_dt)
+        ]
+    else:
+        rows = db.scalars(statement).all()
     result: list[dict[str, Any]] = []
     query_text = str(text or "").strip().lower()
     for base in rows:

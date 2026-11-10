@@ -4,7 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
 
 from app.server.db.session import Base
@@ -13,6 +13,7 @@ from app.server.new_core.course_semester import (
     expand_course_dates_from_semester,
     update_course_event,
 )
+from app.server.new_core.event_relations import create_plan_event, list_events
 from app.server.new_core.event_search import filter_events_by_text, normalize_search_query
 from app.server.new_core.models import CoursePlan, RemindEvt
 
@@ -119,3 +120,42 @@ def test_event_search_matches_date_weekday_and_clock_time() -> None:
 def test_relative_date_search_is_replaced_not_appended() -> None:
     now = datetime(2026, 9, 14, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     assert normalize_search_query("明天 8点", now=now) == "2026-09-15 08:00"
+
+
+def test_day_window_skips_expanding_unrelated_history_and_keeps_overlap() -> None:
+    db = _session()
+    try:
+        for index in range(40):
+            create_plan_event(
+                db, title=f"Old plan {index}",
+                stTime="2026-01-01T08:00:00+08:00", durationMin=30,
+            )
+        overnight = create_plan_event(
+            db, title="Overnight", stTime="2026-11-10T23:30:00+08:00", durationMin=90,
+        )
+        same_instant = create_plan_event(
+            db, title="UTC boundary", stTime="2026-11-10T16:00:00Z", durationMin=30,
+        )
+        create_plan_event(
+            db, title="After window", stTime="2026-11-12T00:00:00+08:00", durationMin=30,
+        )
+        engine = db.get_bind()
+        selects: list[str] = []
+
+        def count_selects(_conn, _cursor, statement, _parameters, _context, _many):
+            if statement.lstrip().upper().startswith("SELECT"):
+                selects.append(statement)
+
+        event.listen(engine, "before_cursor_execute", count_selects)
+        try:
+            rows = list_events(
+                db, start="2026-11-11T00:00:00+08:00",
+                end="2026-11-11T23:59:59+08:00", include_course_templates=False,
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", count_selects)
+        assert {row["evtId"] for row in rows} == {overnight["evtId"], same_instant["evtId"]}
+        # Query work should depend on the two matching plans, not 40 old plans.
+        assert len(selects) < 20
+    finally:
+        db.close()
