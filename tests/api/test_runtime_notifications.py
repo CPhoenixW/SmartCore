@@ -19,6 +19,23 @@ def test_runtime_clock_returns_server_timezone_and_offset(signed_client_factory,
     assert data["source"] == "server"
 
 
+def test_notification_reads_are_private_etag_cacheable(signed_client_factory) -> None:
+    client = signed_client_factory("default")
+
+    first = client.get("/api/notifications")
+
+    assert first.status_code == 200
+    assert first.headers["cache-control"] == "private, max-age=15, stale-while-revalidate=30"
+    etag = first.headers["etag"]
+    assert etag
+
+    second = client.get("/api/notifications", headers={"If-None-Match": etag})
+
+    assert second.status_code == 304
+    assert second.content == b""
+    assert second.headers["etag"] == etag
+
+
 def test_push_subscription_is_owned_by_authenticated_user(signed_client_factory) -> None:
     endpoint = "https://push.example.test/subscription/one"
     payload = {"endpoint": endpoint, "keys": {"p256dh": "p" * 32, "auth": "a" * 16}}

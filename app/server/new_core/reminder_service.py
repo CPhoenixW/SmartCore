@@ -205,6 +205,8 @@ def list_reminder_events(
     *,
     user_id: str = _DEFAULT_USER_ID,
     date_value: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
     stats: list[str] | None = None,
     text: str | None = None,
 ) -> list[dict[str, Any]]:
@@ -217,6 +219,8 @@ def list_reminder_events(
     allowed_stats = {str(item) for item in stats or []}
     query = str(text or "").strip().lower()
     target_date = date.fromisoformat(date_value) if date_value else None
+    start_dt = _parse_datetime(start) if start else None
+    end_dt = _parse_datetime(end) if end else None
     result: list[dict[str, Any]] = []
     for base, remind in rows:
         if allowed_stats and base.stat not in allowed_stats:
@@ -224,11 +228,16 @@ def list_reminder_events(
         item = _event_dict(base, remind)
         if query and query not in f"{base.title} {base.desc or ''} {remind.triggerTime}".lower():
             continue
+        trigger = _parse_datetime(remind.triggerTime)
         if target_date:
-            trigger = _parse_datetime(remind.triggerTime)
-            start = datetime.combine(target_date, time.min, tzinfo=_DEFAULT_TZ)
-            end = datetime.combine(target_date, time.max, tzinfo=_DEFAULT_TZ)
-            if not (start <= trigger <= end):
+            day_start = datetime.combine(target_date, time.min, tzinfo=_DEFAULT_TZ)
+            day_end = datetime.combine(target_date, time.max, tzinfo=_DEFAULT_TZ)
+            if not (day_start <= trigger <= day_end):
+                continue
+        elif start_dt is not None or end_dt is not None:
+            if start_dt is not None and trigger < start_dt:
+                continue
+            if end_dt is not None and trigger > end_dt:
                 continue
         result.append(item)
     return result

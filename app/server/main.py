@@ -1,3 +1,4 @@
+import hashlib
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import quote
@@ -150,7 +151,36 @@ def create_app() -> FastAPI:
         if path.startswith("/work/assets/"):
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         elif path.startswith(("/api/", "/screen", "/work")):
-            response.headers["Cache-Control"] = "no-store"
+            cacheable = (
+                request.method == "GET"
+                and response.status_code == 200
+                and (
+                    path in {"/api/evt", "/api/idea", "/api/notifications"}
+                    or path.startswith(("/api/evt/", "/api/idea/"))
+                )
+            )
+            body = getattr(response, "body", None)
+            if cacheable and body is None and hasattr(response, "body_iterator"):
+                body = b"".join([chunk async for chunk in response.body_iterator])
+                response = Response(
+                    content=body,
+                    status_code=response.status_code,
+                    headers=dict(response.headers),
+                    media_type=response.media_type,
+                )
+            if cacheable and body:
+                etag = f'"{hashlib.sha256(body).hexdigest()}"'
+                response.headers["ETag"] = etag
+                response.headers["Cache-Control"] = "private, max-age=15, stale-while-revalidate=30"
+                response.headers["Vary"] = "Cookie"
+                if request.headers.get("if-none-match") == etag:
+                    response = Response(status_code=304, headers={
+                        "ETag": etag,
+                        "Cache-Control": "private, max-age=15, stale-while-revalidate=30",
+                        "Vary": "Cookie",
+                    })
+            else:
+                response.headers["Cache-Control"] = "no-store"
             response.headers["Referrer-Policy"] = "no-referrer"
             response.headers["X-Content-Type-Options"] = "nosniff"
         return response

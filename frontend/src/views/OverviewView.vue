@@ -15,7 +15,7 @@ import { runtimeApi } from "@/api/runtime";
 import { ideaApi } from "@/api/idea";
 import { useToast } from "@/composables/useToast";
 import type { SmartCoreEvent } from "@/types/event";
-import { eventDateKey, getEventPrimaryTime, todayKey } from "@/utils/date";
+import { addDays, eventDateKey, getEventPrimaryTime, todayKey } from "@/utils/date";
 import { eventEndTime, isOverdue, sortEvents } from "@/utils/event";
 
 const { t, locale } = useI18n();
@@ -23,27 +23,35 @@ const router = useRouter();
 const toast = useToast();
 const queryClient = useQueryClient();
 const { isMobile } = useViewport();
-const clockQuery = useQuery({ queryKey: ["runtime-clock"], queryFn: () => runtimeApi.clock(), refetchInterval: 60_000 });
+const clockQuery = useQuery({ queryKey: ["runtime-clock"], queryFn: () => runtimeApi.clock(), refetchInterval: 60_000, staleTime: 30_000 });
 const serverDate = computed(() => clockQuery.data.value?.serverNow?.slice(0, 10) || todayKey());
 const serverTimestamp = computed(() => {
   const value = clockQuery.data.value?.serverNow;
   const timestamp = value ? new Date(value).getTime() : Date.now();
   return Number.isFinite(timestamp) ? timestamp : Date.now();
 });
-const todayQuery = useQuery({
-  queryKey: computed(() => ["overview", "today", serverDate.value]),
-  queryFn: () => eventApi.list({ date: serverDate.value, includeReminders: true, includeCourseTemplates: false }),
+const eventWindow = computed(() => ({
+  start: `${serverDate.value}T00:00:00`,
+  end: `${addDays(serverDate.value, 3)}T23:59:59`,
+}));
+const eventsQuery = useQuery({
+  queryKey: computed(() => ["overview", "window", serverDate.value]),
+  queryFn: () => eventApi.list({ ...eventWindow.value, includeReminders: true, includeCourseTemplates: false }),
+  enabled: computed(() => Boolean(clockQuery.data.value?.serverNow)),
+  staleTime: 30_000,
 });
-const allEventsQuery = useQuery({ queryKey: ["overview", "all"], queryFn: () => eventApi.list({ includeReminders: true, includeCourseTemplates: false }) });
-const ideasQuery = useQuery({ queryKey: ["ideas", "overview"], queryFn: ideaApi.list });
-const activeToday = computed(() => sortEvents((todayQuery.data.value ?? []).filter((event) => event.stat !== "cancelled")));
+const ideasQuery = useQuery({ queryKey: ["ideas", "overview"], queryFn: ideaApi.list, staleTime: 30_000 });
+const activeToday = computed(() => sortEvents((eventsQuery.data.value ?? []).filter((event) => {
+  const primaryTime = getEventPrimaryTime(event);
+  return event.stat !== "cancelled" && primaryTime.slice(0, 10) === serverDate.value;
+})));
 const currentAction = computed(() => activeToday.value.find((event) => {
   if (event.stat !== "todo" || event.evtType !== "plan") return false;
   const start = new Date(getEventPrimaryTime(event)).getTime();
   const end = eventEndTime(event);
   return Number.isFinite(start) && start <= serverTimestamp.value && serverTimestamp.value < end;
 }) ?? null);
-const nextAction = computed(() => sortEvents((allEventsQuery.data.value ?? []).filter((event) => {
+const nextAction = computed(() => sortEvents((eventsQuery.data.value ?? []).filter((event) => {
   if (event.stat !== "todo") return false;
   const start = new Date(getEventPrimaryTime(event)).getTime();
   return Number.isFinite(start) && start >= serverTimestamp.value;
@@ -56,7 +64,7 @@ const todayScheduleTitle = computed(() => t("overview.todaySchedule"));
 const next72h = computed(() => {
   const start = serverTimestamp.value;
   const end = start + 72 * 60 * 60 * 1000;
-  return sortEvents((allEventsQuery.data.value ?? []).filter((event) => {
+  return sortEvents((eventsQuery.data.value ?? []).filter((event) => {
     if (event.stat !== "todo") return false;
     const time = new Date(getEventPrimaryTime(event)).getTime();
     return Number.isFinite(time) && time >= start && time <= end;
@@ -98,7 +106,7 @@ function eventTimeRange(event: SmartCoreEvent): string {
     </section>
     <section class="overview-columns">
       <BaseCard :title="todayScheduleTitle">
-        <div v-if="todayQuery.isPending.value" class="empty-state">{{ t("common.loading") }}</div>
+        <div v-if="eventsQuery.isPending.value" class="empty-state">{{ t("common.loading") }}</div>
         <div v-else class="overview-event-list">
           <div v-for="event in activeToday" :key="event.evtId" class="overview-event-row" :class="[`overview-event-row--${event.stat}`, { 'overview-event-row--current': currentAction?.evtId === event.evtId, 'overview-event-row--overdue': isOverdue(event, serverTimestamp) }]" :aria-current="currentAction?.evtId === event.evtId ? 'true' : undefined"><div class="overview-event-row__time">{{ eventTimeRange(event) }}</div><EventStatusToggle :status="event.stat" :busy="statusMutation.isPending.value" :mark-done-label="t('event.action.markDone')" :mark-todo-label="t('event.action.markTodo')" @change="statusMutation.mutate({ event, stat: $event })" /><EventCard :event="event" @select="openEvent" /></div>
           <EmptyState v-if="!activeToday.length" :text="t('overview.emptyToday')" />

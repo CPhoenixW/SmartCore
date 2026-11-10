@@ -37,7 +37,7 @@ function mountOverview(): ReturnType<typeof mount> {
 
 describe("OverviewView", () => {
   beforeEach(() => {
-    queryValues.splice(0, queryValues.length, clock, [], [], []);
+    queryValues.splice(0, queryValues.length, clock, [], []);
   });
 
   it("keeps the overview focused on actions", () => {
@@ -53,7 +53,7 @@ describe("OverviewView", () => {
     const current = plan("current", "正在写报告", "2026-07-31T10:00:00+08:00", 90);
     const completed = plan("done", "晨间计划", "2026-07-31T08:30:00+08:00", 30, "done");
     const next = plan("next", "午后复盘", "2026-07-31T13:00:00+08:00", 45);
-    queryValues.splice(0, queryValues.length, { ...clock, serverNow: "2026-07-31T10:30:00+08:00" }, [current, completed], [current, completed, next], []);
+    queryValues.splice(0, queryValues.length, { ...clock, serverNow: "2026-07-31T10:30:00+08:00" }, [current, completed, next], []);
 
     const wrapper = mountOverview();
 
@@ -68,7 +68,7 @@ describe("OverviewView", () => {
 
   it("falls back to the next action from a future day", () => {
     const tomorrow = plan("tomorrow", "明日评审", "2026-08-01T09:00:00+08:00", 60);
-    queryValues.splice(0, queryValues.length, clock, [], [tomorrow], []);
+    queryValues.splice(0, queryValues.length, clock, [tomorrow], []);
 
     const wrapper = mountOverview();
 

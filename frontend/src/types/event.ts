@@ -100,6 +100,8 @@ export type SmartCoreEvent = PlanEvent | ReminderEvent | DdlEvent | CourseEvent;
 
 export interface EventQuery {
   date?: string;
+  start?: string;
+  end?: string;
   evtType?: EventType[];
   stat?: EventStatus[];
   text?: string;

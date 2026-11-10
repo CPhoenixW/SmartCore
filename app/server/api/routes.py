@@ -134,6 +134,8 @@ def patch_user_me(
 @router.get("/evt")
 def list_evt(
     date: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
     evtType: list[str] | None = Query(default=None),
     stat: list[str] | None = Query(default=None),
     text: str | None = None,
@@ -147,6 +149,8 @@ def list_evt(
             db,
             user_id=userId,
             date_value=date,
+            start=start,
+            end=end,
             evt_types=evtType,
             stats=stat,
             text=text,
@@ -159,6 +163,8 @@ def list_evt(
                     db,
                     user_id=userId,
                     date_value=date,
+                    start=start,
+                    end=end,
                     stats=stat,
                     text=text,
                 )
