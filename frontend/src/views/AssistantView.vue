@@ -46,6 +46,12 @@ const messagesRoot = ref<HTMLElement | null>(null);
 const composerRoot = ref<HTMLElement | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 const highlightMessageId = ref("");
+const INITIAL_HISTORY_MESSAGES = 40;
+const HISTORY_PAGE_SIZE = 40;
+const historyVisibleCount = ref(INITIAL_HISTORY_MESSAGES);
+const loadingEarlierMessages = ref(false);
+const historyInitialized = ref(false);
+const historyExpanded = ref(false);
 let syncTimer: ReturnType<typeof setInterval> | undefined;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 let activeAbortController: AbortController | null = null;
@@ -59,9 +65,17 @@ function newClientId(): string {
 function dateLabel(value: string): string {
   return formatDateTime(value, locale.value === "en-US" ? "en-US" : "zh-CN");
 }
+const visibleMessages = computed(() => messages.value.slice(Math.max(0, messages.value.length - historyVisibleCount.value)));
+const earlierMessageCount = computed(() => Math.max(0, messages.value.length - historyVisibleCount.value));
+const hasEarlierMessages = computed(() => earlierMessageCount.value > 0);
 function scrollToLatest(): void {
   void nextTick(() => {
-    if (messagesRoot.value) messagesRoot.value.scrollTop = messagesRoot.value.scrollHeight;
+    const node = messagesRoot.value;
+    if (!node) return;
+    const target = node.scrollHeight;
+    if (typeof node.scrollTo === "function") node.scrollTo({ top: target, behavior: "auto" });
+    node.scrollTop = target;
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => { node.scrollTop = node.scrollHeight; });
   });
 }
 function scrollToMessage(messageId: string): void {
@@ -147,8 +161,8 @@ function messageDayKey(value: string): string {
 
 function shouldShowDateDivider(index: number): boolean {
   if (index === 0) return true;
-  const current = messages.value[index];
-  const previous = messages.value[index - 1];
+  const current = visibleMessages.value[index];
+  const previous = visibleMessages.value[index - 1];
   return Boolean(current && previous && messageDayKey(current.createdAt) !== messageDayKey(previous.createdAt));
 }
 
@@ -222,6 +236,23 @@ function persistConversation(conversation: AssistantConversation | null = active
   };
   try { window.localStorage.setItem(ASSISTANT_CACHE_KEY, JSON.stringify(cached)); } catch {}
 }
+function replaceMessages(next: AssistantMessage[], resetHistory = false): void {
+  messages.value = next;
+  if (resetHistory || !historyInitialized.value) {
+    historyVisibleCount.value = Math.min(INITIAL_HISTORY_MESSAGES, next.length);
+    historyExpanded.value = false;
+  } else if (historyExpanded.value) {
+    historyVisibleCount.value = Math.min(next.length, Math.max(INITIAL_HISTORY_MESSAGES, historyVisibleCount.value));
+  } else {
+    historyVisibleCount.value = Math.min(INITIAL_HISTORY_MESSAGES, next.length);
+  }
+  historyInitialized.value = true;
+}
+function appendMessage(message: AssistantMessage): void {
+  const wasFullyVisible = historyVisibleCount.value >= messages.value.length;
+  messages.value.push(message);
+  if (wasFullyVisible) historyVisibleCount.value = messages.value.length;
+}
 function restoreCachedConversation(): boolean {
   if (typeof window === "undefined") return false;
   try {
@@ -231,7 +262,7 @@ function restoreCachedConversation(): boolean {
     if (!cached?.conversationId || !Array.isArray(cached.messages)) return false;
     activeConversation.value = cached;
     activeConversationId.value = cached.conversationId;
-    messages.value = cached.messages;
+    replaceMessages(cached.messages, true);
     loading.value = false;
     scrollToLatest();
     return true;
@@ -245,13 +276,29 @@ function ensureComposerVisible(): void {
     }
   });
 }
+async function loadEarlierMessages(): Promise<void> {
+  if (loadingEarlierMessages.value || !hasEarlierMessages.value) return;
+  const node = messagesRoot.value;
+  const previousHeight = node?.scrollHeight ?? 0;
+  loadingEarlierMessages.value = true;
+  historyExpanded.value = true;
+  historyVisibleCount.value = Math.min(messages.value.length, historyVisibleCount.value + HISTORY_PAGE_SIZE);
+  await nextTick();
+  if (node) node.scrollTop += node.scrollHeight - previousHeight;
+  loadingEarlierMessages.value = false;
+}
+function handleMessagesScroll(): void {
+  const node = messagesRoot.value;
+  if (!node || node.scrollTop > 40 || loadingEarlierMessages.value || !hasEarlierMessages.value) return;
+  void loadEarlierMessages();
+}
 async function loadConversation(conversationId: string, messageId?: string, silent = false): Promise<void> {
   if (!silent) loading.value = true;
   try {
     const result = await assistantApi.read(conversationId);
     activeConversation.value = result;
     activeConversationId.value = result.conversationId;
-    messages.value = result.messages;
+    replaceMessages(result.messages);
     persistConversation(result);
     highlightMessageId.value = messageId ?? "";
     if (!silent) scrollToLatest();
@@ -396,7 +443,7 @@ async function runSend(draft: ComposerDraft): Promise<void> {
     stat: "complete",
     createdAt: new Date().toISOString(),
   };
-  messages.value.push(optimistic);
+  appendMessage(optimistic);
   persistConversation();
   scrollToLatest();
   ensureComposerVisible();
@@ -514,10 +561,20 @@ onBeforeUnmount(() => {
         <p v-if="searchLoading" class="assistant-search-results__empty">{{ t("common.loading") }}</p>
         <p v-else-if="!searchResults.length" class="assistant-search-results__empty">{{ t("assistant.noSearchResults") }}</p>
       </div>
-      <div ref="messagesRoot" class="assistant-messages" aria-live="polite">
+      <div ref="messagesRoot" class="assistant-messages" aria-live="polite" @scroll="handleMessagesScroll">
         <div v-if="loading" class="assistant-loading" role="status"><span class="assistant-progress__spinner" aria-hidden="true" />{{ t("assistant.loading") }}</div>
         <div v-else-if="!messages.length && !sending" class="assistant-empty"><strong>{{ t("assistant.empty") }}</strong></div>
-        <template v-for="(message, index) in messages" :key="message.messageId">
+        <button
+          v-if="hasEarlierMessages"
+          class="assistant-history-load"
+          type="button"
+          :aria-label="t('assistant.historyLoadEarlier', { count: earlierMessageCount })"
+          :disabled="loadingEarlierMessages"
+          @click="loadEarlierMessages"
+        >
+          <span>{{ loadingEarlierMessages ? t("assistant.historyLoading") : t("assistant.historyLoadEarlier", { count: earlierMessageCount }) }}</span>
+        </button>
+        <template v-for="(message, index) in visibleMessages" :key="message.messageId">
           <div v-if="shouldShowDateDivider(index)" class="assistant-date-divider"><span>{{ dateDividerLabel(message.createdAt) }}</span></div>
           <article
             :id="`assistant-message-${message.messageId}`"
@@ -1754,6 +1811,25 @@ onBeforeUnmount(() => {
 .assistant-stop { border-color: #cbd5e1; background: #f8fafc; color: #334155; }
 .assistant-stop:hover:not(:disabled) { border-color: #94a3b8; background: #eef2f7; color: #1f2937; }
 .assistant-stop:disabled { opacity: .62; }
+.assistant-history-load {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  max-width: min(100%, 360px);
+  margin: 0 auto 2px;
+  padding: 6px 12px;
+  border: 1px solid #d8e0ec;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 82%);
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.2;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 5%);
+}
+.assistant-history-load:hover:not(:disabled) { border-color: #b8c5d6; background: #fff; color: #334155; }
+.assistant-history-load:disabled { cursor: wait; opacity: .68; }
 @media (max-width: 760px) {
   .assistant-composer {
     padding: 8px 10px max(12px, env(safe-area-inset-bottom));
@@ -1766,5 +1842,6 @@ onBeforeUnmount(() => {
   .assistant-attach,
   .assistant-send { width: 40px; min-width: 40px; height: 40px; min-height: 40px; }
   .assistant-send { width: 42px; min-width: 42px; }
+  .assistant-history-load { min-height: 30px; margin-bottom: 0; padding: 5px 10px; font-size: 11px; }
 }
 </style>

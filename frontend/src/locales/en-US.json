@@ -277,6 +277,8 @@
     "queued": "{count} message(s) queued; sending after the current reply",
     "thinking": "The assistant is working…",
     "loading": "Opening this conversation…",
+    "historyLoadEarlier": "Load {count} earlier messages",
+    "historyLoading": "Loading earlier messages…",
     "error": "The assistant is temporarily unavailable; your draft was kept",
     "clear": "Clear search",
     "you": "You",

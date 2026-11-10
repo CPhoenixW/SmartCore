@@ -41,6 +41,45 @@ beforeEach(() => {
     expect(wrapper.text()).toContain("已创建计划");
   });
 
+  it("opens at the newest messages and loads earlier history on demand", async () => {
+    const history = Array.from({ length: 45 }, (_, index) => ({
+      messageId: `history-${index}`,
+      conversationId: "pwa-test",
+      role: index % 2 ? "assistant" as const : "user" as const,
+      text: `历史消息 ${index}`,
+      stat: "complete" as const,
+      createdAt: `2026-07-31T10:${String(index).padStart(2, "0")}:00+08:00`,
+    }));
+    readMock.mockResolvedValueOnce({
+      conversationId: "pwa-test",
+      title: "长对话",
+      stat: "active",
+      createdAt: "2026-07-31T10:00:00+08:00",
+      updatedAt: "2026-07-31T10:44:00+08:00",
+      lastMessageAt: "2026-07-31T10:44:00+08:00",
+      messages: history,
+    });
+    const originalScrollHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get: () => 1200 });
+    const wrapper = mount(AssistantView, { global: { plugins: [i18n] } });
+    await flushPromises();
+
+    const visible = wrapper.findAll(".assistant-message");
+    expect(visible).toHaveLength(40);
+    expect(wrapper.text()).toContain("历史消息 44");
+    expect(wrapper.text()).not.toContain("历史消息 0");
+    expect((wrapper.get(".assistant-messages").element as HTMLElement).scrollTop).toBe(1200);
+
+    await wrapper.get(".assistant-history-load").trigger("click");
+    await flushPromises();
+    expect(wrapper.findAll(".assistant-message")).toHaveLength(45);
+    expect(wrapper.text()).toContain("历史消息 0");
+    expect(wrapper.find(".assistant-history-load").exists()).toBe(false);
+
+    if (originalScrollHeight) Object.defineProperty(HTMLElement.prototype, "scrollHeight", originalScrollHeight);
+    else delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollHeight;
+  });
+
   it("keeps live progress inside the conversation while DSH is working", async () => {
     let resolveStream: ((value: { sessionId: string; response: string }) => void) | undefined;
     streamMock.mockImplementation((_text: string, _conversationId: string, onEvent: (event: object) => void) => {

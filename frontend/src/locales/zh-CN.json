@@ -277,6 +277,8 @@
     "queued": "已排队 {count} 条，当前回答完成后发送",
     "thinking": "助手正在处理…",
     "loading": "正在打开这条对话…",
+    "historyLoadEarlier": "加载更早的 {count} 条消息",
+    "historyLoading": "正在加载更早消息…",
     "error": "助手暂时不可用，草稿已保留",
     "clear": "清除搜索",
     "you": "你",
