@@ -69,7 +69,10 @@
         max_size 22MB
     }
     header {
-        Cache-Control "no-store"
+        # Keep the app's immutable cache policy for fingerprinted assets. The
+        # question mark makes no-store a default only when the upstream did not
+        # set Cache-Control, so API and HTML responses remain uncached.
+        ?Cache-Control "no-store"
         Referrer-Policy "no-referrer"
         X-Content-Type-Options "nosniff"
         Strict-Transport-Security "max-age=31536000"

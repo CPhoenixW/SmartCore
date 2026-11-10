@@ -1,4 +1,4 @@
-const CACHE_NAME = "smartcore-work-v9";
+const CACHE_NAME = "smartcore-work-v10";
 const SHELL_KEY = "/work/shell";
 const APP_SHELL = [
   "/work/",
@@ -44,6 +44,10 @@ function isStaticAsset(request, url) {
     || url.pathname.startsWith("/work/assets/");
 }
 
+function isFingerprintAsset(url) {
+  return url.pathname.startsWith("/work/assets/");
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     await Promise.all(APP_SHELL.map(async (url) => {
@@ -57,13 +61,15 @@ self.addEventListener("install", (event) => {
     }));
     try {
       const response = await fetch("/work/precache.json", { cache: "no-store" });
-      if (!response.ok) return;
-      const files = await response.json();
-      if (!Array.isArray(files)) return;
-      await Promise.all(files.map(async (url) => {
-        const asset = await fetch(url, { cache: "no-store" });
-        await storeResponse(url, asset);
-      }));
+      if (response.ok) {
+        const files = await response.json();
+        if (Array.isArray(files)) {
+          await Promise.all(files.map(async (url) => {
+            const asset = await fetch(url, { cache: "no-store" });
+            await storeResponse(url, asset);
+          }));
+        }
+      }
     } catch {
       // Hashed assets are stored the first time the page requests them.
     }
@@ -100,12 +106,13 @@ self.addEventListener("fetch", (event) => {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE_NAME);
       const cached = await cache.match(request);
+      if (cached && isFingerprintAsset(url)) return cached;
       const refresh = fetch(request)
         .then(async (response) => {
           await storeResponse(request, response);
           return response;
         })
-        .catch(() => cached || cache.match(SHELL_KEY));
+        .catch(() => cached || Response.error());
       if (cached) {
         event.waitUntil(refresh);
         return cached;
