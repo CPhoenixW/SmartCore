@@ -1660,17 +1660,17 @@ onBeforeUnmount(() => {
 .assistant-send {
   width: 44px;
   min-width: 44px;
-  border-color: #2f6fed;
-  background: #2f6fed;
+  border-color: #334155;
+  background: #334155;
   color: #fff;
 }
 .assistant-send:disabled {
-  border-color: #dfe7f5;
-  background: #dfe7f5;
-  color: #9bb4e4;
+  border-color: #e2e8f0;
+  background: #e2e8f0;
+  color: #94a3b8;
   box-shadow: none;
 }
-.assistant-send:hover:not(:disabled) { border-color: #245dcc; background: #245dcc; }
+.assistant-send:hover:not(:disabled) { border-color: #1f2937; background: #1f2937; }
 .assistant-send span { display: none; }
 @media (max-width: 760px) {
   .assistant-composer {
