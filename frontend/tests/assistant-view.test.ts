@@ -30,7 +30,13 @@ beforeEach(() => {
     await wrapper.get(".assistant-composer").trigger("submit");
     await flushPromises();
 
-    expect(streamMock).toHaveBeenCalledWith("明天上午安排复习", expect.any(String), expect.any(Function), expect.any(String));
+    expect(streamMock).toHaveBeenCalledWith(
+      "明天上午安排复习",
+      expect.any(String),
+      expect.any(Function),
+      expect.any(String),
+      expect.objectContaining({ signal: expect.anything() }),
+    );
     expect(wrapper.text()).toContain("明天上午安排复习");
     expect(wrapper.text()).toContain("已创建计划");
   });
@@ -61,6 +67,36 @@ beforeEach(() => {
     await flushPromises();
     expect(wrapper.find(".assistant-progress").exists()).toBe(false);
     expect(wrapper.text()).toContain("已创建计划");
+  });
+
+  it("keeps drafting during generation and can stop the active stream", async () => {
+    let signal: AbortSignal | undefined;
+    streamMock.mockImplementation((_text: string, _conversationId: string, _onEvent: (event: object) => void, _clientMessageId: string, options?: { signal?: AbortSignal }) => {
+      signal = options?.signal;
+      return new Promise<never>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+      });
+    });
+    const wrapper = mount(AssistantView, { global: { plugins: [i18n] } });
+    await flushPromises();
+
+    const textarea = wrapper.get("textarea");
+    await textarea.setValue("当前查询");
+    void wrapper.get(".assistant-composer").trigger("submit");
+    await flushPromises();
+
+    expect(textarea.attributes("disabled")).toBeUndefined();
+    expect(wrapper.find(".assistant-stop").exists()).toBe(true);
+    await textarea.setValue("下一句");
+    expect((textarea.element as HTMLTextAreaElement).value).toBe("下一句");
+
+    await wrapper.get(".assistant-stop").trigger("click");
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await flushPromises();
+
+    expect(signal?.aborted).toBe(true);
+    expect(wrapper.find(".assistant-stop").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("助手暂时不可用");
   });
 
   it("renders assistant markdown instead of plain paragraphs", async () => {

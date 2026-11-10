@@ -73,7 +73,7 @@ export const assistantApi = {
     conversationId: string | undefined,
     onEvent: (event: AssistantStreamEvent) => void,
     clientMessageId?: string,
-    options?: { attachmentIds?: string[]; replyToMessageId?: string },
+    options?: { attachmentIds?: string[]; replyToMessageId?: string; signal?: AbortSignal },
   ): Promise<AssistantMessageResult> {
     const response = await fetch("/api/assistant/stream", {
       method: "POST",
@@ -88,6 +88,7 @@ export const assistantApi = {
         replyToMessageId: options?.replyToMessageId,
       }),
       cache: "no-store",
+      signal: options?.signal,
     });
     if (!response.ok || !response.body) {
       const body = await response.json().catch(() => null) as { detail?: string } | null;

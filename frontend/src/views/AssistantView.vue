@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { Bell, Bot, Copy, FileText, Plus, Quote, Search, Send, WifiOff, X } from "@lucide/vue";
+import { Bell, Bot, Copy, FileText, Plus, Quote, Search, Send, Square, WifiOff, X } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import { assistantApi } from "@/api/assistant";
@@ -29,6 +29,7 @@ const activeConversationId = ref("");
 const activeConversation = ref<AssistantConversation | null>(null);
 const messages = ref<AssistantMessage[]>([]);
 const sending = ref(false);
+const stopping = ref(false);
 const error = ref("");
 const activity = ref("");
 const activeTool = ref("");
@@ -40,6 +41,7 @@ const fileInput = ref<HTMLInputElement | null>(null);
 const highlightMessageId = ref("");
 let syncTimer: ReturnType<typeof setInterval> | undefined;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
+let activeAbortController: AbortController | null = null;
 const ASSISTANT_CACHE_KEY = "smartcore:assistant:primary:v2";
 
 function newClientId(): string {
@@ -325,6 +327,12 @@ async function openSearchResult(result: AssistantSearchResult): Promise<void> {
   highlightMessageId.value = result.messageId;
   scrollToMessage(result.messageId);
 }
+async function stopGeneration(): Promise<void> {
+  if (!sending.value || stopping.value || !activeAbortController) return;
+  stopping.value = true;
+  activeAbortController.abort();
+}
+
 async function send(): Promise<void> {
   const outgoingAttachments = pendingAttachments.value.slice();
   const outgoingQuote = quotedMessage.value;
@@ -359,9 +367,12 @@ async function send(): Promise<void> {
   scrollToLatest();
   ensureComposerVisible();
   sending.value = true;
+  stopping.value = false;
   activity.value = t("assistant.starting");
   activeTool.value = "";
   streamingText.value = "";
+  const abortController = new AbortController();
+  activeAbortController = abortController;
   try {
     const onEvent = (event: AssistantStreamEvent) => {
         if (event.type === "status") activity.value = event.message || t("assistant.thinking");
@@ -377,19 +388,30 @@ async function send(): Promise<void> {
           activity.value = t("assistant.done");
         }
       };
-    const streamOptions = outgoingAttachments.length || outgoingQuote
-      ? { attachmentIds: outgoingAttachments.map((item) => item.uploadId), replyToMessageId: outgoingQuote?.messageId }
-      : undefined;
-    const result = streamOptions
-      ? await assistantApi.stream(text, activeConversationId.value, onEvent, clientMessageId, streamOptions)
-      : await assistantApi.stream(text, activeConversationId.value, onEvent, clientMessageId);
+    const streamOptions = {
+      attachmentIds: outgoingAttachments.map((item) => item.uploadId),
+      replyToMessageId: outgoingQuote?.messageId,
+      signal: abortController.signal,
+    };
+    const result = await assistantApi.stream(text, activeConversationId.value, onEvent, clientMessageId, streamOptions);
     activeConversationId.value = result.conversationId || result.sessionId || activeConversationId.value;
     await loadConversation(activeConversationId.value, undefined, true);
   } catch (requestError) {
-    error.value = requestError instanceof Error && requestError.message ? requestError.message : t("assistant.error");
+    const aborted = abortController.signal.aborted
+      || (typeof DOMException !== "undefined" && requestError instanceof DOMException && requestError.name === "AbortError");
+    if (!aborted) {
+      error.value = requestError instanceof Error && requestError.message ? requestError.message : t("assistant.error");
+    } else {
+      error.value = "";
+      activity.value = t("assistant.stopped");
+      // Let the server finalize the partial stream before reloading history.
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
     await loadConversation(activeConversationId.value, undefined, true);
   } finally {
+    if (activeAbortController === abortController) activeAbortController = null;
     sending.value = false;
+    stopping.value = false;
     activity.value = "";
     activeTool.value = "";
     streamingText.value = "";
@@ -421,6 +443,7 @@ watch(() => route?.query?.messageId, (value) => {
   if (value) scrollToMessage(String(value));
 });
 onBeforeUnmount(() => {
+  activeAbortController?.abort();
   window.removeEventListener("online", onOnline);
   window.removeEventListener("offline", onOffline);
   document.removeEventListener("visibilitychange", onVisibilityChange);
@@ -535,13 +558,25 @@ onBeforeUnmount(() => {
           @focus="ensureComposerVisible"
         />
         <button
+          v-if="sending"
+          class="button assistant-send assistant-stop"
+          type="button"
+          :aria-label="stopping ? t('assistant.stopping') : t('assistant.stop')"
+          :title="stopping ? t('assistant.stopping') : t('assistant.stop')"
+          :disabled="stopping"
+          @click="stopGeneration"
+        >
+          <Square :size="15" :stroke-width="2.4" fill="currentColor" aria-hidden="true" />
+        </button>
+        <button
+          v-else
           class="button button--primary assistant-send"
           type="submit"
-          :aria-label="sending ? t('assistant.sending') : t('assistant.send')"
-          :disabled="sending || loading || !(input.trim() || pendingAttachments.length)"
+          :aria-label="t('assistant.send')"
+          :disabled="loading || !(input.trim() || pendingAttachments.length)"
         >
           <Send :size="16" aria-hidden="true" />
-          <span>{{ sending ? t("assistant.sending") : t("assistant.send") }}</span>
+          <span>{{ t("assistant.send") }}</span>
         </button>
         </div>
       </form>
@@ -1672,6 +1707,9 @@ onBeforeUnmount(() => {
 }
 .assistant-send:hover:not(:disabled) { border-color: #1f2937; background: #1f2937; }
 .assistant-send span { display: none; }
+.assistant-stop { border-color: #cbd5e1; background: #f8fafc; color: #334155; }
+.assistant-stop:hover:not(:disabled) { border-color: #94a3b8; background: #eef2f7; color: #1f2937; }
+.assistant-stop:disabled { opacity: .62; }
 @media (max-width: 760px) {
   .assistant-composer {
     padding: 8px 10px max(12px, env(safe-area-inset-bottom));
